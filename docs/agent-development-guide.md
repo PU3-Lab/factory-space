@@ -21,7 +21,7 @@ http://127.0.0.1:8000/health
 WebSocket endpoint:
 
 ```text
-ws://127.0.0.1:8000/ws/{client_id}
+ws://127.0.0.1:8000/ws
 ```
 
 수동 WebSocket 테스트:
@@ -274,6 +274,7 @@ uv run python scripts/ws_test_client.py
   "type": "agent_request",
   "version": "1.0",
   "session_id": "test-session",
+  "client_id": "test-client",
   "agent": "qa_chatbot",
   "payload": {
     "question": "안녕?"

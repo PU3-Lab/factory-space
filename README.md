@@ -23,7 +23,7 @@ uv sync
 # 또는 기본 pip 사용 시
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r pyproject.toml
+pip install -e .
 ```
 
 ### 2. 실행 방법
@@ -43,7 +43,7 @@ uv run main.py
 
 이 프로젝트는 파이썬 린터 및 포맷터로 **Ruff**를 사용합니다.
 
-- **설정 파일**: [pyproject.toml](file:///Users/kimkyungpyo/Workspaces/projects/factory-space/pyproject.toml)에 정의되어 있습니다.
+- **설정 파일**: [pyproject.toml](./pyproject.toml)에 정의되어 있습니다.
 - **룰셋**: Pyflakes(`F`), Pycodestyle(`E`), Isort(`I`), Pyupgrade(`UP`), Flake8-Annotations(`ANN`), PEP8-Naming(`N`) 등이 적용되어 있습니다.
 
 ### 린트 및 포맷팅 명령어
@@ -63,7 +63,7 @@ uv run ruff format .
 
 ## 💻 VS Code 연동 및 자동 설정
 
-본 레포지토리에는 VS Code용 작업 환경 설정이 포함되어 있습니다. ([.vscode/settings.json](file:///Users/kimkyungpyo/Workspaces/projects/factory-space/.vscode/settings.json))
+본 레포지토리에는 VS Code용 작업 환경 설정이 포함되어 있습니다. ([.vscode/settings.json](./.vscode/settings.json))
 
 ### 권장 익스텐션
 - **Ruff** (`charliermarsh.ruff`): VS Code 마켓플레이스에서 반드시 설치하시기 바랍니다.
