@@ -25,6 +25,7 @@ message_router = MessageRouter(
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """Handle Unreal WebSocket messages on a single channel."""
 
+    await websocket.accept()
     client_id: str | None = None
     try:
         while True:

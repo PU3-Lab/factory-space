@@ -12,9 +12,8 @@ class WebSocketConnectionManager:
         self._connections: dict[str, WebSocket] = {}
 
     async def connect(self, client_id: str, websocket: WebSocket) -> None:
-        """Accept and track a WebSocket connection."""
+        """Track a WebSocket connection (assumes already accepted)."""
 
-        await websocket.accept()
         self._connections[client_id] = websocket
 
     def disconnect(self, client_id: str) -> None:
