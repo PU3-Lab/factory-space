@@ -99,6 +99,11 @@ ipython_config.py
 #   According to poetry documentation, poetry.lock should be committed.
 #   poetry.lock
 
+# Environment variables
+.env
+.env.local
+.env.*.local
+
 # pdm
 #   https://pdm.fming.dev/latest/usage/project/#commit-the-lockfile-or-not
 .pdm-python
