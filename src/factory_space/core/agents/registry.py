@@ -2,6 +2,16 @@
 
 from __future__ import annotations
 
+from factory_space.agents.factory_optimization.agent import (
+    create_agent as create_factory_optimization_agent,
+)
+from factory_space.agents.material_generation.agent import (
+    create_agent as create_material_generation_agent,
+)
+from factory_space.agents.qa_chatbot.agent import (
+    create_agent as create_qa_chatbot_agent,
+)
+from factory_space.agents.quest.agent import create_agent as create_quest_agent
 from factory_space.core.agents.base import BaseAgent
 
 
@@ -41,3 +51,14 @@ class UnknownAgentError(LookupError):
     def __init__(self, agent_id: str) -> None:
         super().__init__(f"Unknown agent: {agent_id}")
         self.agent_id = agent_id
+
+
+def create_default_registry() -> AgentRegistry:
+    """Create a registry with the initial project agents."""
+
+    registry = AgentRegistry()
+    registry.register(create_factory_optimization_agent())
+    registry.register(create_qa_chatbot_agent())
+    registry.register(create_quest_agent())
+    registry.register(create_material_generation_agent())
+    return registry
