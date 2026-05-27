@@ -1,0 +1,1 @@
+"""Factory optimization agent entrypoint."""

@@ -1,0 +1,1 @@
+"""Material generation agent entrypoint."""
