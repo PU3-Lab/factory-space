@@ -37,9 +37,12 @@
 | `version` | string | 예 | 프로토콜 버전 |
 | `request_id` | string | 권장 | 요청 추적용 ID |
 | `session_id` | string | 예 | 플레이/대화/시뮬레이션 세션 ID |
-| `client_id` | string | 권장 | Unreal 클라이언트 ID |
+| `client_id` | string | **예** | Unreal 클라이언트 ID (첫 메시지에서 필수) |
 | `agent` | string | agent 메시지에서 예 | 대상 agent ID |
 | `payload` | object | 예 | 메시지 본문 |
+
+**WebSocket 연결:**
+모든 클라이언트는 `ws://{host}/ws` 엔드포인트로 연결합니다. 클라이언트는 첫 메시지에 반드시 `client_id`를 포함해야 합니다. 이후 메시지에서도 `client_id`를 포함해야 합니다.
 
 ## 메시지 타입
 
