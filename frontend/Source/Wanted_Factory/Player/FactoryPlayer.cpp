@@ -14,7 +14,7 @@ AFactoryPlayer::AFactoryPlayer()
 
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm-> SetupAttachment(RootComponent);
-	SpringArm->TargetArmLength(900.f);
+	SpringArm->TargetArmLength = 900.f;
 	SpringArm->SetRelativeRotation(FRotator(0.0f, 90.0f, 0.0f));
 	SpringArm->bUsePawnControlRotation = false;
 
@@ -43,14 +43,4 @@ void AFactoryPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	PlayerInputComponent->BindAxis(TEXT("MoveForward"), this, &AFactoryPlayer::MoveForward);
-	PlayerInputComponent->BindAxis(TEXT("MoveRight"), this, &AFactoryPlayer::MoveRight);
-}
-
-void AFactoryPlayer::MoveForward(float Value)
-{
-}
-
-void AFactoryPlayer::MoveRight(float Value)
-{
 }

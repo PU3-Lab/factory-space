@@ -82,8 +82,8 @@ protected:
 	int32 CurrentInputCount = 0;
 
 	// 입력 인벤토리
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
-	TMap<FName, TArray<FName>> InputToRecipeMap;
+	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
+	// TMap<FName, TArray<FName>> InputToRecipeMap;
 
 	// 출력 인벤토리
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
