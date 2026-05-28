@@ -1,52 +1,54 @@
 # 메시지 프로토콜
 
-이 문서는 Unreal Engine과 Python 백엔드가 WebSocket으로 주고받는 JSON 메시지 계약을 설명합니다.
+이 문서는 현재 코드에서 지원하는 Unreal Engine과 Python 백엔드 사이의 WebSocket JSON 메시지 계약을 설명합니다.
 
-프로토콜은 agent 내부 구현과 분리되어야 합니다. 각 agent가 룰베이스, LLM, RAG, DB 조회, 시뮬레이션 등 어떤 방식을 사용하더라도 Unreal과 백엔드 사이의 메시지 구조는 안정적으로 유지하는 것을 목표로 합니다.
+현재 프로토콜 버전은 `1.0`입니다. 호환되지 않는 변경이 필요하면 `version`을 올리고 이 문서를 함께 갱신합니다.
 
-## 기본 원칙
+## 엔드포인트
 
-- 모든 메시지는 JSON object입니다.
-- 모든 메시지는 `type`, `version`, `session_id`를 가집니다.
-- agent와 관련된 메시지는 `agent` field를 가집니다.
-- 실제 내용은 `payload` 안에 넣습니다.
-- 호환되지 않는 변경이 생기면 `version`을 갱신합니다.
-- Unreal이 실행해야 하는 작업은 free text가 아니라 구조화된 `actions`로 표현합니다.
+```text
+ws://{host}/ws
+```
+
+로컬 개발 기본 주소:
+
+```text
+ws://127.0.0.1:8000/ws
+```
+
+첫 번째 WebSocket 메시지는 반드시 `client_id`를 포함해야 합니다. 서버는 첫 메시지에서 추출한 `client_id`를 연결 식별자로 사용하고, 이후 raw message를 처리할 때 같은 `client_id`를 주입합니다.
 
 ## 공통 Envelope
 
-기본 형태:
+모든 transport message는 `MessageEnvelope` 구조를 따릅니다.
 
 ```json
 {
   "type": "agent_request",
   "version": "1.0",
-  "request_id": "req-001",
   "session_id": "demo-session",
+  "request_id": "req-001",
   "client_id": "unreal-client-01",
   "agent": "quest",
   "payload": {}
 }
 ```
 
-공통 필드:
+| 필드 | 타입 | 필수 여부 | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| `type` | string | 필수 | 없음 | 메시지 종류입니다. 아래 지원 목록 중 하나여야 합니다. |
+| `version` | string | 선택 | `"1.0"` | 프로토콜 버전입니다. |
+| `session_id` | string | 필수 | 없음 | Unreal 또는 플레이 세션 식별자입니다. |
+| `request_id` | string 또는 null | 선택 | `null` | 요청 추적용 id입니다. |
+| `client_id` | string 또는 null | 첫 WebSocket 메시지에서는 필수 | `null` | Unreal client 식별자입니다. |
+| `agent` | string 또는 null | `agent_request`에서는 필수 | `null` | 대상 agent id입니다. |
+| `payload` | object | 선택 | `{}` | 메시지 본문입니다. |
 
-| 필드 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `type` | string | 예 | 메시지 종류 |
-| `version` | string | 예 | 프로토콜 버전 |
-| `request_id` | string | 권장 | 요청 추적용 ID |
-| `session_id` | string | 예 | 플레이/대화/시뮬레이션 세션 ID |
-| `client_id` | string | **예** | Unreal 클라이언트 ID (첫 메시지에서 필수) |
-| `agent` | string | agent 메시지에서 예 | 대상 agent ID |
-| `payload` | object | 예 | 메시지 본문 |
+`MessageEnvelope`는 정의되지 않은 top-level field를 허용하지 않습니다.
 
-**WebSocket 연결:**
-모든 클라이언트는 `ws://{host}/ws` 엔드포인트로 연결합니다. 클라이언트는 첫 메시지에 반드시 `client_id`를 포함해야 합니다. 이후 메시지에서도 `client_id`를 포함해야 합니다.
+## 지원하는 메시지 타입
 
-## 메시지 타입
-
-초기 지원 대상:
+현재 `MessageType` union은 다음 값을 지원합니다.
 
 - `ping`
 - `pong`
@@ -55,17 +57,19 @@
 - `action_result`
 - `error`
 
-추후 필요 시 추가 가능:
+현재 router가 정상 요청으로 처리하는 type은 다음과 같습니다.
 
-- `action_request`
-- `state_update`
-- `agent_event`
-- `stream_delta`
-- `stream_end`
+| 타입 | 방향 | 현재 동작 |
+| --- | --- | --- |
+| `ping` | Unreal -> Backend | 같은 payload와 요청 metadata를 담아 `pong`을 반환합니다. |
+| `agent_request` | Unreal -> Backend | orchestrator를 통해 대상 agent를 호출합니다. |
+| `action_result` | Unreal -> Backend | `{"status": "received"}` payload를 담은 `pong`을 반환합니다. |
+
+`pong`, `agent_response`, `error`는 주로 backend가 Unreal로 보내는 응답 type입니다. Unreal이 이 type을 보내면 envelope 검증은 통과할 수 있지만, router에서는 일반 요청으로 처리하지 않습니다.
+
+지원 목록에 없는 `type` 값은 WebSocket endpoint의 `MessageEnvelope` 검증에서 실패하고 `INVALID_MESSAGE`를 반환합니다.
 
 ## ping
-
-연결 상태 확인용 메시지입니다.
 
 Unreal -> Backend:
 
@@ -73,18 +77,14 @@ Unreal -> Backend:
 {
   "type": "ping",
   "version": "1.0",
-  "request_id": "req-ping-001",
   "session_id": "demo-session",
+  "request_id": "req-ping-001",
   "client_id": "unreal-client-01",
   "payload": {
-    "timestamp": "2026-05-27T12:00:00Z"
+    "timestamp": "2026-05-28T12:00:00Z"
   }
 }
 ```
-
-## pong
-
-`ping`에 대한 응답입니다.
 
 Backend -> Unreal:
 
@@ -92,18 +92,18 @@ Backend -> Unreal:
 {
   "type": "pong",
   "version": "1.0",
-  "request_id": "req-ping-001",
   "session_id": "demo-session",
+  "request_id": "req-ping-001",
   "client_id": "unreal-client-01",
   "payload": {
-    "timestamp": "2026-05-27T12:00:00Z"
+    "timestamp": "2026-05-28T12:00:00Z"
   }
 }
 ```
 
 ## agent_request
 
-Unreal이 특정 agent에게 처리를 요청할 때 사용합니다.
+Unreal은 특정 agent에 처리를 요청할 때 `agent_request`를 보냅니다.
 
 Unreal -> Backend:
 
@@ -111,26 +111,33 @@ Unreal -> Backend:
 {
   "type": "agent_request",
   "version": "1.0",
-  "request_id": "req-quest-001",
   "session_id": "demo-session",
+  "request_id": "req-quest-001",
   "client_id": "unreal-client-01",
   "agent": "quest",
   "payload": {
     "event": "player_entered_area",
-    "area_id": "machine_room",
-    "world_state": {
-      "player_location": "machine_room",
-      "nearby_objects": ["control_panel_01", "machine_01"]
-    }
+    "area_id": "machine_room"
   }
 }
 ```
 
-agent별 payload는 각 agent가 정의합니다. 다만 envelope 구조는 유지해야 합니다.
+router는 envelope를 `AgentRequest`로 변환합니다.
+
+| 필드 | 타입 | 필수 여부 | 기본값 |
+| --- | --- | --- | --- |
+| `version` | string | 선택 | `"1.0"` |
+| `session_id` | string | 필수 | 없음 |
+| `agent` | string | 필수 | 없음 |
+| `payload` | object | 선택 | `{}` |
+| `request_id` | string 또는 null | 선택 | `null` |
+| `client_id` | string 또는 null | 선택 | `null` |
+
+각 agent는 자기 `payload`의 의미를 직접 소유합니다. agent별 payload schema는 `src/factory_space/agents/{agent_name}/schemas.py`에 둡니다.
 
 ## agent_response
 
-agent 처리 결과를 Unreal로 보낼 때 사용합니다.
+모든 agent는 `AgentResponse`를 반환합니다. backend는 이를 `MessageEnvelope`로 변환해 Unreal로 전송합니다.
 
 Backend -> Unreal:
 
@@ -138,41 +145,40 @@ Backend -> Unreal:
 {
   "type": "agent_response",
   "version": "1.0",
-  "request_id": "req-quest-001",
   "session_id": "demo-session",
+  "request_id": "req-quest-001",
   "client_id": "unreal-client-01",
   "agent": "quest",
   "payload": {
-    "text": "기계실에 도착했습니다. 제어 패널을 확인하세요.",
+    "text": "Quest request received.",
     "actions": [
       {
         "name": "show_ui_message",
         "args": {
-          "text": "제어 패널을 확인하세요."
-        }
-      },
-      {
-        "name": "highlight_object",
-        "args": {
-          "object_id": "control_panel_01"
+          "text": "Quest request received."
         }
       }
     ],
     "metadata": {
-      "quest_id": "quest-001",
-      "step": "inspect_control_panel"
+      "status": "stub"
     }
   }
 }
 ```
 
-`payload.text`는 사용자에게 보여줄 수 있는 자연어 응답입니다.
+Response payload 필드:
 
-`payload.actions`는 Unreal이 실행할 수 있는 구조화된 명령입니다.
+| 필드 | 타입 | 필수 여부 | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| `text` | string | 선택 | `""` | Unreal이 사용자에게 보여줄 수 있는 응답 text입니다. |
+| `actions` | `Action` 배열 | 선택 | `[]` | Unreal이 실행할 구조화된 명령 목록입니다. |
+| `metadata` | object | 선택 | `{}` | debug, trace, status, agent별 metadata를 담습니다. |
 
-## action schema
+현재 기본 agent들은 placeholder 응답을 반환하며 `metadata.status`는 `"stub"`입니다.
 
-action은 다음 형태를 따릅니다.
+## Action Schema
+
+`Action`은 Unreal이 실행할 수 있는 구조화된 명령입니다.
 
 ```json
 {
@@ -183,31 +189,29 @@ action은 다음 형태를 따릅니다.
 }
 ```
 
-공통 필드:
+| 필드 | 타입 | 필수 여부 | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| `name` | string | 필수 | 없음 | 비어 있지 않은 action 이름입니다. |
+| `args` | object | 선택 | `{}` | action 인자입니다. |
 
-| 필드 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `name` | string | 예 | action 이름 |
-| `args` | object | 예 | action 인자 |
+현재 코드는 `name`이 비어 있지 않은지와 `args`가 object인지까지만 검증합니다. 아직 고정 action catalog를 강제하지는 않습니다.
 
-초기 action 후보:
+agent가 사용하거나 사용할 예정인 공통 action 이름은 다음과 같습니다.
 
-| action | 설명 |
-| --- | --- |
-| `show_ui_message` | Unreal UI에 메시지 표시 |
-| `highlight_object` | 특정 오브젝트 강조 |
-| `focus_camera` | 카메라 시선 이동 |
-| `move_npc` | NPC 이동 |
-| `play_animation` | 애니메이션 실행 |
-| `set_object_state` | 오브젝트 상태 변경 |
-| `spawn_object` | 오브젝트 생성 |
-| `update_quest_marker` | 퀘스트 마커 갱신 |
+- `show_ui_message`
+- `highlight_object`
+- `focus_camera`
+- `move_npc`
+- `play_animation`
+- `set_object_state`
+- `spawn_object`
+- `update_quest_marker`
 
-action 목록은 Unreal 구현과 맞춰 별도 문서로 확장할 수 있습니다.
+새 action 이름이나 인자 계약이 Unreal 연동에 포함되면 이 문서를 갱신하고, 필요하면 코드 검증도 추가합니다.
 
 ## action_result
 
-Unreal이 action 실행 결과를 백엔드에 알릴 때 사용합니다.
+Unreal은 action 실행 결과를 `action_result`로 보고할 수 있습니다.
 
 Unreal -> Backend:
 
@@ -215,8 +219,8 @@ Unreal -> Backend:
 {
   "type": "action_result",
   "version": "1.0",
-  "request_id": "req-action-001",
   "session_id": "demo-session",
+  "request_id": "req-action-001",
   "client_id": "unreal-client-01",
   "agent": "quest",
   "payload": {
@@ -234,82 +238,87 @@ Unreal -> Backend:
 }
 ```
 
-실패 예시:
+Backend -> Unreal:
 
 ```json
 {
-  "type": "action_result",
+  "type": "pong",
   "version": "1.0",
-  "request_id": "req-action-002",
   "session_id": "demo-session",
+  "request_id": "req-action-001",
   "client_id": "unreal-client-01",
   "agent": "quest",
   "payload": {
-    "action": {
-      "name": "highlight_object",
-      "args": {
-        "object_id": "missing_object"
-      }
-    },
-    "status": "failed",
-    "error": {
-      "code": "OBJECT_NOT_FOUND",
-      "message": "오브젝트를 찾을 수 없습니다."
-    }
+    "status": "received"
   }
 }
 ```
 
+`protocol.py`에는 `ActionResultMessage` 모델이 있지만, 현재 router는 `action_result` payload를 `ActionResult`로 엄격 검증하지 않고 generic envelope 기준으로 받은 뒤 `pong`을 반환합니다.
+
 ## error
 
-백엔드가 요청을 처리할 수 없을 때 사용합니다.
-
-Backend -> Unreal:
+오류는 `ErrorMessage`로 반환합니다.
 
 ```json
 {
   "type": "error",
   "version": "1.0",
-  "request_id": "req-quest-001",
   "session_id": "demo-session",
+  "request_id": "req-quest-001",
   "client_id": "unreal-client-01",
   "agent": "quest",
   "payload": {
     "code": "UNKNOWN_AGENT",
-    "message": "요청한 agent를 찾을 수 없습니다.",
+    "message": "Requested agent was not found.",
     "details": {
-      "agent": "unknown_agent"
+      "agent": "missing"
     }
   }
 }
 ```
 
-오류 코드 예시:
+Error payload 필드:
 
-| code | 설명 |
-| --- | --- |
-| `INVALID_JSON` | JSON 파싱 실패 |
-| `INVALID_MESSAGE` | 공통 envelope 검증 실패 |
-| `UNKNOWN_MESSAGE_TYPE` | 지원하지 않는 message type |
-| `UNKNOWN_AGENT` | 등록되지 않은 agent |
-| `VALIDATION_ERROR` | payload schema 검증 실패 |
-| `AGENT_EXECUTION_ERROR` | agent 실행 중 오류 |
-| `UNSUPPORTED_ACTION` | 지원하지 않는 action |
+| 필드 | 타입 | 필수 여부 | 기본값 |
+| --- | --- | --- | --- |
+| `code` | string | 필수 | 없음 |
+| `message` | string | 필수 | 없음 |
+| `details` | object | 선택 | `{}` |
 
-## agent별 payload 예시
+현재 error code:
 
-### 공장 최적화 Agent
+| Code | 생성 위치 | 의미 |
+| --- | --- | --- |
+| `INVALID_JSON` | WebSocket endpoint | raw message가 올바른 JSON이 아닙니다. |
+| `INVALID_MESSAGE` | WebSocket endpoint | JSON이 object가 아니거나 `MessageEnvelope` 검증에 실패했습니다. |
+| `MISSING_CLIENT_ID` | WebSocket endpoint | 첫 WebSocket 메시지에 `client_id`가 없습니다. |
+| `VALIDATION_ERROR` | Message router | `agent_request`에 `agent`가 없거나 `AgentRequest` 검증에 실패했습니다. |
+| `UNKNOWN_AGENT` | Message router | 요청한 agent id가 registry에 없습니다. |
+| `UNKNOWN_MESSAGE_TYPE` | Message router fallback | 이미 검증된 envelope가 router에서 처리하지 않는 요청 type으로 들어왔습니다. |
+
+## 등록된 Agent ID
+
+현재 기본 registry에 등록된 agent id는 다음과 같습니다.
+
+- `factory_optimization`
+- `qa_chatbot`
+- `quest`
+- `material_generation`
+
+## Agent Payload 예시
+
+공장 최적화:
 
 ```json
 {
   "type": "agent_request",
   "version": "1.0",
-  "request_id": "req-factory-001",
   "session_id": "demo-session",
   "client_id": "unreal-client-01",
   "agent": "factory_optimization",
   "payload": {
-    "question": "현재 병목이 어디야?",
+    "question": "Where is the bottleneck?",
     "factory_state": {
       "machines": [
         {
@@ -324,18 +333,17 @@ Backend -> Unreal:
 }
 ```
 
-### Q&A 챗봇 Agent
+Q&A 챗봇:
 
 ```json
 {
   "type": "agent_request",
   "version": "1.0",
-  "request_id": "req-qa-001",
   "session_id": "demo-session",
   "client_id": "unreal-client-01",
   "agent": "qa_chatbot",
   "payload": {
-    "question": "이 설비는 어떻게 점검하나요?",
+    "question": "How do I restart this machine?",
     "context": {
       "selected_object_id": "machine_01"
     }
@@ -343,13 +351,12 @@ Backend -> Unreal:
 }
 ```
 
-### 퀘스트 Agent
+퀘스트:
 
 ```json
 {
   "type": "agent_request",
   "version": "1.0",
-  "request_id": "req-quest-001",
   "session_id": "demo-session",
   "client_id": "unreal-client-01",
   "agent": "quest",
@@ -361,18 +368,17 @@ Backend -> Unreal:
 }
 ```
 
-### 신물질 생성 Agent
+신물질 생성:
 
 ```json
 {
   "type": "agent_request",
   "version": "1.0",
-  "request_id": "req-material-001",
   "session_id": "demo-session",
   "client_id": "unreal-client-01",
   "agent": "material_generation",
   "payload": {
-    "goal": "가볍고 열에 강한 소재",
+    "goal": "lightweight heat-resistant material",
     "constraints": {
       "max_weight": "low",
       "heat_resistance": "high",
@@ -381,27 +387,3 @@ Backend -> Unreal:
   }
 }
 ```
-
-## 버전 관리
-
-현재 프로토콜 버전:
-
-```text
-1.0
-```
-
-호환 가능한 변경:
-
-- optional field 추가
-- 새로운 action 추가
-- 새로운 agent 추가
-- 기존 payload에 optional metadata 추가
-
-호환되지 않는 변경:
-
-- 필수 field 제거
-- field 타입 변경
-- 기존 action args 구조 변경
-- 기존 message type 의미 변경
-
-호환되지 않는 변경이 필요하면 version을 올리고 문서에 변경 내용을 기록합니다.
