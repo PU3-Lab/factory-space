@@ -58,8 +58,10 @@ def test_router_dispatches_agent_request() -> None:
     assert isinstance(response, MessageEnvelope)
     assert response.type == "agent_response"
     assert response.agent == "quest"
-    assert response.payload["metadata"]["status"] == "stub"
+    assert response.payload["metadata"]["status"] == "ok"
+    assert response.payload["metadata"]["quest"]["quest_id"] == "quest-explore-current_area"
     assert response.payload["actions"][0]["name"] == "show_ui_message"
+    assert response.payload["actions"][2]["name"] == "update_quest_marker"
 
 
 def test_router_returns_error_for_unknown_agent() -> None:

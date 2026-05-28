@@ -37,6 +37,23 @@ uv run main.py
 .venv/bin/python main.py
 ```
 
+### uvicorn으로 FastAPI 서버 실행
+
+개발 중 WebSocket endpoint를 직접 확인하려면 `uvicorn`으로 FastAPI app을 실행할 수 있습니다.
+
+```bash
+uv run uvicorn factory_space.app:app --host 127.0.0.1 --port 8000 --reload
+```
+
+실행 후 확인 주소:
+
+```text
+Health check: http://127.0.0.1:8000/health
+WebSocket: ws://127.0.0.1:8000/ws
+```
+
+Postman이나 Unreal 클라이언트에서는 HTTP POST가 아니라 WebSocket 연결로 `ws://127.0.0.1:8000/ws`에 접속한 뒤 JSON 메시지를 전송합니다.
+
 ---
 
 ## 🧹 코드 스타일 및 품질 관리 (Ruff)

@@ -1,18 +1,18 @@
 # Agent 개발 가이드
 
-이 문서는 각 agent 담당자가 Factory Space 백엔드에서 어디를 어떻게 수정하면 되는지 설명합니다.
+이 문서는 Factory Space에 agent를 추가하거나 기존 agent를 구현할 때 따라야 할 기준을 설명합니다.
 
-전체 아키텍처는 [architecture.md](architecture.md), Unreal과 주고받는 JSON 계약은 [message-protocol.md](message-protocol.md)를 함께 참고하세요.
+전체 구조는 [architecture.md](architecture.md)를, Unreal과 주고받는 JSON 계약은 [message-protocol.md](message-protocol.md)를 함께 확인하세요.
 
-## 시작 전 확인
+## 로컬 명령어
 
-서버 실행:
+개발 서버 실행:
 
 ```bash
 uv run main.py
 ```
 
-상태 확인:
+Health check:
 
 ```text
 http://127.0.0.1:8000/health
@@ -24,84 +24,94 @@ WebSocket endpoint:
 ws://127.0.0.1:8000/ws
 ```
 
-수동 WebSocket 테스트:
-
-```bash
-uv run python scripts/ws_test_client.py
-```
-
 테스트와 린트:
 
 ```bash
 uv run --extra dev pytest
-uv run --extra dev ruff check .
+uv run --extra dev ruff check src tests
 ```
 
-## 담당자별 작업 위치
+## Agent 담당 영역
 
-각 담당자는 기본적으로 자기 agent 폴더 안에서 작업합니다.
+대부분의 agent 작업은 자신의 폴더 안에서 끝나야 합니다.
 
 ```text
 src/factory_space/agents/{agent_name}/
 ```
 
-초기 agent 목록:
+현재 기본 agent:
 
-| agent id | 폴더 |
+| Agent ID | 폴더 |
 | --- | --- |
 | `factory_optimization` | `src/factory_space/agents/factory_optimization/` |
 | `qa_chatbot` | `src/factory_space/agents/qa_chatbot/` |
 | `quest` | `src/factory_space/agents/quest/` |
 | `material_generation` | `src/factory_space/agents/material_generation/` |
 
-## Agent 폴더 구성
+한 agent가 다른 agent의 내부 파일에 직접 의존하지 않도록 합니다. 둘 이상의 agent가 실제로 같은 구현을 공유해야 할 때만 `shared/`로 옮깁니다.
+
+## 권장 폴더 구조
 
 ```text
-agent.py        # WebSocket 요청이 최종 도착하는 agent 진입점
-schemas.py      # agent 전용 payload/schema
-service.py      # agent 도메인 로직
-repository.py   # DB 접근이 필요할 때 사용하는 계층
-models.py       # agent가 소유하는 DB 모델
-rules.py        # 규칙 기반 로직이 필요할 때
-prompts.py      # LLM prompt가 필요할 때
-scenarios/      # agent 시나리오 예시
-tests/          # agent 전용 테스트
+agent.py        # Agent 진입점과 create_agent()
+schemas.py      # Agent 전용 payload 또는 domain schema
+rules.py        # Rule-based logic이 필요할 때 사용
+service.py      # Domain orchestration logic
+repository.py   # Agent 전용 DB 또는 vector store 접근
+models.py       # Agent가 소유하는 DB model
+prompts.py      # LLM prompt가 필요할 때 사용
+tests/          # Agent 전용 test
+scenarios/      # Scenario 예시 또는 replay data
 ```
 
-처음에는 `agent.py`의 stub을 실제 구현으로 바꾸는 것부터 시작하면 됩니다.
+현재 초기 agent들은 stub 상태입니다. 주변 파일은 각 agent가 공통 계약을 바꾸지 않고 확장될 수 있도록 미리 마련되어 있습니다.
 
-## 공통 입출력 계약
+## 필수 Agent 계약
 
-모든 agent는 같은 `process()` 형태를 유지해야 합니다.
+모든 agent는 `BaseAgent`와 호환되도록 `agent_id`와 async `process()` method를 제공해야 합니다.
 
 ```python
-async def process(
-    self,
-    request: AgentRequest,
-    context: AgentContext,
-) -> AgentResponse:
-    ...
+from factory_space.core.state.context import AgentContext
+from factory_space.messages.protocol import AgentRequest, AgentResponse
+
+
+class SomeAgent:
+    agent_id = "some_agent"
+
+    async def process(
+        self,
+        request: AgentRequest,
+        context: AgentContext,
+    ) -> AgentResponse:
+        ...
 ```
 
-입력:
+입력으로 사용할 수 있는 값:
 
+- `request.version`
 - `request.session_id`
 - `request.request_id`
 - `request.client_id`
 - `request.agent`
 - `request.payload`
-- `context`
+- `context.session_id`
+- `context.client_id`
+- `context.request_id`
+- `context.world_state`
+- `context.agent_state`
+- `context.metadata`
+- `context.timestamp`
 
-출력:
+출력해야 하는 값:
 
 - `AgentResponse`
 - `AgentResponsePayload.text`
 - `AgentResponsePayload.actions`
 - `AgentResponsePayload.metadata`
 
-agent 내부 구현은 담당자가 선택합니다. 룰베이스, LLM, RAG, DB 조회, 외부 API, 시뮬레이션 모두 가능합니다. 단, 외부로 나가는 응답 구조는 공통 schema를 따라야 합니다.
+agent는 WebSocket 메시지를 직접 보내지 않습니다. 구조화된 응답을 반환하고, transport 계층이 이를 직렬화합니다.
 
-## 기본 구현 예시
+## 최소 Agent 예시
 
 ```python
 from factory_space.core.actions.schemas import Action
@@ -127,69 +137,72 @@ class ExampleAgent:
             client_id=context.client_id,
             agent=self.agent_id,
             payload=AgentResponsePayload(
-                text="요청을 처리했습니다.",
+                text="Request received.",
                 actions=[
                     Action(
                         name="show_ui_message",
-                        args={"text": "요청을 처리했습니다."},
+                        args={"text": "Request received."},
                     )
                 ],
                 metadata={"status": "ok"},
             ),
         )
+
+
+def create_agent() -> ExampleAgent:
+    return ExampleAgent()
 ```
 
-## Payload schema 작성
+## Payload Schema
 
-agent별 payload는 `schemas.py`에 정의합니다.
-
-예시:
+각 agent는 `request.payload`의 의미를 직접 소유합니다. payload 구조가 중요해지는 시점에는 agent 전용 payload model을 `schemas.py`에 정의합니다.
 
 ```python
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class QAChatbotPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    question: str
-    context: dict[str, object] = {}
+    question: str = Field(min_length=1)
+    context: dict[str, object] = Field(default_factory=dict)
 ```
 
-`agent.py`에서는 다음처럼 검증해서 사용할 수 있습니다.
+`agent.py` 또는 service 코드에서 다음처럼 검증합니다.
 
 ```python
 payload = QAChatbotPayload.model_validate(request.payload)
 ```
 
-payload 구조를 바꾸면 [message-protocol.md](message-protocol.md)의 agent별 예시도 함께 갱신하세요.
+payload 예시나 필수 field가 바뀌면 [message-protocol.md](message-protocol.md)도 함께 갱신합니다.
 
-## Service와 Repository 사용 기준
+## Service와 Repository 경계
 
-간단한 로직은 `agent.py`에서 시작해도 됩니다. 다만 다음 경우에는 분리하세요.
+agent가 stub이거나 작은 rule-based 구현일 때는 단순 logic을 `agent.py`에 둘 수 있습니다.
 
-`service.py`로 옮기기 좋은 경우:
+다음 경우에는 `service.py`로 분리하는 것이 좋습니다.
 
-- 여러 함수를 조합하는 도메인 로직
-- DB 조회 결과를 agent가 쓰기 좋은 형태로 가공
-- 외부 API나 모델 호출 흐름 관리
-- 규칙/LLM/RAG 결과를 조합
+- 여러 decision이나 rule을 조합해야 하는 경우
+- DB, vector store, 외부 API 결과를 agent 응답에 맞게 가공해야 하는 경우
+- LLM, RAG, simulation 호출 흐름을 조율해야 하는 경우
+- 독립적인 unit test가 필요할 만큼 logic이 중요해진 경우
 
-`repository.py`로 옮기기 좋은 경우:
+다음 경우에는 `repository.py`로 persistence 접근을 분리합니다.
 
-- DB query
-- 저장/조회/수정/삭제
-- DB row와 도메인 객체 변환
+- SQL query가 도입되는 경우
+- vector store lookup이 도입되는 경우
+- domain object를 저장하거나 조회해야 하는 경우
+- DB row를 agent가 쓰기 좋은 객체로 변환해야 하는 경우
 
 의존 방향:
 
 ```text
-Agent -> Service -> Repository -> Database
+Agent -> Service -> Repository -> Database / Vector Store / External API
 ```
 
-## Action 작성 기준
+## Action
 
-Unreal이 실행할 작업은 `Action`으로 반환합니다.
+agent는 Unreal이 실행할 명령을 `Action` 객체로 반환합니다.
 
 ```python
 Action(
@@ -198,62 +211,56 @@ Action(
 )
 ```
 
-초기 action 후보:
-
-- `show_ui_message`
-- `highlight_object`
-- `focus_camera`
-- `move_npc`
-- `play_animation`
-- `set_object_state`
-- `spawn_object`
-- `update_quest_marker`
-
-새 action을 추가하면 Unreal 담당자와 맞추고 [message-protocol.md](message-protocol.md)를 갱신하세요.
+현재 검증은 비어 있지 않은 `name`과 object 형태의 `args`만 요구합니다. 새 action 이름을 추가하거나 인자를 바꾸기 전에는 Unreal 담당자와 계약을 맞추고, [message-protocol.md](message-protocol.md)에 문서화합니다.
 
 ## Registry 등록
 
-기존 4개 agent는 이미 `create_default_registry()`에 등록되어 있습니다.
-
-위치:
+기본 agent는 다음 파일에서 등록합니다.
 
 ```text
 src/factory_space/core/agents/registry.py
 ```
 
-새 agent를 추가할 때는 다음을 해야 합니다.
+새 agent 추가 절차:
 
-1. `src/factory_space/agents/{agent_name}/` 폴더 생성
-2. `agent.py`에 `agent_id`와 `create_agent()` 구현
-3. `create_default_registry()`에 등록
-4. 테스트 추가
-5. 문서 갱신
+1. `src/factory_space/agents/{agent_name}/` 폴더를 만듭니다.
+2. `agent.py`에 `agent_id`, `process()`, `create_agent()`를 구현합니다.
+3. 필요하면 `schemas.py`, `rules.py`, `service.py`, `repository.py`, `models.py`, `prompts.py`를 추가합니다.
+4. `create_default_registry()`에 agent factory를 등록합니다.
+5. 테스트를 추가합니다.
+6. Unreal에서 직접 호출할 agent라면 `message-protocol.md`에 agent id와 payload 예시를 추가합니다.
 
-## 테스트 작성
+## 테스트 기준
 
-agent 담당자는 최소한 자기 agent의 `process()` 테스트를 추가하세요.
+최소한 다음 내용을 테스트합니다.
 
-권장 위치:
+- registry에 agent id가 등록되어 있는지
+- `process()`가 `AgentResponse`를 반환하는지
+- response가 `session_id`, `request_id`, `client_id`를 유지하는지
+- 기대하는 `text`, `actions`, `metadata`가 포함되는지
+- payload schema가 도입된 경우 잘못된 payload가 예측 가능하게 실패하는지
+
+기존 통합 수준 테스트는 다음 위치에 있습니다.
+
+```text
+tests/test_agent_contracts.py
+tests/test_message_router.py
+tests/test_websocket_endpoint.py
+```
+
+agent 전용 테스트는 둘 중 한 위치를 사용할 수 있습니다.
 
 ```text
 tests/test_{agent_name}_agent.py
 ```
 
-또는 agent 폴더 내부 테스트를 사용할 수 있습니다.
+또는:
 
 ```text
 src/factory_space/agents/{agent_name}/tests/
 ```
 
-테스트에서 확인할 것:
-
-- payload 검증
-- 정상 응답 text
-- 필요한 action 포함 여부
-- metadata/status
-- 잘못된 입력 처리
-
-## WebSocket 테스트
+## WebSocket 간단 테스트
 
 서버 실행:
 
@@ -261,13 +268,17 @@ src/factory_space/agents/{agent_name}/tests/
 uv run main.py
 ```
 
-테스트 client 실행:
+script client 실행:
 
 ```bash
 uv run python scripts/ws_test_client.py
+uv run python scripts/ws_test_quest.py
+uv run python scripts/ws_test_qa_chatbot.py
+uv run python scripts/ws_test_factory_optimization.py
+uv run python scripts/ws_test_material_generation.py
 ```
 
-`agent_request` 테스트를 하고 싶으면 `scripts/ws_test_client.py`의 메시지를 다음처럼 바꿔서 실행할 수 있습니다.
+요청 예시:
 
 ```json
 {
@@ -277,14 +288,14 @@ uv run python scripts/ws_test_client.py
   "client_id": "test-client",
   "agent": "qa_chatbot",
   "payload": {
-    "question": "안녕?"
+    "question": "hello"
   }
 }
 ```
 
-## 공통 영역 수정 기준
+## 공통 영역 수정 규칙
 
-다음 폴더는 모든 agent에 영향을 줄 수 있습니다.
+다음 폴더는 모든 agent에 영향을 줄 수 있으므로 신중하게 수정합니다.
 
 ```text
 src/factory_space/core/
@@ -293,22 +304,20 @@ src/factory_space/websocket/
 src/factory_space/shared/
 ```
 
-공통 영역을 수정할 때는 다음을 확인하세요.
+공통 계약을 바꾸기 전에는 다음을 확인합니다.
 
-- 기존 agent 테스트가 깨지지 않는가
-- WebSocket message envelope이 호환되는가
-- Unreal-facing JSON 구조가 바뀌는가
-- 새 action/message type을 문서화했는가
+- 기존 agent 테스트가 통과하는가?
+- WebSocket envelope가 기존 caller와 호환되는가?
+- Unreal 쪽 protocol version 변경이 필요한가?
+- 문서와 예시가 새 구조를 반영하는가?
 
-## 작업 완료 기준
+## PR 체크리스트
 
-agent 작업 PR 전 체크리스트:
-
-- agent 입출력 계약 유지
-- 필요한 schema 추가
-- 필요한 service/repository 분리
-- action 구조 확인
-- 테스트 추가 또는 갱신
-- `uv run --extra dev pytest` 통과
-- `uv run --extra dev ruff check .` 통과
-- protocol 변경 시 문서 갱신
+- Agent 계약을 유지했습니다.
+- payload 구조가 의미를 가지는 경우 명시적인 schema를 추가했습니다.
+- domain 또는 persistence logic이 커진 경우 service/repository 경계를 사용했습니다.
+- action 구조를 명확히 했고 필요한 문서를 갱신했습니다.
+- 테스트 또는 scenario를 추가하거나 갱신했습니다.
+- `pytest`가 통과합니다.
+- `ruff check src tests`가 통과합니다.
+- Unreal-facing 계약이 바뀐 경우 `message-protocol.md`를 갱신했습니다.
