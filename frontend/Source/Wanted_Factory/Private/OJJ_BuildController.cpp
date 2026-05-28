@@ -135,8 +135,16 @@ void AOJJ_BuildController::UpdateMouseHover()
 		return;
 	}
 
-	// 그리드 floor mesh 외의 표면을 hit하면 off-grid 좌표로 환산되지 않도록 차단
-	if (Hit.GetComponent() != TargetGrid->GetGridFloorMesh())
+	// floor 또는 이미 배치된 머신 위에서 hover를 유지.
+	// 머신 Cube mesh가 Visibility 채널을 Block해서 trace를 가로채도, 머신 위 XY는
+	// 점유된 셀에 정확히 매핑되므로 CanPlaceMachine 검증을 거치게 그대로 통과시킨다
+	// → 점유 셀과 겹친 풋프린트가 빨강으로 표시됨. 그 외 표면(캐릭터/벽 등)은
+	// off-grid이므로 기존처럼 ClearHoverPreview로 차단.
+	UPrimitiveComponent* HitComp = Hit.GetComponent();
+	AActor* HitActor = Hit.GetActor();
+	const bool bHitFloor = (HitComp == TargetGrid->GetGridFloorMesh());
+	const bool bHitMachine = HitActor && HitActor->IsA<AMachineBase>();
+	if (!bHitFloor && !bHitMachine)
 	{
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
