@@ -88,6 +88,8 @@ class QuestObjective(BaseModel):
     description: str = Field(min_length=1)
     target_object_id: str = Field(min_length=1)
     required_event: str = Field(min_length=1)
+    target_item_id: str | None = None
+    required_count: int | None = Field(default=None, gt=0)
     completed: bool = False
 
 

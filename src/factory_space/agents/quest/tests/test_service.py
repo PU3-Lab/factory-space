@@ -39,6 +39,66 @@ def test_generates_control_panel_inspection_quest_json() -> None:
     ]
 
 
+def test_generates_iron_ore_mining_quest_json() -> None:
+    service = QuestAgentService()
+
+    result_json = service.generate_quest_json(
+        {
+            "event": "player_entered_area",
+            "game_state": {
+                "player_location": "mine_zone",
+                "nearby_objects": [
+                    {
+                        "id": "iron_ore_node_01",
+                        "type": "resource_node",
+                        "status": "available",
+                    }
+                ],
+            },
+        }
+    )
+
+    result = QuestGenerationResult.model_validate(json.loads(result_json))
+
+    assert result.quest.quest_id == "quest-mine-iron-ore-50"
+    assert result.quest.title == "Mine 50 iron ore"
+    assert result.quest.objective.target_object_id == "iron_ore_node_01"
+    assert result.quest.objective.required_event == "resource_collected"
+    assert result.quest.objective.target_item_id == "iron_ore"
+    assert result.quest.objective.required_count == 50
+    assert result.metadata["reason"] == "iron_ore_node_nearby"
+
+
+def test_generates_iron_ingot_crafting_quest_json() -> None:
+    service = QuestAgentService()
+
+    result_json = service.generate_quest_json(
+        {
+            "event": "player_entered_area",
+            "game_state": {
+                "player_location": "smelting_area",
+                "nearby_objects": [
+                    {
+                        "id": "smelter_01",
+                        "type": "smelter",
+                        "status": "available",
+                    }
+                ],
+            },
+        }
+    )
+
+    result = QuestGenerationResult.model_validate(json.loads(result_json))
+
+    assert result.quest.quest_id == "quest-craft-iron-ingot-5"
+    assert result.quest.title == "Craft 5 iron ingots"
+    assert result.quest.objective.target_object_id == "smelter_01"
+    assert result.quest.objective.required_event == "item_crafted"
+    assert result.quest.objective.target_item_id == "iron_ingot"
+    assert result.quest.objective.required_count == 5
+    assert result.metadata["reason"] == "smelter_nearby"
+
+
 def test_generates_bottleneck_machine_quest_json() -> None:
     service = QuestAgentService()
 

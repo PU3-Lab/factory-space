@@ -30,6 +30,14 @@ class QuestAgentService:
     ) -> QuestGenerationResult:
         """Generate a quest from normalized request data."""
 
+        iron_ore_node = self._find_iron_ore_node(request.game_state.nearby_objects)
+        if iron_ore_node is not None:
+            return self._build_iron_ore_mining_result(iron_ore_node)
+
+        smelter = self._find_smelter(request.game_state.nearby_objects)
+        if smelter is not None:
+            return self._build_iron_ingot_crafting_result(smelter)
+
         bottleneck = self._find_bottleneck_machine(request.game_state.machines)
         if bottleneck is not None:
             return self._build_bottleneck_result(bottleneck)
@@ -68,6 +76,24 @@ class QuestAgentService:
                 return nearby_object
         return None
 
+    def _find_iron_ore_node(
+        self,
+        nearby_objects: list[QuestWorldObject],
+    ) -> QuestWorldObject | None:
+        for nearby_object in nearby_objects:
+            if nearby_object.type == "resource_node" and "iron_ore" in nearby_object.id:
+                return nearby_object
+        return None
+
+    def _find_smelter(
+        self,
+        nearby_objects: list[QuestWorldObject],
+    ) -> QuestWorldObject | None:
+        for nearby_object in nearby_objects:
+            if nearby_object.type in {"smelter", "furnace"}:
+                return nearby_object
+        return None
+
     def _build_bottleneck_result(
         self,
         machine: QuestMachine,
@@ -92,6 +118,59 @@ class QuestAgentService:
             quest=quest,
             actions=self._build_actions(text, quest),
             metadata={"source": "mock_game_state", "reason": "bottleneck_detected"},
+        )
+
+    def _build_iron_ore_mining_result(
+        self,
+        iron_ore_node: QuestWorldObject,
+    ) -> QuestGenerationResult:
+        quest = Quest(
+            quest_id="quest-mine-iron-ore-50",
+            title="Mine 50 iron ore",
+            description="Mine 50 iron ore from the highlighted ore node.",
+            priority="medium",
+            objective=QuestObjective(
+                description="Mine 50 iron ore.",
+                target_object_id=iron_ore_node.id,
+                required_event="resource_collected",
+                target_item_id="iron_ore",
+                required_count=50,
+            ),
+        )
+        text = "New quest: mine 50 iron ore from the highlighted node."
+        return QuestGenerationResult(
+            text=text,
+            quest=quest,
+            actions=self._build_actions(text, quest),
+            metadata={
+                "source": "mock_game_state",
+                "reason": "iron_ore_node_nearby",
+            },
+        )
+
+    def _build_iron_ingot_crafting_result(
+        self,
+        smelter: QuestWorldObject,
+    ) -> QuestGenerationResult:
+        quest = Quest(
+            quest_id="quest-craft-iron-ingot-5",
+            title="Craft 5 iron ingots",
+            description="Use the highlighted smelter to craft 5 iron ingots.",
+            priority="medium",
+            objective=QuestObjective(
+                description="Craft 5 iron ingots.",
+                target_object_id=smelter.id,
+                required_event="item_crafted",
+                target_item_id="iron_ingot",
+                required_count=5,
+            ),
+        )
+        text = "New quest: craft 5 iron ingots at the highlighted smelter."
+        return QuestGenerationResult(
+            text=text,
+            quest=quest,
+            actions=self._build_actions(text, quest),
+            metadata={"source": "mock_game_state", "reason": "smelter_nearby"},
         )
 
     def _build_control_panel_result(
