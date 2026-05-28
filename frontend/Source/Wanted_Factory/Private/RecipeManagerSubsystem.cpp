@@ -1,10 +1,7 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-
-#include "RecipeManagerSubsystem.h"
+﻿#include "RecipeManagerSubsystem.h"
 
 #include "Wanted_Factory.h"
-
+#include "Engine/DataTable.h"
 
 void URecipeManagerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -28,7 +25,6 @@ void URecipeManagerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		}
 	}
 
-
 	BuildRecipeIndex();
 }
 
@@ -36,15 +32,13 @@ void URecipeManagerSubsystem::BuildRecipeIndex()
 {
 	if (!RecipeTable)
 	{
-		LOG_SSR_W(
-			TEXT("RecipeTable is NULL"));
+		LOG_SSR_W(TEXT("RecipeTable is NULL"));
 		return;
 	}
 
 	InputToRecipeMap.Empty();
 
-	TArray<FName> RowNames =
-		RecipeTable->GetRowNames();
+	TArray<FName> RowNames = RecipeTable->GetRowNames();
 
 	for (const FName& RowName : RowNames)
 	{
@@ -59,39 +53,80 @@ void URecipeManagerSubsystem::BuildRecipeIndex()
 			continue;
 		}
 
-		InputToRecipeMap.Add(
-			Recipe->InputItem,
-			RowName
-		);
+		auto AddInputIndex = [&](FName InputItem)
+		{
+			if (InputItem.IsNone())
+			{
+				return;
+			}
+
+			TArray<FName>& RecipeList =
+				InputToRecipeMap.FindOrAdd(InputItem);
+
+			RecipeList.AddUnique(RowName);
+
+			LOG_SSR_W(
+				TEXT("Recipe Indexed: %s -> %s"),
+				*InputItem.ToString(),
+				*RowName.ToString()
+			);
+		};
+
+		AddInputIndex(Recipe->InputItem1);
+		AddInputIndex(Recipe->InputItem2);
+		AddInputIndex(Recipe->InputItem3);
 	}
 }
 
-bool URecipeManagerSubsystem::FindRecipeByInputItem(FName InputItem, FRecipeTable& OutRecipe)
+bool URecipeManagerSubsystem::FindRecipeByInputItem(
+	FName InputItem,
+	FRecipeTable& OutRecipe)
 {
+	TArray<FRecipeTable> FoundRecipes;
+
+	if (!FindRecipesByInputItem(InputItem, FoundRecipes))
+	{
+		return false;
+	}
+
+	OutRecipe = FoundRecipes[0];
+	return true;
+}
+
+bool URecipeManagerSubsystem::FindRecipesByInputItem(
+	FName InputItem,
+	TArray<FRecipeTable>& OutRecipes)
+{
+	OutRecipes.Empty();
+
 	if (!RecipeTable)
 	{
 		return false;
 	}
 
-	FName* FoundRecipeName =
+	const TArray<FName>* FoundRecipeNames =
 		InputToRecipeMap.Find(InputItem);
 
-	if (!FoundRecipeName)
+	if (!FoundRecipeNames || FoundRecipeNames->Num() <= 0)
 	{
 		return false;
 	}
 
-	FRecipeTable* Recipe =
-		RecipeTable->FindRow<FRecipeTable>(
-			*FoundRecipeName,
-			TEXT("")
-		);
-
-	if (!Recipe)
+	for (const FName& RecipeRowName : *FoundRecipeNames)
 	{
-		return false;
+		FRecipeTable* Recipe =
+			RecipeTable->FindRow<FRecipeTable>(
+				RecipeRowName,
+				TEXT("")
+			);
+
+		if (!Recipe)
+		{
+			continue;
+		}
+
+		OutRecipes.Add(*Recipe);
 	}
 
-	OutRecipe = *Recipe;
-	return true;
+	return OutRecipes.Num() > 0;
 }

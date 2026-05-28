@@ -74,16 +74,16 @@ protected:
 	// 타이머
 	FTimerHandle ProcessTimer;
 
-	// 현재 입력 아이템, 수량
-	UPROPERTY(visibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
-	FName CurrentInputItem;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
-	int32 CurrentInputCount = 0;
+	// // 현재 입력 아이템, 수량
+	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
+	// FName CurrentInputItem;
+	//
+	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
+	// int32 CurrentInputCount = 0;
 
 	// 입력 인벤토리
-	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
-	// TMap<FName, TArray<FName>> InputToRecipeMap;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
+	TMap<FName, int32> InputInventory;
 
 	// 출력 인벤토리
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
@@ -135,4 +135,11 @@ public:
 	// 기계 정지
 	UFUNCTION(BlueprintCallable)
 	virtual void StopProcess();
+	
+	bool HasEnoughIngredients(const FRecipeTable& Recipe) const;
+	void ConsumeIngredients(const FRecipeTable& Recipe);
+	void AddOutputItem(FName ItemID, int32 Count);
+	
+	UFUNCTION(BlueprintCallable, Category = "Machine | Debug")
+	void DebugInventory();
 };

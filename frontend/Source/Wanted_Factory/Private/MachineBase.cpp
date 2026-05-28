@@ -74,10 +74,13 @@ void AMachineBase::AddItem(FName ItemID, int32 Count)
 		return;
 	}
 
-	CurrentInputItem = ItemID;
-	CurrentInputCount = Count;
+	int32& ItemCount = InputInventory.FindOrAdd(ItemID);
+	ItemCount += Count;
 
-	LOG_SSR_W(TEXT("Input Item : %s x %d"), *ItemID.ToString(), CurrentInputCount);
+	LOG_SSR_W(TEXT("Input Inventory Added : %s x %d"),
+		*ItemID.ToString(),
+		ItemCount
+	);
 
 	TryStartProcess();
 }
@@ -88,6 +91,7 @@ void AMachineBase::TryStartProcess()
 	{
 		return;
 	}
+
 	if (MachineState == EMachineState::Disabled ||
 		MachineState == EMachineState::NoPower ||
 		MachineState == EMachineState::Blocked)
@@ -95,12 +99,13 @@ void AMachineBase::TryStartProcess()
 		return;
 	}
 
-	if (CurrentInputItem.IsNone() || CurrentInputCount <= 0)
+	if (InputInventory.Num() <= 0)
 	{
 		return;
 	}
 
-	URecipeManagerSubsystem* RecipeManager = GetGameInstance()->GetSubsystem<URecipeManagerSubsystem>();
+	URecipeManagerSubsystem* RecipeManager =
+		GetGameInstance()->GetSubsystem<URecipeManagerSubsystem>();
 
 	if (!RecipeManager)
 	{
@@ -108,40 +113,39 @@ void AMachineBase::TryStartProcess()
 		return;
 	}
 
-	FRecipeTable FoundRecipe;
-
-	const bool bFoundRecipe = RecipeManager->FindRecipeByInputItem(CurrentInputItem, FoundRecipe);
-
-	if (!bFoundRecipe)
+	for (const TPair<FName, int32>& InputPair : InputInventory)
 	{
-		LOG_SSR_W(TEXT("No recipe found for input item: %s"), *CurrentInputItem.ToString());
-		return;
+		TArray<FRecipeTable> FoundRecipes;
+
+		const bool bFoundRecipes =
+			RecipeManager->FindRecipesByInputItem(InputPair.Key, FoundRecipes);
+
+		if (!bFoundRecipes)
+		{
+			continue;
+		}
+
+		for (const FRecipeTable& Recipe : FoundRecipes)
+		{
+			if (Recipe.MachineType != MachineType)
+			{
+				continue;
+			}
+
+			if (!HasEnoughIngredients(Recipe))
+			{
+				continue;
+			}
+
+			CurrentRecipe = Recipe;
+			ProcessTime = CurrentRecipe.CraftingTime;
+
+			StartProcess();
+			return;
+		}
 	}
 
-	if (FoundRecipe.MachineType != MachineType)
-	{
-		LOG_SSR_W(
-			TEXT("Recipe machine type mismatch. Machine: %s / Recipe: %s"),
-			*MachineType.ToString(),
-			*FoundRecipe.MachineType.ToString()
-		);
-		return;
-	}
-
-	if (CurrentInputCount < FoundRecipe.InputQty)
-	{
-		LOG_SSR_W(
-			TEXT("Not enough input. Need %d / Has %d"),
-			FoundRecipe.InputQty,
-			CurrentInputCount
-		);
-		return;
-	}
-
-	CurrentRecipe = FoundRecipe;
-	ProcessTime = CurrentRecipe.CraftingTime;
-
-	StartProcess();
+	LOG_SSR_W(TEXT("No craftable recipe found."));
 }
 
 void AMachineBase::StartProcess()
@@ -154,8 +158,8 @@ void AMachineBase::StartProcess()
 	MachineState = EMachineState::Working;
 
 	LOG_SSR_W(TEXT("Process Started: %s -> %s"),
-		*CurrentRecipe.InputItem.ToString(),
-		*CurrentRecipe.OutputItem.ToString()
+		*CurrentRecipe.InputItem1.ToString(),
+		*CurrentRecipe.OutputItem1.ToString()
 	);
 
 	GetWorld()->GetTimerManager().SetTimer(
@@ -179,29 +183,23 @@ void AMachineBase::FinishProcess()
 
 void AMachineBase::ProcessItem_Implementation()
 {
-	CurrentInputCount -= CurrentRecipe.InputQty;
+	ConsumeIngredients(CurrentRecipe);
 
-	if (CurrentInputCount <= 0)
-	{
-		CurrentInputCount = 0;
-		CurrentInputItem = NAME_None;
-	}
-
-	int32& OutputCount = OutputInventory.FindOrAdd(CurrentRecipe.OutputItem);
-	OutputCount += CurrentRecipe.OutputQty;
+	AddOutputItem(CurrentRecipe.OutputItem1, CurrentRecipe.OutputQty1);
+	AddOutputItem(CurrentRecipe.OutputItem2, CurrentRecipe.OutputQty2);
 
 	LOG_SSR_W(
-		TEXT("Machine Processed: %s x%d -> %s x%d"),
-		*CurrentRecipe.InputItem.ToString(),
-		CurrentRecipe.InputQty,
-		*CurrentRecipe.OutputItem.ToString(),
-		CurrentRecipe.OutputQty
-	);
-
-	LOG_SSR_W(
-		TEXT("Output Inventory: %s x%d"),
-		*CurrentRecipe.OutputItem.ToString(),
-		OutputInventory[CurrentRecipe.OutputItem]
+		TEXT("Machine Processed: %s x%d, %s x%d, %s x%d -> %s x%d, %s x%d"),
+		*CurrentRecipe.InputItem1.ToString(),
+		CurrentRecipe.InputQty1,
+		*CurrentRecipe.InputItem2.ToString(),
+		CurrentRecipe.InputQty2,
+		*CurrentRecipe.InputItem3.ToString(),
+		CurrentRecipe.InputQty3,
+		*CurrentRecipe.OutputItem1.ToString(),
+		CurrentRecipe.OutputQty1,
+		*CurrentRecipe.OutputItem2.ToString(),
+		CurrentRecipe.OutputQty2
 	);
 }
 
@@ -210,4 +208,99 @@ void AMachineBase::StopProcess()
 	GetWorld()->GetTimerManager().ClearTimer(ProcessTimer);
 
 	MachineState = EMachineState::Idle;
+}
+
+bool AMachineBase::HasEnoughIngredients(const FRecipeTable& Recipe) const
+{
+	auto CheckIngredient = [this](FName ItemID, int32 Qty) -> bool
+	{
+		if (ItemID.IsNone() || Qty <= 0)
+		{
+			return true;
+		}
+
+		const int32* FoundCount = InputInventory.Find(ItemID);
+
+		if (!FoundCount)
+		{
+			return false;
+		}
+
+		return *FoundCount >= Qty;
+	};
+
+	return
+		CheckIngredient(Recipe.InputItem1, Recipe.InputQty1) &&
+		CheckIngredient(Recipe.InputItem2, Recipe.InputQty2) &&
+		CheckIngredient(Recipe.InputItem3, Recipe.InputQty3);
+}
+
+void AMachineBase::ConsumeIngredients(const FRecipeTable& Recipe)
+{
+	auto Consume = [this](FName ItemID, int32 Qty)
+	{
+		if (ItemID.IsNone() || Qty <= 0)
+		{
+			return;
+		}
+
+		int32* FoundCount = InputInventory.Find(ItemID);
+
+		if (!FoundCount)
+		{
+			return;
+		}
+
+		*FoundCount -= Qty;
+
+		if (*FoundCount <= 0)
+		{
+			InputInventory.Remove(ItemID);
+		}
+	};
+
+	Consume(Recipe.InputItem1, Recipe.InputQty1);
+	Consume(Recipe.InputItem2, Recipe.InputQty2);
+	Consume(Recipe.InputItem3, Recipe.InputQty3);
+}
+
+void AMachineBase::AddOutputItem(FName ItemID, int32 Count)
+{
+	if (ItemID.IsNone() || Count <= 0)
+	{
+		return;
+	}
+
+	int32& OutputCount = OutputInventory.FindOrAdd(ItemID);
+	OutputCount += Count;
+
+	LOG_SSR_W(TEXT("Output Inventory Added : %s x %d"),
+		*ItemID.ToString(),
+		OutputCount
+	);
+}
+
+void AMachineBase::DebugInventory()
+{
+	LOG_SSR_W(TEXT("========== Input Inventory =========="));
+
+	for (const TPair<FName, int32>& Input : InputInventory)
+	{
+		LOG_SSR_W(
+			TEXT("%s x %d"),
+			*Input.Key.ToString(),
+			Input.Value
+		);
+	}
+
+	LOG_SSR_W(TEXT("========== Output Inventory =========="));
+
+	for (const TPair<FName, int32>& Output : OutputInventory)
+	{
+		LOG_SSR_W(
+			TEXT("%s x %d"),
+			*Output.Key.ToString(),
+			Output.Value
+		);
+	}
 }

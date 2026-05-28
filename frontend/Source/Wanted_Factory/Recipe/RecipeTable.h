@@ -13,16 +13,34 @@ struct FRecipeTable : public FTableRowBase
 	FName MachineType;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	FName InputItem;
+	FName InputItem1;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName InputItem2;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName InputItem3;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	int32 InputQty = 1;
+	int32 InputQty1 = 0;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 InputQty2 = 0;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 InputQty3 = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	FName OutputItem;
+	FName OutputItem1;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName OutputItem2;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	int32 OutputQty = 1;
+	int32 OutputQty1 = 0;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 OutputQty2 = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	float CraftingTime = 1.f;
