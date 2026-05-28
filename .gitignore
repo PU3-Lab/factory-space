@@ -172,6 +172,7 @@ worktree/
 
 # Agent metadata
 .antigravitycli/
+.omc/
 
 # Keep environment templates tracked even though real env files are ignored.
 !.env.example
