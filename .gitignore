@@ -76,7 +76,8 @@ docs/_build/
 
 # PyBuilder
 .pybuilder/
-target/
+/target/
+backend/target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -132,11 +133,11 @@ ENV/
 env/
 
 # IDEs
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
+**/.vscode/*
+!**/.vscode/settings.json
+!**/.vscode/tasks.json
+!**/.vscode/launch.json
+!**/.vscode/extensions.json
 .idea/
 *.suo
 *.ntvs*
@@ -150,5 +151,28 @@ env/
 ehthumbs.db
 Thumbs.db
 
+# Unreal Engine generated files
+frontend/.vs/
+frontend/**/Binaries/
+frontend/**/DerivedDataCache/
+frontend/**/Intermediate/
+frontend/**/Saved/
+frontend/**/*.sln
+frontend/**/*.suo
+frontend/**/*.opensdf
+frontend/**/*.sdf
+frontend/**/*.VC.db
+frontend/**/*.VC.opendb
+frontend/**/*.xcworkspace/
+frontend/**/*.xcodeproj/
+frontend/**/*.xcuserdata/
+
+# Local git worktrees / scratch checkouts
+worktree/
+
 # Agent metadata
 .antigravitycli/
+
+# Keep environment templates tracked even though real env files are ignored.
+!.env.example
+!**/.env.example
