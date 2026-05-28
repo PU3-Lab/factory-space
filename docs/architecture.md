@@ -1,342 +1,176 @@
-# 아키텍처
+# Factory Space 아키텍처
 
-이 문서는 Factory Space Python 백엔드의 내부 구조와 책임 분리를 설명합니다.
+이 문서는 현재 Factory Space Python 백엔드의 구조와 책임 분리를 설명합니다.
 
-백엔드는 Unreal Engine과 WebSocket으로 통신하고, 들어온 메시지를 목적별 agent에 전달한 뒤, agent가 만든 응답과 action을 Unreal로 돌려보냅니다.
+Factory Space는 Unreal Engine과 WebSocket으로 통신하는 FastAPI 백엔드입니다. Unreal에서 들어온 메시지를 공통 envelope로 검증하고, `agent_request`는 registry에 등록된 agent로 라우팅합니다. Unreal과 맞닿는 메시지 계약과 agent 입출력 계약은 안정적으로 유지하고, agent 내부 구현은 각 agent 폴더 안에서 독립적으로 발전시키는 것이 기본 방향입니다.
 
-## 큰 그림
+## 실행 흐름
 
 ```text
 Unreal Engine
-  -> WebSocket Endpoint
+  -> WebSocket endpoint (/ws)
+  -> MessageEnvelope 검증
   -> Message Router
-  -> Agent Orchestrator
+  -> Agent Orchestrator (LangGraph StateGraph)
+  -> Agent Registry
   -> Target Agent
-  -> Service
-  -> Repository
-  -> Database / Vector Store / External System
-  -> Agent Response
-  -> Action Dispatcher
-  -> WebSocket Endpoint
+  -> AgentResponse
+  -> MessageEnvelope
   -> Unreal Engine
 ```
 
-각 단계는 서로 다른 책임을 가집니다.
+현재 `agent_request` 처리 흐름은 다음과 같습니다.
 
-## 책임 분리
+1. Unreal이 `/ws`로 JSON text message를 전송합니다.
+2. 첫 메시지에서 `client_id`를 추출해 WebSocket connection manager에 등록합니다.
+3. `handle_raw_message()`가 JSON을 파싱하고 `MessageEnvelope`로 검증합니다.
+4. `MessageRouter`가 `type`에 따라 메시지를 분기합니다.
+5. `agent_request`는 `AgentRequest`로 정규화되어 `AgentOrchestrator`로 전달됩니다.
+6. orchestrator는 LangGraph graph에서 `AgentContext`를 만들고 registry에서 대상 agent를 조회합니다.
+7. 대상 agent의 `process(request, context)`를 호출합니다.
+8. agent가 반환한 `AgentResponse`를 전송용 `MessageEnvelope`로 변환해 Unreal로 보냅니다.
 
-### WebSocket Endpoint
-
-Unreal과 실제 WebSocket 연결을 담당합니다.
-
-주요 책임:
-
-- 클라이언트 연결 수락 (`/ws` 엔드포인트)
-- 메시지 수신 및 client_id 추출 (JSON 필드)
-- 메시지 직렬화/역직렬화
-- 연결 종료 처리
-- transport 수준의 에러 처리
-- 응답 메시지 전송
-
-**라우팅:**
-모든 클라이언트는 **단일 WebSocket 채널 (`/ws`)** 로 연결됩니다. 클라이언트 식별은 JSON의 `client_id` 필드로 이루어집니다. 첫 메시지에서 `client_id`를 반드시 포함해야 합니다.
-
-이 계층은 agent 내부 동작을 알지 않아야 합니다.
-
-예상 위치:
+## 소스 구조
 
 ```text
-src/factory_space/websocket/
+src/factory_space/
+  app.py                         # FastAPI app factory
+  websocket/
+    endpoint.py                  # /ws endpoint, raw JSON parsing, client_id handling
+    manager.py                   # WebSocket connection registry
+  messages/
+    protocol.py                  # WebSocket/agent message Pydantic models
+    router.py                    # message type routing
+  core/
+    agents/
+      base.py                    # BaseAgent protocol
+      registry.py                # in-memory agent registry
+      orchestrator.py            # LangGraph-based agent orchestration
+    actions/
+      schemas.py                 # Action and ActionResult schemas
+    state/
+      context.py                 # AgentContext model
+    db/
+      base.py
+      session.py
+  agents/
+    factory_optimization/
+    qa_chatbot/
+    quest/
+    material_generation/
+  shared/
+    repositories/
+    schemas/
+    services/
+    vectorstores/
 ```
 
-### Message Router
+## 컴포넌트 책임
 
-수신한 메시지의 타입과 대상 agent를 확인합니다.
+| 컴포넌트 | 위치 | 책임 |
+| --- | --- | --- |
+| FastAPI 앱 | `src/factory_space/app.py` | ASGI 앱을 만들고, `/health`와 WebSocket router를 등록합니다. |
+| WebSocket endpoint | `src/factory_space/websocket/endpoint.py` | `/ws` 연결을 받고, raw JSON을 파싱하며, 첫 메시지의 `client_id`를 요구합니다. |
+| 메시지 프로토콜 | `src/factory_space/messages/protocol.py` | envelope, agent request/response, action, error Pydantic 모델을 정의합니다. |
+| 메시지 라우터 | `src/factory_space/messages/router.py` | `ping`, `agent_request`, `action_result`를 처리합니다. |
+| Agent orchestrator | `src/factory_space/core/agents/orchestrator.py` | 하나의 agent 요청을 LangGraph 실행 graph로 처리합니다. |
+| Agent registry | `src/factory_space/core/agents/registry.py` | `agent_id`로 등록된 agent를 저장하고 조회합니다. |
+| Agent 폴더 | `src/factory_space/agents/{agent_name}/` | 각 agent의 진입점, schema, rule, service, repository, model, prompt, test를 소유합니다. |
+| Action schema | `src/factory_space/core/actions/schemas.py` | agent가 Unreal에 요청할 수 있는 구조화된 명령을 정의합니다. |
 
-주요 책임:
+## LangGraph Orchestrator 구조
 
-- `ping`, `agent_request`, `action_result` 같은 message type 구분
-- 메시지 schema 검증
-- agent 요청이면 orchestrator로 전달
-- 잘못된 메시지면 error response 생성
-
-예상 위치:
+현재 orchestrator는 의도적으로 작게 유지되어 있습니다. LangGraph를 실행 프레임워크로 사용하지만, 기존 agent 계약은 그대로 보존합니다.
 
 ```text
-src/factory_space/messages/
+START
+  -> build_context
+  -> dispatch_agent
+  -> END
 ```
 
-### Agent Orchestrator
+Graph state 구성:
 
-agent 실행을 조율합니다.
+| 키 | 타입 | 설명 |
+| --- | --- | --- |
+| `request` | `AgentRequest` | router에서 전달된 정규화된 agent 요청입니다. |
+| `context` | `AgentContext` | request metadata로 만든 실행 context입니다. |
+| `response` | `AgentResponse` | 선택된 agent가 반환한 최종 응답입니다. |
 
-주요 책임:
+Node별 책임:
 
-- 요청에 맞는 agent 선택
-- session/context 구성
-- agent 실행
-- agent 응답 표준화
-- 필요 시 state 업데이트
-- 공통 로그 또는 trace 기록
+| 노드 | 책임 |
+| --- | --- |
+| `build_context` | `AgentContext(session_id, client_id, request_id)`를 생성합니다. |
+| `dispatch_agent` | `request.agent`를 `AgentRegistry`에서 조회하고 `agent.process()`를 호출합니다. |
 
-orchestrator는 agent의 내부 구현 방식에는 관여하지 않습니다.
+이 구조는 현재 동작을 단순하게 유지하면서도, 이후 validation, trace logging, memory update, fallback routing, multi-agent workflow, streaming 같은 노드를 자연스럽게 추가할 수 있게 해줍니다.
 
-예상 위치:
+## Agent 계약
 
-```text
-src/factory_space/core/agents/orchestrator.py
-```
-
-### Agent
-
-각 도메인의 의사결정 진입점입니다.
-
-예시:
-
-- 공장 최적화 Agent
-- Q&A 챗봇 Agent
-- 퀘스트 Agent
-- 신물질 생성 Agent
-
-주요 책임:
-
-- agent 전용 request 해석
-- 필요한 service 호출
-- 내부 추론 방식 실행
-- 응답 text와 action 생성
-- agent 전용 상태 변경 요청
-
-agent 내부 구현 방식은 담당자가 선택합니다. 룰베이스, LLM, RAG, 시뮬레이션, DB 조회, 외부 API 호출 등을 사용할 수 있습니다.
-
-예상 위치:
-
-```text
-src/factory_space/agents/{agent_name}/agent.py
-```
-
-### Service
-
-agent 도메인 로직을 담당합니다.
-
-주요 책임:
-
-- repository 여러 개를 조합
-- DB 데이터를 agent가 쓰기 좋은 형태로 변환
-- 도메인 규칙 처리
-- 외부 시스템 호출을 agent에서 분리
-
-agent가 모든 로직을 직접 가지면 커지기 쉬우므로, DB 조회나 도메인 처리 흐름은 service로 나눕니다.
-
-예상 위치:
-
-```text
-src/factory_space/agents/{agent_name}/service.py
-```
-
-### Repository
-
-DB 접근을 담당합니다.
-
-주요 책임:
-
-- query 작성
-- 데이터 저장/조회/수정
-- DB row와 도메인 객체 간 변환
-
-agent는 raw database session에 직접 접근하지 않고 service를 통해 repository를 사용합니다.
-
-예상 위치:
-
-```text
-src/factory_space/agents/{agent_name}/repository.py
-```
-
-### Action Dispatcher
-
-agent 응답 안의 action을 Unreal이 실행할 수 있는 메시지로 정리합니다.
-
-주요 책임:
-
-- action schema 검증
-- action 이름과 args 정규화
-- Unreal로 보낼 action response 구성
-- 지원하지 않는 action 처리
-
-처음에는 단순히 agent response 안의 action을 검증하는 정도로 시작할 수 있습니다.
-
-예상 위치:
-
-```text
-src/factory_space/core/actions/
-```
-
-## Agent 입출력 계약
-
-모든 agent는 공통 입력/출력 계약을 지켜야 합니다.
-
-개념적 형태:
+모든 agent는 `BaseAgent` protocol을 따릅니다.
 
 ```python
-class BaseAgent:
+class BaseAgent(Protocol):
     agent_id: str
 
-    async def process(self, request, context):
+    async def process(
+        self,
+        request: AgentRequest,
+        context: AgentContext,
+    ) -> AgentResponse:
         ...
 ```
 
-입력:
+agent는 WebSocket 메시지를 직접 보내지 않습니다. agent는 text, actions, metadata가 담긴 `AgentResponse`를 반환하고, transport 계층이 이 응답을 WebSocket envelope로 변환합니다.
 
-- 공통 request metadata
-- agent 이름
-- session id
-- payload
-- runtime context
+## 등록된 Agent
 
-출력:
+기본 registry에는 현재 다음 agent가 등록되어 있습니다.
 
-- response type
-- agent 이름
-- session id
-- 사용자에게 보여줄 text
-- Unreal이 실행할 actions
-- 선택적 debug/metadata
+| Agent ID | Factory 함수 | 폴더 |
+| --- | --- | --- |
+| `factory_optimization` | `create_factory_optimization_agent()` | `src/factory_space/agents/factory_optimization/` |
+| `qa_chatbot` | `create_qa_chatbot_agent()` | `src/factory_space/agents/qa_chatbot/` |
+| `quest` | `create_quest_agent()` | `src/factory_space/agents/quest/` |
+| `material_generation` | `create_material_generation_agent()` | `src/factory_space/agents/material_generation/` |
 
-agent 내부에서 어떤 방식으로 판단하는지는 공통부가 알 필요 없습니다.
+현재 agent 구현은 통합 테스트를 위한 stub입니다. 각 agent는 다음 값을 반환합니다.
 
-## Context와 State
+- `payload.text`: placeholder text
+- `payload.actions`: `show_ui_message` action 1개
+- `payload.metadata.status`: `"stub"`
+- `payload.metadata.received_payload`: 원본 request payload
 
-agent 실행에는 현재 상황 정보가 필요합니다.
+## 데이터 접근 방향
 
-예상 context:
-
-```text
-AgentContext
-- session_id
-- client_id
-- user_id
-- world_state
-- agent_state
-- request_id
-- timestamp
-```
-
-state 종류:
-
-- session state
-- world state
-- quest progress
-- factory state
-- material generation history
-- conversation memory
-
-초기에는 메모리 또는 SQLite로 시작하고, 필요에 따라 Redis, PostgreSQL, vector DB 등을 추가할 수 있습니다.
-
-## DB 사용 방향
-
-기본 의존 방향:
+agent별 저장소나 외부 시스템 접근이 필요할 때는 다음 의존 방향을 따릅니다.
 
 ```text
-Agent -> Service -> Repository -> DB
+Agent -> Service -> Repository -> Database / Vector Store / External System
 ```
 
-예시:
+원칙:
 
-```text
-QuestAgent
-  -> QuestService
-  -> QuestRepository
-  -> quest_progress table
-```
+- agent 코드는 다른 agent의 내부 파일에 직접 의존하지 않습니다.
+- agent 전용 schema, model, service, repository는 우선 해당 agent 폴더 안에서 시작합니다.
+- 둘 이상의 agent가 실제로 같은 구현을 재사용할 때만 `shared/`로 옮깁니다.
+- 공통 runtime 계약은 `core/`에 둡니다.
 
-```text
-QAChatbotAgent
-  -> QAService
-  -> DocumentRepository
-  -> documents table / vector store
-```
+## 오류 경계
 
-agent 전용 DB 모델은 우선 agent 폴더 안에 둡니다.
+transport 단계의 오류는 메시지가 router에 도달하기 전에 WebSocket endpoint에서 만들어집니다. 예시는 invalid JSON, JSON object가 아닌 메시지, 첫 메시지의 `client_id` 누락, envelope 검증 실패입니다.
 
-```text
-src/factory_space/agents/{agent_name}/models.py
-```
+routing 단계의 오류는 `MessageRouter`에서 만들어집니다. 예시는 `agent_request`의 `agent` 누락, `AgentRequest` 검증 실패, 등록되지 않은 agent id입니다.
 
-여러 agent가 공유하는 모델만 shared 또는 core 쪽으로 이동합니다.
+현재 코드는 agent 실행 중 발생한 일반 예외를 별도의 error response로 감싸지 않습니다. 이 동작을 추가하면 error code와 response shape를 `message-protocol.md`에 함께 문서화해야 합니다.
 
-## Agent Registry
+## 확장 지점
 
-orchestrator가 agent를 찾으려면 registry가 필요합니다.
+가까운 확장 지점은 다음과 같습니다.
 
-개념적 형태:
-
-```python
-AGENT_REGISTRY = {
-    "factory_optimization": create_factory_optimization_agent,
-    "qa_chatbot": create_qa_chatbot_agent,
-    "quest": create_quest_agent,
-    "material_generation": create_material_generation_agent,
-}
-```
-
-새 agent를 추가할 때는 registry에 등록해야 WebSocket 요청에서 호출할 수 있습니다.
-
-## 메시지 처리 흐름
-
-`agent_request` 기준 처리 흐름:
-
-```text
-1. Unreal이 WebSocket으로 JSON 메시지를 보낸다.
-2. WebSocket endpoint가 메시지를 수신한다.
-3. Message router가 message type과 schema를 확인한다.
-4. `agent` field를 기준으로 대상 agent를 찾는다.
-5. Orchestrator가 AgentContext를 구성한다.
-6. 대상 agent의 `process()`를 호출한다.
-7. agent는 service/repository 등을 사용해 응답을 만든다.
-8. 응답 안의 action을 검증한다.
-9. WebSocket endpoint가 Unreal로 response를 보낸다.
-```
-
-## 에러 처리 방향
-
-에러는 가능한 구조화해서 반환합니다.
-
-예상 error response:
-
-```json
-{
-  "type": "error",
-  "version": "1.0",
-  "session_id": "demo-session",
-  "agent": "quest",
-  "payload": {
-    "code": "UNKNOWN_AGENT",
-    "message": "요청한 agent를 찾을 수 없습니다."
-  }
-}
-```
-
-에러 분류 예시:
-
-- 잘못된 JSON
-- 지원하지 않는 message type
-- 알 수 없는 agent
-- schema validation 실패
-- agent 실행 실패
-- 지원하지 않는 action
-
-## 확장 방향
-
-처음에는 단순한 구조로 시작하고, 필요가 생기면 확장합니다.
-
-가능한 확장:
-
-- LLM engine 추가
-- RAG/vector search 추가
-- agent별 DB 모델 추가
-- Redis 기반 session/runtime state 추가
-- PostgreSQL 전환
-- agent execution log 저장
-- scenario replay 테스트
-- Unreal action catalog 문서화
-
-확장할 때도 Unreal-facing message protocol과 agent 입출력 계약은 최대한 안정적으로 유지합니다.
+- 각 agent의 `schemas.py`에 구체적인 payload schema 추가
+- stub agent 로직을 rule-based, LLM, RAG, simulation, DB, hybrid 구현으로 교체
+- agent가 domain logic이나 persistence를 갖기 시작할 때 service/repository 경계 추가
+- LangGraph에 validation, logging, trace capture, memory update, fallback routing 노드 추가
+- Unreal이 더 엄격한 command 보장을 요구할 때 action validation 또는 action catalog 추가
