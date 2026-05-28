@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from factory_space.core.actions.schemas import Action
+from factory_space.agents.quest.schemas import QuestGenerationResult
+from factory_space.agents.quest.service import QuestAgentService
 from factory_space.core.state.context import AgentContext
 from factory_space.messages.protocol import (
     AgentRequest,
@@ -12,16 +13,22 @@ from factory_space.messages.protocol import (
 
 
 class QuestAgent:
-    """Default quest agent stub."""
+    """Quest agent that creates validated quests from game state."""
 
     agent_id = "quest"
+
+    def __init__(self, service: QuestAgentService | None = None) -> None:
+        self._service = service or QuestAgentService()
 
     async def process(
         self,
         request: AgentRequest,
         context: AgentContext,
     ) -> AgentResponse:
-        """Return a stable placeholder response for integration work."""
+        """Return a quest response that keeps the Unreal-facing contract stable."""
+
+        quest_json = self._service.generate_quest_json(request.payload)
+        result = QuestGenerationResult.model_validate_json(quest_json)
 
         return AgentResponse(
             session_id=context.session_id,
@@ -29,14 +36,14 @@ class QuestAgent:
             client_id=context.client_id,
             agent=self.agent_id,
             payload=AgentResponsePayload(
-                text="퀘스트 agent가 요청을 수신했습니다.",
-                actions=[
-                    Action(
-                        name="show_ui_message",
-                        args={"text": "퀘스트 요청을 확인했습니다."},
-                    )
-                ],
-                metadata={"status": "stub", "received_payload": request.payload},
+                text=result.text,
+                actions=result.actions,
+                metadata={
+                    "status": "ok",
+                    "quest": result.quest.model_dump(),
+                    "quest_json": quest_json,
+                    **result.metadata,
+                },
             ),
         )
 
