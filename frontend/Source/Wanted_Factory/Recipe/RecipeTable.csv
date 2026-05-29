@@ -28,4 +28,4 @@ Crush_Charcoal,Grinder,charcoal,,,1,,,charcoal_dust,,2,,1.5
 Crush_Coal,Grinder,coal,,,1,,,coal_dust,,2,,1.5
 Make_Sawdust,Grinder,wood,,,1,,,sawdust,,4,,1
 Crush_Sulfur,Grinder,sulfur_ore,,,1,,,sulfur_powder,,1,,1.5
-TestSSR,Grinder,ssr_ingot,ssr_ore,ssr_test,3,2,1,ssr_result,ssr_trash,1,5,5
+TestSSR,Grinder,ssr_ingot,ssr_ore,ssr_test,1,1,1,ssr_result,ssr_trash,1,2,1
