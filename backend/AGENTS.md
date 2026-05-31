@@ -186,6 +186,7 @@ Unreal이 예측 가능하게 실행할 수 있도록 backend의 action schema�
 - 한 agent 작업 중 관련 없는 다른 agent를 리팩터링하지 않습니다.
 - agent 동작이 바뀌면 테스트나 시나리오도 함께 추가/수정합니다.
 - schema는 Pydantic model로 명시적으로 정의합니다.
+- import는 항상 파일 상단에 둡니다. 함수나 메서드 내부 import는 금지합니다.
 - 모듈은 작고 책임이 분명하게 유지합니다.
 - 임시 데이터나 생성물은 의도된 fixture가 아니라면 source control에 넣지 않습니다.
 - 새로운 message type, action type, shared contract를 추가하면 문서화합니다.
