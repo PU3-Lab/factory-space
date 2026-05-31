@@ -386,24 +386,6 @@
 
 ## 17. LLM provider 구현은 어떻게 시작하는가?
 
-결정: LLM 구현은 provider 추상화를 유지하되 1차 adapter는 현재 의존성에 맞춰 Google GenAI 기반으로 시작한다.
+결정: 1차 실제 LLM provider는 `google-genai` SDK 기반으로 계획한다.
 
-이유:
-
-- 현재 `backend/pyproject.toml`에는 `google-generativeai`, `langchain-google-genai`, `langchain`, `langgraph`가 포함되어 있다.
-- OpenAI SDK는 현재 의존성에 없다.
-- 새 SDK를 추가하기보다 이미 포함된 provider 계열을 먼저 연결하는 편이 변경 범위가 작다.
-- 모델명은 코드에 고정하지 않고 환경변수로 주입해야 한다.
-
-구현 원칙:
-
-- 기본 provider는 `none`으로 두고 외부 API 없이 fallback 경로가 동작해야 한다.
-- `FACTORY_LLM_PROVIDER=google`일 때만 Google GenAI adapter를 사용한다.
-- API key 누락, timeout, provider error, 빈 응답은 예외를 전파하지 않고 `None`으로 변환한다.
-- pipeline은 `None`을 받아 deterministic fallback response로 복구한다.
-- Agent routing과 sub-agent routing은 계속 prompt 기반 LLM 결정으로 처리한다.
-- keyword, if/else, score table로 agent 선택을 복구하지 않는다.
-
-상세 계획:
-
-- `backend/llm_implementation_plan.md`에 기록한다.
+상세 구현 계획은 `backend/docs/plans/llm_implementation_plan.md`, sprint 체크리스트는 `backend/docs/plans/llm_implementation_sprint.md`에 둔다.

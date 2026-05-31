@@ -2,7 +2,7 @@
 
 ## 1. 목적
 
-이 문서는 `protocol_plans.md`와 `backend/server_implementation_plan.md`를 기반으로 서버 내부 AI Agent 실행 파이프라인을 구현하기 위한 계획이다.
+이 문서는 `protocol_plans.md`와 `backend/docs/plans/server_implementation_plan.md`를 기반으로 서버 내부 AI Agent 실행 파이프라인을 구현하기 위한 계획이다.
 
 서버는 클라이언트가 보낸 Agent별 요약 스냅샷을 받아 Agent를 실행하고, LLM 결과 또는 deterministic fallback 결과를 WebSocket 응답으로 반환한다. 기존 backend 구현과의 하위 호환은 고려하지 않는다.
 
