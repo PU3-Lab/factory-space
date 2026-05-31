@@ -1,1 +1,0 @@
-"""Factory optimization schemas."""

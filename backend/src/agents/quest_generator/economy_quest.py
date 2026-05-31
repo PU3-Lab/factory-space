@@ -1,0 +1,1 @@
+"""Economy quest sub-agent."""
