@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from agents.pipeline import AgentPipeline
-from tests.harness import StubLlm
+from tests.harness import StubLLM
 
 
 @pytest.mark.parametrize(
@@ -23,7 +23,7 @@ def test_explicit_sub_agent_scenarios(
     sub_agent: str,
     expected_type: str,
 ) -> None:
-    pipeline = AgentPipeline(llm=StubLlm([None]))
+    pipeline = AgentPipeline(llm=StubLLM([None]))
 
     response = pipeline.run(
         {

@@ -15,4 +15,4 @@ uv run --extra dev pytest tests/test_llm_settings.py -q
 
 예상 실패:
 
-- 아직 `llm.settings` 모듈과 `LlmSettings.from_env()`가 없다.
+- 아직 `llm.settings` 모듈과 `LLMSettings.from_env()`가 없다.

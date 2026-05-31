@@ -62,7 +62,7 @@ Steps:
 - [x] provider별 API key alias 우선순위 테스트 작성
 - [x] local provider는 `BASE_URL`을 요구하는 테스트 작성
 - [x] `uv run --extra dev pytest tests/test_llm_settings.py -q`로 RED 확인
-- [x] `LlmSettings.from_env()` 구현
+- [x] `LLMSettings.from_env()` 구현
 - [x] `.env.example`을 `FACTORY_LLM_*` 기준으로 갱신
 - [x] `.env.example`의 development 예시는 local LLM을 기본 provider로 둔다.
 - [x] settings 테스트 GREEN 확인
@@ -122,13 +122,13 @@ Files:
 
 Steps:
 
-- [x] `NoopLlmAdapter.invoke()`가 `None`을 반환하는 테스트 작성
-- [x] `none` provider slot은 `NoopLlmAdapter`를 반환하는 테스트 작성
-- [x] Google slot은 `GoogleGenAiLlmAdapter`를 반환하는 테스트 작성
-- [x] OpenAI slot은 `OpenAiLlmAdapter`를 반환하는 테스트 작성
-- [x] Local slot은 `LocalLlmAdapter`를 반환하는 테스트 작성
+- [x] `NoopLLMAdapter.invoke()`가 `None`을 반환하는 테스트 작성
+- [x] `none` provider slot은 `NoopLLMAdapter`를 반환하는 테스트 작성
+- [x] Google slot은 `GoogleGenAiLLMAdapter`를 반환하는 테스트 작성
+- [x] OpenAI slot은 `OpenAILLMAdapter`를 반환하는 테스트 작성
+- [x] Local slot은 `LocalLLMAdapter`를 반환하는 테스트 작성
 - [x] `uv run --extra dev pytest tests/test_llm_adapter.py -q`로 RED 확인
-- [x] `LlmAdapter` protocol, `NoopLlmAdapter`, `create_llm_adapter(slot)` 구현
+- [x] `LLMAdapter` protocol, `NoopLLMAdapter`, `create_llm_adapter(slot)` 구현
 - [x] adapter 테스트 GREEN 확인
 - [x] 커밋: `e5021ed test: LLM slot adapter 계약 추가`
 
@@ -145,7 +145,7 @@ Steps:
 - [x] 빈 응답은 `None`으로 변환하는 테스트 작성
 - [x] provider 예외는 `None`으로 변환하는 테스트 작성
 - [x] `uv run --extra dev pytest tests/test_llm_adapter.py::test_google_llm_adapter_returns_response_text -q`로 RED 확인
-- [x] `GoogleGenAiLlmAdapter` 구현
+- [x] `GoogleGenAiLLMAdapter` 구현
 - [x] `response_mime_type="application/json"` 설정
 - [x] `max_output_tokens`, `temperature`, `timeout_ms` 전달
 - [x] adapter 테스트 GREEN 확인
@@ -189,7 +189,7 @@ Files:
 
 Steps:
 
-- [x] local base URL 누락 정책을 settings와 정합화한다. 현재 `LlmSettings`는 local provider에 model/base URL을 요구한다.
+- [x] local base URL 누락 정책을 settings와 정합화한다. 현재 `LLMSettings`는 local provider에 model/base URL을 요구한다.
 - [x] fake local endpoint 성공 응답 테스트 작성
 - [x] local endpoint error는 `None` 반환 테스트 작성
 - [x] adapter 구현

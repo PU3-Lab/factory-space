@@ -6,13 +6,13 @@ import pytest
 
 import llm.adapter as adapter_module
 from llm.adapter import (
-    GoogleGenAiLlmAdapter,
-    LocalLlmAdapter,
-    NoopLlmAdapter,
-    OpenAiLlmAdapter,
+    GoogleGenAiLLMAdapter,
+    LocalLLMAdapter,
+    NoopLLMAdapter,
+    OpenAILLMAdapter,
     create_llm_adapter,
 )
-from llm.settings import LlmModelSlot
+from llm.settings import LLMModelSlot
 
 
 class FakeGoogleResponse:
@@ -99,21 +99,21 @@ class FakeOpenAiHttpClient:
 
 
 def test_noop_llm_adapter_returns_none() -> None:
-    adapter = NoopLlmAdapter()
+    adapter = NoopLLMAdapter()
 
     assert adapter.invoke("prompt") is None
 
 
 def test_create_llm_adapter_returns_noop_for_none_slot() -> None:
-    slot = LlmModelSlot(name="default", provider="none")
+    slot = LLMModelSlot(name="default", provider="none")
 
     adapter = create_llm_adapter(slot)
 
-    assert isinstance(adapter, NoopLlmAdapter)
+    assert isinstance(adapter, NoopLLMAdapter)
 
 
 def test_create_llm_adapter_returns_google_adapter_for_google_slot() -> None:
-    slot = LlmModelSlot(
+    slot = LLMModelSlot(
         name="default",
         provider="google",
         model="gemini-2.5-flash",
@@ -122,11 +122,11 @@ def test_create_llm_adapter_returns_google_adapter_for_google_slot() -> None:
 
     adapter = create_llm_adapter(slot)
 
-    assert isinstance(adapter, GoogleGenAiLlmAdapter)
+    assert isinstance(adapter, GoogleGenAiLLMAdapter)
 
 
 def test_create_llm_adapter_returns_openai_adapter_for_openai_slot() -> None:
-    slot = LlmModelSlot(
+    slot = LLMModelSlot(
         name="fallback1",
         provider="openai",
         model="gpt-5.5",
@@ -135,11 +135,11 @@ def test_create_llm_adapter_returns_openai_adapter_for_openai_slot() -> None:
 
     adapter = create_llm_adapter(slot)
 
-    assert isinstance(adapter, OpenAiLlmAdapter)
+    assert isinstance(adapter, OpenAILLMAdapter)
 
 
 def test_create_llm_adapter_returns_local_adapter_for_local_slot() -> None:
-    slot = LlmModelSlot(
+    slot = LLMModelSlot(
         name="fallback2",
         provider="local",
         model="llama3.1:8b",
@@ -148,13 +148,13 @@ def test_create_llm_adapter_returns_local_adapter_for_local_slot() -> None:
 
     adapter = create_llm_adapter(slot)
 
-    assert isinstance(adapter, LocalLlmAdapter)
+    assert isinstance(adapter, LocalLLMAdapter)
 
 
 def test_google_llm_adapter_returns_response_text() -> None:
     models = FakeGoogleModels(FakeGoogleResponse('  {"summary":"ok"}  '))
-    adapter = GoogleGenAiLlmAdapter(
-        LlmModelSlot(
+    adapter = GoogleGenAiLLMAdapter(
+        LLMModelSlot(
             name="default",
             provider="google",
             model="gemini-2.5-flash",
@@ -180,8 +180,8 @@ def test_google_llm_adapter_returns_response_text() -> None:
 
 def test_google_llm_adapter_returns_none_for_empty_response() -> None:
     models = FakeGoogleModels(FakeGoogleResponse(""))
-    adapter = GoogleGenAiLlmAdapter(
-        LlmModelSlot(
+    adapter = GoogleGenAiLLMAdapter(
+        LLMModelSlot(
             name="default",
             provider="google",
             model="gemini-2.5-flash",
@@ -195,8 +195,8 @@ def test_google_llm_adapter_returns_none_for_empty_response() -> None:
 
 def test_google_llm_adapter_returns_none_for_non_string_response_text() -> None:
     models = FakeGoogleModels(FakeGoogleResponse({"summary": "ok"}))
-    adapter = GoogleGenAiLlmAdapter(
-        LlmModelSlot(
+    adapter = GoogleGenAiLLMAdapter(
+        LLMModelSlot(
             name="default",
             provider="google",
             model="gemini-2.5-flash",
@@ -209,8 +209,8 @@ def test_google_llm_adapter_returns_none_for_non_string_response_text() -> None:
 
 
 def test_google_llm_adapter_returns_none_without_api_key() -> None:
-    adapter = GoogleGenAiLlmAdapter(
-        LlmModelSlot(
+    adapter = GoogleGenAiLLMAdapter(
+        LLMModelSlot(
             name="default",
             provider="google",
             model="gemini-2.5-flash",
@@ -228,8 +228,8 @@ def test_google_llm_adapter_returns_none_when_client_creation_fails(
         raise RuntimeError("client init failed")
 
     monkeypatch.setattr(adapter_module, "_create_google_client", raise_client_error)
-    adapter = GoogleGenAiLlmAdapter(
-        LlmModelSlot(
+    adapter = GoogleGenAiLLMAdapter(
+        LLMModelSlot(
             name="default",
             provider="google",
             model="gemini-2.5-flash",
@@ -242,8 +242,8 @@ def test_google_llm_adapter_returns_none_when_client_creation_fails(
 
 def test_google_llm_adapter_returns_none_for_provider_error() -> None:
     models = FakeGoogleModels(error=RuntimeError("provider failed"))
-    adapter = GoogleGenAiLlmAdapter(
-        LlmModelSlot(
+    adapter = GoogleGenAiLLMAdapter(
+        LLMModelSlot(
             name="default",
             provider="google",
             model="gemini-2.5-flash",
@@ -257,8 +257,8 @@ def test_google_llm_adapter_returns_none_for_provider_error() -> None:
 
 def test_openai_llm_adapter_returns_response_text() -> None:
     http_client = FakeOpenAiHttpClient()
-    adapter = OpenAiLlmAdapter(
-        LlmModelSlot(
+    adapter = OpenAILLMAdapter(
+        LLMModelSlot(
             name="fallback1",
             provider="openai",
             model="gpt-5.5",
@@ -293,8 +293,8 @@ def test_openai_llm_adapter_returns_response_text() -> None:
 
 def test_openai_llm_adapter_returns_none_without_api_key() -> None:
     http_client = FakeOpenAiHttpClient()
-    adapter = OpenAiLlmAdapter(
-        LlmModelSlot(
+    adapter = OpenAILLMAdapter(
+        LLMModelSlot(
             name="fallback1",
             provider="openai",
             model="gpt-5.5",
@@ -309,8 +309,8 @@ def test_openai_llm_adapter_returns_none_without_api_key() -> None:
 
 def test_openai_llm_adapter_returns_none_for_provider_error() -> None:
     http_client = FakeOpenAiHttpClient(error=RuntimeError("provider failed"))
-    adapter = OpenAiLlmAdapter(
-        LlmModelSlot(
+    adapter = OpenAILLMAdapter(
+        LLMModelSlot(
             name="fallback1",
             provider="openai",
             model="gpt-5.5",
@@ -326,8 +326,8 @@ def test_openai_llm_adapter_returns_none_for_http_error_response() -> None:
     http_client = FakeOpenAiHttpClient(
         FakeHttpResponse(500, {"error": {"message": "provider failed"}})
     )
-    adapter = OpenAiLlmAdapter(
-        LlmModelSlot(
+    adapter = OpenAILLMAdapter(
+        LLMModelSlot(
             name="fallback1",
             provider="openai",
             model="gpt-5.5",
@@ -350,8 +350,8 @@ def test_openai_llm_adapter_returns_none_for_empty_response_text() -> None:
             },
         )
     )
-    adapter = OpenAiLlmAdapter(
-        LlmModelSlot(
+    adapter = OpenAILLMAdapter(
+        LLMModelSlot(
             name="fallback1",
             provider="openai",
             model="gpt-5.5",
@@ -374,8 +374,8 @@ def test_openai_llm_adapter_preserves_json_object_response_text() -> None:
             },
         )
     )
-    adapter = OpenAiLlmAdapter(
-        LlmModelSlot(
+    adapter = OpenAILLMAdapter(
+        LLMModelSlot(
             name="fallback1",
             provider="openai",
             model="gpt-5.5",
@@ -389,8 +389,8 @@ def test_openai_llm_adapter_preserves_json_object_response_text() -> None:
 
 def test_local_llm_adapter_returns_response_text_without_api_key() -> None:
     http_client = FakeOpenAiHttpClient()
-    adapter = LocalLlmAdapter(
-        LlmModelSlot(
+    adapter = LocalLLMAdapter(
+        LLMModelSlot(
             name="default",
             provider="local",
             model="llama3.1:8b",
@@ -424,8 +424,8 @@ def test_local_llm_adapter_returns_response_text_without_api_key() -> None:
 
 def test_local_llm_adapter_returns_none_without_base_url() -> None:
     http_client = FakeOpenAiHttpClient()
-    adapter = LocalLlmAdapter(
-        LlmModelSlot(
+    adapter = LocalLLMAdapter(
+        LLMModelSlot(
             name="default",
             provider="local",
             model="llama3.1:8b",
@@ -439,8 +439,8 @@ def test_local_llm_adapter_returns_none_without_base_url() -> None:
 
 def test_local_llm_adapter_returns_none_for_endpoint_error() -> None:
     http_client = FakeOpenAiHttpClient(error=RuntimeError("provider failed"))
-    adapter = LocalLlmAdapter(
-        LlmModelSlot(
+    adapter = LocalLLMAdapter(
+        LLMModelSlot(
             name="default",
             provider="local",
             model="llama3.1:8b",
@@ -456,8 +456,8 @@ def test_local_llm_adapter_returns_none_for_http_error_response() -> None:
     http_client = FakeOpenAiHttpClient(
         FakeHttpResponse(500, {"error": {"message": "provider failed"}})
     )
-    adapter = LocalLlmAdapter(
-        LlmModelSlot(
+    adapter = LocalLLMAdapter(
+        LLMModelSlot(
             name="default",
             provider="local",
             model="llama3.1:8b",

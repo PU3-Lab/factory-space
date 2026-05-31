@@ -250,8 +250,21 @@ Reviewer: `Bacon` sub-agent
 최종 리뷰:
 
 - result: no unresolved findings
-- 확인: `LocalLlmAdapter`가 slot의 `base_url`과 `model`만 사용해 Chat Completions compatible endpoint를 호출한다.
+- 확인: `LocalLLMAdapter`가 slot의 `base_url`과 `model`만 사용해 Chat Completions compatible endpoint를 호출한다.
 - 확인: local provider는 API key 없이 `Authorization` header 없이 요청한다.
 - 확인: provider/endpoint 실패는 예외 전파 없이 `None`으로 수렴한다.
 - 확인: fallback 순서는 adapter에 들어가 있지 않다.
 - 확인: 함수/메서드 내부 import 금지 규칙이 문서에 반영되었고 내부 import 검색 결과가 비어 있다.
+
+## 2026-05-31 LLM Acronym Rename Review
+
+Status: resolved
+
+Reviewer: `Boyle` sub-agent
+
+최종 리뷰:
+
+- result: no unresolved findings
+- 확인: 기존 mixed-case LLM 타입/클래스 표기를 `LLM` acronym 표기로 정리했다.
+- 확인: package/module path `llm`, snake_case 함수/변수, `FACTORY_LLM_*` env var는 유지했다.
+- 확인: 내부 import 검색, Ruff, 전체 pytest 검증이 통과했다.

@@ -3,7 +3,7 @@ from __future__ import annotations
 from agents.pipeline import AgentPipeline
 from tests.harness import (
     PipelineScenario,
-    StubLlm,
+    StubLLM,
     assert_agent_error,
     assert_agent_response,
     run_pipeline_scenario,
@@ -59,7 +59,7 @@ def test_pipeline_uses_prompt_based_manual_sub_agent_routing() -> None:
 
 
 def test_pipeline_uses_explicit_agent_without_top_level_routing_prompt() -> None:
-    llm = StubLlm([None])
+    llm = StubLLM([None])
     pipeline = AgentPipeline(llm=llm)
 
     response = pipeline.run(
@@ -77,7 +77,7 @@ def test_pipeline_uses_explicit_agent_without_top_level_routing_prompt() -> None
 
 
 def test_pipeline_returns_error_when_agent_routing_model_is_unavailable() -> None:
-    pipeline = AgentPipeline(llm=StubLlm([None]))
+    pipeline = AgentPipeline(llm=StubLLM([None]))
 
     response = pipeline.run(
         {
@@ -91,7 +91,7 @@ def test_pipeline_returns_error_when_agent_routing_model_is_unavailable() -> Non
 
 
 def test_pipeline_rejects_invalid_explicit_manual_sub_agent() -> None:
-    pipeline = AgentPipeline(llm=StubLlm([]))
+    pipeline = AgentPipeline(llm=StubLLM([]))
 
     response = pipeline.run(
         {
@@ -106,7 +106,7 @@ def test_pipeline_rejects_invalid_explicit_manual_sub_agent() -> None:
 
 
 def test_pipeline_rejects_invalid_explicit_quest_sub_agent() -> None:
-    pipeline = AgentPipeline(llm=StubLlm([]))
+    pipeline = AgentPipeline(llm=StubLLM([]))
 
     response = pipeline.run(
         {
@@ -121,7 +121,7 @@ def test_pipeline_rejects_invalid_explicit_quest_sub_agent() -> None:
 
 
 def test_pipeline_rejects_invalid_explicit_process_sub_agent() -> None:
-    pipeline = AgentPipeline(llm=StubLlm([]))
+    pipeline = AgentPipeline(llm=StubLLM([]))
 
     response = pipeline.run(
         {
@@ -136,7 +136,7 @@ def test_pipeline_rejects_invalid_explicit_process_sub_agent() -> None:
 
 
 def test_pipeline_rejects_invalid_explicit_material_sub_agent() -> None:
-    pipeline = AgentPipeline(llm=StubLlm([]))
+    pipeline = AgentPipeline(llm=StubLLM([]))
 
     response = pipeline.run(
         {
@@ -152,7 +152,7 @@ def test_pipeline_rejects_invalid_explicit_material_sub_agent() -> None:
 
 def test_pipeline_rejects_invalid_explicit_sub_agent_after_top_level_routing() -> None:
     pipeline = AgentPipeline(
-        llm=StubLlm(['{"agent":"process_optimizer","reason":"process request"}'])
+        llm=StubLLM(['{"agent":"process_optimizer","reason":"process request"}'])
     )
 
     response = pipeline.run(
@@ -167,7 +167,7 @@ def test_pipeline_rejects_invalid_explicit_sub_agent_after_top_level_routing() -
 
 
 def test_pipeline_returns_error_for_invalid_envelope() -> None:
-    pipeline = AgentPipeline(llm=StubLlm([]))
+    pipeline = AgentPipeline(llm=StubLLM([]))
 
     response = pipeline.run(
         {
@@ -181,7 +181,7 @@ def test_pipeline_returns_error_for_invalid_envelope() -> None:
 
 
 def test_cache_key_separates_context() -> None:
-    llm = StubLlm(
+    llm = StubLLM(
         [
             '{"result":"site-a"}',
             '{"result":"site-b"}',

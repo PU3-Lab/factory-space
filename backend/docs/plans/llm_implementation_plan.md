@@ -63,15 +63,15 @@ fallback2: none
 ```txt
 backend/src/llm/
  ├─ adapter.py
- │   ├─ LlmAdapter protocol
- │   ├─ NoopLlmAdapter
- │   ├─ GoogleGenAiLlmAdapter
- │   ├─ OpenAiLlmAdapter
- │   ├─ LocalLlmAdapter
+ │   ├─ LLMAdapter protocol
+ │   ├─ NoopLLMAdapter
+ │   ├─ GoogleGenAiLLMAdapter
+ │   ├─ OpenAILLMAdapter
+ │   ├─ LocalLLMAdapter
  │   └─ create_llm_adapter(slot)
  └─ settings.py
-     ├─ LlmSettings
-     └─ LlmModelSlot
+     ├─ LLMSettings
+     └─ LLMModelSlot
 ```
 
 Pipeline 연결:
@@ -231,7 +231,7 @@ raw_text = response.text
 
 ### 7.2 OpenAI / GPT API
 
-OpenAI provider는 별도 `OpenAiLlmAdapter`로 둔다.
+OpenAI provider는 별도 `OpenAILLMAdapter`로 둔다.
 
 정책:
 

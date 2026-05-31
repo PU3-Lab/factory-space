@@ -2,7 +2,7 @@
 
 ## Scope
 
-Sprint 4.3은 `OpenAiLlmAdapter`가 OpenAI Chat Completions compatible HTTP endpoint를 1회 호출하고, raw assistant content를 반환하는 계약을 고정한다.
+Sprint 4.3은 `OpenAILLMAdapter`가 OpenAI Chat Completions compatible HTTP endpoint를 1회 호출하고, raw assistant content를 반환하는 계약을 고정한다.
 
 ## RED verification
 
@@ -15,7 +15,7 @@ Production code 수정 전에 다음 실패 테스트를 추가한다.
 
 예상 실패:
 
-- 현재 `OpenAiLlmAdapter`는 placeholder라 `http_client`, `timeout_ms`, `max_output_tokens`, `temperature` 주입을 받지 못하거나 항상 `None`을 반환한다.
+- 현재 `OpenAILLMAdapter`는 placeholder라 `http_client`, `timeout_ms`, `max_output_tokens`, `temperature` 주입을 받지 못하거나 항상 `None`을 반환한다.
 
 ## Acceptance captured by tests
 

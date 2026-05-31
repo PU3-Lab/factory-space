@@ -7,35 +7,35 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-LlmProvider = Literal["none", "google", "openai", "local"]
+LLMProvider = Literal["none", "google", "openai", "local"]
 
 _PROVIDERS: set[str] = {"none", "google", "openai", "local"}
 
 
 @dataclass(frozen=True)
-class LlmModelSlot:
+class LLMModelSlot:
     """One configured LLM provider slot."""
 
     name: str
-    provider: LlmProvider
+    provider: LLMProvider
     model: str | None = None
     base_url: str | None = None
     api_key: str | None = None
 
 
 @dataclass(frozen=True)
-class LlmSettings:
+class LLMSettings:
     """LLM provider settings for LangGraph fallback slots."""
 
-    default: LlmModelSlot
-    fallback1: LlmModelSlot
-    fallback2: LlmModelSlot
+    default: LLMModelSlot
+    fallback1: LLMModelSlot
+    fallback2: LLMModelSlot
     timeout_ms: int = 20000
     max_output_tokens: int = 2048
     temperature: float = 0.2
 
     @classmethod
-    def from_env(cls, env: Mapping[str, str] | None = None) -> LlmSettings:
+    def from_env(cls, env: Mapping[str, str] | None = None) -> LLMSettings:
         """Create settings from environment variables."""
 
         source = os.environ if env is None else env
@@ -53,7 +53,7 @@ class LlmSettings:
         )
 
 
-def _slot_from_env(env: Mapping[str, str], slot: str) -> LlmModelSlot:
+def _slot_from_env(env: Mapping[str, str], slot: str) -> LLMModelSlot:
     prefix = f"FACTORY_LLM_{slot.upper()}"
     provider = _provider_from_env(env, slot, prefix)
     model = _string_from_env(env, f"{prefix}_MODEL")
@@ -61,9 +61,9 @@ def _slot_from_env(env: Mapping[str, str], slot: str) -> LlmModelSlot:
     api_key = _api_key_from_env(env, slot, prefix, provider)
 
     if provider == "none":
-        return LlmModelSlot(name=slot, provider=provider)
+        return LLMModelSlot(name=slot, provider=provider)
     if provider == "google":
-        return LlmModelSlot(
+        return LLMModelSlot(
             name=slot,
             provider=provider,
             model=model or "gemini-2.5-flash",
@@ -72,7 +72,7 @@ def _slot_from_env(env: Mapping[str, str], slot: str) -> LlmModelSlot:
         )
     if provider == "openai":
         _require(model, f"{prefix}_MODEL")
-        return LlmModelSlot(
+        return LLMModelSlot(
             name=slot,
             provider=provider,
             model=model,
@@ -81,7 +81,7 @@ def _slot_from_env(env: Mapping[str, str], slot: str) -> LlmModelSlot:
         )
     _require(model, f"{prefix}_MODEL")
     _require(base_url, f"{prefix}_BASE_URL")
-    return LlmModelSlot(
+    return LLMModelSlot(
         name=slot,
         provider=provider,
         model=model,
@@ -94,7 +94,7 @@ def _provider_from_env(
     env: Mapping[str, str],
     slot: str,
     prefix: str,
-) -> LlmProvider:
+) -> LLMProvider:
     provider = _string_from_env(env, f"{prefix}_PROVIDER")
     if provider is None and slot == "default":
         environment = (_string_from_env(env, "ENVIRONMENT") or "").lower()
@@ -110,7 +110,7 @@ def _api_key_from_env(
     env: Mapping[str, str],
     slot: str,
     prefix: str,
-    provider: LlmProvider,
+    provider: LLMProvider,
 ) -> str | None:
     slot_key = _string_from_env(env, f"{prefix}_API_KEY")
     if provider == "google":

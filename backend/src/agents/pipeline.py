@@ -16,7 +16,7 @@ from agents.orchestrator import TOP_LEVEL_AGENT_IDS, OrchestratorAgent
 from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS, QuestGeneratorAgent
 from agents.router import AgentRouter, UnknownAgentError, create_default_agent_router
 from cache.response_cache import ResponseCache
-from llm.adapter import LlmAdapter, NoopLlmAdapter
+from llm.adapter import LLMAdapter, NoopLLMAdapter
 from protocol.errors import build_error_payload
 from protocol.messages import (
     AgentErrorEnvelope,
@@ -64,11 +64,11 @@ class AgentPipeline:
         *,
         router: AgentRouter | None = None,
         cache: ResponseCache | None = None,
-        llm: LlmAdapter | None = None,
+        llm: LLMAdapter | None = None,
     ) -> None:
         self.router = router or create_default_agent_router()
         self.cache = cache or ResponseCache()
-        self.llm = llm or NoopLlmAdapter()
+        self.llm = llm or NoopLLMAdapter()
         self.graph = build_agent_graph(
             router=self.router,
             cache=self.cache,
@@ -95,13 +95,13 @@ def build_agent_graph(
     *,
     router: AgentRouter | None = None,
     cache: ResponseCache | None = None,
-    llm: LlmAdapter | None = None,
+    llm: LLMAdapter | None = None,
 ) -> CompiledStateGraph:
     """Build and compile the LangGraph agent pipeline."""
 
     agent_router = router or create_default_agent_router()
     response_cache = cache or ResponseCache()
-    llm_adapter = llm or NoopLlmAdapter()
+    llm_adapter = llm or NoopLLMAdapter()
     orchestrator = OrchestratorAgent()
     manual_qa = ManualQaAgent()
     quest_generator = QuestGeneratorAgent()

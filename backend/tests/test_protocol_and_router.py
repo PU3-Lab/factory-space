@@ -5,7 +5,7 @@ import pytest
 from agents.base import AgentContext, AgentRunResult
 from agents.router import AgentRouter, UnknownAgentError
 from cache.response_cache import ResponseCache
-from llm.adapter import NoopLlmAdapter
+from llm.adapter import NoopLLMAdapter
 from protocol.errors import build_error_payload
 from protocol.messages import (
     AgentErrorEnvelope,
@@ -114,4 +114,4 @@ def test_response_cache_returns_stored_payload_by_key() -> None:
 
 
 def test_noop_llm_adapter_forces_fallback_path() -> None:
-    assert NoopLlmAdapter().invoke("prompt") is None
+    assert NoopLLMAdapter().invoke("prompt") is None

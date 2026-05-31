@@ -11,12 +11,12 @@ from typing import Any, Protocol
 from google import genai
 from google.genai import types
 
-from llm.settings import LlmModelSlot
+from llm.settings import LLMModelSlot
 
 _OPENAI_BASE_URL = "https://api.openai.com/v1"
 
 
-class LlmAdapter(Protocol):
+class LLMAdapter(Protocol):
     """Common contract for raw LLM text generation."""
 
     def invoke(self, prompt: str) -> str | None:
@@ -56,7 +56,7 @@ class _HttpClient(Protocol):
 
 
 @dataclass(frozen=True)
-class NoopLlmAdapter:
+class NoopLLMAdapter:
     """Disabled LLM adapter."""
 
     def invoke(self, prompt: str) -> str | None:
@@ -66,10 +66,10 @@ class NoopLlmAdapter:
 
 
 @dataclass(frozen=True)
-class GoogleGenAiLlmAdapter:
+class GoogleGenAiLLMAdapter:
     """Google Gen AI adapter."""
 
-    slot: LlmModelSlot
+    slot: LLMModelSlot
     client: _GoogleClient | None = None
     timeout_ms: int = 20000
     max_output_tokens: int = 2048
@@ -105,10 +105,10 @@ class GoogleGenAiLlmAdapter:
 
 
 @dataclass(frozen=True)
-class OpenAiLlmAdapter:
+class OpenAILLMAdapter:
     """OpenAI-compatible Chat Completions adapter."""
 
-    slot: LlmModelSlot
+    slot: LLMModelSlot
     http_client: _HttpClient | None = None
     timeout_ms: int = 20000
     max_output_tokens: int = 2048
@@ -132,10 +132,10 @@ class OpenAiLlmAdapter:
 
 
 @dataclass(frozen=True)
-class LocalLlmAdapter:
+class LocalLLMAdapter:
     """Local OpenAI-compatible Chat Completions adapter."""
 
-    slot: LlmModelSlot
+    slot: LLMModelSlot
     http_client: _HttpClient | None = None
     timeout_ms: int = 20000
     max_output_tokens: int = 2048
@@ -158,16 +158,16 @@ class LocalLlmAdapter:
         )
 
 
-def create_llm_adapter(slot: LlmModelSlot) -> LlmAdapter:
+def create_llm_adapter(slot: LLMModelSlot) -> LLMAdapter:
     """Create an adapter for one configured LLM slot."""
 
     if slot.provider == "none":
-        return NoopLlmAdapter()
+        return NoopLLMAdapter()
     if slot.provider == "google":
-        return GoogleGenAiLlmAdapter(slot)
+        return GoogleGenAiLLMAdapter(slot)
     if slot.provider == "openai":
-        return OpenAiLlmAdapter(slot)
-    return LocalLlmAdapter(slot)
+        return OpenAILLMAdapter(slot)
+    return LocalLLMAdapter(slot)
 
 
 def _create_google_client(api_key: str | None) -> _GoogleClient | None:
@@ -229,7 +229,7 @@ def _openai_chat_completions_url(base_url: str | None) -> str:
 
 def _invoke_openai_compatible(
     *,
-    slot: LlmModelSlot,
+    slot: LLMModelSlot,
     prompt: str,
     http_client: _HttpClient | None,
     timeout_ms: int,

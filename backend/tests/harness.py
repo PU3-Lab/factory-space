@@ -6,7 +6,7 @@ from typing import Any
 from agents.pipeline import AgentPipeline
 
 
-class StubLlm:
+class StubLLM:
     """Small LLM stub that only answers routing prompts."""
 
     def __init__(self, responses: list[str | None]) -> None:
@@ -32,10 +32,10 @@ class PipelineScenario:
     llm_responses: list[str | None] = field(default_factory=list)
 
 
-def run_pipeline_scenario(scenario: PipelineScenario) -> tuple[dict[str, Any], StubLlm]:
+def run_pipeline_scenario(scenario: PipelineScenario) -> tuple[dict[str, Any], StubLLM]:
     """Run one scenario through the real LangGraph-backed pipeline."""
 
-    llm = StubLlm(list(scenario.llm_responses))
+    llm = StubLLM(list(scenario.llm_responses))
     pipeline = AgentPipeline(llm=llm)
     response = pipeline.run(
         {

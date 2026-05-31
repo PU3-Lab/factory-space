@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from llm.settings import LlmSettings
+from llm.settings import LLMSettings
 
 
 def test_llm_settings_defaults_to_disabled_slots(
@@ -10,7 +10,7 @@ def test_llm_settings_defaults_to_disabled_slots(
 ) -> None:
     monkeypatch.setenv("FACTORY_LLM_DEFAULT_PROVIDER", "google")
 
-    settings = LlmSettings.from_env({})
+    settings = LLMSettings.from_env({})
 
     assert settings.default.provider == "none"
     assert settings.fallback1.provider == "none"
@@ -21,7 +21,7 @@ def test_llm_settings_defaults_to_disabled_slots(
 
 
 def test_llm_settings_uses_local_default_slot_in_development() -> None:
-    settings = LlmSettings.from_env(
+    settings = LLMSettings.from_env(
         {
             "ENVIRONMENT": "development",
             "FACTORY_LLM_DEFAULT_MODEL": "llama3.1:8b",
@@ -38,11 +38,11 @@ def test_llm_settings_uses_local_default_slot_in_development() -> None:
 
 def test_llm_settings_rejects_unknown_provider() -> None:
     with pytest.raises(ValueError, match="Unsupported LLM provider"):
-        LlmSettings.from_env({"FACTORY_LLM_DEFAULT_PROVIDER": "unknown"})
+        LLMSettings.from_env({"FACTORY_LLM_DEFAULT_PROVIDER": "unknown"})
 
 
 def test_llm_settings_uses_google_default_model_and_key_priority() -> None:
-    settings = LlmSettings.from_env(
+    settings = LLMSettings.from_env(
         {
             "FACTORY_LLM_DEFAULT_PROVIDER": "google",
             "FACTORY_LLM_DEFAULT_API_KEY": "slot-key",
@@ -54,7 +54,7 @@ def test_llm_settings_uses_google_default_model_and_key_priority() -> None:
     assert settings.default.model == "gemini-2.5-flash"
     assert settings.default.api_key == "slot-key"
 
-    settings = LlmSettings.from_env(
+    settings = LLMSettings.from_env(
         {
             "FACTORY_LLM_DEFAULT_PROVIDER": "google",
             "GEMINI_API_KEY": "gemini-key",
@@ -67,14 +67,14 @@ def test_llm_settings_uses_google_default_model_and_key_priority() -> None:
 
 def test_llm_settings_requires_openai_model_and_uses_openai_key() -> None:
     with pytest.raises(ValueError, match="requires FACTORY_LLM_DEFAULT_MODEL"):
-        LlmSettings.from_env(
+        LLMSettings.from_env(
             {
                 "FACTORY_LLM_DEFAULT_PROVIDER": "openai",
                 "OPENAI_API_KEY": "openai-key",
             }
         )
 
-    settings = LlmSettings.from_env(
+    settings = LLMSettings.from_env(
         {
             "FACTORY_LLM_DEFAULT_PROVIDER": "openai",
             "FACTORY_LLM_DEFAULT_MODEL": "gpt-5.5",
@@ -88,17 +88,17 @@ def test_llm_settings_requires_openai_model_and_uses_openai_key() -> None:
 
 def test_llm_settings_requires_local_model_and_base_url() -> None:
     with pytest.raises(ValueError, match="requires FACTORY_LLM_DEFAULT_MODEL"):
-        LlmSettings.from_env({"FACTORY_LLM_DEFAULT_PROVIDER": "local"})
+        LLMSettings.from_env({"FACTORY_LLM_DEFAULT_PROVIDER": "local"})
 
     with pytest.raises(ValueError, match="requires FACTORY_LLM_DEFAULT_BASE_URL"):
-        LlmSettings.from_env(
+        LLMSettings.from_env(
             {
                 "FACTORY_LLM_DEFAULT_PROVIDER": "local",
                 "FACTORY_LLM_DEFAULT_MODEL": "llama3.1:8b",
             }
         )
 
-    settings = LlmSettings.from_env(
+    settings = LLMSettings.from_env(
         {
             "FACTORY_LLM_DEFAULT_PROVIDER": "local",
             "FACTORY_LLM_DEFAULT_MODEL": "llama3.1:8b",

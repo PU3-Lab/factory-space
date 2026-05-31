@@ -3,7 +3,7 @@ from __future__ import annotations
 from agents.base import AgentContext, AgentRunResult
 from agents.pipeline import AgentPipeline, build_agent_graph, run_agent_pipeline
 from agents.router import AgentRouter
-from tests.harness import StubLlm, assert_agent_error, assert_agent_response
+from tests.harness import StubLLM, assert_agent_error, assert_agent_response
 
 
 class BrokenFallbackAgent:
@@ -21,7 +21,7 @@ class BrokenFallbackAgent:
 
 
 def test_pipeline_uses_valid_llm_json_response_without_fallback() -> None:
-    pipeline = AgentPipeline(llm=StubLlm(['{"summary":"from model"}']))
+    pipeline = AgentPipeline(llm=StubLLM(['{"summary":"from model"}']))
 
     response = pipeline.run(
         {
@@ -38,7 +38,7 @@ def test_pipeline_uses_valid_llm_json_response_without_fallback() -> None:
 
 
 def test_pipeline_rejects_non_json_llm_response() -> None:
-    pipeline = AgentPipeline(llm=StubLlm(["not json"]))
+    pipeline = AgentPipeline(llm=StubLLM(["not json"]))
 
     response = pipeline.run(
         {
@@ -53,7 +53,7 @@ def test_pipeline_rejects_non_json_llm_response() -> None:
 
 
 def test_pipeline_rejects_non_object_llm_response() -> None:
-    pipeline = AgentPipeline(llm=StubLlm(['["not", "object"]']))
+    pipeline = AgentPipeline(llm=StubLLM(['["not", "object"]']))
 
     response = pipeline.run(
         {
@@ -68,7 +68,7 @@ def test_pipeline_rejects_non_object_llm_response() -> None:
 
 
 def test_pipeline_returns_unknown_agent_for_invalid_explicit_agent() -> None:
-    pipeline = AgentPipeline(llm=StubLlm([]))
+    pipeline = AgentPipeline(llm=StubLLM([]))
 
     response = pipeline.run(
         {
@@ -86,7 +86,7 @@ def test_pipeline_returns_unknown_agent_for_invalid_explicit_agent() -> None:
 def test_pipeline_rejects_invalid_fallback_payload_shape() -> None:
     router = AgentRouter()
     router.register(BrokenFallbackAgent())
-    pipeline = AgentPipeline(router=router, llm=StubLlm([None]))
+    pipeline = AgentPipeline(router=router, llm=StubLLM([None]))
 
     response = pipeline.run(
         {
@@ -101,7 +101,7 @@ def test_pipeline_rejects_invalid_fallback_payload_shape() -> None:
 
 
 def test_pipeline_cache_hit_skips_second_llm_call() -> None:
-    llm = StubLlm(['{"summary":"first"}'])
+    llm = StubLLM(['{"summary":"first"}'])
     pipeline = AgentPipeline(llm=llm)
     message = {
         "type": "agent.request",
@@ -121,7 +121,7 @@ def test_pipeline_cache_hit_skips_second_llm_call() -> None:
 
 
 def test_pipeline_cache_hit_preserves_original_response_metadata() -> None:
-    llm = StubLlm(['{"summary":"first"}'])
+    llm = StubLLM(['{"summary":"first"}'])
     pipeline = AgentPipeline(llm=llm)
     message = {
         "type": "agent.request",
@@ -139,7 +139,7 @@ def test_pipeline_cache_hit_preserves_original_response_metadata() -> None:
 
 
 def test_build_agent_graph_returns_compiled_graph() -> None:
-    graph = build_agent_graph(llm=StubLlm([]))
+    graph = build_agent_graph(llm=StubLLM([]))
 
     assert callable(graph.invoke)
 
