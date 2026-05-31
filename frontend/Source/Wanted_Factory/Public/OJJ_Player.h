@@ -10,6 +10,7 @@ class USpringArmComponent;
 class UCameraComponent;
 class UInputMappingContext;
 class UInputAction;
+class AOJJ_BuildController;
 struct FInputActionValue;
 
 /**
@@ -85,8 +86,23 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_Zoom;
 
+	// 빌드모드 토글(B키). 레벨의 BuildController로 위임.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_Build;
+
+	// 빌드모드 머신 배치(좌클릭). 빌드모드 밖에서는 BuildController 내부 가드로 no-op.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_BuildPlace;
+
+	// --- Build mode 연동 ---
+	// 레벨에 배치된 BuildController 인스턴스. BeginPlay에서 GetActorOfClass로 캐시(소유 X, spawn X).
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Build")
+	TObjectPtr<AOJJ_BuildController> BuildController;
+
 	// --- Input handlers ---
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void Zoom(const FInputActionValue& Value);
+	void ToggleBuild(const FInputActionValue& Value);
+	void BuildPlace(const FInputActionValue& Value);
 };

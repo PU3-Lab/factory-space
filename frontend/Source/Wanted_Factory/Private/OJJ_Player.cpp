@@ -15,6 +15,8 @@
 #include "InputMappingContext.h"
 #include "InputAction.h"
 #include "InputActionValue.h"
+#include "Kismet/GameplayStatics.h"
+#include "OJJ_BuildController.h"
 
 AOJJ_Player::AOJJ_Player()
 {
@@ -67,6 +69,17 @@ void AOJJ_Player::BeginPlay()
 			CameraManager->ViewPitchMax = CameraPitchMax;
 		}
 	}
+
+	// 레벨에 배치된 BuildController 인스턴스를 찾아 캐시 (spawn 하지 않음 —
+	// 레벨 인스턴스에 와이어링된 TargetGrid/MachineClass 설정을 유지해야 하므로).
+	BuildController = Cast<AOJJ_BuildController>(
+		UGameplayStatics::GetActorOfClass(GetWorld(), AOJJ_BuildController::StaticClass()));
+	if (!BuildController)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] AOJJ_BuildController 인스턴스를 레벨에서 찾지 못함 — 빌드모드(B키) 비활성. ")
+			TEXT("레벨에 AOJJ_BuildController가 배치되어 있고 TargetGrid/MachineClass가 설정됐는지 확인."));
+	}
 }
 
 void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -98,6 +111,25 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 		// ACharacter 내장 Jump/StopJumping 사용
 		EnhancedInput->BindAction(IA_Jump, ETriggerEvent::Started, this, &ACharacter::Jump);
 		EnhancedInput->BindAction(IA_Jump, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
+	}
+	if (IA_Build)
+	{
+		EnhancedInput->BindAction(IA_Build, ETriggerEvent::Started, this, &AOJJ_Player::ToggleBuild);
+	}
+	else
+	{
+		// 바인딩이 조용히 스킵되면 B키가 무반응이라 원인 파악이 어려움 → 명시적 경고
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] IA_Build 미할당 — 빌드모드 토글(B키) 비활성. BP_OJJ_Player에 IA_Build 에셋 할당 필요."));
+	}
+	if (IA_BuildPlace)
+	{
+		EnhancedInput->BindAction(IA_BuildPlace, ETriggerEvent::Started, this, &AOJJ_Player::BuildPlace);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] IA_BuildPlace 미할당 — 배치(좌클릭) 비활성. BP_OJJ_Player에 IA_BuildPlace 에셋 할당 필요."));
 	}
 }
 
@@ -137,4 +169,24 @@ void AOJJ_Player::Zoom(const FInputActionValue& Value)
 	// 스크롤 업(+) → 줌인(팔 길이 감소)
 	const float NewLength = SpringArm->TargetArmLength - Scroll * ZoomStep;
 	SpringArm->TargetArmLength = FMath::Clamp(NewLength, MinArmLength, MaxArmLength);
+}
+
+void AOJJ_Player::ToggleBuild(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	// Enter/Exit 자체 가드(같은 상태면 no-op) 덕분에 토글 라우팅만 하면 됨
+	BuildController->ToggleBuildMode();
+}
+
+void AOJJ_Player::BuildPlace(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	// 빌드모드 밖이면 OnLeftClickPressed 내부 가드(bIsBuildMode)로 no-op
+	BuildController->OnLeftClickPressed();
 }

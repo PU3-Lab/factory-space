@@ -11,7 +11,10 @@ class AMachineBase;
 
 /**
  * 건설 모드 컨트롤러. 호버 갱신, 미리보기, 클릭 배치 라우팅을 담당.
- * PlayerController가 Tick/Input에서 UpdateMouseHover/OnLeftClickPressed로 위임 호출.
+ * 빌드모드 진입/종료 토글과 클릭 배치는 외부(플레이어 Pawn)가 입력에서
+ * ToggleBuildMode/OnLeftClickPressed로 위임 호출한다.
+ * 호버 갱신(UpdateMouseHover)은 이 액터가 자체 Tick으로 구동한다 — Tick은
+ * 기본 비활성, EnterBuildMode에서 켜지고 ExitBuildMode에서 꺼진다(빌드모드 밖 0비용).
  *
  * 풋프린트 조회는 MachineClass의 CDO(GetDefaultObject)에서 GetMachineSize만 읽음.
  * 미리보기 전용으로 머신 액터를 spawn하지 않으므로 부작용(BeginPlay/tick/collision/
@@ -40,6 +43,9 @@ class WANTED_FACTORY_API AOJJ_BuildController : public AActor
 
 public:
 	AOJJ_BuildController();
+
+	// 빌드모드 동안만 활성화되는 자체 Tick — UpdateMouseHover 구동.
+	virtual void Tick(float DeltaSeconds) override;
 
 protected:
 	UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "BuildController")

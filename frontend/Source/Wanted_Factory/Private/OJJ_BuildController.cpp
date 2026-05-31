@@ -12,7 +12,21 @@
 
 AOJJ_BuildController::AOJJ_BuildController()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// 빌드모드 동안만 호버를 갱신하면 되므로 Tick은 켜두되 기본 비활성.
+	// Enter/ExitBuildMode에서 SetActorTickEnabled로 on/off → 빌드모드 밖 0비용.
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
+}
+
+void AOJJ_BuildController::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	// Enter/Exit에서 Tick을 on/off하지만, 방어적으로 모드 가드도 유지(UpdateMouseHover 내부에도 가드 있음).
+	if (bIsBuildMode)
+	{
+		UpdateMouseHover();
+	}
 }
 
 void AOJJ_BuildController::EnterBuildMode()
@@ -37,6 +51,9 @@ void AOJJ_BuildController::EnterBuildMode()
 	TargetGrid->SetVisualizationVisible(true);
 
 	bIsBuildMode = true;
+
+	// 빌드모드 동안에만 호버 Tick 가동
+	SetActorTickEnabled(true);
 
 	if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
 	{
@@ -63,6 +80,9 @@ void AOJJ_BuildController::ExitBuildMode()
 	}
 
 	bIsBuildMode = false;
+
+	// 호버 Tick 정지 (빌드모드 밖 0비용)
+	SetActorTickEnabled(false);
 
 	if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
 	{
