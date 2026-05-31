@@ -141,15 +141,15 @@ Files:
 
 Steps:
 
-- [ ] fake Google client로 성공 응답 테스트 작성
-- [ ] 빈 응답은 `None`으로 변환하는 테스트 작성
-- [ ] provider 예외는 `None`으로 변환하는 테스트 작성
-- [ ] `uv run --extra dev pytest tests/test_llm_adapter.py::test_google_llm_adapter_returns_response_text -q`로 RED 확인
-- [ ] `GoogleGenAiLlmAdapter` 구현
-- [ ] `response_mime_type="application/json"` 설정
-- [ ] `max_output_tokens`, `temperature`, `timeout_ms` 전달
-- [ ] adapter 테스트 GREEN 확인
-- [ ] 커밋: `feat: Google Gen AI LLM adapter 추가`
+- [x] fake Google client로 성공 응답 테스트 작성
+- [x] 빈 응답은 `None`으로 변환하는 테스트 작성
+- [x] provider 예외는 `None`으로 변환하는 테스트 작성
+- [x] `uv run --extra dev pytest tests/test_llm_adapter.py::test_google_llm_adapter_returns_response_text -q`로 RED 확인
+- [x] `GoogleGenAiLlmAdapter` 구현
+- [x] `response_mime_type="application/json"` 설정
+- [x] `max_output_tokens`, `temperature`, `timeout_ms` 전달
+- [x] adapter 테스트 GREEN 확인
+- [x] 커밋: `feat: Google Gen AI LLM adapter 추가`
 
 Acceptance:
 
