@@ -1,6 +1,7 @@
 # `backend/src` 폴더 역할
 
 이 문서는 새 서버 구조에서 `backend/src` 아래 각 폴더가 맡는 책임을 정리한다.
+Agent별 세부 책임은 `AGENT_ROLES.md`에 둔다.
 
 ## 최상위 구성
 
@@ -113,20 +114,38 @@ AI Agent 실행 계층이다.
 - `manual_qa/`: 매뉴얼 Q&A Agent와 서브 에이전트
 - `new_material_generator.py`: 신물질 생성 Agent
 
+오케스트레이터 수:
+
+- 서버 전체 오케스트레이터 Agent는 `orchestrator.py` 1개다.
+- 도메인 서브 오케스트레이터는 `manual_qa/agent.py`, `quest_generator/agent.py` 2개다.
+- `pipeline.py`는 실행 파이프라인이고, `router.py`는 registry/router이므로 오케스트레이터가 아니다.
+- `manual_qa/agent.py`와 `quest_generator/agent.py`는 각 도메인 내부에서 서브 에이전트 선택, payload 정리, 결과 정규화를 맡는 서브 오케스트레이터다.
+
 `manual_qa/` 내부:
 
-- `agent.py`: 매뉴얼 Q&A 요청을 서브 에이전트로 분기하는 상위 Agent
+- `agent.py`: 매뉴얼 Q&A 요청을 서브 에이전트로 분기하는 도메인 서브 오케스트레이터
 - `recipe_explainer.py`: 레시피 설명 서브 에이전트
 - `machine_help.py`: 장비 도움말 서브 에이전트
 - `troubleshooter.py`: 문제 해결 서브 에이전트
 
 `quest_generator/` 내부:
 
-- `agent.py`: 퀘스트 생성 요청을 서브 에이전트로 분기하는 상위 Agent
+- `agent.py`: 퀘스트 생성 요청을 서브 에이전트로 분기하는 도메인 서브 오케스트레이터
 - `tutorial_quest.py`: 튜토리얼 퀘스트 서브 에이전트
 - `production_quest.py`: 생산 퀘스트 서브 에이전트
 - `exploration_quest.py`: 탐험 퀘스트 서브 에이전트
 - `economy_quest.py`: 경제 퀘스트 서브 에이전트
+
+`quest_generator.route_sub_agent` 역할:
+
+- 서브 에이전트를 구분하는 주체는 도메인 서브 오케스트레이터인 `agents/quest_generator/agent.py`다.
+- `route_sub_agent`는 별도 Agent가 아니라 `quest_generator` 서브 오케스트레이터 내부의 결정 함수 또는 메서드를 LangGraph 노드 이름으로 표현한 것이다.
+- LangGraph에서는 `quest_generator` 최상위 Agent가 선택된 뒤 이 내부 결정 함수를 호출한다.
+- 입력은 이미 envelope 검증을 통과한 퀘스트 생성 payload와 player/session context다.
+- 출력은 `selectedSubAgent` 값이며, `tutorial_quest`, `production_quest`, `exploration_quest`, `economy_quest` 중 하나여야 한다.
+- 이 단계는 퀘스트를 직접 생성하지 않고, 어떤 퀘스트 생성 서브 에이전트가 요청을 처리할지만 결정한다.
+- 판단 기준은 플레이어 진행도, 현재 공장 상태, 최근 이벤트, 명시된 quest type, 튜토리얼 필요 여부다.
+- 선택 근거는 observability와 debugging을 위해 metadata에 남긴다.
 
 ## `llm`
 
