@@ -6,7 +6,12 @@ from agents.base import AgentContext, AgentRunResult
 from agents.pipeline import AgentPipeline, run_agent_pipeline
 from agents.router import AgentRouter
 from llm.settings import LLMModelSlot, LLMSettings
-from tests.harness import StubLLM, assert_agent_error, assert_agent_response
+from tests.harness import (
+    StubLLM,
+    assert_agent_error,
+    assert_agent_response,
+    top_agent_decision,
+)
 
 
 class BrokenFallbackAgent:
@@ -23,7 +28,7 @@ class BrokenFallbackAgent:
         return AgentRunResult(agent=self.agent_id, payload=[])  # type: ignore[arg-type]
 
 
-def test_pipeline_default_settings_without_api_returns_deterministic_fallback() -> None:
+def test_pipeline_default_settings_without_api_returns_routing_unavailable() -> None:
     pipeline = AgentPipeline(
         llm_settings=LLMSettings(
             default=LLMModelSlot(name="default", provider="none"),
@@ -41,11 +46,10 @@ def test_pipeline_default_settings_without_api_returns_deterministic_fallback() 
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
-    assert response["payload"]["metadata"]["fallback"] is True
+    assert_agent_error(response, code="ROUTING_UNAVAILABLE")
 
 
-def test_pipeline_default_constructor_without_api_returns_deterministic_fallback(
+def test_pipeline_default_constructor_without_api_returns_routing_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("FACTORY_LLM_DEFAULT_PROVIDER", "none")
@@ -62,8 +66,7 @@ def test_pipeline_default_constructor_without_api_returns_deterministic_fallback
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
-    assert response["payload"]["metadata"]["fallback"] is True
+    assert_agent_error(response, code="ROUTING_UNAVAILABLE")
 
 
 def test_pipeline_uses_settings_slot_adapters_before_deterministic_fallback() -> None:
@@ -79,7 +82,7 @@ def test_pipeline_uses_settings_slot_adapters_before_deterministic_fallback() ->
     )
     created_slots: list[str] = []
     adapters = {
-        "default": StubLLM([None]),
+        "default": StubLLM([top_agent_decision("process_optimizer"), None]),
         "fallback1": StubLLM(['{"summary":"from fallback1"}']),
         "fallback2": StubLLM(['{"summary":"should not be used"}']),
     }
@@ -109,6 +112,8 @@ def test_pipeline_uses_settings_slot_adapters_before_deterministic_fallback() ->
     assert response["payload"]["metadata"]["llmSlot"] == "fallback1"
     assert response["payload"]["metadata"]["llmProvider"] == "openai"
     assert response["payload"]["metadata"]["llmModel"] == "gpt-5.5"
+    assert len(adapters["default"].prompts) == 2
+    assert len(adapters["fallback1"].prompts) == 1
     assert len(adapters["fallback2"].prompts) == 0
 
 
@@ -129,7 +134,7 @@ def test_pipeline_uses_fallback2_when_default_and_fallback1_fail() -> None:
         ),
     )
     adapters = {
-        "default": StubLLM([None]),
+        "default": StubLLM([top_agent_decision("process_optimizer"), None]),
         "fallback1": StubLLM([None]),
         "fallback2": StubLLM(['{"summary":"from fallback2"}']),
     }
@@ -153,7 +158,7 @@ def test_pipeline_uses_fallback2_when_default_and_fallback1_fail() -> None:
     assert response["payload"]["metadata"]["llmSlot"] == "fallback2"
     assert response["payload"]["metadata"]["llmProvider"] == "local"
     assert response["payload"]["metadata"]["llmModel"] == "llama3.1:8b"
-    assert len(adapters["default"].prompts) == 1
+    assert len(adapters["default"].prompts) == 2
     assert len(adapters["fallback1"].prompts) == 1
     assert len(adapters["fallback2"].prompts) == 1
 
@@ -165,7 +170,7 @@ def test_pipeline_uses_deterministic_fallback_after_all_slots_fail() -> None:
         fallback2=LLMModelSlot(name="fallback2", provider="none"),
     )
     adapters = {
-        "default": StubLLM([None]),
+        "default": StubLLM([top_agent_decision("process_optimizer"), None]),
         "fallback1": StubLLM([None]),
         "fallback2": StubLLM([None]),
     }
@@ -186,13 +191,20 @@ def test_pipeline_uses_deterministic_fallback_after_all_slots_fail() -> None:
 
     assert_agent_response(response, agent="process_optimizer")
     assert response["payload"]["metadata"]["fallback"] is True
-    assert len(adapters["default"].prompts) == 1
+    assert len(adapters["default"].prompts) == 2
     assert len(adapters["fallback1"].prompts) == 1
     assert len(adapters["fallback2"].prompts) == 1
 
 
 def test_pipeline_uses_valid_llm_json_response_without_fallback() -> None:
-    pipeline = AgentPipeline(llm=StubLLM(['{"summary":"from model"}']))
+    pipeline = AgentPipeline(
+        llm=StubLLM(
+            [
+                top_agent_decision("process_optimizer"),
+                '{"summary":"from model"}',
+            ]
+        )
+    )
 
     response = pipeline.run(
         {
@@ -209,7 +221,9 @@ def test_pipeline_uses_valid_llm_json_response_without_fallback() -> None:
 
 
 def test_pipeline_rejects_non_json_llm_response() -> None:
-    pipeline = AgentPipeline(llm=StubLLM(["not json"]))
+    pipeline = AgentPipeline(
+        llm=StubLLM([top_agent_decision("process_optimizer"), "not json"])
+    )
 
     response = pipeline.run(
         {
@@ -224,7 +238,9 @@ def test_pipeline_rejects_non_json_llm_response() -> None:
 
 
 def test_pipeline_rejects_non_object_llm_response() -> None:
-    pipeline = AgentPipeline(llm=StubLLM(['["not", "object"]']))
+    pipeline = AgentPipeline(
+        llm=StubLLM([top_agent_decision("process_optimizer"), '["not", "object"]'])
+    )
 
     response = pipeline.run(
         {
@@ -238,7 +254,7 @@ def test_pipeline_rejects_non_object_llm_response() -> None:
     assert_agent_error(response, code="INVALID_LLM_RESPONSE")
 
 
-def test_pipeline_returns_unknown_agent_for_invalid_explicit_agent() -> None:
+def test_pipeline_returns_routing_unavailable_for_invalid_explicit_agent_without_model_decision() -> None:
     pipeline = AgentPipeline(llm=StubLLM([]))
 
     response = pipeline.run(
@@ -250,14 +266,17 @@ def test_pipeline_returns_unknown_agent_for_invalid_explicit_agent() -> None:
         }
     )
 
-    assert_agent_error(response, code="UNKNOWN_AGENT")
+    assert_agent_error(response, code="ROUTING_UNAVAILABLE")
     assert response["agent"] == "unknown"
 
 
 def test_pipeline_rejects_invalid_fallback_payload_shape() -> None:
     router = AgentRouter()
     router.register(BrokenFallbackAgent())
-    pipeline = AgentPipeline(router=router, llm=StubLLM([None]))
+    pipeline = AgentPipeline(
+        router=router,
+        llm=StubLLM([top_agent_decision("process_optimizer"), None]),
+    )
 
     response = pipeline.run(
         {
@@ -272,7 +291,13 @@ def test_pipeline_rejects_invalid_fallback_payload_shape() -> None:
 
 
 def test_pipeline_cache_hit_skips_second_llm_call() -> None:
-    llm = StubLLM(['{"summary":"first"}'])
+    llm = StubLLM(
+        [
+            top_agent_decision("process_optimizer"),
+            '{"summary":"first"}',
+            top_agent_decision("process_optimizer"),
+        ]
+    )
     pipeline = AgentPipeline(llm=llm)
     message = {
         "type": "agent.request",
@@ -288,11 +313,19 @@ def test_pipeline_cache_hit_skips_second_llm_call() -> None:
     assert first["payload"]["summary"] == "first"
     assert second["payload"]["summary"] == "first"
     assert second["payload"]["metadata"]["cache"] == "hit"
-    assert len(llm.prompts) == 1
+    assert_agent_response(first, agent="process_optimizer")
+    assert_agent_response(second, agent="process_optimizer")
+    assert len(llm.prompts) == 3
 
 
 def test_pipeline_cache_hit_preserves_original_response_metadata() -> None:
-    llm = StubLLM(['{"summary":"first"}'])
+    llm = StubLLM(
+        [
+            top_agent_decision("process_optimizer"),
+            '{"summary":"first"}',
+            top_agent_decision("process_optimizer"),
+        ]
+    )
     pipeline = AgentPipeline(llm=llm)
     message = {
         "type": "agent.request",

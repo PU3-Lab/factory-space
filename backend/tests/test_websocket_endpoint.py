@@ -14,7 +14,7 @@ def test_health_endpoint_returns_ok() -> None:
     assert response.json() == {"status": "ok"}
 
 
-def test_agent_websocket_runs_pipeline_for_explicit_agent() -> None:
+def test_agent_websocket_requires_top_level_routing_model_for_agent_request() -> None:
     client = TestClient(create_app())
 
     with client.websocket_connect("/ws/agent") as websocket:
@@ -28,8 +28,9 @@ def test_agent_websocket_runs_pipeline_for_explicit_agent() -> None:
         )
         response = websocket.receive_json()
 
-    assert response["type"] == "agent.response"
+    assert response["type"] == "agent.error"
     assert response["agent"] == "process_optimizer"
+    assert response["error"]["code"] == "ROUTING_UNAVAILABLE"
 
 
 def test_agent_websocket_returns_error_for_malformed_envelope() -> None:

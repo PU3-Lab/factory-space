@@ -19,20 +19,20 @@ def run_fallback(
     router: AgentRouter,
     state: AgentGraphState,
 ) -> AgentRunResult:
-    agent = router.get(state["selectedSubAgent"])
+    agent = router.get(state["selectedLeafAgent"])
     return agent.fallback(state["typedPayload"], state["context"])
 
 
 def build_cache_key(
     agent: str,
-    sub_agent: str,
+    leaf_agent: str,
     payload: dict[str, Any],
     context: AgentContext,
 ) -> str:
     raw = json.dumps(
         {
             "agent": agent,
-            "sub_agent": sub_agent,
+            "leaf_agent": leaf_agent,
             "payload": payload,
             "context": {
                 "session_id": context.session_id,

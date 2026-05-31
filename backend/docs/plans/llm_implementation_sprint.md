@@ -4,7 +4,7 @@
 
 ## Sprint 목표
 
-실제 LLM provider를 backend agent pipeline에 연결한다. `llm` 패키지는 provider 설정과 1회 호출 adapter만 담당하고, `default -> fallback1 -> fallback2 -> deterministic fallback` 순서는 LangGraph pipeline에서 제어한다.
+실제 LLM provider를 backend agent pipeline에 연결한다. `llm` 패키지는 provider 설정과 1회 호출 adapter만 담당한다. LangGraph pipeline은 call type별로 분기한다: routing은 `default -> fallback1 -> fallback2 -> ROUTING_UNAVAILABLE`, generation은 `default -> fallback1 -> fallback2 -> deterministic fallback` 순서로 제어한다.
 
 ## Sprint 1: Pipeline edge 선행 수정
 
@@ -146,7 +146,7 @@ Steps:
 - [x] provider 예외는 `None`으로 변환하는 테스트 작성
 - [x] `uv run --extra dev pytest tests/test_llm_adapter.py::test_google_llm_adapter_returns_response_text -q`로 RED 확인
 - [x] `GoogleGenAiLLMAdapter` 구현
-- [x] `response_mime_type="application/json"` 설정
+- [x] generation 호출에서 `response_mime_type="application/json"` 설정
 - [x] `max_output_tokens`, `temperature`, `timeout_ms` 전달
 - [x] adapter 테스트 GREEN 확인
 - [x] 커밋: `feat: Google Gen AI LLM adapter 추가`
@@ -213,21 +213,22 @@ Files:
 
 Steps:
 
-- [x] `AgentPipeline()` 기본값이 API 없이 fallback 응답을 반환하는 테스트 추가
+- [x] routing model이 없으면 명시 `agent`가 있어도 `ROUTING_UNAVAILABLE`을 반환하는 테스트 추가
 - [x] 기존 placeholder 의존 상태에서 테스트 baseline 확인
 - [x] `AgentPipeline._build_graph()`가 settings에서 default/fallback1/fallback2 adapter를 만든다.
 - [x] `call_llm.default`, `call_llm.fallback1`, `call_llm.fallback2` node를 추가한다.
 - [x] default가 `None`이면 fallback1 node로 이동하는 conditional edge를 추가한다.
 - [x] fallback1이 `None`이면 fallback2 node로 이동하는 conditional edge를 추가한다.
-- [x] fallback2가 `None`이면 deterministic fallback node로 이동하는 conditional edge를 추가한다.
+- [x] generation에서 fallback2가 `None`이면 deterministic fallback node로 이동하는 conditional edge를 추가한다.
 - [x] 성공한 LLM slot/provider/model을 response metadata에 남긴다.
 - [x] `uv run --extra dev pytest tests/test_pipeline_edges.py -q` 실행
 - [x] 커밋: `feat: LangGraph LLM fallback 경로 연결`
 
 Acceptance:
 
-- `llm`을 명시 주입하는 기존 테스트는 계속 외부 API를 호출하지 않는다.
-- `llm` 미주입 기본 pipeline은 settings 기준 default/fallback1/fallback2 adapter를 생성한다.
+- top-level routing은 명시 `agent`가 있어도 prompt 결과로 확정한다.
+- `llm`을 명시 주입하는 기존 테스트는 routing 응답과 generation 응답을 stub으로 분리하고 외부 API를 호출하지 않는다.
+- `llm` 미주입 기본 pipeline은 settings 기준 default/fallback1/fallback2 adapter를 생성하지만, routing model이 없으면 generation fallback 전에 `ROUTING_UNAVAILABLE`을 반환한다.
 - LLM fallback 순서는 adapter가 아니라 LangGraph node/edge 테스트로 검증된다.
 
 ### Task 5.2 LLM fallback 순서 테스트
@@ -240,7 +241,7 @@ Steps:
 
 - [ ] default가 실패하고 fallback1이 성공하면 fallback2를 호출하지 않는 테스트 작성
 - [ ] default와 fallback1이 실패하고 fallback2가 성공하는 테스트 작성
-- [ ] 세 slot이 모두 실패하면 deterministic fallback response가 반환되는 테스트 작성
+- [ ] generation 세 slot이 모두 실패하면 deterministic fallback response가 반환되는 테스트 작성
 - [ ] 성공 응답 metadata에 `llmSlot`, `llmProvider`, `llmModel`이 들어가는 테스트 작성
 - [ ] `uv run --extra dev pytest tests/test_pipeline_edges.py -q` 실행
 - [ ] 커밋: `test: LangGraph LLM fallback 순서 고정`
@@ -255,9 +256,9 @@ Files:
 
 Steps:
 
-- [ ] top-level orchestrator가 LLM raw JSON으로 `manual_qa`를 선택하는 테스트 추가
-- [ ] `quest_generator`가 LLM raw JSON으로 `quest_generator.production_quest`를 선택하는 테스트 추가
-- [ ] invalid routing JSON이 `ROUTING_UNAVAILABLE`로 종료되는 테스트 추가
+- [ ] top-level orchestrator가 structured prompt 응답 문자열로 `manual_qa`를 선택하는 테스트 추가
+- [ ] `quest_generator`가 structured prompt 응답 문자열로 `quest_generator.production_quest`를 선택하는 테스트 추가
+- [ ] top-level/sub-agent routing에서 JSON output이 `ROUTING_UNAVAILABLE`로 종료되는 테스트 추가
 - [ ] `uv run --extra dev pytest tests/test_pipeline_edges.py -q` 실행
 - [ ] 커밋: `test: LLM 기반 agent routing 경로 보강`
 
@@ -265,6 +266,7 @@ Acceptance:
 
 - keyword routing 로직 없이 LLM decision 경로가 검증된다.
 - invalid decision은 임의 fallback agent를 고르지 않는다.
+- routing prompt output은 JSON이 아니라 허용 id 문자열 하나로 고정된다.
 
 ## Sprint 7: 문서 정리
 

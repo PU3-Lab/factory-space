@@ -6,7 +6,9 @@ from tests.harness import (
     StubLLM,
     assert_agent_error,
     assert_agent_response,
+    leaf_agent_decision,
     run_pipeline_scenario,
+    top_agent_decision,
 )
 
 
@@ -18,8 +20,8 @@ def test_pipeline_uses_prompt_based_top_level_routing() -> None:
             payload={"message": "create an objective"},
             request_id="request-1",
             llm_responses=[
-                '{"agent":"quest_generator","reason":"quest request"}',
-                '{"sub_agent":"quest_generator.production_quest","reason":"production"}',
+                top_agent_decision("quest_generator"),
+                leaf_agent_decision("quest_generator.production_quest"),
                 None,
             ],
         )
@@ -32,7 +34,10 @@ def test_pipeline_uses_prompt_based_top_level_routing() -> None:
     )
     assert response["payload"]["quest"]["type"] == "production"
     assert "서버 전체 오케스트레이터" in llm.prompts[0]
-    assert "퀘스트 생성 도메인 서브 오케스트레이터" in llm.prompts[1]
+    assert "[OUTPUT_CONTRACT]" in llm.prompts[0]
+    assert "퀘스트 생성 도메인 오케스트레이터" in llm.prompts[1]
+    assert "[ALLOWED_LEAF_AGENT_IDS]" in llm.prompts[1]
+    assert "[OUTPUT_CONTRACT]" in llm.prompts[1]
 
 
 def test_pipeline_uses_prompt_based_manual_sub_agent_routing() -> None:
@@ -43,7 +48,8 @@ def test_pipeline_uses_prompt_based_manual_sub_agent_routing() -> None:
             payload={"question": "How do I use this panel?"},
             request_id="request-manual-routing",
             llm_responses=[
-                '{"sub_agent":"manual_qa.machine_help","reason":"machine question"}',
+                top_agent_decision("manual_qa"),
+                leaf_agent_decision("manual_qa.machine_help"),
                 None,
             ],
         )
@@ -55,11 +61,19 @@ def test_pipeline_uses_prompt_based_manual_sub_agent_routing() -> None:
         sub_agent="manual_qa.machine_help",
     )
     assert response["payload"]["topic"] == "machine"
-    assert "매뉴얼 Q&A 도메인 서브 오케스트레이터" in llm.prompts[0]
+    assert "서버 전체 오케스트레이터" in llm.prompts[0]
+    assert "매뉴얼 Q&A 도메인 오케스트레이터" in llm.prompts[1]
+    assert "[ALLOWED_LEAF_AGENT_IDS]" in llm.prompts[1]
+    assert "[OUTPUT_CONTRACT]" in llm.prompts[1]
 
 
-def test_pipeline_uses_explicit_agent_without_top_level_routing_prompt() -> None:
-    llm = StubLLM([None])
+def test_pipeline_routes_explicit_agent_through_top_level_prompt() -> None:
+    llm = StubLLM(
+        [
+            top_agent_decision("process_optimizer"),
+            None,
+        ]
+    )
     pipeline = AgentPipeline(llm=llm)
 
     response = pipeline.run(
@@ -72,8 +86,74 @@ def test_pipeline_uses_explicit_agent_without_top_level_routing_prompt() -> None
     )
 
     assert_agent_response(response, agent="process_optimizer")
-    assert len(llm.prompts) == 1
-    assert "공장 snapshot에서 공정 병목" in llm.prompts[0]
+    assert len(llm.prompts) == 2
+    assert "서버 전체 오케스트레이터" in llm.prompts[0]
+    assert "[REQUEST_HINT]\nagent: process_optimizer" in llm.prompts[0]
+    assert "공장 snapshot에서 공정 병목" in llm.prompts[1]
+
+
+def test_pipeline_treats_explicit_agent_as_top_level_prompt_hint_only() -> None:
+    llm = StubLLM([top_agent_decision("manual_qa"), None])
+    pipeline = AgentPipeline(llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-explicit-agent-hint-only",
+            "agent": "process_optimizer",
+            "payload": {
+                "sub_agent": "manual_qa.machine_help",
+                "question": "How do I use this panel?",
+            },
+        }
+    )
+
+    assert_agent_response(
+        response,
+        agent="manual_qa",
+        sub_agent="manual_qa.machine_help",
+    )
+    assert "[REQUEST_HINT]\nagent: process_optimizer" in llm.prompts[0]
+
+
+def test_pipeline_rejects_json_top_level_routing_output() -> None:
+    pipeline = AgentPipeline(
+        llm=StubLLM(['{"agent":"process_optimizer","reason":"old contract"}'])
+    )
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-json-routing-output",
+            "agent": "process_optimizer",
+            "payload": {"machines": [{"id": "m-1"}]},
+        }
+    )
+
+    assert_agent_error(response, code="ROUTING_UNAVAILABLE")
+    assert response["agent"] == "process_optimizer"
+
+
+def test_pipeline_rejects_json_sub_agent_routing_output() -> None:
+    pipeline = AgentPipeline(
+        llm=StubLLM(
+            [
+                top_agent_decision("quest_generator"),
+                '{"sub_agent":"quest_generator.production_quest","reason":"old contract"}',
+            ]
+        )
+    )
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-json-sub-agent-routing-output",
+            "payload": {"message": "create a production objective"},
+        }
+    )
+
+    assert_agent_error(response, code="ROUTING_UNAVAILABLE")
+    assert response["agent"] == "quest_generator"
 
 
 def test_pipeline_returns_error_when_agent_routing_model_is_unavailable() -> None:
@@ -91,7 +171,7 @@ def test_pipeline_returns_error_when_agent_routing_model_is_unavailable() -> Non
 
 
 def test_pipeline_rejects_invalid_explicit_manual_sub_agent() -> None:
-    pipeline = AgentPipeline(llm=StubLLM([]))
+    pipeline = AgentPipeline(llm=StubLLM([top_agent_decision("manual_qa")]))
 
     response = pipeline.run(
         {
@@ -106,7 +186,7 @@ def test_pipeline_rejects_invalid_explicit_manual_sub_agent() -> None:
 
 
 def test_pipeline_rejects_invalid_explicit_quest_sub_agent() -> None:
-    pipeline = AgentPipeline(llm=StubLLM([]))
+    pipeline = AgentPipeline(llm=StubLLM([top_agent_decision("quest_generator")]))
 
     response = pipeline.run(
         {
@@ -121,7 +201,7 @@ def test_pipeline_rejects_invalid_explicit_quest_sub_agent() -> None:
 
 
 def test_pipeline_rejects_invalid_explicit_process_sub_agent() -> None:
-    pipeline = AgentPipeline(llm=StubLLM([]))
+    pipeline = AgentPipeline(llm=StubLLM([top_agent_decision("process_optimizer")]))
 
     response = pipeline.run(
         {
@@ -136,7 +216,7 @@ def test_pipeline_rejects_invalid_explicit_process_sub_agent() -> None:
 
 
 def test_pipeline_rejects_invalid_explicit_material_sub_agent() -> None:
-    pipeline = AgentPipeline(llm=StubLLM([]))
+    pipeline = AgentPipeline(llm=StubLLM([top_agent_decision("new_material_generator")]))
 
     response = pipeline.run(
         {
@@ -151,9 +231,7 @@ def test_pipeline_rejects_invalid_explicit_material_sub_agent() -> None:
 
 
 def test_pipeline_rejects_invalid_explicit_sub_agent_after_top_level_routing() -> None:
-    pipeline = AgentPipeline(
-        llm=StubLLM(['{"agent":"process_optimizer","reason":"process request"}'])
-    )
+    pipeline = AgentPipeline(llm=StubLLM([top_agent_decision("process_optimizer")]))
 
     response = pipeline.run(
         {
@@ -183,7 +261,9 @@ def test_pipeline_returns_error_for_invalid_envelope() -> None:
 def test_cache_key_separates_context() -> None:
     llm = StubLLM(
         [
+            top_agent_decision("process_optimizer"),
             '{"result":"site-a"}',
+            top_agent_decision("process_optimizer"),
             '{"result":"site-b"}',
         ]
     )
@@ -210,3 +290,5 @@ def test_cache_key_separates_context() -> None:
 
     assert first["payload"]["result"] == "site-a"
     assert second["payload"]["result"] == "site-b"
+    assert_agent_response(first, agent="process_optimizer")
+    assert_agent_response(second, agent="process_optimizer")

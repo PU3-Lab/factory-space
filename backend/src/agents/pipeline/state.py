@@ -22,7 +22,7 @@ class AgentGraphState(TypedDict, total=False):
     envelope: AgentRequestEnvelope
     context: AgentContext
     selectedAgent: str
-    selectedSubAgent: str
+    selectedLeafAgent: str
     typedPayload: dict[str, Any]
     cacheKey: str
     cachedPayload: dict[str, Any]

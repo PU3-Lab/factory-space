@@ -6,7 +6,15 @@ from typing import Literal
 
 from langgraph.graph import END, START, StateGraph
 
+from agents.manual_qa.agent import MANUAL_QA_SUB_AGENT_IDS
+from agents.orchestrator import TOP_LEVEL_AGENT_IDS
 from agents.pipeline.state import AgentGraphState, TopRoute
+from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS
+
+SINGLE_LEAF_AGENT_IDS = {
+    "new_material_generator": ("new_material_generator",),
+    "process_optimizer": ("process_optimizer",),
+}
 
 
 def wire_agent_graph(graph: StateGraph) -> None:
@@ -32,7 +40,7 @@ def wire_agent_graph(graph: StateGraph) -> None:
     ):
         graph.add_conditional_edges(
             node,
-            route_sub_agent_result,
+            route_selected_leaf_agent,
             {
                 "valid": "cache_lookup",
                 "error": "build_agent_error",
@@ -101,12 +109,7 @@ def route_selected_agent(state: AgentGraphState) -> TopRoute:
     if state.get("error"):
         return "error"
     selected_agent = state.get("selectedAgent")
-    if selected_agent in {
-        "process_optimizer",
-        "manual_qa",
-        "quest_generator",
-        "new_material_generator",
-    }:
+    if selected_agent in TOP_LEVEL_AGENT_IDS:
         return selected_agent  # type: ignore[return-value]
     return "error"
 
@@ -115,8 +118,20 @@ def route_cache_result(state: AgentGraphState) -> Literal["hit", "miss"]:
     return "hit" if state.get("cachedPayload") is not None else "miss"
 
 
-def route_sub_agent_result(state: AgentGraphState) -> Literal["valid", "error"]:
-    return "error" if state.get("error") else "valid"
+def route_selected_leaf_agent(state: AgentGraphState) -> Literal["valid", "error"]:
+    if state.get("error"):
+        return "error"
+
+    selected_agent = state.get("selectedAgent")
+    selected_leaf_agent = state.get("selectedLeafAgent")
+    allowed_leaf_agent_ids = {
+        **SINGLE_LEAF_AGENT_IDS,
+        "manual_qa": MANUAL_QA_SUB_AGENT_IDS,
+        "quest_generator": QUEST_SUB_AGENT_IDS,
+    }.get(selected_agent, ())
+    if selected_leaf_agent in allowed_leaf_agent_ids:
+        return "valid"
+    return "error"
 
 
 def route_llm_result(state: AgentGraphState) -> Literal["valid", "fallback", "error"]:

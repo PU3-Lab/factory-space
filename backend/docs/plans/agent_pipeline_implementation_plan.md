@@ -15,7 +15,8 @@ AI Agent 파이프라인은 모든 Agent 요청이 동일한 처리 흐름을 �
 - Agent별 구현 차이를 공통 pipeline 뒤에 숨긴다.
 - WebSocket gateway는 transport 처리만 담당한다.
 - Agent는 payload 검증, prompt 구성, fallback 생성만 담당한다.
-- LLM 실패는 사용자 기능 실패로 노출하지 않고 fallback 응답으로 복구한다.
+- Agent 실행 단계의 LLM 실패는 사용자 기능 실패로 노출하지 않고 fallback 응답으로 복구한다.
+- routing 단계의 LLM decision 실패는 임의 fallback Agent를 고르지 않고 `ROUTING_UNAVAILABLE`로 종료한다.
 - 모든 최종 응답은 schema 검증을 통과한 JSON만 클라이언트에 보낸다.
 
 ## 3. 책임 분리
@@ -95,21 +96,27 @@ sequenceDiagram
     participant G as WebSocket Gateway
     participant P as Agent Pipeline
     participant R as Agent Registry
+    participant O as Global/Domain Orchestrator
     participant A as Agent
     participant Cache as Response Cache
     participant LLM as LLM Adapter
 
     C->>G: agent.request
     G->>P: validated envelope
-    P->>R: lookup(agent)
-    R-->>P: agent implementation
+    P->>O: build structured routing prompt
+    O-->>P: routing prompt
+    P->>LLM: invoke(routing prompt)
+    LLM-->>P: allowed id raw text
+    P->>P: LangGraph conditional edge validates route
+    P->>R: lookup(selected leaf Agent)
+    R-->>P: leaf agent implementation
     P->>A: validate_payload(payload)
     A-->>P: typed payload
     P->>Cache: get(cacheKey)
 
     alt cache hit
         Cache-->>P: cached response payload
-        P-->>G: agent.response(metadata.cacheHit=true)
+        P-->>G: agent.response(metadata.cache="hit")
         G-->>C: agent.response
     else cache miss
         Cache-->>P: miss
@@ -117,10 +124,10 @@ sequenceDiagram
         G-->>C: agent.stream(progress optional)
         P->>A: build_prompt(payload, context)
         A-->>P: prompt
-        P->>LLM: generate_json(prompt)
+        P->>LLM: invoke(generation prompt)
 
         alt LLM success and schema valid
-            LLM-->>P: JSON object
+            LLM-->>P: raw JSON text
             P->>A: parse_llm_response(raw)
             A-->>P: response payload
         else LLM unavailable or invalid
@@ -190,32 +197,38 @@ client
 ```txt
 client
  -> agent.request
- -> LLM timeout / provider error / invalid JSON / invalid schema
+ -> generation LLM timeout / provider error / invalid JSON / invalid schema
  -> deterministic fallback
  -> agent.response
  -> client
 ```
 
-LLM 실패는 `agent.error`가 아니라 정상 `agent.response`로 복구한다. 단, fallback 생성 결과까지 schema 검증에 실패하면 `agent.error`를 반환한다.
+Agent 실행 단계의 LLM 실패는 `agent.error`가 아니라 정상 `agent.response`로 복구한다. 단, fallback 생성 결과까지 schema 검증에 실패하면 `agent.error`를 반환한다.
+
+routing 단계는 예외다. top-level/domain leaf routing prompt는 허용 id 문자열 하나를 반환해야 하며, routing model이 응답하지 않거나 허용 id가 아니면 deterministic fallback agent를 임의로 고르지 않고 `agent.error` / `ROUTING_UNAVAILABLE`로 종료한다.
 
 ## 8. Pipeline 단계
 
 ```txt
 1. AgentRequestEnvelope 수신
 2. AgentContext 생성
-3. agent id로 AgentRegistry lookup
-4. agent별 payload schema 검증
-5. cache key 생성
-6. cache lookup
-7. cache hit이면 cached response 반환
-8. 필요 시 agent.stream(progress) 전송
-9. agent prompt/context 생성
-10. LLM adapter 호출
-11. LLM raw output JSON parse
-12. agent별 response schema 검증
-13. cache write
-14. agent.response 반환
-15. 실패 시 fallback 또는 agent.error 반환
+3. top-level routing prompt 호출과 `selectedAgent` state 기록
+4. LangGraph conditional edge로 top-level route 검증
+5. 필요 시 domain leaf routing prompt 호출과 `selectedLeafAgent` state 기록
+6. LangGraph conditional edge로 selected leaf Agent 검증
+7. `selectedLeafAgent` id로 AgentRegistry lookup
+8. agent별 payload schema 검증
+9. cache key 생성
+10. cache lookup
+11. cache hit이면 cached response 반환
+12. 필요 시 agent.stream(progress) 전송
+13. generation prompt/context 생성
+14. LLM adapter 호출
+15. generation LLM raw output JSON parse
+16. agent별 response schema 검증
+17. cache write
+18. agent.response 반환
+19. 실패 시 fallback 또는 agent.error 반환
 ```
 
 ## 9. 핵심 타입
@@ -234,27 +247,21 @@ class AgentContext(BaseModel):
 ### Agent Interface
 
 ```python
-class BaseAgent(Protocol):
+class Agent(Protocol):
     agent_id: str
 
-    def validate_payload(self, payload: dict[str, Any]) -> BaseModel:
-        ...
-
-    def build_prompt(self, payload: BaseModel, context: AgentContext) -> str:
-        ...
-
-    def parse_llm_response(self, raw: dict[str, Any]) -> BaseModel:
-        ...
-
-    def build_fallback(
+    def build_prompt(
         self,
-        payload: BaseModel,
+        payload: dict[str, Any],
         context: AgentContext,
-        reason: str,
-    ) -> BaseModel:
+    ) -> str:
         ...
 
-    def to_response_payload(self, result: BaseModel) -> dict[str, Any]:
+    def fallback(
+        self,
+        payload: dict[str, Any],
+        context: AgentContext,
+    ) -> AgentRunResult:
         ...
 ```
 
@@ -274,12 +281,7 @@ WebSocket gateway는 `streams`를 먼저 전송하고, 마지막에 `response`�
 
 ```python
 class LLMAdapter(Protocol):
-    async def generate_json(
-        self,
-        prompt: str,
-        *,
-        timeout_seconds: float,
-    ) -> dict[str, Any]:
+    def invoke(self, prompt: str) -> str | None:
         ...
 ```
 
@@ -299,17 +301,17 @@ OPENAI_MODEL=gpt-4o-mini
 LLM_TIMEOUT_SECONDS=20
 ```
 
-`OPENAI_API_KEY`가 없으면 LLM 호출을 건너뛰고 fallback을 사용한다.
+generation 호출에서 `OPENAI_API_KEY`가 없으면 fallback을 사용한다. routing 호출에서 model decision이 없으면 임의 fallback Agent를 고르지 않고 `ROUTING_UNAVAILABLE`로 종료한다.
 
 ### Adapter 구현
 
 - `OpenAICompatibleLLMAdapter`
   - OpenAI-compatible chat completions 또는 responses endpoint를 호출한다.
-  - JSON object 응답만 허용한다.
+  - raw text를 반환한다. routing id 검증과 generation JSON 검증은 pipeline이 담당한다.
 - `NoopLLMAdapter`
-  - 테스트와 API key 없는 로컬 실행에서 fallback 경로를 강제한다.
+  - generation 테스트와 API key 없는 로컬 실행에서 fallback 경로를 강제한다.
 - `FakeLLMAdapter`
-  - unit test에서 성공, timeout, invalid JSON을 재현한다.
+  - unit test에서 routing id, generation success, timeout, invalid JSON을 재현한다.
 
 ## 11. Cache 정책
 
@@ -318,17 +320,18 @@ MVP cache는 in-memory로 구현한다.
 Cache key:
 
 ```txt
-agent + snapshotHash + normalizedPayloadHash
+agent + leaf_agent + payload + session_id + client_id + context.metadata
 ```
 
 규칙:
 
-- `snapshotHash`가 있으면 cache key에 포함한다.
-- `snapshotHash`가 없으면 payload hash만 사용한다.
-- normalized payload는 JSON key를 정렬해 안정적으로 hash한다.
+- `agent`는 선택된 top-level Agent id다.
+- `leaf_agent`는 실제 실행할 leaf Agent id다.
+- payload와 context metadata는 JSON key를 정렬해 안정적으로 hash한다.
+- `request_id`는 cache key에 포함하지 않는다.
 - cache hit이면 LLM adapter와 fallback을 호출하지 않는다.
-- cache hit 응답에는 `metadata.cacheHit = true`를 추가한다.
-- cache miss 응답에는 `metadata.cacheHit = false`를 추가한다.
+- cache hit 응답에는 `metadata.cache = "hit"`을 추가한다.
+- cache miss 응답에는 별도 cache metadata를 추가하지 않는다.
 - 프로세스 재시작 시 cache는 사라진다.
 
 ## 12. Streaming 정책
@@ -373,11 +376,12 @@ stream을 보내지 않는 경우:
 | agent 누락 | `agent.error` / `VALIDATION_ERROR` |
 | 미등록 agent | `agent.error` / `UNKNOWN_AGENT` |
 | agent payload schema 실패 | `agent.error` / `VALIDATION_ERROR` |
-| LLM API key 없음 | fallback `agent.response` |
-| LLM timeout | fallback `agent.response` |
-| LLM provider error | fallback `agent.response` |
-| LLM invalid JSON | fallback `agent.response` |
-| LLM response schema 실패 | fallback `agent.response` |
+| routing LLM decision 없음/허용 id 아님 | `agent.error` / `ROUTING_UNAVAILABLE` |
+| generation LLM API key 없음 | fallback `agent.response` |
+| generation LLM timeout | fallback `agent.response` |
+| generation LLM provider error | fallback `agent.response` |
+| generation LLM invalid JSON | fallback `agent.response` |
+| generation LLM response schema 실패 | fallback `agent.response` |
 | fallback response schema 실패 | `agent.error` / `INTERNAL_ERROR` |
 
 ## 14. Agent별 구현
@@ -501,13 +505,14 @@ fallback:
 - registry가 네 agent id를 모두 찾는다.
 - unknown agent는 `UNKNOWN_AGENT` error가 된다.
 - invalid payload는 `VALIDATION_ERROR` error가 된다.
-- LLM 성공 결과는 response schema 검증 후 반환된다.
-- LLM timeout은 fallback response로 복구된다.
-- LLM invalid JSON은 fallback response로 복구된다.
+- generation LLM 성공 결과는 response schema 검증 후 반환된다.
+- generation LLM timeout은 fallback response로 복구된다.
+- generation LLM invalid JSON은 fallback response로 복구된다.
+- routing LLM invalid decision은 `ROUTING_UNAVAILABLE`로 종료된다.
 - fallback response도 schema 검증을 통과해야 한다.
 - cache hit이면 LLM adapter가 호출되지 않는다.
-- cache hit 응답에는 `metadata.cacheHit = true`가 들어간다.
-- API key가 없으면 fallback response가 반환된다.
+- cache hit 응답에는 `metadata.cache = "hit"`이 들어간다.
+- generation LLM API key가 없으면 fallback response가 반환된다.
 
 ### Agent Tests
 
@@ -523,12 +528,14 @@ fallback:
 - LLM 경로 요청 -> optional `agent.stream` 후 `agent.response`
 - invalid JSON -> `agent.error`
 - unknown agent -> `agent.error`
-- API key 없는 환경에서도 네 agent가 fallback으로 정상 응답한다.
+- routing decision을 받을 수 있는 API key 없는 환경에서도 네 agent가 generation fallback으로 정상 응답한다.
+- routing decision을 받을 수 없으면 `ROUTING_UNAVAILABLE`을 반환한다.
 
 ## 17. 완료 기준
 
 - `ws://127.0.0.1:8000/ws/agent`에서 네 agent 요청이 모두 처리된다.
-- LLM API key가 없어도 fallback으로 정상 응답한다.
+- routing decision을 받을 수 있으면 LLM API key가 없어도 generation fallback으로 정상 응답한다.
+- routing decision을 받을 수 없으면 `ROUTING_UNAVAILABLE`을 반환한다.
 - LLM API key가 있으면 LLM 응답을 사용하되 schema 검증을 통과한 결과만 반환한다.
 - 서버는 LLM raw text를 클라이언트에 직접 보내지 않는다.
 - cache hit이 LLM 호출을 건너뛰는 것이 테스트로 증명된다.

@@ -184,13 +184,13 @@ WebSocket raw text
 invalid JSON / invalid envelope / unknown agent
  -> agent.error 반환
 
-LLM timeout / provider error / invalid LLM JSON / response schema failure
+generation LLM timeout / provider error / invalid LLM JSON / response schema failure
  -> agent별 deterministic fallback 생성
  -> fallback 응답 schema validation
  -> agent.response 반환
 ```
 
-LLM 실패는 사용자가 볼 수 있는 기능 실패로 처리하지 않는다. fallback도 정상 `agent.response`로 반환하되, payload metadata에 fallback 사용 여부를 남긴다.
+Agent 실행 단계의 LLM 실패는 사용자가 볼 수 있는 기능 실패로 처리하지 않는다. fallback도 정상 `agent.response`로 반환하되, payload metadata에 fallback 사용 여부를 남긴다. routing 단계는 예외로 둔다. top-level/domain leaf routing prompt가 허용 id 문자열을 반환하지 못하면 임의 agent fallback 없이 `agent.error` / `ROUTING_UNAVAILABLE`로 종료한다.
 
 ## 6. LLM 정책
 
@@ -209,10 +209,13 @@ LLM_TIMEOUT_SECONDS
 
 ### LLM Response Rules
 
-- Agent prompt는 JSON object만 출력하도록 요구한다.
+- routing prompt는 허용 agent id 또는 sub-agent id 문자열 하나만 출력하도록 요구한다.
+- leaf Agent generation prompt는 JSON object만 출력하도록 요구한다.
 - 서버는 LLM raw text를 클라이언트에 직접 전달하지 않는다.
-- LLM 응답은 JSON parse 후 agent별 response schema로 검증한다.
-- 검증 실패 시 fallback으로 전환한다.
+- routing 응답은 LangGraph conditional edge에서 허용 id인지 검증한다.
+- generation 응답은 JSON parse 후 agent별 response schema로 검증한다.
+- generation 검증 실패 시 fallback으로 전환한다.
+- routing 검증 실패 시 `ROUTING_UNAVAILABLE`로 종료한다.
 - timeout 기본값은 20초로 둔다.
 
 ## 7. Agent별 구현 계획
@@ -432,12 +435,13 @@ MVP cache는 in-memory로 구현한다.
 Cache key:
 
 ```txt
-agent + snapshotHash + normalizedPayloadHash
+agent + leaf_agent + payload + session_id + client_id + context.metadata
 ```
 
 동작:
 
-- `snapshotHash`가 없으면 payload hash만 사용한다.
+- payload와 context metadata는 JSON key를 정렬해 안정적으로 hash한다.
+- `request_id`는 cache key에 포함하지 않는다.
 - cache hit 시 LLM을 호출하지 않고 이전 `agent.response` payload를 반환한다.
 - cache는 프로세스 재시작 시 사라진다.
 - `manual_qa`는 question이 payload에 포함되므로 별도 key field를 추가하지 않는다.
@@ -452,7 +456,7 @@ agent + snapshotHash + normalizedPayloadHash
 | `UNKNOWN_AGENT` | 등록되지 않은 agent id |
 | `INTERNAL_ERROR` | fallback으로도 복구할 수 없는 서버 오류 |
 
-LLM provider 오류는 `agent.error`가 아니라 fallback `agent.response`로 복구한다.
+Agent 실행 단계의 LLM provider 오류는 `agent.error`가 아니라 fallback `agent.response`로 복구한다. routing LLM decision 실패는 `ROUTING_UNAVAILABLE`로 종료한다.
 
 ## 11. 구현 순서
 
@@ -479,9 +483,10 @@ LLM provider 오류는 `agent.error`가 아니라 fallback `agent.response`로 �
 - missing agent error
 - unknown agent error
 - agent별 payload validation
-- LLM success response validation
-- LLM invalid JSON fallback
-- LLM timeout fallback
+- generation LLM success response validation
+- generation LLM invalid JSON fallback
+- generation LLM timeout fallback
+- routing LLM invalid decision error
 - cache hit/miss
 - new material visual profile 생성
 
@@ -501,7 +506,8 @@ LLM provider 오류는 `agent.error`가 아니라 fallback `agent.response`로 �
 - 서버는 `uv run uvicorn factory_space.app:app --host 127.0.0.1 --port 8000`로 실행된다.
 - `ws://127.0.0.1:8000/ws/agent`로 접속 가능하다.
 - 네 agent id가 모두 정상 라우팅된다.
-- LLM API key가 없어도 fallback으로 모든 agent가 정상 응답한다.
+- routing decision을 받을 수 있으면 LLM API key가 없어도 generation fallback으로 정상 응답한다.
+- routing decision을 받을 수 없으면 `ROUTING_UNAVAILABLE`을 반환한다.
 - LLM API key가 있으면 LLM 응답을 사용하되 schema 검증을 통과한 결과만 반환한다.
 - 서버는 장비 설치, 배치 검증, tick 시뮬레이션 API를 제공하지 않는다.
 

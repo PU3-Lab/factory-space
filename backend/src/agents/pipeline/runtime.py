@@ -68,7 +68,6 @@ class AgentPipeline:
         state = self.graph.invoke({"envelope": envelope})
         return state["responseEnvelope"]
 
-
     def _build_graph(self) -> CompiledStateGraph:
         """Build and compile the LangGraph agent pipeline."""
 
@@ -123,31 +122,17 @@ class AgentPipeline:
             envelope = state["envelope"]
             context = state["context"]
             payload = state["typedPayload"]
-            selected = envelope.agent
-            if selected is None:
-                routing_prompt = orchestrator.build_routing_prompt(payload, context)
-                routing_raw = routing_llm.invoke(routing_prompt)
-                selected = orchestrator.parse_agent_selection(routing_raw)
-                if selected is None:
-                    return {
-                        "routingPrompt": routing_prompt,
-                        "routingRaw": routing_raw,
-                        "error": build_error_payload(
-                            "ROUTING_UNAVAILABLE",
-                            "Top-level agent routing requires a valid orchestrator model decision.",
-                        ),
-                    }
-
-            if selected not in TOP_LEVEL_AGENT_IDS:
-                return {
-                    "selectedAgent": selected,
-                    "error": build_error_payload(
-                        "UNKNOWN_AGENT",
-                        f"Unknown top-level agent: {selected}",
-                        details={"agent": selected},
-                    ),
-                }
-            return {"selectedAgent": selected}
+            routing_prompt = orchestrator.build_routing_prompt(
+                payload,
+                context,
+                requested_agent=envelope.agent,
+            )
+            routing_raw = routing_llm.invoke(routing_prompt)
+            return {
+                "routingPrompt": routing_prompt,
+                "routingRaw": routing_raw,
+                "selectedAgent": (routing_raw or "").strip(),
+            }
 
         def validate_process_payload(state: AgentGraphState) -> AgentGraphState:
             explicit_sub_agent = state["typedPayload"].get("sub_agent")
@@ -159,7 +144,7 @@ class AgentPipeline:
                         details={"sub_agent": explicit_sub_agent},
                     )
                 }
-            return {"selectedSubAgent": "process_optimizer"}
+            return {"selectedLeafAgent": "process_optimizer"}
 
         def validate_material_payload(state: AgentGraphState) -> AgentGraphState:
             explicit_sub_agent = state["typedPayload"].get("sub_agent")
@@ -174,7 +159,7 @@ class AgentPipeline:
                         details={"sub_agent": explicit_sub_agent},
                     )
                 }
-            return {"selectedSubAgent": "new_material_generator"}
+            return {"selectedLeafAgent": "new_material_generator"}
 
         def route_manual_sub_agent(state: AgentGraphState) -> AgentGraphState:
             explicit_sub_agent = state["typedPayload"].get("sub_agent")
@@ -183,7 +168,7 @@ class AgentPipeline:
                     isinstance(explicit_sub_agent, str)
                     and explicit_sub_agent in MANUAL_QA_SUB_AGENT_IDS
                 ):
-                    return {"selectedSubAgent": explicit_sub_agent}
+                    return {"selectedLeafAgent": explicit_sub_agent}
                 return {
                     "error": build_error_payload(
                         "INVALID_SUB_AGENT",
@@ -197,17 +182,11 @@ class AgentPipeline:
                 state["context"],
             )
             routing_raw = routing_llm.invoke(routing_prompt)
-            selected = manual_qa.parse_sub_agent_selection(routing_raw)
-            if selected is None:
-                return {
-                    "routingPrompt": routing_prompt,
-                    "routingRaw": routing_raw,
-                    "error": build_error_payload(
-                        "ROUTING_UNAVAILABLE",
-                        "Manual Q&A sub-agent routing requires a valid model decision.",
-                    ),
-                }
-            return {"selectedSubAgent": selected}
+            return {
+                "routingPrompt": routing_prompt,
+                "routingRaw": routing_raw,
+                "selectedLeafAgent": (routing_raw or "").strip(),
+            }
 
         def route_quest_sub_agent(state: AgentGraphState) -> AgentGraphState:
             explicit_sub_agent = state["typedPayload"].get("sub_agent")
@@ -216,7 +195,7 @@ class AgentPipeline:
                     isinstance(explicit_sub_agent, str)
                     and explicit_sub_agent in QUEST_SUB_AGENT_IDS
                 ):
-                    return {"selectedSubAgent": explicit_sub_agent}
+                    return {"selectedLeafAgent": explicit_sub_agent}
                 return {
                     "error": build_error_payload(
                         "INVALID_SUB_AGENT",
@@ -230,22 +209,16 @@ class AgentPipeline:
                 state["context"],
             )
             routing_raw = routing_llm.invoke(routing_prompt)
-            selected = quest_generator.parse_sub_agent_selection(routing_raw)
-            if selected is None:
-                return {
-                    "routingPrompt": routing_prompt,
-                    "routingRaw": routing_raw,
-                    "error": build_error_payload(
-                        "ROUTING_UNAVAILABLE",
-                        "Quest sub-agent routing requires a valid model decision.",
-                    ),
-                }
-            return {"selectedSubAgent": selected}
+            return {
+                "routingPrompt": routing_prompt,
+                "routingRaw": routing_raw,
+                "selectedLeafAgent": (routing_raw or "").strip(),
+            }
 
         def cache_lookup(state: AgentGraphState) -> AgentGraphState:
             cache_key = build_cache_key(
                 state["selectedAgent"],
-                state["selectedSubAgent"],
+                state["selectedLeafAgent"],
                 state["typedPayload"],
                 state["context"],
             )
@@ -267,13 +240,13 @@ class AgentPipeline:
 
         def build_prompt(state: AgentGraphState) -> AgentGraphState:
             try:
-                agent = agent_router.get(state["selectedSubAgent"])
+                agent = agent_router.get(state["selectedLeafAgent"])
             except UnknownAgentError:
                 return {
                     "error": build_error_payload(
                         "UNKNOWN_AGENT",
-                        f"Unknown leaf agent: {state['selectedSubAgent']}",
-                        details={"agent": state["selectedSubAgent"]},
+                        f"Unknown leaf agent: {state['selectedLeafAgent']}",
+                        details={"agent": state["selectedLeafAgent"]},
                     )
                 }
             return {"prompt": agent.build_prompt(state["typedPayload"], state["context"])}
@@ -364,7 +337,7 @@ class AgentPipeline:
                     "metadata": {
                         **state.get("responseMetadata", {}),
                         "selectedAgent": state["selectedAgent"],
-                        "selectedSubAgent": state["selectedSubAgent"],
+                        "selectedLeafAgent": state["selectedLeafAgent"],
                     },
                 },
                 streams=state.get("streams", []),
@@ -373,13 +346,20 @@ class AgentPipeline:
 
         def build_agent_error(state: AgentGraphState) -> AgentGraphState:
             envelope = state["envelope"]
+            selected_agent = state.get("selectedAgent")
+            response_agent = (
+                selected_agent if selected_agent in TOP_LEVEL_AGENT_IDS else envelope.agent
+            )
+            default_error = build_error_payload(
+                "ROUTING_UNAVAILABLE",
+                "Agent routing requires a valid orchestrator model decision.",
+            )
             response = AgentErrorEnvelope(
                 request_id=envelope.request_id,
                 session_id=envelope.session_id,
                 client_id=envelope.client_id,
-                agent=state.get("selectedAgent") or envelope.agent,
-                error=state.get("error")
-                or build_error_payload("AGENT_PIPELINE_ERROR", "Agent pipeline failed."),
+                agent=response_agent,
+                error=state.get("error") or default_error,
             )
             return {"responseEnvelope": response.model_dump(mode="json")}
 
@@ -406,7 +386,6 @@ class AgentPipeline:
 
         wire_agent_graph(graph)
         return graph.compile()
-
 
 
 def run_agent_pipeline(message: AgentRequestEnvelope | dict[str, Any]) -> dict[str, Any]:

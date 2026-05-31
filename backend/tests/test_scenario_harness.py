@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from agents.pipeline import AgentPipeline
-from tests.harness import StubLLM
+from tests.harness import StubLLM, top_agent_decision
 
 
 @pytest.mark.parametrize(
@@ -23,7 +23,7 @@ def test_explicit_sub_agent_scenarios(
     sub_agent: str,
     expected_type: str,
 ) -> None:
-    pipeline = AgentPipeline(llm=StubLLM([None]))
+    pipeline = AgentPipeline(llm=StubLLM([top_agent_decision(agent), None]))
 
     response = pipeline.run(
         {
@@ -39,4 +39,5 @@ def test_explicit_sub_agent_scenarios(
 
     assert response["type"] == "agent.response"
     assert response["agent"] == agent
-    assert response["payload"]["metadata"]["selectedSubAgent"] == sub_agent
+    assert response["payload"]["metadata"]["selectedLeafAgent"] == sub_agent
+    assert "selectedSubAgent" not in response["payload"]["metadata"]

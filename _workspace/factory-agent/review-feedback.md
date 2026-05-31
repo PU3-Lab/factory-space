@@ -359,3 +359,430 @@ Reviewer: `Jason` sub-agent
 - 확인: `build_agent_graph` 제거 후 repo 내부 사용처는 결정/리뷰 기록 문서뿐이다.
 - 확인: `_build_graph()`가 `AgentPipeline` 내부에서 `self` 의존성을 사용하는 구조가 중복 DI 경로보다 단순하다.
 - 확인: `llm` 명시 주입과 `default -> fallback1 -> fallback2 -> deterministic fallback` 테스트 계약이 유지된다.
+
+## 2026-05-31 Top-level Prompt Routing Review
+
+Status: resolved
+
+질문:
+
+- 최상위 Agent를 왜 코드 로직으로 찾는가?
+- LangGraph conditional node/edge로 구분해야 하지 않는가?
+
+수정:
+
+- `route_top_agent`는 명시 `agent`가 있어도 직접 선택하지 않고, 항상 orchestrator prompt를 호출한다.
+- 명시 `agent`는 `OrchestratorAgent.build_routing_prompt(..., requested_agent=...)`의 hint로만 전달한다.
+- 최상위 Agent decision은 모델이 반환한 문자열을 `selectedAgent` state에 기록한다.
+- 실제 Agent 경로 분기는 기존 `route_selected_agent` LangGraph conditional edge가 담당한다.
+
+계약 변경:
+
+- routing model이 유효한 최상위 Agent 결정을 반환하지 못하면 명시 `agent`가 있어도 `ROUTING_UNAVAILABLE`로 종료한다.
+- API key나 local routing model이 없는 기본 WebSocket `agent.request`는 deterministic fallback 전에 routing 단계에서 실패할 수 있다.
+
+검증:
+
+- RED: `uv run --extra dev pytest tests/test_message_router.py::test_pipeline_routes_explicit_agent_through_top_level_prompt -q` 실패 확인
+- GREEN: `uv run --extra dev pytest tests/test_message_router.py::test_pipeline_routes_explicit_agent_through_top_level_prompt -q` 통과
+- `uv run --extra dev pytest tests/test_message_router.py tests/test_pipeline_edges.py tests/test_websocket_endpoint.py tests/test_scenario_harness.py -q` 통과: 37 passed
+- `uv run --extra dev ruff check .` 통과
+- `uv run --extra dev pytest -q` 통과: 86 passed
+- 함수/메서드 내부 import 검색 결과 없음
+- source 최대 길이: `backend/src/agents/pipeline/runtime.py` 420줄
+
+Reviewer: `Darwin` sub-agent
+
+### 1. 명시 `agent`가 hint only인지 증명하는 회귀 테스트 누락
+
+- severity: medium
+- file: `backend/tests/test_message_router.py`
+
+문제:
+
+- 기존 테스트는 명시 `agent`와 모델이 선택한 agent가 같은 경우만 검증했다.
+- prompt는 호출하지만 이후 코드가 `envelope.agent`를 우선하는 회귀가 생겨도 테스트가 통과할 수 있다.
+
+필요 작업:
+
+- 요청의 명시 `agent`는 `process_optimizer`지만 모델은 `manual_qa`를 선택하는 테스트를 추가한다.
+- 최종 응답이 `manual_qa` 경로를 따른다는 것을 확인한다.
+
+수정:
+
+- `test_pipeline_treats_explicit_agent_as_top_level_prompt_hint_only`를 추가했다.
+- 명시 `agent=process_optimizer` 요청에서 모델이 `manual_qa`를 선택하면 최종 응답도 `manual_qa` 경로를 따르는지 검증한다.
+
+### 2. top-level routing parser가 compact JSON 계약보다 느슨함
+
+- severity: medium
+- file: `backend/src/agents/orchestrator.py`
+
+문제:
+
+- `parse_agent_route_decision()`이 JSON parsing 실패 시 bare text를 후보로 받아들인다.
+- prompt와 문서는 compact JSON 반환을 요구하므로 bare `process_optimizer`가 routing 성공으로 처리되면 계약이 느슨해진다.
+
+필요 작업:
+
+- bare agent id를 거부하는 테스트를 추가한다.
+- JSON object의 `agent` 필드만 허용하도록 parser를 수정한다.
+
+수정:
+
+- 처음에는 `parse_agent_route_decision()`이 JSON decode 실패 시 `None`을 반환하도록 수정했다.
+- 이후 top-level output 계약을 더 단순화하면서 `parse_agent_route_decision()` 자체를 제거했다.
+- [superseded] 당시에는 `parse_sub_agent_route_decision()`을 sub-agent compact JSON 계약으로 유지했다.
+- [superseded] 당시에는 bare `process_optimizer`, `manual_qa.machine_help`, `quest_generator.production_quest`를 거부하는 테스트를 추가했다.
+
+추가 수정:
+
+- `parse_agent_selection` / `parse_sub_agent_selection` 명칭이 코드 선택 로직처럼 보여 처음에는 `parse_agent_route_decision` / `parse_sub_agent_route_decision`으로 rename했다.
+- [superseded] 이후 top-level은 parser 자체를 제거했고, sub-agent만 `parse_sub_agent_route_decision`을 유지했다.
+- `runtime.py`의 top-level local variable도 제거했고, sub-agent local variable만 `sub_agent_route_decision`으로 둔다.
+- `route_top_agent` 안의 중복 allowlist 분기를 제거하고, 경로 구분은 `route_selected_agent` conditional edge에 맡겼다.
+
+추가 단순화:
+
+- top-level `parse_agent_route_decision()`도 제거했다.
+- `OrchestratorAgent` prompt는 `TOP_LEVEL_AGENT_IDS` 중 하나의 id만 plain string으로 반환하도록 구조화했다.
+- `route_top_agent`는 LLM raw decision을 strip해서 `selectedAgent` state에 기록하고, 허용 목록 검증과 구분은 `route_selected_agent` conditional edge가 맡는다.
+- JSON 형태의 top-level routing output은 더 이상 허용하지 않고 `ROUTING_UNAVAILABLE`이 되도록 테스트를 추가했다.
+
+재리뷰 finding:
+
+- reviewer: `Descartes` sub-agent
+- severity: low
+- file: `backend/src/DECISION_LOG.md`
+- 문제: 앞쪽 LangGraph 제약 문서가 "LLM 실패는 fallback node로 복구", "fallback schema/validation error만 agent.error"라고 남아 있어 새 top-level routing failure 계약과 충돌했다.
+
+수정:
+
+- LangGraph routing 설명을 `route_top_agent`는 decision state 기록, `route_selected_agent` conditional edge가 실제 경로 구분으로 분리했다.
+- top-level routing LLM 실패는 generation fallback 전에 `ROUTING_UNAVAILABLE`로 종료한다고 명시했다.
+- Agent 실행 단계 LLM slot 실패만 generation fallback node로 복구한다고 명시했다.
+
+재리뷰 finding:
+
+- reviewer: `Popper` sub-agent
+- severity: medium
+- file: `backend/src/agents/pipeline/runtime.py`
+- 문제: invalid top-level LLM output이 public `agent.error.agent` 필드에 그대로 들어갈 수 있었다.
+- 수정: `selectedAgent`가 `TOP_LEVEL_AGENT_IDS` 중 하나일 때만 error envelope의 `agent`로 사용하고, 아니면 요청 envelope의 `agent`로 fallback한다.
+
+재리뷰 finding:
+
+- reviewer: `Popper` sub-agent
+- severity: low
+- file: `backend/src/DECISION_LOG.md`
+- 문제: 문서가 아직 `route_top_agent`가 검증한다고 설명하거나 `orchestrator.py`가 LLM 선택 결과를 파싱한다고 설명했다.
+- 수정: `route_top_agent`는 raw decision state 기록, `route_selected_agent` conditional edge가 검증/구분한다고 수정했다.
+
+최종 재리뷰:
+
+- reviewer: `Popper` sub-agent
+- result: no unresolved findings
+- 확인: `build_agent_error`는 `selectedAgent`가 `TOP_LEVEL_AGENT_IDS`에 있을 때만 public `agent` field에 사용한다.
+- 확인: JSON old-contract top-level output은 `ROUTING_UNAVAILABLE`을 반환하면서 요청 `agent` 값을 보존한다.
+- 확인: `DECISION_LOG.md`는 `route_top_agent`가 raw decision string을 기록하고 `route_selected_agent`가 검증/구분한다고 설명한다.
+- 확인: `uv run --extra dev pytest tests/test_message_router.py::test_pipeline_rejects_json_top_level_routing_output -q` 통과
+
+### 3. 문서에 이전 routing/error 계약이 남아 있음
+
+- severity: low
+- file: `backend/src/FOLDER_ROLES.md`, `backend/src/DECISION_LOG.md`
+
+문제:
+
+- 일부 문서는 LLM 실패가 항상 fallback `agent.response`로 복구된다고 설명한다.
+- 일부 문서는 명시 `agent` 또는 `sub_agent` 값을 검증 후 사용할 수 있다고 설명한다.
+- 새 계약에서는 top-level routing 실패가 `ROUTING_UNAVAILABLE`로 끝나고, 명시 `agent`는 hint only다.
+
+필요 작업:
+
+- top-level routing failure는 fallback 전에 `agent.error`가 될 수 있음을 문서에 명시한다.
+- 명시 `agent`와 명시 `sub_agent`의 계약을 분리해서 설명한다.
+
+수정:
+
+- `FOLDER_ROLES.md`에 top-level routing failure는 fallback 전에 `ROUTING_UNAVAILABLE`이 될 수 있음을 명시했다.
+- `DECISION_LOG.md`에서 top-level `agent`는 hint only, `sub_agent`는 top-level Agent 확정 후 도메인 허용 목록으로 검증하는 계약으로 분리했다.
+- `llm_implementation_sprint.md`의 Sprint 5.1 acceptance를 새 top-level routing 계약에 맞게 수정했다.
+
+최종 재리뷰:
+
+- reviewer: `Darwin` sub-agent
+- result: no unresolved findings
+- 확인: 명시 `agent`와 모델 선택이 다른 경우를 테스트가 고정한다.
+- [superseded] 확인: 당시 계약은 top-level plain Agent id 문자열, sub-agent compact JSON parser였다. 현재 계획은 sub-agent도 plain id 문자열 계약으로 바뀌었다.
+- 확인: 문서가 top-level `agent` hint only와 `ROUTING_UNAVAILABLE` 계약을 반영한다.
+- 확인: `uv run --extra dev pytest tests/test_message_router.py tests/test_agent_contracts.py tests/test_pipeline_edges.py tests/test_websocket_endpoint.py tests/test_scenario_harness.py -q` 통과: 41 passed
+
+### 4. LangGraph 구성도와 review 기록이 structured prompt 계약과 불일치
+
+- reviewer: `Carson` sub-agent
+- severity: low
+- file: `backend/src/FOLDER_ROLES.md`, `_workspace/factory-agent/review-feedback.md`
+
+문제:
+
+- `FOLDER_ROLES.md`의 LangGraph 구성도가 `route_top_agent`를 top-level branching node처럼 표시했다.
+- 실제 구현은 `route_top_agent`가 prompt를 호출하고 `selectedAgent`를 기록한 뒤, `route_selected_agent` conditional edge가 검증과 분기를 담당한다.
+- state 목록에 `routingPrompt`, `routingRaw`가 빠져 있었다.
+- 이전 review 기록이 top-level routing parser도 JSON decode 실패 시 bare text를 거부한다고 적어 현재 계약과 맞지 않았다.
+
+수정:
+
+- LangGraph 구성도에 `route_selected_agent` conditional edge를 명시했다.
+- sub-agent routing 뒤에는 leaf node가 아니라 `route_sub_agent_result`를 거쳐 `cache_lookup`으로 진행한다고 정리했다.
+- state 목록에 `routingPrompt`, `routingRaw`, `responseEnvelope`을 추가했다.
+- [superseded] 당시 review 기록은 top-level plain Agent id 문자열 계약, sub-agent parser compact JSON 계약으로 분리했다. 현재 계획은 sub-agent도 plain id 문자열 계약으로 바뀌었다.
+
+최종 재리뷰:
+
+- reviewer: `Carson` sub-agent
+- result: no findings
+- 확인: `FOLDER_ROLES.md`는 `route_top_agent`를 일반 node로, `route_selected_agent`를 top-level 검증/분기 conditional edge로 표현한다.
+- 확인: state 목록은 `routingPrompt`, `routingRaw`, `responseEnvelope`을 포함한다.
+- [superseded] 확인: 당시 review 기록은 top-level plain Agent id output과 sub-agent compact JSON parser 동작을 구분했다. 현재 계획은 sub-agent도 plain id 문자열 계약으로 바뀌었다.
+
+### 5. 상위 Agent 처리 기준 문서 리뷰
+
+- reviewer: `Poincare` sub-agent
+- severity: low
+- file: `backend/src/DECISION_LOG.md`, `backend/src/AGENT_ROLES.md`, `backend/src/FOLDER_ROLES.md`
+
+문제:
+
+- `DECISION_LOG.md`가 LangGraph routing node를 오케스트레이터 내부 실행 단계처럼 설명했다.
+- `AGENT_ROLES.md`가 leaf Agent를 "바로 prompt 생성, response parsing, fallback을 수행"한다고 설명해 pipeline 실행 책임과 섞일 수 있었다.
+- `FOLDER_ROLES.md` 구성도에서 leaf top-level Agent도 `route_sub_agent_result`를 거쳐 sub-agent routing이 있는 것처럼 오해될 수 있었다.
+
+수정:
+
+- LangGraph routing node는 오케스트레이터 내부 구현이 아니라 `agents/pipeline/`이 소유하는 실행 node라고 정리했다.
+- leaf Agent는 `build_prompt()`, response schema, `fallback()` 정책을 제공하고 pipeline이 이를 실행한다고 수정했다.
+- `route_sub_agent_result`는 sub-agent 전용이 아니라 `selectedSubAgent` 또는 `error` state를 확인하는 공통 validity/error edge라고 설명했다.
+- 사용자의 "중간 에이전트" 용어 질문에 맞춰 공식 용어를 `Domain Orchestrator` / `도메인 오케스트레이터`로 정했다.
+- active 문서의 `도메인 서브 오케스트레이터`, `서브 오케스트레이터` 표현을 `도메인 오케스트레이터`로 통일했다.
+
+재리뷰 finding:
+
+- reviewer: `Poincare` sub-agent
+- severity: low
+- file: `backend/src/AGENT_ROLES.md`, `backend/src/DECISION_LOG.md`
+- 문제: 공식 용어로 쓰지 않기로 한 `상위 Agent` 표현이 active 문서의 제목과 본문에 남아 있었다.
+- 수정: 해당 표현을 `top-level Agent` 또는 `도메인 오케스트레이터`로 바꿨고, `중간 에이전트` 같은 계층 위치 표현은 공식 용어로 쓰지 않는다고 정리했다.
+
+최종 재리뷰:
+
+- reviewer: `Poincare` sub-agent
+- result: no findings
+- 확인: active 문서에서 `상위 Agent`는 `top-level Agent` 또는 `도메인 오케스트레이터`로 정리됐다.
+- 확인: active 문서에 `도메인 서브 오케스트레이터` 표현은 남아 있지 않다.
+- 확인: `Global Orchestrator` / `Domain Orchestrator` / `Leaf Agent` 경계가 일관적이다.
+
+### 6. 기획 문서 routing/generation 계약 불일치
+
+- reviewer: `Laplace` sub-agent
+- severity: planning
+- file: `backend/docs/plans/*.md`, `backend/src/DECISION_LOG.md`, `backend/src/AGENT_ROLES.md`
+
+문제:
+
+- top-level routing은 structured prompt와 plain id output으로 바뀌었지만, sub-agent routing 계획에는 compact JSON/parser 계약이 남아 있었다.
+- LLM 구현 계획은 raw text를 항상 JSON parsing 대상으로 설명해 routing prompt의 plain id 계약과 충돌했다.
+- 오래된 server/pipeline 계획은 LLM 실패가 항상 fallback `agent.response`라고 설명해 routing failure의 `ROUTING_UNAVAILABLE` 계약과 충돌했다.
+
+수정:
+
+- routing prompt는 top-level/sub-agent 모두 허용 id 문자열 하나만 반환한다고 계획을 정리했다.
+- leaf Agent generation prompt만 Agent별 response JSON object를 반환한다고 분리했다.
+- routing id 검증은 LangGraph conditional edge/node가 담당하고, generation JSON 검증은 pipeline parser/schema node가 담당한다고 정리했다.
+- routing LLM decision 실패는 deterministic fallback agent를 고르지 않고 `ROUTING_UNAVAILABLE`로 종료한다고 오래된 계획 문서에도 반영했다.
+
+기획 리뷰 finding:
+
+- reviewer: `Laplace` sub-agent
+- severity: high
+- file: `backend/docs/plans/llm_implementation_plan.md`
+- 문제: provider-level JSON response mode가 routing plain id 계약과 충돌했다.
+- 수정: routing 호출에는 JSON response mode를 설정하지 않고, generation 호출에만 provider JSON mode를 적용한다고 분리했다.
+
+기획 리뷰 finding:
+
+- reviewer: `Laplace` sub-agent
+- severity: medium
+- file: `backend/docs/plans/llm_implementation_plan.md`, `backend/docs/plans/llm_implementation_sprint.md`, `backend/docs/plans/agent_pipeline_implementation_plan.md`, `backend/docs/plans/server_implementation_plan.md`
+- 문제: deterministic fallback이 routing/generation 구분 없이 설명됐다.
+- 수정: generation LLM 실패만 deterministic fallback으로 복구하고, routing decision 실패는 `ROUTING_UNAVAILABLE`로 종료한다고 범위를 좁혔다.
+
+기획 리뷰 finding:
+
+- reviewer: `Laplace` sub-agent
+- severity: medium
+- file: `backend/docs/plans/agent_pipeline_implementation_plan.md`
+- 문제: pipeline 단계와 LLM adapter 계획이 old explicit-agent execution, `generate_json`, adapter dict return 기준으로 남아 있었다.
+- 수정: prompt-based routing, raw text adapter, LangGraph conditional edge 검증, generation JSON parse 순서로 갱신했다.
+
+기획 리뷰 finding:
+
+- reviewer: `Laplace` sub-agent
+- severity: low
+- file: `backend/docs/plans/server_implementation_plan.md`
+- 문제: `Agent prompt는 JSON object만 출력`이라는 일반 규칙이 routing prompt와 충돌했다.
+- 수정: routing prompt는 허용 id 문자열, leaf generation prompt는 JSON object로 분리했다.
+
+재리뷰 finding:
+
+- reviewer: `Laplace` sub-agent
+- severity: medium
+- file: `backend/docs/plans/llm_implementation_plan.md`, `backend/docs/plans/llm_implementation_sprint.md`
+- 문제: LLM plan/sprint에서 deterministic fallback이 call type 구분 없이 generic terminal path처럼 남아 있었다.
+- 수정: routing은 `default -> fallback1 -> fallback2 -> ROUTING_UNAVAILABLE`, generation은 `default -> fallback1 -> fallback2 -> deterministic fallback`으로 분리했다.
+
+최종 재리뷰 finding:
+
+- reviewer: `Laplace` sub-agent
+- severity: low
+- file: `backend/docs/plans/llm_implementation_plan.md`, `backend/docs/plans/llm_implementation_sprint.md`
+- 문제: LLM slot 순서 목록과 sprint step에 generation 전용 fallback 표시가 빠져 있었다.
+- 수정: LLM slot 순서 목록을 call type별 terminal path로 바꾸고, sprint step에도 generation fallback임을 명시했다.
+
+최종 재리뷰:
+
+- reviewer: `Laplace` sub-agent
+- result: no findings
+- 확인: `llm_implementation_plan.md`와 sprint 모두 routing/generation terminal path가 분리됐다.
+- 확인: provider JSON mode는 generation 전용이고 routing은 plain id 계약이다.
+- 확인: old `generate_json`, adapter dict return, explicit `lookup(agent)` 계획 잔여물은 active planning 범위에서 발견되지 않았다.
+
+재리뷰 finding:
+
+- reviewer: `Laplace` sub-agent
+- severity: low
+- file: `_workspace/factory-agent/review-feedback.md`
+- 문제: planning review section의 reviewer 상태가 `pending`으로 남아 있었다.
+- 수정: reviewer를 `Laplace` sub-agent로 기록했다.
+
+## 2026-05-31 Sub-agent routing parser 제거
+
+### 1. 사용자 리뷰 finding: sub-agent parser 잔존
+
+- reviewer: user
+- severity: high
+- file: `backend/src/agents/manual_qa/agent.py`, `backend/src/agents/quest_generator/agent.py`, `backend/src/agents/pipeline/runtime.py`
+
+문제:
+
+- `parse_sub_agent_route_decision()`가 `manual_qa`와 `quest_generator`에 남아 있었다.
+- 해당 함수는 compact JSON을 decode하고 `candidate in *_SUB_AGENT_IDS`로 검증해, sub-agent 선택을 다시 코드 로직에 태웠다.
+- 최신 계약은 top-level/sub-agent 모두 structured prompt가 허용 id 문자열 하나를 반환하고, LangGraph conditional edge가 경로를 구분하는 방식이다.
+
+수정:
+
+- `parse_sub_agent_route_decision()`를 두 도메인 오케스트레이터에서 제거했다.
+- domain leaf routing prompt를 `[ROLE]`, `[TASK]`, `[ALLOWED_LEAF_AGENT_IDS]`, `[REQUEST_CONTEXT]`, `[REQUEST_PAYLOAD]`, `[OUTPUT_CONTRACT]` 구조로 바꿨다.
+- `manual_qa.route_sub_agent`, `quest_generator.route_sub_agent` node는 LLM raw output을 trim해 `selectedLeafAgent` state에 기록만 하도록 바꿨다.
+- `route_selected_leaf_agent` conditional edge가 선택된 top-level Agent별 허용 leaf Agent id를 검증하도록 수정했다.
+
+### 2. 사용자 리뷰 finding: 용어 혼동
+
+- reviewer: user
+- severity: medium
+- file: `backend/src/agents/pipeline/state.py`, `backend/src/agents/pipeline/graph_edges.py`, `backend/src/agents/pipeline/runtime.py`, `backend/src/DECISION_LOG.md`
+
+문제:
+
+- 실행 대상 Agent를 `selectedSubAgent`로 부르면 `process_optimizer`, `new_material_generator` 같은 leaf top-level Agent도 sub-agent처럼 보인다.
+- 공통 conditional edge 이름이 `route_sub_agent_result`라서 domain sub-agent 전용 edge처럼 보였다.
+
+수정:
+
+- pipeline state와 response metadata를 `selectedLeafAgent`로 바꿨다.
+- 공통 conditional edge predicate를 `route_selected_leaf_agent`로 바꿨다.
+- 정확한 용어를 `DECISION_LOG.md`에 추가했다: `selectedAgent`, `selectedLeafAgent`, request payload의 `sub_agent`, `route_selected_agent`, `route_selected_leaf_agent`.
+
+### 3. 리뷰 전용 에이전트 finding: routing behavior 범위 확인
+
+- reviewer: `Mill` sub-agent
+- severity: high
+- file: `backend/src/agents/pipeline/runtime.py`, `backend/tests/test_message_router.py`
+
+검토:
+
+- reviewer는 explicit `agent`를 코드에서 확정하지 않고 routing prompt를 항상 호출하는 변경을 public behavior regression 가능성으로 지적했다.
+- 이 변경은 사용자의 기존 지시인 "오케스트레이터가 구분은 프롬프트로 해야 한다", "에이전트 쓰는 곳은 로직을 쓰지마", "명시 agent는 hint" 계약과 일치하므로 rollback하지 않는다.
+- 해당 계약은 `test_pipeline_routes_explicit_agent_through_top_level_prompt`, `test_pipeline_treats_explicit_agent_as_top_level_prompt_hint_only`, `DECISION_LOG.md`에 고정되어 있다.
+
+### 4. 리뷰 전용 에이전트 finding: leaf top-level metadata 테스트 보강
+
+- reviewer: `Mill` sub-agent
+- severity: medium
+- file: `backend/tests/harness.py`, `backend/tests/test_message_router.py`
+
+문제:
+
+- `selectedLeafAgent` metadata 검증이 sub-agent 인자를 넘긴 경우에만 수행되어 `process_optimizer` 같은 leaf top-level Agent 응답의 metadata rename 회귀를 놓칠 수 있었다.
+
+수정:
+
+- 공통 `assert_agent_response()`가 모든 성공 응답에서 `selectedLeafAgent == (sub_agent or agent)`를 검증하도록 강화했다.
+- 모든 성공 응답에서 `selectedSubAgent`가 metadata에 남지 않는지도 검증한다.
+
+### 5. 리뷰 전용 에이전트 finding: 문서 용어 잔여물
+
+- reviewer: `Mill` sub-agent
+- severity: low
+- file: `backend/docs/plans/agent_pipeline_implementation_plan.md`, `backend/src/DECISION_LOG.md`
+
+문제:
+
+- pipeline 단계 문서가 `selectedLeafAgent` 기록 후에도 "sub-agent route 검증"이라고 설명했다.
+- cache key 결정 로그가 실제 코드의 `leaf_agent` 키와 달리 `sub_agent`를 포함한다고 설명했다.
+
+수정:
+
+- pipeline 단계 설명을 "selected leaf Agent 검증"으로 바꿨다.
+- cache key 결정 로그를 `agent`, `leaf_agent`, `payload`, context metadata 기준으로 바꿨다.
+
+### 6. 재리뷰 finding: cache hit metadata 테스트 누락
+
+- reviewer: `McClintock` sub-agent
+- severity: medium
+- file: `backend/tests/test_pipeline_edges.py`, `backend/tests/test_message_router.py`
+
+문제:
+
+- cache hit/context cache 성공 응답 테스트가 공통 `assert_agent_response()`를 거치지 않아 `selectedLeafAgent`와 `selectedSubAgent` 부재 검증을 놓칠 수 있었다.
+- 특히 cache hit 경로는 metadata를 재조립하므로 별도 검증이 필요하다.
+
+수정:
+
+- cache context 분리 테스트와 cache hit 테스트에 `assert_agent_response()`를 추가했다.
+- 이로써 cache hit/miss 성공 응답 모두 `selectedLeafAgent` metadata와 `selectedSubAgent` 부재를 검증한다.
+
+### 7. 재리뷰 finding: cache 정책 문서 불일치
+
+- reviewer: `McClintock` sub-agent
+- severity: low
+- file: `backend/docs/plans/agent_pipeline_implementation_plan.md`
+
+문제:
+
+- 계획 문서의 cache key가 `agent + snapshotHash + normalizedPayloadHash`로 남아 있었지만, 실제 코드는 `agent`, `leaf_agent`, `payload`, `session_id`, `client_id`, `context.metadata`를 포함한다.
+- 문서가 cache hit metadata를 `metadata.cacheHit = true`로 설명했지만, 실제 코드는 `metadata.cache = "hit"`을 사용한다.
+
+수정:
+
+- cache key 문서를 실제 코드의 `agent + leaf_agent + payload + session_id + client_id + context.metadata` 기준으로 수정했다.
+- cache hit metadata 문서를 `metadata.cache = "hit"`로 수정하고, cache miss는 별도 cache metadata를 추가하지 않는다고 명시했다.
+- 같은 구식 cache key 표현이 남아 있던 `FOLDER_ROLES.md`, `server_implementation_plan.md`도 실제 코드 기준으로 정리했다.
+
+### 8. 최종 재리뷰
+
+- reviewer: `Russell` sub-agent
+- result: no findings
+- 확인: cache hit/context cache 성공 응답 테스트가 `selectedLeafAgent`와 `selectedSubAgent` 부재를 검증한다.
+- 확인: cache key/cache hit metadata 문서가 실제 코드와 일치한다.
+- 확인: 코드 active path에 `parse_sub_agent*`, `selectedSubAgent`, `route_sub_agent_result`, `[ALLOWED_SUB_AGENT_IDS]`가 남아 있지 않다.

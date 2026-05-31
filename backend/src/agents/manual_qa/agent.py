@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from agents.base import AgentContext
 
-MANUAL_QA_SUB_AGENT_IDS = {
+MANUAL_QA_SUB_AGENT_IDS = (
     "manual_qa.recipe_explainer",
     "manual_qa.machine_help",
     "manual_qa.troubleshooter",
-}
+)
 
 
 class ManualQaAgent:
-    """Select the manual Q&A sub-agent for a user question."""
+    """Select the manual Q&A leaf agent for a user question."""
 
     agent_id = "manual_qa"
 
@@ -24,34 +23,23 @@ class ManualQaAgent:
         payload: dict[str, Any],
         context: AgentContext,
     ) -> str:
-        """Build the prompt used to select a manual Q&A sub-agent."""
+        """Build the prompt used to select a manual Q&A leaf agent."""
 
-        return (
-            "당신은 매뉴얼 Q&A 도메인 서브 오케스트레이터입니다.\n"
-            "사용자 요청을 처리할 서브 에이전트를 정확히 하나 선택하세요.\n"
-            "허용 서브 에이전트: manual_qa.recipe_explainer, "
-            "manual_qa.machine_help, manual_qa.troubleshooter.\n"
-            "반드시 다음 compact JSON만 반환하세요: "
-            '{"sub_agent":"<허용된_서브_에이전트>","reason":"<짧은 이유>"}\n'
-            f"요청 context: {context.metadata}\n"
-            f"요청 payload: {payload}"
+        allowed_leaf_agent_ids = "\n".join(
+            f"- {sub_agent_id}" for sub_agent_id in MANUAL_QA_SUB_AGENT_IDS
         )
-
-    def parse_sub_agent_selection(self, raw: str | None) -> str | None:
-        """Parse a model routing decision."""
-
-        if not raw:
-            return None
-
-        try:
-            value: Any = json.loads(raw)
-        except json.JSONDecodeError:
-            candidate = raw.strip()
-        else:
-            candidate = (
-                str(value.get("sub_agent", "")).strip() if isinstance(value, dict) else ""
-            )
-
-        if candidate in MANUAL_QA_SUB_AGENT_IDS:
-            return candidate
-        return None
+        return (
+            "[ROLE]\n"
+            "매뉴얼 Q&A 도메인 오케스트레이터\n\n"
+            "[TASK]\n"
+            "사용자 요청을 처리할 leaf Agent id를 하나만 결정한다.\n\n"
+            "[ALLOWED_LEAF_AGENT_IDS]\n"
+            f"{allowed_leaf_agent_ids}\n\n"
+            "[REQUEST_CONTEXT]\n"
+            f"{context.metadata}\n\n"
+            "[REQUEST_PAYLOAD]\n"
+            f"{payload}\n\n"
+            "[OUTPUT_CONTRACT]\n"
+            "ALLOWED_LEAF_AGENT_IDS 중 하나의 id만 그대로 출력한다.\n"
+            "JSON, markdown, 설명, reason, 따옴표, 코드블록은 출력하지 않는다."
+        )

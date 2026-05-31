@@ -20,6 +20,18 @@ class StubLLM:
         return self.responses.pop(0)
 
 
+def top_agent_decision(agent: str) -> str:
+    """Build a top-level routing decision for tests."""
+
+    return agent
+
+
+def leaf_agent_decision(leaf_agent: str) -> str:
+    """Build a leaf agent routing decision for tests."""
+
+    return leaf_agent
+
+
 @dataclass(frozen=True)
 class PipelineScenario:
     """Reusable input for an agent pipeline scenario."""
@@ -62,8 +74,8 @@ def assert_agent_response(
     assert isinstance(response["payload"], dict)
     assert isinstance(response["payload"]["metadata"], dict)
     assert response["payload"]["metadata"]["selectedAgent"] == agent
-    if sub_agent is not None:
-        assert response["payload"]["metadata"]["selectedSubAgent"] == sub_agent
+    assert response["payload"]["metadata"]["selectedLeafAgent"] == (sub_agent or agent)
+    assert "selectedSubAgent" not in response["payload"]["metadata"]
 
 
 def assert_agent_error(

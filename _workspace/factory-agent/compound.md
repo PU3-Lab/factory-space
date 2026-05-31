@@ -166,3 +166,59 @@
 - 일반 source 파일은 500줄을 넘기지 않는다.
 - 500줄을 넘기면 역할 기준으로 파일을 분리한다.
 - 작업 전후 `wc -l`로 주요 source 파일 길이를 확인한다.
+
+### 10. Agent routing parser naming이 책임 경계를 흐림
+
+실수:
+
+- `parse_agent_selection`, `parse_sub_agent_selection`, `selected` 같은 이름을 남겨 code가 Agent를 선택하는 것처럼 보이게 했다.
+- reviewer는 기능 동작은 확인했지만 사용자가 반복해서 강조한 "Agent 선택은 prompt, 구분은 LangGraph conditional edge" naming/책임 경계까지 잡지 못했다.
+
+영향:
+
+- prompt 기반 decision 검증 코드와 실제 분기 로직의 책임이 혼동된다.
+- 이후 작업자가 `route_top_agent` 안에 selection shortcut이나 allowlist 분기를 다시 넣기 쉬워진다.
+
+재발 방지:
+
+- LLM 출력 파싱 함수는 `selection`이 아니라 `route_decision`처럼 검증 역할이 드러나는 이름을 쓴다.
+- `route_*` node는 state 기록까지만 하고, 경로 구분은 LangGraph conditional edge에서 한다.
+- 리뷰 요청에는 동작뿐 아니라 naming이 아키텍처 책임을 흐리는지도 명시적으로 포함한다.
+
+### 11. Sub-agent routing parser를 제거하지 않고 남김
+
+실수:
+
+- top-level routing은 structured prompt와 LangGraph conditional edge로 바꿨지만, `manual_qa`와 `quest_generator`에는 `parse_sub_agent_route_decision()` JSON parser가 남아 있었다.
+- 이 parser는 `{"sub_agent": "...", "reason": "..."}` compact JSON을 허용하고 plain id 문자열을 거부해 최신 routing 계약과 반대로 동작했다.
+
+영향:
+
+- `Agent 선택은 prompt, 구분은 LangGraph conditional edge`라는 사용자 지침과 코드가 다시 어긋났다.
+- top-level과 sub-agent routing 계약이 달라져 테스트, 문서, 구현을 함께 읽어도 실제 동작을 오해하기 쉬웠다.
+
+재발 방지:
+
+- routing prompt는 top-level과 sub-agent 모두 허용 id 문자열 하나만 반환하게 한다.
+- routing node는 모델 raw output을 trim해서 state에 기록하는 일만 한다.
+- 허용 id 검증과 경로 분기는 LangGraph conditional edge에만 둔다.
+- compact JSON parser는 leaf generation response parsing에만 사용하고, routing에는 만들지 않는다.
+
+### 12. 실행 대상 Agent를 `selectedSubAgent`로 부름
+
+실수:
+
+- `process_optimizer`, `new_material_generator`처럼 하위 Agent가 없는 leaf top-level Agent까지 `selectedSubAgent` state/metadata로 표현했다.
+- 공통 conditional edge 이름도 `route_sub_agent_result`라서 domain sub-agent 전용 검증처럼 보였다.
+
+영향:
+
+- top-level Agent, Domain Orchestrator, Leaf Agent의 계층이 문서와 코드에서 다시 혼동됐다.
+- 사용자가 "용어 헛갈리지 않게 정확히 명칭해"라고 지적할 만큼 state 이름이 실제 책임을 가리지 못했다.
+
+재발 방지:
+
+- 실제 실행 대상은 항상 `selectedLeafAgent`로 부른다.
+- top-level routing 결과는 `selectedAgent`, 실행 leaf 결과는 `selectedLeafAgent`로 구분한다.
+- public request payload의 `sub_agent`는 입력 힌트 이름으로만 유지한다.
+- 공통 leaf 검증 edge는 `route_selected_leaf_agent`처럼 역할을 드러내는 이름을 쓴다.

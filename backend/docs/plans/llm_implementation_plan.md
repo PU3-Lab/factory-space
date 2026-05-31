@@ -12,7 +12,8 @@
 - env 미설정과 CI 기본 provider는 `none`이며, dev 모드에서는 기본 provider를 `local`로 둔다.
 - `llm` 패키지는 LLM slot 설정과 provider별 1회 호출 adapter만 담당한다.
 - `default -> fallback1 -> fallback2` 실행 순서는 LangGraph pipeline에서 제어한다.
-- LLM slot이 모두 실패하면 LangGraph pipeline이 기존 deterministic fallback 응답으로 복구한다.
+- generation LLM slot이 모두 실패하면 LangGraph pipeline이 기존 deterministic fallback 응답으로 복구한다.
+- routing LLM slot이 모두 실패하거나 허용 id를 반환하지 못하면 `ROUTING_UNAVAILABLE`로 종료한다.
 - provider error, timeout, API key 부재, 빈 응답은 LangGraph에서 다음 LLM fallback slot으로 넘긴다.
 - LLM slot은 `none`, `google`, `openai`, `local` provider를 지원할 수 있는 구조로 둔다.
 - Agent routing과 sub-agent routing은 계속 prompt 기반 LLM 결정으로 처리한다.
@@ -86,13 +87,25 @@ flowchart TD
     Fallback1Adapter -->|None| Fallback2Node[LangGraph node: call_llm.fallback2]
     Fallback2Node --> Fallback2Adapter[provider adapter for fallback2 slot]
     Fallback2Adapter -->|None| Empty[None]
-    DefaultAdapter -->|raw text| Raw[raw JSON text]
+    DefaultAdapter -->|raw text| Raw[raw text]
     Fallback1Adapter -->|raw text| Raw
     Fallback2Adapter -->|raw text| Raw
-    Raw --> PipelineParse[pipeline strict json.loads]
-    Empty --> Fallback[deterministic fallback]
+    Raw --> OutputContract{prompt output contract}
+    OutputContract -->|routing| RouteId[allowed agent id]
+    OutputContract -->|generation| PipelineParse[pipeline strict json.loads]
+    Empty --> CallFailure{call type}
+    CallFailure -->|routing| RoutingError[ROUTING_UNAVAILABLE]
+    CallFailure -->|generation| Fallback[generation deterministic fallback]
+    RouteId --> RouteEdge[LangGraph conditional edge]
     PipelineParse --> Response[agent.response]
 ```
+
+Routing prompt와 generation prompt는 출력 계약이 다르다.
+
+- top-level routing prompt: `TOP_LEVEL_AGENT_IDS` 중 하나의 id 문자열만 반환한다.
+- domain leaf routing prompt: 해당 도메인의 허용 leaf Agent id 문자열만 반환한다.
+- leaf Agent generation prompt: Agent별 response JSON object를 반환한다.
+- provider adapter는 raw text를 보정하지 않는다. routing id 검증과 generation JSON 검증은 pipeline edge/node가 담당한다.
 
 ## 5. 설정
 
@@ -142,7 +155,7 @@ FACTORY_LLM_FALLBACK1_PROVIDER=none
 FACTORY_LLM_FALLBACK2_PROVIDER=none
 ```
 
-dev 모드에서는 원격 API key 없이 로컬 LLM을 먼저 사용한다. 로컬 LLM이 꺼져 있거나 응답하지 않으면 LangGraph fallback 정책에 따라 `fallback1`, `fallback2`, deterministic fallback 순서로 복구한다.
+dev 모드에서는 원격 API key 없이 로컬 LLM을 먼저 사용한다. 로컬 LLM이 꺼져 있거나 응답하지 않으면 LangGraph fallback 정책에 따라 call type별로 분기한다. routing 호출은 `fallback1`, `fallback2`까지 실패하면 `ROUTING_UNAVAILABLE`로 종료하고, generation 호출은 `fallback1`, `fallback2`까지 실패하면 deterministic fallback으로 복구한다.
 
 slot별 API key lookup 순서:
 
@@ -158,12 +171,13 @@ slot별 기본 model:
 
 ## 6. LangGraph LLM fallback 정책
 
-LangGraph pipeline은 LLM slot을 다음 순서로 실행한다.
+LangGraph pipeline은 LLM slot을 call type별로 다음 순서로 실행한다.
 
 1. `default`
 2. `fallback1`
 3. `fallback2`
-4. deterministic fallback
+4. routing: `ROUTING_UNAVAILABLE`
+5. generation: deterministic fallback
 
 다음 상태는 다음 LLM slot으로 넘어간다.
 
@@ -174,7 +188,7 @@ LangGraph pipeline은 LLM slot을 다음 순서로 실행한다.
 - provider exception
 - 빈 응답
 
-다음 상태는 현재 sprint에서는 다음 LLM slot으로 넘기지 않고 pipeline schema error로 둔다.
+generation prompt에서 다음 상태는 현재 sprint에서는 다음 LLM slot으로 넘기지 않고 pipeline schema error로 둔다.
 
 - JSON이 아닌 응답
 - JSON object가 아닌 응답
@@ -183,6 +197,8 @@ LangGraph pipeline은 LLM slot을 다음 순서로 실행한다.
 
 - model output 형식 오류를 조용히 숨기면 prompt/eval 문제가 발견되지 않는다.
 - provider 장애 fallback과 prompt 품질 실패는 다르게 추적해야 한다.
+
+routing prompt에서는 JSON을 요구하지 않는다. 허용 id 문자열이 아니면 routing failure로 종료하고 임의 fallback Agent를 고르지 않는다.
 
 Graph state에는 다음 정보를 남긴다.
 
@@ -213,7 +229,6 @@ response = client.models.generate_content(
     model=settings.model,
     contents=prompt,
     config=types.GenerateContentConfig(
-        response_mime_type="application/json",
         max_output_tokens=settings.max_output_tokens,
         temperature=settings.temperature,
         http_options=types.HttpOptions(timeout=settings.timeout_ms),
@@ -224,10 +239,11 @@ raw_text = response.text
 
 정책:
 
-- provider에는 JSON 응답을 요청한다.
+- routing 호출에는 JSON response mode를 설정하지 않는다. prompt가 허용 id 문자열 하나만 요구한다.
+- generation 호출에는 provider가 지원하는 경우에만 JSON response mode를 설정한다.
 - adapter는 markdown code fence나 설명 문장을 보정하지 않는다.
-- pipeline은 raw text를 strict JSON object로 검증한다.
-- JSON 형식 오류는 prompt/eval 품질 문제로 드러나게 둔다.
+- pipeline은 routing raw text를 허용 id로 검증하고, generation raw text를 strict JSON object로 검증한다.
+- generation JSON 형식 오류는 prompt/eval 품질 문제로 드러나게 둔다.
 
 ### 7.2 OpenAI / GPT API
 
@@ -238,7 +254,8 @@ OpenAI provider는 별도 `OpenAILLMAdapter`로 둔다.
 - model 이름은 설정으로만 받는다.
 - API key는 slot 전용 key 또는 `OPENAI_API_KEY`에서 읽는다.
 - endpoint override가 필요하면 slot별 `BASE_URL`을 사용한다.
-- response format은 JSON object만 반환하도록 provider config와 prompt 양쪽에서 요구한다.
+- routing 호출에는 JSON object response format을 설정하지 않는다.
+- generation 호출에는 JSON object만 반환하도록 provider config와 prompt 양쪽에서 요구한다.
 
 ### 7.3 Local LLM
 
@@ -249,7 +266,8 @@ Local provider는 OpenAI-compatible local endpoint를 1차 대상으로 둔다.
 - `BASE_URL`은 필수다.
 - API key는 선택이다.
 - Ollama, llama.cpp server, vLLM처럼 OpenAI-compatible chat/completions 또는 responses 형태를 제공하는 로컬 서버를 우선 지원한다.
-- 로컬 서버가 JSON mode를 지원하지 않으면 prompt로 JSON object 출력을 강제하고 pipeline strict parser로 검증한다.
+- routing 호출은 plain id 문자열 계약을 사용한다.
+- generation 호출에서 로컬 서버가 JSON mode를 지원하지 않으면 prompt로 JSON object 출력을 강제하고 pipeline strict parser로 검증한다.
 
 ## 8. 선행 수정
 
@@ -300,5 +318,6 @@ FACTORY_LLM_DEFAULT_PROVIDER=none FACTORY_LLM_FALLBACK1_PROVIDER=none FACTORY_LL
 - 외부 API key 없이 전체 테스트가 통과한다.
 - fake client만으로 Google/OpenAI/local adapter 성공/실패 경로가 검증된다.
 - LangGraph에서 default/fallback1/fallback2 순서가 테스트로 고정된다.
-- LLM provider 장애는 `agent.error`가 아니라 fallback `agent.response`로 복구된다.
+- Agent 실행 단계의 LLM provider 장애는 `agent.error`가 아니라 fallback `agent.response`로 복구된다.
+- routing LLM decision 실패는 `ROUTING_UNAVAILABLE`로 종료된다.
 - 잘못된 explicit `agent`/`sub_agent`는 LLM으로 우회하지 않는다.
