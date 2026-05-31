@@ -58,6 +58,44 @@ Postman이나 Unreal 클라이언트에서는 HTTP POST가 아니라 WebSocket �
 
 서버를 실행한 뒤 smoke runner로 실제 WebSocket 경로를 확인할 수 있습니다.
 
+### LLM provider 설정
+
+CI와 unit test에서는 외부 API나 local LLM을 요구하지 않도록 모든 LLM slot을 `none`으로 둡니다.
+
+```bash
+FACTORY_LLM_DEFAULT_PROVIDER=none \
+FACTORY_LLM_FALLBACK1_PROVIDER=none \
+FACTORY_LLM_FALLBACK2_PROVIDER=none \
+uv run --extra dev pytest
+```
+
+개발 모드에서는 OpenAI-compatible local LLM을 기본 slot으로 사용할 수 있습니다. Ollama를 사용할 경우 모델을 먼저 설치하고 OpenAI-compatible endpoint가 `http://localhost:11434/v1`에서 응답해야 합니다.
+
+```bash
+ENVIRONMENT=development
+FACTORY_LLM_DEFAULT_PROVIDER=local
+FACTORY_LLM_DEFAULT_MODEL=gemma4:e4b
+FACTORY_LLM_DEFAULT_BASE_URL=http://localhost:11434/v1
+FACTORY_LLM_FALLBACK1_PROVIDER=none
+FACTORY_LLM_FALLBACK2_PROVIDER=none
+```
+
+원격 provider와 local fallback을 함께 운영하려면 slot별 provider/model/key를 명시합니다. Google slot은 slot 전용 key, `GEMINI_API_KEY`, `GOOGLE_API_KEY` 순서로 key를 찾고, OpenAI slot은 slot 전용 key와 `OPENAI_API_KEY`를 지원합니다.
+
+```bash
+FACTORY_LLM_DEFAULT_PROVIDER=google
+FACTORY_LLM_DEFAULT_MODEL=gemini-2.5-flash
+# FACTORY_LLM_DEFAULT_API_KEY=
+
+FACTORY_LLM_FALLBACK1_PROVIDER=openai
+FACTORY_LLM_FALLBACK1_MODEL=gpt-5.5
+# FACTORY_LLM_FALLBACK1_API_KEY=
+
+FACTORY_LLM_FALLBACK2_PROVIDER=local
+FACTORY_LLM_FALLBACK2_MODEL=gemma4:e4b
+FACTORY_LLM_FALLBACK2_BASE_URL=http://localhost:11434/v1
+```
+
 `none` smoke는 LLM slot provider가 모두 `none`인 backend에서 외부 API key 없이 endpoint와 routing failure 경로만 검증합니다. 기본 개발용 `.env.example`은 local LLM을 기본값으로 두므로, `none` smoke에는 전용 env 예시를 사용합니다.
 
 ```bash
@@ -70,6 +108,7 @@ local LLM이 OpenAI-compatible endpoint로 떠 있고 `.env`가 local LLM 설정
 
 ```bash
 cp .env.example .env
+# FACTORY_LLM_DEFAULT_MODEL 값을 설치된 local model로 조정합니다.
 uv run --env-file .env uvicorn app:app --host 127.0.0.1 --port 8000
 
 uv run --env-file .env python scripts/smoke_agent_pipeline.py local

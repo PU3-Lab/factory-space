@@ -608,3 +608,23 @@ Pipeline 흐름:
 - `factory_help`: UI 도움말처럼 가벼워 보여 troubleshooting과 recipe explanation을 충분히 담지 못한다.
 - `knowledge_assistant`: 지식 범위가 너무 넓고 공장 조작 맥락이 약하다.
 - `manual_assistant`: 기존 `operator_guide`보다 조금 낫지만 troubleshooting까지 담기엔 여전히 좁다.
+
+## 22. Gemini provider SDK는 무엇을 쓰는가?
+
+결정: Gemini API provider는 `google-genai` SDK를 사용한다.
+
+이유:
+
+- `google-genai`는 현재 Google Gen AI SDK 계열이며 Gemini API 호출을 직접 지원한다.
+- legacy Gemini SDK나 LangChain wrapper에 runtime 의존하지 않아 adapter 책임을 작게 유지할 수 있다.
+- backend의 LLM adapter 계약은 `invoke(prompt: str) -> str | None`으로 충분하므로, orchestration 또는 prompt abstraction을 제공하는 외부 wrapper가 필요하지 않다.
+- adapter는 provider response text를 보정하지 않고 raw text를 pipeline에 넘긴다.
+
+운영 규칙:
+
+- `google` slot의 기본 model은 `gemini-2.5-flash`다.
+- API key는 slot 전용 `FACTORY_LLM_*_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY` 순서로 읽는다.
+- provider 호출 실패, timeout, 빈 응답은 adapter 안에서 예외 전파하지 않고 `None`으로 수렴시킨다.
+- routing output은 pipeline의 LangGraph conditional edge가 허용 id 문자열인지 검증한다.
+- generation output은 pipeline이 strict JSON object로 검증한다.
+- fallback 순서는 adapter가 아니라 LangGraph pipeline의 `default -> fallback1 -> fallback2` node/edge가 담당한다.

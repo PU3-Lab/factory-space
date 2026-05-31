@@ -239,12 +239,12 @@ Files:
 
 Steps:
 
-- [ ] default가 실패하고 fallback1이 성공하면 fallback2를 호출하지 않는 테스트 작성
-- [ ] default와 fallback1이 실패하고 fallback2가 성공하는 테스트 작성
-- [ ] generation 세 slot이 모두 실패하면 deterministic fallback response가 반환되는 테스트 작성
-- [ ] 성공 응답 metadata에 `llmSlot`, `llmProvider`, `llmModel`이 들어가는 테스트 작성
-- [ ] `uv run --extra dev pytest tests/test_pipeline_edges.py -q` 실행
-- [ ] 커밋: `test: LangGraph LLM fallback 순서 고정`
+- [x] default가 실패하고 fallback1이 성공하면 fallback2를 호출하지 않는 테스트 작성
+- [x] default와 fallback1이 실패하고 fallback2가 성공하는 테스트 작성
+- [x] generation 세 slot이 모두 실패하면 deterministic fallback response가 반환되는 테스트 작성
+- [x] 성공 응답 metadata에 `llmSlot`, `llmProvider`, `llmModel`이 들어가는 테스트 작성
+- [x] `uv run --extra dev pytest tests/test_pipeline_edges.py -q` 실행
+- [x] 커밋: `test: LangGraph LLM fallback 순서 고정`
 
 ## Sprint 6: Prompt routing 경로 보강
 
@@ -310,22 +310,22 @@ Files:
 
 Steps:
 
-- [ ] `DECISION_LOG.md`에 `google-genai` 선택 이유 기록
-- [ ] `README.md`에 CI/test에서 모든 slot이 `none`인 실행 예시 추가
-- [ ] `README.md`에 dev 모드 local LLM 기본 실행 예시 추가
-- [ ] `README.md`에 Google 기본 모델, OpenAI fallback1, local fallback2 예시 추가
-- [ ] `rg -n "OpenAI API Configuration|google-generativeai|langchain-google-genai" backend`로 낡은 설정 문구 확인
-- [ ] 커밋: `docs: LLM provider 운영 규칙 정리`
+- [x] `DECISION_LOG.md`에 `google-genai` 선택 이유 기록
+- [x] `README.md`에 CI/test에서 모든 slot이 `none`인 실행 예시 추가
+- [x] `README.md`에 dev 모드 local LLM 기본 실행 예시 추가
+- [x] `README.md`에 Google 기본 모델, OpenAI fallback1, local fallback2 예시 추가
+- [x] `rg -n "OpenAI API Configuration|google-generativeai|langchain-google-genai" backend`로 낡은 설정 문구 확인
+- [x] 커밋: `docs: LLM provider 운영 규칙 정리`
 
 ## 최종 검증
 
 Steps:
 
-- [ ] `uv run --extra dev pytest`
-- [ ] `uv run --extra dev ruff check .`
-- [ ] `FACTORY_LLM_DEFAULT_PROVIDER=none FACTORY_LLM_FALLBACK1_PROVIDER=none FACTORY_LLM_FALLBACK2_PROVIDER=none uv run --extra dev pytest tests/test_pipeline_edges.py -q`
+- [x] `uv run --extra dev pytest`
+- [x] `uv run --extra dev ruff check .`
+- [x] `FACTORY_LLM_DEFAULT_PROVIDER=none FACTORY_LLM_FALLBACK1_PROVIDER=none FACTORY_LLM_FALLBACK2_PROVIDER=none uv run --extra dev pytest tests/test_pipeline_edges.py -q`
 - [ ] `git status --short`
-- [ ] `git push -u origin docs/llm-adapter-implementation`
+- [ ] `git push -u origin feature/issue-19-agent-routing-terms`
 
 완료 기준:
 
