@@ -207,8 +207,11 @@ void AOJJ_Player::ToggleBuild(const FInputActionValue& Value)
 
 void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 {
-	// 3a: 카메라 뷰타겟 블렌드 + 플레이어 가시성. (IMC 교체는 3b, Pan/Rotate는 3c에서 추가)
+	// 카메라 뷰타겟 블렌드 + 플레이어 가시성 + IMC 교체(Look 차단). (Pan/Rotate 핸들러는 3c에서 추가)
 	APlayerController* PC = Cast<APlayerController>(GetController());
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = PC
+		? ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer())
+		: nullptr;
 
 	if (bEntering)
 	{
@@ -227,6 +230,21 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 		}
 		// 뷰타겟이 빌드캠이라 시각적 의미만 있지만, 탑다운에서 플레이어가 안 보이도록 숨김
 		SetActorHiddenInGame(true);
+
+		// 입력: TPS IMC 제거 + 빌드 IMC 추가. 빌드 IMC엔 IA_Look이 없어 마우스 카메라 회전이 차단됨.
+		// ⚠️ IMC_Build 미할당 시엔 절대 IMC_Player를 제거하지 않음 — 제거하면 입력이 전부 잠겨
+		//    B키로 빌드모드를 빠져나올 수조차 없게 됨. 이 경우 IMC_Player 유지 + 경고만.
+		if (Subsystem && IMC_Build)
+		{
+			Subsystem->RemoveMappingContext(IMC_Player);
+			Subsystem->AddMappingContext(IMC_Build, 0);
+		}
+		else if (!IMC_Build)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[OJJ_Player] IMC_Build 미할당 — 빌드모드 Look 차단 불가(IMC_Player 유지). ")
+				TEXT("BP_OJJ_Player에 IMC_Build 할당 필요."));
+		}
 	}
 	else
 	{
@@ -236,6 +254,20 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 			PC->SetViewTargetWithBlend(this, CameraBlendTime);
 		}
 		SetActorHiddenInGame(false);
+
+		// 입력 복귀: 빌드 IMC 제거 + TPS IMC 복원. 항상 IMC_Player 재추가(멱등) — 진입이
+		// IMC_Build 미할당으로 스왑을 건너뛴 경우에도 안전하게 정상 상태로 수렴.
+		if (Subsystem)
+		{
+			if (IMC_Build)
+			{
+				Subsystem->RemoveMappingContext(IMC_Build);
+			}
+			if (IMC_Player)
+			{
+				Subsystem->AddMappingContext(IMC_Player, 0);
+			}
+		}
 	}
 }
 
