@@ -1,1 +1,0 @@
-"""Material generation database models."""

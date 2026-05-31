@@ -1,1 +1,0 @@
-"""Material generation agent tests."""

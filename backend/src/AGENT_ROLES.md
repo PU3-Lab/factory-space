@@ -1,0 +1,431 @@
+# Agent Roles
+
+이 문서는 `backend/src/agents` 아래 Agent들의 책임 경계를 정의한다. 폴더 역할은 `FOLDER_ROLES.md`, 결정 변경 이력은 `DECISION_LOG.md`에 기록한다.
+
+## 원칙
+
+- Agent는 도메인 판단, prompt 구성, response payload 해석, deterministic fallback 정책을 가진다.
+- Agent는 WebSocket connection을 직접 읽거나 쓰지 않는다.
+- Agent는 public message envelope 생성을 직접 소유하지 않는다.
+- LLM 호출, cache, retry, 최종 envelope 생성은 `agents/pipeline.py`가 담당한다.
+- Agent 간 호출은 오케스트레이션 계층에서만 일어나며, leaf Agent가 다른 Agent를 직접 호출하지 않는다.
+
+## Agent 계층
+
+```mermaid
+flowchart TD
+    Client[agent.request] --> Pipeline[agents.pipeline]
+    Pipeline --> Orchestrator[agents.orchestrator]
+
+    Orchestrator --> Process[process_optimizer]
+    Orchestrator --> Material[new_material_generator]
+    Orchestrator --> Manual[manual_qa.agent]
+    Orchestrator --> Quest[quest_generator.agent]
+
+    Manual --> Recipe[manual_qa.recipe_explainer]
+    Manual --> Machine[manual_qa.machine_help]
+    Manual --> Trouble[manual_qa.troubleshooter]
+
+    Quest --> Tutorial[quest_generator.tutorial_quest]
+    Quest --> Production[quest_generator.production_quest]
+    Quest --> Exploration[quest_generator.exploration_quest]
+    Quest --> Economy[quest_generator.economy_quest]
+```
+
+## 오케스트레이션 구분
+
+서버 전체 오케스트레이터:
+
+- `agents/orchestrator.py`
+
+도메인 서브 오케스트레이터:
+
+- `agents/manual_qa/agent.py`
+- `agents/quest_generator/agent.py`
+
+Agent가 아닌 실행 구성요소:
+
+- `agents/pipeline.py`: LangGraph 기반 공통 실행 파이프라인
+- `agents/router.py`: agent id를 구현체로 매핑하는 registry/router
+- `agents/base.py`: Agent interface와 공통 타입
+
+## `agents/orchestrator.py`
+
+역할: 서버 전체 요청을 어떤 최상위 Agent가 처리할지 선택한다.
+
+선택 방식:
+
+- 기본 선택은 `orchestrator.py`가 만든 routing prompt의 LLM 응답으로만 한다.
+- 명시적인 `agent` 값이 요청에 있으면 그 값을 검증해서 사용한다.
+- keyword, if/else, score table 같은 코드 로직으로 Agent를 추론하지 않는다.
+- LLM routing 결과가 없거나 허용 목록 밖이면 임의 fallback 선택을 하지 않고 routing error로 종료한다.
+
+입력:
+
+- 검증된 `agent.request`
+- user/session context
+- 명시된 `agent` 값 또는 자연어 요청
+
+출력:
+
+- `selectedAgent`
+- 선택 근거 metadata
+- 필요하면 최상위 Agent에 넘길 normalized payload
+
+선택 가능한 Agent:
+
+- `process_optimizer`
+- `manual_qa`
+- `quest_generator`
+- `new_material_generator`
+
+소유하지 않는 책임:
+
+- WebSocket 송수신
+- cache lookup/write
+- LLM retry
+- 최종 `agent.response` envelope 생성
+- 각 도메인 내부 서브 에이전트 선택
+
+직접 서브 에이전트까지 분기하지 않는 이유:
+
+- `orchestrator.py`가 `manual_qa.recipe_explainer`, `quest_generator.production_quest` 같은 leaf Agent까지 직접 고르면 도메인별 세부 정책이 서버 전체 오케스트레이터로 새어 나온다.
+- 도메인별 서브 에이전트 선택 기준은 서로 다르다. 매뉴얼 Q&A는 질문 의도와 화면 context가 중요하고, 퀘스트 생성은 진행도, 최근 이벤트, 경제/생산/탐험 우선순위가 중요하다.
+- leaf Agent가 늘어날 때마다 서버 전체 오케스트레이터를 수정하게 되면 변경 범위가 커진다.
+- 따라서 `orchestrator.py`는 최상위 Agent만 선택하고, 세부 분기는 도메인 서브 오케스트레이터가 맡는다.
+
+예외:
+
+- 도메인이 leaf Agent 하나만 가진다면 도메인 서브 오케스트레이터 없이 `orchestrator.py`가 바로 해당 Agent를 선택해도 된다.
+- 여러 도메인을 가로지르는 긴급 fallback이나 안전 차단 정책은 `orchestrator.py`에서 처리할 수 있다.
+
+## `agents/process_optimizer.py`
+
+역할: 공장 상태를 기반으로 공정 최적화 제안을 만든다.
+
+입력:
+
+- 설비 상태
+- 생산량/처리량 지표
+- 병목 후보
+- 레시피와 자원 흐름 snapshot
+
+출력:
+
+- 병목 요약
+- 우선순위가 있는 개선 액션
+- 예상 효과
+- 사용자가 확인할 근거 데이터
+
+주요 판단:
+
+- 어떤 설비나 공정이 병목인지
+- 생산량, 비용, 안정성 중 무엇을 우선할지
+- 즉시 실행 가능한 액션과 장기 개선안을 어떻게 나눌지
+
+소유하지 않는 책임:
+
+- 실제 게임 상태 변경
+- 액션 실행
+- 퀘스트 생성
+- 매뉴얼 Q&A
+
+## `agents/new_material_generator.py`
+
+역할: 현재 게임 상태와 설계 제약에 맞는 신규 재료 후보를 생성한다.
+
+입력:
+
+- 현재 unlock 상태
+- 기존 재료 목록
+- 생산 체인 제약
+- 밸런스 목표
+
+출력:
+
+- 신규 재료 후보
+- 속성, 희귀도, 생산/소비처
+- 밸런스 근거
+- 관련 레시피 후보
+
+주요 판단:
+
+- 기존 재료와 역할이 중복되지 않는지
+- 생산 체인을 과도하게 복잡하게 만들지 않는지
+- 초반/중반/후반 progression 중 어디에 들어갈지
+
+소유하지 않는 책임:
+
+- 최종 밸런스 확정
+- DB write
+- 퀘스트 자동 생성
+- 시각 asset 생성
+
+## `agents/manual_qa/agent.py`
+
+역할: 매뉴얼 Q&A 도메인 서브 오케스트레이터다.
+
+선택 방식:
+
+- 기본 선택은 `manual_qa/agent.py`가 만든 routing prompt의 LLM 응답으로만 한다.
+- 명시적인 `sub_agent` 값이 요청에 있으면 그 값을 검증해서 사용한다.
+- 질문 keyword를 코드에서 직접 분류하지 않는다.
+- LLM routing 결과가 없거나 허용 목록 밖이면 임의 fallback 선택을 하지 않고 routing error로 종료한다.
+
+입력:
+
+- 사용자 질문
+- 현재 화면 또는 시스템 context
+- 매뉴얼 검색 결과 또는 참조 가능한 domain context
+
+출력:
+
+- `selectedSubAgent`
+- 서브 에이전트에 넘길 normalized question
+- 답변 정규화 metadata
+
+선택 가능한 서브 에이전트:
+
+- `recipe_explainer`
+- `machine_help`
+- `troubleshooter`
+
+주요 판단:
+
+- routing prompt는 질문이 레시피 설명인지, 장비 도움말인지, 문제 해결인지 판단하도록 지시한다.
+- 질문이 모호할 때는 LLM router가 현재 화면 context를 판단 근거로 사용한다.
+- LLM router가 허용된 `sub_agent`를 반환하지 못하면 기본 sub-agent로 복구하지 않고 routing error로 종료한다.
+
+소유하지 않는 책임:
+
+- 직접 답변 생성
+- 퀘스트 생성
+- 공정 최적화
+- WebSocket 송수신
+
+## `agents/manual_qa/recipe_explainer.py`
+
+역할: 레시피와 생산 체인을 설명한다.
+
+입력:
+
+- 레시피 id 또는 재료/생산품 이름
+- 현재 unlock 상태
+- 사용자의 질문 문장
+
+출력:
+
+- 필요한 입력 재료
+- 생산 결과
+- 선행 조건
+- 추천 사용처
+- 초보자용 설명 또는 상세 설명
+
+## `agents/manual_qa/machine_help.py`
+
+역할: 설비, UI, 조작, 상태 표시를 설명한다.
+
+입력:
+
+- 설비 id 또는 화면 context
+- 사용자의 질문 문장
+- 현재 설비 상태
+
+출력:
+
+- 설비 목적
+- 주요 상태값 의미
+- 사용 방법
+- 관련 레시피 또는 연결 설비
+
+## `agents/manual_qa/troubleshooter.py`
+
+역할: 생산 중단, 병목, 오류 상태의 원인을 진단한다.
+
+입력:
+
+- 문제 증상
+- 관련 설비 상태
+- 최근 이벤트
+- 자원 흐름 snapshot
+
+출력:
+
+- 가능한 원인 목록
+- 우선순위가 있는 확인 단계
+- 즉시 시도할 해결 방법
+- 추가로 필요한 정보
+
+## `agents/quest_generator/agent.py`
+
+역할: 퀘스트 생성 도메인 서브 오케스트레이터다.
+
+선택 방식:
+
+- 기본 선택은 `quest_generator/agent.py`가 만든 routing prompt의 LLM 응답으로만 한다.
+- 명시적인 `sub_agent` 값이 요청에 있으면 그 값을 검증해서 사용한다.
+- 진행도, 이벤트, quest type을 코드 if/else로 직접 분류하지 않는다.
+- LLM routing 결과가 없거나 허용 목록 밖이면 임의 fallback 선택을 하지 않고 routing error로 종료한다.
+
+입력:
+
+- 플레이어 진행도
+- 현재 공장 상태
+- 최근 이벤트
+- 명시된 quest type
+- 경제/생산/탐험 우선순위
+
+출력:
+
+- `selectedSubAgent`
+- 서브 에이전트에 넘길 normalized quest context
+- 선택 근거 metadata
+
+선택 가능한 서브 에이전트:
+
+- `tutorial_quest`
+- `production_quest`
+- `exploration_quest`
+- `economy_quest`
+
+주요 판단:
+
+- routing prompt는 지금 필요한 퀘스트가 온보딩인지, 생산 개선인지, 탐험 유도인지, 경제 균형인지 판단하도록 지시한다.
+- `quest_type`, 진행도, 최근 이벤트는 LLM router가 참고하는 입력 신호다.
+- 코드가 `quest_type`, 진행도, 최근 이벤트를 if/else로 분류해서 sub-agent를 선택하지 않는다.
+- 명시적으로 사용할 수 있는 값은 검증된 `sub_agent`뿐이며, `quest_type`은 직접 라우팅 값으로 사용하지 않는다.
+
+소유하지 않는 책임:
+
+- 퀘스트 payload 직접 생성
+- LLM 호출
+- cache 정책
+- 최종 envelope 생성
+
+## `agents/quest_generator/tutorial_quest.py`
+
+역할: 온보딩과 기능 학습 목적의 퀘스트를 생성한다.
+
+입력:
+
+- 튜토리얼 진행도
+- 아직 사용하지 않은 핵심 기능
+- 현재 unlock 상태
+
+출력:
+
+- 학습 목표
+- 단계별 완료 조건
+- 보상 후보
+- 다음 튜토리얼 연결점
+
+## `agents/quest_generator/production_quest.py`
+
+역할: 생산량, 설비 운용, 병목 개선 목적의 퀘스트를 생성한다.
+
+입력:
+
+- 생산 지표
+- 병목 후보
+- 설비 상태
+- 레시피 unlock 상태
+
+출력:
+
+- 생산 목표
+- 완료 조건
+- 측정 기준
+- 보상 후보
+
+## `agents/quest_generator/exploration_quest.py`
+
+역할: 신규 재료, 지역, 이벤트 탐색을 유도하는 퀘스트를 생성한다.
+
+입력:
+
+- 탐험 unlock 상태
+- 발견하지 않은 재료나 지역
+- 최근 탐험 이벤트
+
+출력:
+
+- 탐험 목표
+- 발견 조건
+- 위험/제약 조건
+- 보상 후보
+
+## `agents/quest_generator/economy_quest.py`
+
+역할: 비용, 수익, 재고, 거래 효율을 다루는 퀘스트를 생성한다.
+
+입력:
+
+- 재고 상태
+- 비용/수익 지표
+- 거래 가능 항목
+- 생산 효율 지표
+
+출력:
+
+- 경제 목표
+- 완료 조건
+- 효율 개선 기준
+- 보상 후보
+
+## 실행 구성요소
+
+### `agents/pipeline.py`
+
+역할: Agent 실행을 LangGraph로 연결하는 공통 파이프라인이다.
+
+담당:
+
+- envelope 검증 이후 graph state 구성
+- top-level Agent routing 호출
+- sub-orchestrator routing 호출
+- cache lookup/write
+- prompt build
+- LLM adapter 호출
+- fallback 생성
+- response schema 검증
+- 최종 `agent.response` 또는 `agent.error` envelope 반환
+
+Agent가 아닌 이유:
+
+- 도메인 판단의 주체가 아니다.
+- 전문 Agent별 정책을 직접 소유하지 않는다.
+- 실행 순서와 공통 실패 처리를 소유한다.
+
+### `agents/router.py`
+
+역할: agent id를 구현체로 매핑한다.
+
+담당:
+
+- agent registry 구성
+- agent id 검증
+- 구현체 lookup
+
+Agent가 아닌 이유:
+
+- 의도 분석을 하지 않는다.
+- payload를 해석하지 않는다.
+- LLM prompt나 fallback을 만들지 않는다.
+
+### `agents/base.py`
+
+역할: Agent 구현체가 따라야 하는 공통 interface와 타입을 정의한다.
+
+담당:
+
+- Agent id 타입
+- 공통 request context 타입
+- prompt build contract
+- response parse contract
+- fallback contract
+
+Agent가 아닌 이유:
+
+- 실행 인스턴스가 아니다.
+- 요청을 처리하지 않는다.
+- 도메인 판단이나 orchestration을 하지 않는다.
