@@ -62,6 +62,11 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
 	FIntPoint CurrentHoverCell = FIntPoint::ZeroValue;
 
+	// 호버 머신의 90° 회전 step(0~3, 시계방향). 호버/배치 footprint·메시에 반영(단계 3·4).
+	// CDO에 못 담으므로 회전 상태는 이 컨트롤러가 소유. EnterBuildMode에서 0으로 초기화.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
+	int32 HoverRotationSteps = 0;
+
 public:
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void EnterBuildMode();
@@ -87,6 +92,10 @@ public:
 	// 빌드 모드 상태 토글. Enter/Exit의 자체 가드(이미 같은 상태면 no-op) 덕분에 안전.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void ToggleBuildMode();
+
+	// 호버 머신을 시계방향 90° 회전(step +1, mod 4). 빌드모드에서만 동작. 플레이어 R키가 위임.
+	UFUNCTION(BlueprintCallable, Category = "BuildController")
+	void RotateHoverClockwise();
 
 private:
 	// cursor cell → lower-left origin 변환. 마우스 = 풋프린트 중심 정책.

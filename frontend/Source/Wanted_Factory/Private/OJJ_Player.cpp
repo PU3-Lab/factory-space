@@ -160,6 +160,16 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	{
 		EnhancedInput->BindAction(IA_BuildRotate, ETriggerEvent::Triggered, this, &AOJJ_Player::BuildRotate);
 	}
+	if (IA_MachineRotate)
+	{
+		// 머신 회전은 1회성 토글이라 Started (누를 때 한 번)
+		EnhancedInput->BindAction(IA_MachineRotate, ETriggerEvent::Started, this, &AOJJ_Player::BuildRotateMachine);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] IA_MachineRotate 미할당 — 호버 머신 회전(R) 비활성. IMC_Build/BP_OJJ_Player에 IA_MachineRotate 할당 필요."));
+	}
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -304,5 +314,14 @@ void AOJJ_Player::BuildRotate(const FInputActionValue& Value)
 	if (BuildCamera)
 	{
 		BuildCamera->Rotate(Value.Get<float>());
+	}
+}
+
+void AOJJ_Player::BuildRotateMachine(const FInputActionValue& Value)
+{
+	// 호버 머신 회전은 BuildController가 상태(step) 소유 — 빌드모드 가드도 거기서 처리.
+	if (BuildController)
+	{
+		BuildController->RotateHoverClockwise();
 	}
 }

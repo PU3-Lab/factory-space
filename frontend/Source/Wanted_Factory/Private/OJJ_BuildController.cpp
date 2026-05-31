@@ -52,6 +52,9 @@ void AOJJ_BuildController::EnterBuildMode()
 
 	bIsBuildMode = true;
 
+	// 빌드 세션은 항상 회전 0(미회전)으로 시작 — 예측 가능한 기본 방향.
+	HoverRotationSteps = 0;
+
 	// 빌드모드 동안에만 호버 Tick 가동
 	SetActorTickEnabled(true);
 
@@ -103,6 +106,22 @@ void AOJJ_BuildController::ToggleBuildMode()
 	{
 		EnterBuildMode();
 	}
+}
+
+void AOJJ_BuildController::RotateHoverClockwise()
+{
+	// R은 IMC_Build 전용이라 빌드모드에서만 발동하지만, 방어적으로 가드.
+	if (!bIsBuildMode)
+	{
+		return;
+	}
+
+	HoverRotationSteps = (HoverRotationSteps + 1) % 4;
+
+	// [임시 진단] 단계 2: R 입력 도달 + step 순환(0→1→2→3→0) 확인. 단계 3에서 호버 반영 추가 시 정리.
+	UE_LOG(LogTemp, Warning, TEXT("[BuildController] 머신 회전 step=%d"), HoverRotationSteps);
+
+	// 단계 3 예정: 여기서 CurrentHoverCell sentinel 리셋 + UpdateMouseHover 호출로 즉시 미리보기 갱신.
 }
 
 FIntPoint AOJJ_BuildController::ComputeOriginFromCursorCell(FIntPoint CursorCell, AMachineBase* Machine, int32 RotationSteps) const
