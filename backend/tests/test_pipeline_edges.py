@@ -10,6 +10,7 @@ from tests.harness import (
     StubLLM,
     assert_agent_error,
     assert_agent_response,
+    leaf_agent_decision,
     top_agent_decision,
 )
 
@@ -268,6 +269,102 @@ def test_pipeline_returns_routing_unavailable_for_invalid_explicit_agent_without
 
     assert_agent_error(response, code="ROUTING_UNAVAILABLE")
     assert response["agent"] == "unknown"
+
+
+def test_pipeline_routes_operator_guide_from_llm_top_level_decision() -> None:
+    llm = StubLLM(
+        [
+            top_agent_decision("operator_guide"),
+            leaf_agent_decision("operator_guide.recipe_explainer"),
+            None,
+        ]
+    )
+    pipeline = AgentPipeline(llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-edge-operator-guide-decision",
+            "agent": "process_optimizer",
+            "payload": {"question": "How do I run this recipe?"},
+        }
+    )
+
+    assert_agent_response(
+        response,
+        agent="operator_guide",
+        sub_agent="operator_guide.recipe_explainer",
+    )
+    assert response["payload"]["topic"] == "recipe"
+    assert "서버 전체 오케스트레이터" in llm.prompts[0]
+    assert "운영자 가이드 도메인 오케스트레이터" in llm.prompts[1]
+
+
+def test_pipeline_routes_production_quest_from_llm_leaf_decision() -> None:
+    llm = StubLLM(
+        [
+            top_agent_decision("quest_generator"),
+            leaf_agent_decision("quest_generator.production_quest"),
+            None,
+        ]
+    )
+    pipeline = AgentPipeline(llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-edge-production-quest-decision",
+            "payload": {"message": "Create the next production objective."},
+        }
+    )
+
+    assert_agent_response(
+        response,
+        agent="quest_generator",
+        sub_agent="quest_generator.production_quest",
+    )
+    assert response["payload"]["quest"]["type"] == "production"
+    assert "퀘스트 생성 도메인 오케스트레이터" in llm.prompts[1]
+
+
+def test_pipeline_rejects_json_top_level_routing_decision_in_edges() -> None:
+    llm = StubLLM(['{"agent":"operator_guide","reason":"old contract"}'])
+    pipeline = AgentPipeline(llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-edge-json-top-level-routing",
+            "agent": "operator_guide",
+            "payload": {"question": "How do I use this panel?"},
+        }
+    )
+
+    assert_agent_error(response, code="ROUTING_UNAVAILABLE")
+    assert response["agent"] == "operator_guide"
+    assert len(llm.prompts) == 1
+
+
+def test_pipeline_rejects_json_sub_agent_routing_decision_in_edges() -> None:
+    llm = StubLLM(
+        [
+            top_agent_decision("quest_generator"),
+            '{"sub_agent":"quest_generator.production_quest","reason":"old contract"}',
+        ]
+    )
+    pipeline = AgentPipeline(llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-edge-json-leaf-routing",
+            "payload": {"message": "Create the next production objective."},
+        }
+    )
+
+    assert_agent_error(response, code="ROUTING_UNAVAILABLE")
+    assert response["agent"] == "quest_generator"
+    assert len(llm.prompts) == 2
 
 
 def test_pipeline_rejects_invalid_fallback_payload_shape() -> None:

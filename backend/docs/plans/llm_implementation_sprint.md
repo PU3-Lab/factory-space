@@ -256,11 +256,11 @@ Files:
 
 Steps:
 
-- [ ] top-level orchestrator가 structured prompt 응답 문자열로 `operator_guide`를 선택하는 테스트 추가
-- [ ] `quest_generator`가 structured prompt 응답 문자열로 `quest_generator.production_quest`를 선택하는 테스트 추가
-- [ ] top-level/sub-agent routing에서 JSON output이 `ROUTING_UNAVAILABLE`로 종료되는 테스트 추가
-- [ ] `uv run --extra dev pytest tests/test_pipeline_edges.py -q` 실행
-- [ ] 커밋: `test: LLM 기반 agent routing 경로 보강`
+- [x] top-level orchestrator가 structured prompt 응답 문자열로 `operator_guide`를 선택하는 테스트 추가
+- [x] `quest_generator`가 structured prompt 응답 문자열로 `quest_generator.production_quest`를 선택하는 테스트 추가
+- [x] top-level/sub-agent routing에서 JSON output이 `ROUTING_UNAVAILABLE`로 종료되는 테스트 추가
+- [x] `uv run --extra dev pytest tests/test_pipeline_edges.py -q` 실행
+- [x] 커밋: `test: LLM 기반 agent routing 경로 보강`
 
 Acceptance:
 
