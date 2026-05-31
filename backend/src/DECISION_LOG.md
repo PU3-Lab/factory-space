@@ -323,43 +323,6 @@
 - 같은 payload라도 세션, 클라이언트, 선택 화면, 공장 구역 등 context가 다르면 응답이 달라질 수 있다.
 - request id는 추적용 값이므로 prompt와 cache 의미에 들어가면 안 된다.
 
-## 14. Superpowers 방식의 개발 harness를 어떻게 구성하는가?
-
-결정: backend agent 작업은 repo-local Superpowers harness로 진행한다.
-
-구성:
-
-- `docs/harness/factory-agent/team-spec.md`: 역할, handoff artifact, review gate, 실패 정책을 정의한다.
-- `.agents/skills/factory-agent-superpowers/SKILL.md`: coordinator가 사용할 top-level workflow다.
-- `.agents/skills/factory-agent-implementer/SKILL.md`: 단일 작업 구현자 역할이다.
-- `.agents/skills/factory-agent-spec-reviewer/SKILL.md`: 사용자 요청과 결정 로그 준수 여부를 검토한다.
-- `.agents/skills/factory-agent-quality-reviewer/SKILL.md`: spec 통과 후 코드 품질, 테스트, 경계 일관성을 검토한다.
-- `_workspace/factory-agent/`: 작업별 request, red, implementation, spec review, quality review, verification artifact를 보관한다.
-
-채택한 패턴:
-
-- Pipeline + Producer-Reviewer
-
-이유:
-
-- backend agent 작업은 protocol, LangGraph pipeline, prompt routing, WebSocket gateway가 순서대로 맞물린다.
-- 사용자 요구사항과 결정 로그 준수 여부는 일반 코드 리뷰와 별도로 검토해야 한다.
-- behavior 변경은 테스트를 먼저 만들고, 구현 후 spec review와 quality review를 분리해야 누락을 줄일 수 있다.
-
-검증 명령:
-
-```bash
-uv run --extra dev pytest
-uv run --extra dev ruff check .
-```
-
-운영 원칙:
-
-- behavior 변경은 failing test를 먼저 만든다.
-- spec review가 pass 되기 전에는 quality review로 넘어가지 않는다.
-- 완료 또는 커밋 전에는 fresh verification 결과를 기록한다.
-- Superpowers 플러그인이 세션 스킬로 직접 노출되지 않아도 repo-local harness artifact를 기준으로 같은 절차를 따른다.
-
 ## 15. 현재 리뷰에서 발견된 pipeline 문제는 무엇인가?
 
 결정: 다음 두 이슈는 구현 전에 테스트로 고정하고 수정해야 한다.
@@ -420,3 +383,27 @@ uv run --extra dev ruff check .
 - prompt 지시문, 역할 설명, 요청 설명은 한글로 작성한다.
 - routing prompt는 계속 compact JSON만 반환하도록 요구한다.
 - prompt 변경은 테스트에서 한글 문구를 검증해 회귀를 막는다.
+
+## 17. LLM provider 구현은 어떻게 시작하는가?
+
+결정: LLM 구현은 provider 추상화를 유지하되 1차 adapter는 현재 의존성에 맞춰 Google GenAI 기반으로 시작한다.
+
+이유:
+
+- 현재 `backend/pyproject.toml`에는 `google-generativeai`, `langchain-google-genai`, `langchain`, `langgraph`가 포함되어 있다.
+- OpenAI SDK는 현재 의존성에 없다.
+- 새 SDK를 추가하기보다 이미 포함된 provider 계열을 먼저 연결하는 편이 변경 범위가 작다.
+- 모델명은 코드에 고정하지 않고 환경변수로 주입해야 한다.
+
+구현 원칙:
+
+- 기본 provider는 `none`으로 두고 외부 API 없이 fallback 경로가 동작해야 한다.
+- `FACTORY_LLM_PROVIDER=google`일 때만 Google GenAI adapter를 사용한다.
+- API key 누락, timeout, provider error, 빈 응답은 예외를 전파하지 않고 `None`으로 변환한다.
+- pipeline은 `None`을 받아 deterministic fallback response로 복구한다.
+- Agent routing과 sub-agent routing은 계속 prompt 기반 LLM 결정으로 처리한다.
+- keyword, if/else, score table로 agent 선택을 복구하지 않는다.
+
+상세 계획:
+
+- `backend/llm_implementation_plan.md`에 기록한다.

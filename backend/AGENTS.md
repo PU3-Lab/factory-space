@@ -26,7 +26,6 @@ Factory Space는 Unreal Engine과 WebSocket으로 통신하는 Python 백엔드 
 - 공통 코드는 작고 명확하게 유지합니다.
 - 한 agent가 다른 agent의 내부 파일에 직접 의존하지 않도록 합니다.
 - agent가 DB에 접근해야 할 때는 service/repository 계층을 통해 접근합니다.
-- backend agent 작업은 `docs/harness/factory-agent/team-spec.md`의 Superpowers harness를 따릅니다.
 
 ## 담당 영역 구조
 
@@ -199,26 +198,6 @@ Unreal이 예측 가능하게 실행할 수 있도록 backend의 action schema�
 4. 중앙 registry에 agent를 등록합니다.
 5. 최소 1개의 scenario 또는 test를 추가합니다.
 6. 사용자나 다른 담당자가 알아야 하는 agent라면 README 또는 docs를 갱신합니다.
-
-## Superpowers Harness
-
-backend agent 작업은 repo-local harness를 따른다.
-
-- team spec: `docs/harness/factory-agent/team-spec.md`
-- coordinator skill: `.agents/skills/factory-agent-superpowers/SKILL.md`
-- implementer skill: `.agents/skills/factory-agent-implementer/SKILL.md`
-- spec reviewer skill: `.agents/skills/factory-agent-spec-reviewer/SKILL.md`
-- quality reviewer skill: `.agents/skills/factory-agent-quality-reviewer/SKILL.md`
-- handoff artifacts: `_workspace/factory-agent/`
-
-기본 순서:
-
-1. request artifact 작성
-2. behavior 변경이면 failing test 먼저 작성
-3. 최소 구현
-4. spec review
-5. quality review
-6. `uv run --extra dev pytest`와 `uv run --extra dev ruff check .` fresh run
 
 ## POC 기준
 
