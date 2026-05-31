@@ -14,7 +14,7 @@ Resolved by:
 ### 1. Malformed envelope request correlation
 
 - severity: high
-- file: `backend/src/agents/pipeline.py`
+- file: `backend/src/agents/pipeline/runtime.py`
 - related decision: `backend/src/DECISION_LOG.md` section 15.1
 
 문제:
@@ -37,7 +37,7 @@ Resolved by:
 ### 2. Cache hit metadata loss
 
 - severity: medium
-- file: `backend/src/agents/pipeline.py`
+- file: `backend/src/agents/pipeline/runtime.py`
 - related decision: `backend/src/DECISION_LOG.md` section 15.2
 
 문제:
@@ -268,3 +268,94 @@ Reviewer: `Boyle` sub-agent
 - 확인: 기존 mixed-case LLM 타입/클래스 표기를 `LLM` acronym 표기로 정리했다.
 - 확인: package/module path `llm`, snake_case 함수/변수, `FACTORY_LLM_*` env var는 유지했다.
 - 확인: 내부 import 검색, Ruff, 전체 pytest 검증이 통과했다.
+
+## 2026-05-31 LangGraph LLM Fallback Wiring Review
+
+Status: resolved
+
+Reviewer: `Jason` sub-agent
+
+### 1. fallback2 및 전체 실패 순서 테스트 누락
+
+- severity: low
+- file: `backend/tests/test_pipeline_edges.py`
+
+문제:
+
+- 현재 테스트는 `default -> fallback1 성공 -> fallback2 미호출`만 직접 검증한다.
+- 구현에는 `fallback2` edge와 deterministic fallback edge가 있지만, `default/fallback1 실패 후 fallback2 성공` 및 `default/fallback1/fallback2 모두 실패 후 deterministic fallback` 순서가 테스트로 고정되어 있지 않다.
+- `_workspace/factory-agent/task_5_1_red.md`가 "fallback 순서는 LangGraph pipeline 경로에서 검증"한다고 적고 있어 테스트 주장과 실제 커버리지 사이에 간극이 있다.
+
+영향:
+
+- fallback2 edge 또는 세 slot 실패 후 deterministic fallback edge가 회귀해도 테스트가 놓칠 수 있다.
+
+필요 작업:
+
+- default/fallback1 실패 후 fallback2 성공 경로 테스트를 추가한다.
+- default/fallback1/fallback2 모두 실패 후 deterministic fallback 경로 테스트를 추가한다.
+
+수정:
+
+- `test_pipeline_uses_fallback2_when_default_and_fallback1_fail`를 추가했다.
+- `test_pipeline_uses_deterministic_fallback_after_all_slots_fail`를 추가했다.
+
+구조 정리:
+
+- `backend/src/agents/pipeline.py`를 `backend/src/agents/pipeline/` 패키지로 이동했다.
+- `runtime.py`, `graph_edges.py`, `llm_fallback.py`, `state.py`, `utils.py`로 기능별 책임을 분리했다.
+- source 파일 500줄 제한 확인: `backend/src/agents/pipeline/runtime.py` 430줄, 나머지 pipeline package 파일은 129줄 이하.
+
+검증:
+
+- `uv run --extra dev ruff check .` 통과
+- `uv run --extra dev pytest tests/test_pipeline_edges.py -q` 통과: 15 passed
+- `uv run --extra dev pytest -q` 통과: 86 passed
+- 함수/메서드 내부 import 검색 결과 없음
+
+재리뷰:
+
+- reviewer: `Singer` sub-agent
+- status: no unresolved findings after fix
+
+### 2. LangGraph 문서의 cache hit 경로가 실제 edge와 다름
+
+- severity: low
+- file: `backend/src/FOLDER_ROLES.md`
+
+문제:
+
+- 문서 다이어그램은 cache hit 경로를 `build_cached_response -> END`로 표시했다.
+- 실제 graph는 `build_cached_response -> build_agent_response -> END`로 최종 envelope 생성 단계를 경유한다.
+
+영향:
+
+- 문서만 보고 cache hit 응답이 envelope 생성 단계를 우회한다고 오해할 수 있다.
+
+수정:
+
+- Mermaid diagram의 cache hit 경로를 `BuildCachedResponse --> BuildResponse --> End`로 수정했다.
+
+최종 재리뷰:
+
+- result: no unresolved findings
+- 확인: `FOLDER_ROLES.md`의 cache hit 경로가 `graph_edges.py`의 실제 edge와 일치한다.
+- 확인: `uv run --extra dev pytest tests/test_pipeline_edges.py -q` 통과: 15 passed
+
+후속 구조 반영:
+
+- 질문: `build_agent_graph`를 `AgentPipeline` 안에 넣으면 인자로 받을 필요가 없는가?
+- 답변: 맞다. `AgentPipeline`이 `router`, `cache`, `llm`, `llm_settings`, `llm_adapter_factory`를 이미 소유하므로 graph 생성은 내부 `_build_graph()`가 `self` 의존성을 사용한다.
+- 수정: public `build_agent_graph` export를 제거하고, compiled graph 확인 테스트를 `AgentPipeline(...).graph` 기준으로 변경했다.
+- 검증: `uv run --extra dev pytest tests/test_pipeline_edges.py -q` 통과: 15 passed
+- 검증: `uv run --extra dev ruff check .` 통과
+- 검증: `uv run --extra dev pytest -q` 통과: 86 passed
+- status: no unresolved findings after `_build_graph()` refactor
+
+최종 재리뷰:
+
+- reviewer: `Singer` sub-agent
+- result: no unresolved findings
+- 확인: `build_agent_graph` 제거 후 repo 내부 사용처는 결정/리뷰 기록 문서뿐이다.
+- 확인: `_build_graph()`가 `AgentPipeline` 내부에서 `self` 의존성을 사용하는 구조가 중복 DI 경로보다 단순하다.
+- 확인: `llm` 명시 주입과 `default -> fallback1 -> fallback2 -> deterministic fallback` 테스트 계약이 유지된다.

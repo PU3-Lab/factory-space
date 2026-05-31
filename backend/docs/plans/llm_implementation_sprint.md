@@ -16,7 +16,7 @@ Files:
 
 - `backend/tests/test_pipeline_edges.py`
 - `backend/src/cache/response_cache.py`
-- `backend/src/agents/pipeline.py`
+- `backend/src/agents/pipeline/`
 
 Steps:
 
@@ -32,7 +32,7 @@ Steps:
 Files:
 
 - `backend/tests/test_pipeline_edges.py`
-- `backend/src/agents/pipeline.py`
+- `backend/src/agents/pipeline/`
 
 Steps:
 
@@ -208,21 +208,21 @@ Acceptance:
 
 Files:
 
-- `backend/src/agents/pipeline.py`
+- `backend/src/agents/pipeline/`
 - `backend/tests/test_pipeline_edges.py`
 
 Steps:
 
-- [ ] `AgentPipeline()` 기본값이 API 없이 fallback 응답을 반환하는 테스트 추가
-- [ ] 기존 placeholder 의존 상태에서 테스트 baseline 확인
-- [ ] `build_agent_graph()`가 settings에서 default/fallback1/fallback2 adapter를 만든다.
-- [ ] `call_llm.default`, `call_llm.fallback1`, `call_llm.fallback2` node를 추가한다.
-- [ ] default가 `None`이면 fallback1 node로 이동하는 conditional edge를 추가한다.
-- [ ] fallback1이 `None`이면 fallback2 node로 이동하는 conditional edge를 추가한다.
-- [ ] fallback2가 `None`이면 deterministic fallback node로 이동하는 conditional edge를 추가한다.
-- [ ] 성공한 LLM slot/provider/model을 response metadata에 남긴다.
-- [ ] `uv run --extra dev pytest tests/test_pipeline_edges.py -q` 실행
-- [ ] 커밋: `feat: LangGraph LLM fallback 경로 연결`
+- [x] `AgentPipeline()` 기본값이 API 없이 fallback 응답을 반환하는 테스트 추가
+- [x] 기존 placeholder 의존 상태에서 테스트 baseline 확인
+- [x] `AgentPipeline._build_graph()`가 settings에서 default/fallback1/fallback2 adapter를 만든다.
+- [x] `call_llm.default`, `call_llm.fallback1`, `call_llm.fallback2` node를 추가한다.
+- [x] default가 `None`이면 fallback1 node로 이동하는 conditional edge를 추가한다.
+- [x] fallback1이 `None`이면 fallback2 node로 이동하는 conditional edge를 추가한다.
+- [x] fallback2가 `None`이면 deterministic fallback node로 이동하는 conditional edge를 추가한다.
+- [x] 성공한 LLM slot/provider/model을 response metadata에 남긴다.
+- [x] `uv run --extra dev pytest tests/test_pipeline_edges.py -q` 실행
+- [x] 커밋: `feat: LangGraph LLM fallback 경로 연결`
 
 Acceptance:
 

@@ -7,7 +7,7 @@
 - Agent는 도메인 판단, prompt 구성, response payload 해석, deterministic fallback 정책을 가진다.
 - Agent는 WebSocket connection을 직접 읽거나 쓰지 않는다.
 - Agent는 public message envelope 생성을 직접 소유하지 않는다.
-- LLM 호출, cache, retry, 최종 envelope 생성은 `agents/pipeline.py`가 담당한다.
+- LLM 호출, cache, retry, 최종 envelope 생성은 `agents/pipeline/`가 담당한다.
 - Agent 간 호출은 오케스트레이션 계층에서만 일어나며, leaf Agent가 다른 Agent를 직접 호출하지 않는다.
 
 ## Agent 계층
@@ -45,7 +45,7 @@ flowchart TD
 
 Agent가 아닌 실행 구성요소:
 
-- `agents/pipeline.py`: LangGraph 기반 공통 실행 파이프라인
+- `agents/pipeline/`: LangGraph 기반 공통 실행 파이프라인 패키지
 - `agents/router.py`: agent id를 구현체로 매핑하는 registry/router
 - `agents/base.py`: Agent interface와 공통 타입
 
@@ -374,9 +374,17 @@ Agent가 아닌 실행 구성요소:
 
 ## 실행 구성요소
 
-### `agents/pipeline.py`
+### `agents/pipeline/`
 
 역할: Agent 실행을 LangGraph로 연결하는 공통 파이프라인이다.
+
+구성:
+
+- `runtime.py`: pipeline public API와 LangGraph node 구현
+- `graph_edges.py`: node 연결과 conditional edge predicate
+- `llm_fallback.py`: default/fallback1/fallback2 LLM slot 호출
+- `state.py`: graph state 타입
+- `utils.py`: cache key, fallback, validation error helper
 
 담당:
 

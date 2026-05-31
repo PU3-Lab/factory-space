@@ -2,9 +2,9 @@
 
 이 문서는 backend 구조를 정하는 과정에서 나온 질문과 답변을 결정 사항으로 기록한다.
 
-## 1. `agents/pipeline.py`는 오케스트레이터 에이전트인가?
+## 1. `agents/pipeline/`는 오케스트레이터 에이전트인가?
 
-결정: `agents/pipeline.py`는 오케스트레이터 에이전트가 아니라 공통 실행 파이프라인이다.
+결정: `agents/pipeline/`는 오케스트레이터 에이전트가 아니라 공통 실행 파이프라인이다.
 
 역할:
 
@@ -20,7 +20,7 @@
 구분:
 
 - `agents/router.py`: agent id를 실제 Agent 구현체에 매핑한다.
-- `agents/pipeline.py`: 공통 실행 흐름을 제어한다.
+- `agents/pipeline/`: 공통 실행 흐름을 제어한다.
 - `agents/process_optimizer.py`: 공정 최적화 Agent다.
 - `agents/quest_generator/agent.py`: 퀘스트 생성 상위 Agent다.
 - `agents/manual_qa/agent.py`: 매뉴얼 Q&A 상위 Agent다.
@@ -28,7 +28,7 @@
 
 후속 검토:
 
-- `pipeline.py`라는 이름이 헷갈리면 `agent_executor.py`로 변경하는 편이 더 명확하다.
+- `pipeline/` 패키지 안에서는 `runtime.py`, `graph_edges.py`, `llm_fallback.py`, `state.py`, `utils.py`처럼 책임별 파일명을 사용한다.
 
 ## 2. 오케스트레이터 에이전트를 추가할 것인가?
 
@@ -47,7 +47,7 @@
 
 구분:
 
-- `agents/pipeline.py`는 실행 흐름을 제어하는 인프라 계층이다.
+- `agents/pipeline/`는 실행 흐름을 제어하는 인프라 계층이다.
 - `agents/orchestrator.py`는 어떤 전문 Agent를 쓸지 판단하는 Agent다.
 - `agents/router.py`는 agent id를 구현체에 매핑하는 registry다.
 
@@ -85,7 +85,7 @@
 - 전체 서버 오케스트레이터인 `agents/orchestrator.py`는 어떤 최상위 Agent를 쓸지 선택한다.
 - `manual_qa/agent.py`는 매뉴얼 Q&A 내부에서 어떤 서브 에이전트를 쓸지 선택한다.
 - `quest_generator/agent.py`는 퀘스트 생성 내부에서 어떤 서브 에이전트를 쓸지 선택한다.
-- `agents/pipeline.py`는 여전히 공통 실행 흐름만 담당하고 서브 에이전트 정책을 소유하지 않는다.
+- `agents/pipeline/`는 여전히 공통 실행 흐름만 담당하고 서브 에이전트 정책을 소유하지 않는다.
 
 서브 에이전트 목록:
 
@@ -99,12 +99,12 @@
 
 ## 4. LangGraph는 어디에 적용하는가?
 
-결정: LangGraph는 WebSocket transport가 아니라 `agents/pipeline.py`의 Agent 실행 흐름에 적용한다.
+결정: LangGraph는 WebSocket transport가 아니라 `agents/pipeline/`의 Agent 실행 흐름에 적용한다.
 
 구조:
 
 - WebSocket gateway는 raw message 수신과 response 송신만 담당한다.
-- `agents/pipeline.py`가 검증된 `agent.request`를 LangGraph input으로 넣는다.
+- `agents/pipeline/`가 검증된 `agent.request`를 LangGraph input으로 넣는다.
 - LangGraph state는 envelope, context, selectedAgent, selectedSubAgent, typedPayload, cacheKey, prompt, llmRaw, responsePayload, streams, error를 가진다.
 - 최종 graph output은 `agent.response` 또는 `agent.error` envelope다.
 
@@ -136,7 +136,7 @@
 
 오케스트레이터가 아닌 것:
 
-- `agents/pipeline.py`: LangGraph 실행 흐름을 소유하는 공통 실행 파이프라인이다.
+- `agents/pipeline/`: LangGraph 실행 흐름을 소유하는 공통 실행 파이프라인이다.
 - `agents/router.py`: agent id를 구현체에 매핑하는 registry/router다.
 - LangGraph의 `route_top_agent`, `manual_qa.route_sub_agent`, `quest_generator.route_sub_agent` 노드는 Agent 파일이 아니라 오케스트레이터 내부의 실행 단계다.
 
@@ -189,7 +189,7 @@
 
 - WebSocket message를 직접 읽거나 쓰지 않는다.
 - LLM 호출을 직접 소유하지 않는다.
-- cache key 생성, retry, fallback, response envelope 생성은 `agents/pipeline.py`가 담당한다.
+- cache key 생성, retry, fallback, response envelope 생성은 `agents/pipeline/`가 담당한다.
 - routing 실패나 판단 불가 상태는 기본 sub-agent 선택 정책으로 복구하지 않는다.
 - 명시적으로 전달된 유효한 `sub_agent`만 검증 후 사용할 수 있다.
 - LLM router가 허용된 `sub_agent`를 반환하지 못하면 `ROUTING_UNAVAILABLE` error로 종료한다.
@@ -212,7 +212,7 @@
 - 신물질 생성 Agent
 - 매뉴얼 Q&A 서브 에이전트
 - 퀘스트 생성 서브 에이전트
-- Agent가 아닌 실행 구성요소인 `pipeline.py`, `router.py`, `base.py`
+- Agent가 아닌 실행 구성요소인 `pipeline/`, `router.py`, `base.py`
 
 ## 8. `agents/orchestrator.py`에서 leaf Agent까지 바로 분기해도 되는가?
 
@@ -228,6 +228,27 @@
 현재 원칙:
 
 - `agents/orchestrator.py`는 최상위 Agent만 선택한다.
+
+## 9. `build_agent_graph`는 `AgentPipeline` 밖에 둘 필요가 있는가?
+
+결정: graph 생성은 `AgentPipeline` 내부 책임으로 둔다.
+
+이유:
+
+- `AgentPipeline`이 `router`, `cache`, `llm`, `llm_settings`, `llm_adapter_factory`를 이미 소유한다.
+- graph 생성 함수가 외부에 있으면 같은 의존성을 다시 인자로 넘겨야 해서 DI 경로가 중복된다.
+- 현재 `build_agent_graph()` 직접 사용은 테스트의 compiled graph 확인뿐이므로 public API로 둘 필요가 약하다.
+
+구조:
+
+- `AgentPipeline.__init__()`은 `self._build_graph()`를 호출한다.
+- `_build_graph()`는 `self`에 저장된 의존성을 사용한다.
+- 외부 사용자는 `AgentPipeline` 또는 `run_agent_pipeline()`을 진입점으로 사용한다.
+
+제약:
+
+- graph node/edge 구현은 여전히 `agents/pipeline/runtime.py`, `graph_edges.py`, `llm_fallback.py`, `state.py`, `utils.py`로 기능별 분리한다.
+- `AgentPipeline`이 도메인 판단을 직접 소유하지 않는다는 기존 원칙은 유지한다.
 - `manual_qa/agent.py`는 매뉴얼 Q&A 내부 서브 에이전트를 선택한다.
 - `quest_generator/agent.py`는 퀘스트 생성 내부 서브 에이전트를 선택한다.
 

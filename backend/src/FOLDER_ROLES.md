@@ -107,7 +107,12 @@ AI Agent 실행 계층이다.
 
 - `base.py`: Agent interface와 공통 타입
 - `router.py`: agent id 기반 registry/router
-- `pipeline.py`: validation/cache/LLM/fallback 처리 흐름
+- `pipeline/`: LangGraph 실행 파이프라인 패키지
+  - `runtime.py`: validation/cache/prompt/response envelope 실행 흐름
+  - `graph_edges.py`: LangGraph node edge와 routing predicate
+  - `llm_fallback.py`: default/fallback1/fallback2 LLM slot 호출
+  - `state.py`: graph state 타입
+  - `utils.py`: cache key, fallback, validation error helper
 - `orchestrator.py`: 요청 의도 분석과 전문 Agent 선택을 담당하는 오케스트레이터 Agent
 - `process_optimizer.py`: 공정 최적화 Agent
 - `quest_generator/`: 퀘스트 생성 Agent와 서브 에이전트
@@ -118,7 +123,7 @@ AI Agent 실행 계층이다.
 
 - 서버 전체 오케스트레이터 Agent는 `orchestrator.py` 1개다.
 - 도메인 서브 오케스트레이터는 `manual_qa/agent.py`, `quest_generator/agent.py` 2개다.
-- `pipeline.py`는 실행 파이프라인이고, `router.py`는 registry/router이므로 오케스트레이터가 아니다.
+- `pipeline/`은 실행 파이프라인이고, `router.py`는 registry/router이므로 오케스트레이터가 아니다.
 - `manual_qa/agent.py`와 `quest_generator/agent.py`는 각 도메인 내부에서 서브 에이전트 선택, payload 정리, 결과 정규화를 맡는 서브 오케스트레이터다.
 
 `manual_qa/` 내부:
@@ -242,7 +247,7 @@ agents.new_material_generator -> visual
 
 ## LangGraph 구성도
 
-LangGraph는 `agents/pipeline.py` 내부 실행 흐름을 표현하는 데 사용한다. WebSocket 연결 자체는 LangGraph에 넣지 않고, 검증된 `agent.request` 하나를 graph input으로 넣는다.
+LangGraph는 `agents/pipeline/` 내부 실행 흐름을 표현하는 데 사용한다. WebSocket 연결 자체는 LangGraph에 넣지 않고, 검증된 `agent.request` 하나를 graph input으로 넣는다.
 
 ```mermaid
 flowchart TD
@@ -279,10 +284,17 @@ flowchart TD
     CacheDecision -->|yes| BuildCachedResponse[build_cached_response]
     CacheDecision -->|no| BuildPrompt[build_prompt]
 
-    BuildPrompt --> CallLLM[call_llm]
-    CallLLM --> LLMDecision{llm_valid?}
-    LLMDecision -->|yes| ValidateResponse[validate_response_schema]
-    LLMDecision -->|no| BuildFallback[build_fallback]
+    BuildPrompt --> DefaultLLM[call_llm.default]
+    DefaultLLM --> DefaultDecision{default valid?}
+    DefaultDecision -->|yes| ParseLLM[parse_llm_response]
+    DefaultDecision -->|no| Fallback1LLM[call_llm.fallback1]
+    Fallback1LLM --> Fallback1Decision{fallback1 valid?}
+    Fallback1Decision -->|yes| ParseLLM
+    Fallback1Decision -->|no| Fallback2LLM[call_llm.fallback2]
+    Fallback2LLM --> Fallback2Decision{fallback2 valid?}
+    Fallback2Decision -->|yes| ParseLLM
+    Fallback2Decision -->|no| BuildFallback[build_fallback]
+    ParseLLM --> ValidateResponse[validate_response_schema]
     BuildFallback --> ValidateResponse
 
     ValidateResponse --> ResponseDecision{response_valid?}
@@ -290,7 +302,7 @@ flowchart TD
     ResponseDecision -->|no| ErrorNode
 
     CacheWrite --> BuildResponse[build_agent_response]
-    BuildCachedResponse --> End([END])
+    BuildCachedResponse --> BuildResponse
     BuildResponse --> End
     ErrorNode --> End
 ```
@@ -306,10 +318,15 @@ AgentGraphState
  ├─ typedPayload
  ├─ cacheKey
  ├─ cachedPayload
+ ├─ cachedMetadata
  ├─ prompt
  ├─ llmRaw
+ ├─ llmSlot
+ ├─ llmProvider
+ ├─ llmModel
  ├─ fallbackReason
  ├─ responsePayload
+ ├─ responseMetadata
  ├─ streams
  └─ error
 ```
@@ -323,7 +340,9 @@ AgentGraphState
 - `quest_generator.route_sub_agent`: 진행도와 이벤트를 보고 퀘스트 서브 에이전트를 선택한다.
 - `cache_lookup`: cache key로 이전 response payload를 찾는다.
 - `build_prompt`: 선택된 Agent 또는 sub-agent prompt를 만든다.
-- `call_llm`: LLM adapter를 호출한다.
+- `call_llm.default`: 기본 LLM slot adapter를 호출한다.
+- `call_llm.fallback1`: 기본 slot이 응답하지 못했을 때 1차 fallback slot adapter를 호출한다.
+- `call_llm.fallback2`: fallback1 slot이 응답하지 못했을 때 2차 fallback slot adapter를 호출한다.
 - `build_fallback`: LLM 실패 또는 API key 없음 상태에서 deterministic fallback을 만든다.
 - `validate_response_schema`: 최종 payload가 Agent response schema를 만족하는지 검증한다.
 - `cache_write`: 검증된 payload를 cache에 저장한다.
