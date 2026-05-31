@@ -4,7 +4,12 @@
 
 ## 2026-05-31 Pipeline Review
 
-Status: open
+Status: resolved
+
+Resolved by:
+
+- `b3c7f1e fix: cache hit metadata 보존`
+- `7d09463 fix: validation error correlation 보존`
 
 ### 1. Malformed envelope request correlation
 
@@ -51,3 +56,37 @@ Status: open
 - cache entry에 payload와 metadata를 함께 저장한다.
 - cache hit 응답은 원래 metadata를 유지하고 `cache: hit`만 추가한다.
 - 첫 응답과 cache hit 응답의 metadata 일관성을 검증하는 실패 테스트를 먼저 추가한다.
+
+## 2026-05-31 LLM Settings / Dependency Review
+
+Status: resolved
+
+Reviewer: `Socrates` sub-agent
+
+### 1. `from_env({})`가 실제 환경 변수를 읽는 문제
+
+- severity: medium
+- file: `backend/src/llm/settings.py`
+- status: fixed before commit
+
+문제:
+
+- 직전 커밋 `a5aa46a` 기준 `source = env or os.environ` 때문에 빈 mapping을 명시해도 실제 `os.environ`을 읽었다.
+- `FACTORY_LLM_DEFAULT_PROVIDER` 같은 ambient env가 있으면 env 미설정/CI 기본값 `none` 계약이 깨질 수 있었다.
+
+수정:
+
+- `env is None`일 때만 `os.environ`을 사용하도록 변경했다.
+- `tests/test_llm_settings.py`에서 `monkeypatch`로 실제 환경 변수가 있어도 `from_env({})`는 `none`을 반환하도록 검증한다.
+
+### 2. 의존성 정리 리뷰
+
+- severity: none
+- status: no unresolved findings
+
+확인:
+
+- `google-generativeai`, `langchain`, `langchain-google-genai` 제거.
+- `google-genai>=1.33.0` 추가.
+- FastAPI는 최신 0.136 patch 라인인 `fastapi>=0.136.3,<0.137.0`로 축소.
+- `uv.lock` root metadata와 package lock이 `pyproject.toml`과 일치한다.

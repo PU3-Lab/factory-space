@@ -5,7 +5,11 @@ import pytest
 from llm.settings import LlmSettings
 
 
-def test_llm_settings_defaults_to_disabled_slots() -> None:
+def test_llm_settings_defaults_to_disabled_slots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FACTORY_LLM_DEFAULT_PROVIDER", "google")
+
     settings = LlmSettings.from_env({})
 
     assert settings.default.provider == "none"

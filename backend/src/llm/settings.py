@@ -10,7 +10,6 @@ from typing import Literal
 LlmProvider = Literal["none", "google", "openai", "local"]
 
 _PROVIDERS: set[str] = {"none", "google", "openai", "local"}
-_SLOTS = ("default", "fallback1", "fallback2")
 
 
 @dataclass(frozen=True)
@@ -39,7 +38,7 @@ class LlmSettings:
     def from_env(cls, env: Mapping[str, str] | None = None) -> LlmSettings:
         """Create settings from environment variables."""
 
-        source = env or os.environ
+        source = os.environ if env is None else env
         return cls(
             default=_slot_from_env(source, "default"),
             fallback1=_slot_from_env(source, "fallback1"),
