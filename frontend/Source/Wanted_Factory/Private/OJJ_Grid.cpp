@@ -114,6 +114,15 @@ FVector AOJJ_Grid::GridToWorld(FIntPoint Coord) const
 	return FVector(WorldX, WorldY, Origin.Z);
 }
 
+FVector AOJJ_Grid::GetGridCenter() const
+{
+	// 원점(액터 위치)은 그리드 좌하단. placement extent(GridSize)의 정중앙.
+	const FVector Origin = GetActorLocation();
+	const float CenterX = Origin.X + (GridSize.X * CellSize * 0.5f);
+	const float CenterY = Origin.Y + (GridSize.Y * CellSize * 0.5f);
+	return FVector(CenterX, CenterY, Origin.Z);
+}
+
 FVector AOJJ_Grid::GetMachinePlacementLocation(AMachineBase* Machine, FIntPoint Origin) const
 {
 	// 방어층: 머신 없으면 lower-left 셀 중심 반환 (호출자가 잘못 부른 경우 안전한 fallback).

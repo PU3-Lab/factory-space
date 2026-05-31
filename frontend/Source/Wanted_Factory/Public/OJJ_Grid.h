@@ -102,6 +102,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
 	FVector GridToWorld(FIntPoint Coord) const;
 
+	// placement 범위(GridSize)의 중심 월드 좌표. 원점은 좌하단(액터 위치)이므로
+	// ActorLoc + GridSize*CellSize/2. 빌드 카메라 자동 센터링 등에 사용.
+	// Z는 그리드 평면(액터 Z) 반환. 그리드가 동적으로 커지면 호출 시점 GridSize를 반영.
+	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
+	FVector GetGridCenter() const;
+
 	// 머신 mesh는 center anchor (머신 팀과 합의된 contract). 그리드 lower-left 좌표계와
 	// 정렬을 맞추기 위해 풋프린트 전체 center에 머신 액터 중심을 배치한다.
 	// 1x1은 offset (0,0) → GridToWorld(Origin)과 동일하므로 회귀 없음.

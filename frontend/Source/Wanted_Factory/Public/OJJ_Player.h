@@ -11,6 +11,7 @@ class UCameraComponent;
 class UInputMappingContext;
 class UInputAction;
 class AOJJ_BuildController;
+class AOJJ_BuildCamera;
 struct FInputActionValue;
 
 /**
@@ -99,10 +100,27 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Build")
 	TObjectPtr<AOJJ_BuildController> BuildController;
 
+	// 빌드 탑다운 카메라 클래스. BeginPlay에서 이 클래스로 spawn한다(수동 레벨 배치 불필요).
+	// 미설정 시 C++ 기본 AOJJ_BuildCamera 사용. BP 파생을 지정하면 PanSpeed/Pitch 등 에디터 튜닝 가능.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Build")
+	TSubclassOf<AOJJ_BuildCamera> BuildCameraClass;
+
+	// BeginPlay에서 spawn된 빌드 카메라 인스턴스. 진입 시 그리드 중심으로 자동 재배치.
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Build")
+	TObjectPtr<AOJJ_BuildCamera> BuildCamera;
+
+	// 빌드모드 진입/복귀 시 카메라 뷰타겟 블렌드 시간(초).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Build", meta = (ClampMin = "0.0"))
+	float CameraBlendTime = 0.4f;
+
 	// --- Input handlers ---
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void Zoom(const FInputActionValue& Value);
 	void ToggleBuild(const FInputActionValue& Value);
 	void BuildPlace(const FInputActionValue& Value);
+
+	// 빌드모드 상태에 맞춰 카메라 뷰타겟/플레이어 가시성을 전환. BuildController가 단일 진실원이므로
+	// ToggleBuild에서 IsInBuildMode() 결과(bEntering)를 받아 호출한다. (3b에서 IMC 교체 추가 예정)
+	void ApplyBuildModeView(bool bEntering);
 };

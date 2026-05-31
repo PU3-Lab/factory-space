@@ -72,6 +72,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	bool IsInBuildMode() const { return bIsBuildMode; }
 
+	// 연동된 그리드 접근자 (빌드 카메라 자동 센터링 등 외부에서 그리드 중심을 얻기 위함).
+	UFUNCTION(BlueprintPure, Category = "BuildController")
+	AOJJ_Grid* GetTargetGrid() const { return TargetGrid; }
+
 	// PlayerController가 Tick에서 호출. 마우스 위치 → 그리드 셀 → 호버 미리보기 갱신.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void UpdateMouseHover();

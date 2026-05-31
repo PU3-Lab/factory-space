@@ -17,10 +17,15 @@
 #include "InputActionValue.h"
 #include "Kismet/GameplayStatics.h"
 #include "OJJ_BuildController.h"
+#include "OJJ_BuildCamera.h"
+#include "OJJ_Grid.h"
 
 AOJJ_Player::AOJJ_Player()
 {
 	PrimaryActorTick.bCanEverTick = false;
+
+	// 빌드 카메라 기본 클래스 = C++ 기본. BP 파생을 BP_OJJ_Player에서 지정하면 그걸로 spawn.
+	BuildCameraClass = AOJJ_BuildCamera::StaticClass();
 
 	// 카메라가 컨트롤러 회전을 따르고, 캐릭터 본체는 이동 방향으로 회전 (TPS 표준)
 	bUseControllerRotationPitch = false;
@@ -79,6 +84,21 @@ void AOJJ_Player::BeginPlay()
 		UE_LOG(LogTemp, Warning,
 			TEXT("[OJJ_Player] AOJJ_BuildController 인스턴스를 레벨에서 찾지 못함 — 빌드모드(B키) 비활성. ")
 			TEXT("레벨에 AOJJ_BuildController가 배치되어 있고 TargetGrid/MachineClass가 설정됐는지 확인."));
+	}
+
+	// 빌드 탑다운 카메라는 spawn으로 생성 (수동 레벨 배치 불필요 — 진입 시 그리드 중심으로 자동 배치).
+	if (UWorld* World = GetWorld())
+	{
+		const TSubclassOf<AOJJ_BuildCamera> SpawnClass =
+			BuildCameraClass ? BuildCameraClass : TSubclassOf<AOJJ_BuildCamera>(AOJJ_BuildCamera::StaticClass());
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.Owner = this;
+		BuildCamera = World->SpawnActor<AOJJ_BuildCamera>(SpawnClass, FTransform::Identity, SpawnParams);
+	}
+	if (!BuildCamera)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] AOJJ_BuildCamera spawn 실패 — 빌드모드 탑다운 전환 비활성."));
 	}
 }
 
@@ -179,6 +199,44 @@ void AOJJ_Player::ToggleBuild(const FInputActionValue& Value)
 	}
 	// Enter/Exit 자체 가드(같은 상태면 no-op) 덕분에 토글 라우팅만 하면 됨
 	BuildController->ToggleBuildMode();
+
+	// BuildController가 단일 진실원 — 실제 전환 결과(early-return 시 미전환)에 맞춰 플레이어측 적용.
+	// 이로써 TargetGrid 미설정 등으로 Enter가 무산되면 카메라/가시성도 안 바뀜(half-state 방지).
+	ApplyBuildModeView(BuildController->IsInBuildMode());
+}
+
+void AOJJ_Player::ApplyBuildModeView(bool bEntering)
+{
+	// 3a: 카메라 뷰타겟 블렌드 + 플레이어 가시성. (IMC 교체는 3b, Pan/Rotate는 3c에서 추가)
+	APlayerController* PC = Cast<APlayerController>(GetController());
+
+	if (bEntering)
+	{
+		if (BuildCamera && BuildController)
+		{
+			// 진입할 때마다 그리드 중심으로 카메라 재배치 — 그리드가 동적으로 커져도 매 진입 시 맞춰짐.
+			// XY/Z만 이동(회전은 보존). SpringArm pitch/arm이 높이·거리 담당.
+			if (const AOJJ_Grid* Grid = BuildController->GetTargetGrid())
+			{
+				BuildCamera->SetActorLocation(Grid->GetGridCenter());
+			}
+		}
+		if (PC && BuildCamera)
+		{
+			PC->SetViewTargetWithBlend(BuildCamera, CameraBlendTime);
+		}
+		// 뷰타겟이 빌드캠이라 시각적 의미만 있지만, 탑다운에서 플레이어가 안 보이도록 숨김
+		SetActorHiddenInGame(true);
+	}
+	else
+	{
+		if (PC)
+		{
+			// 복귀 뷰타겟은 플레이어 자신(소유 Pawn) — 빌드캠 없어도 안전하게 복귀
+			PC->SetViewTargetWithBlend(this, CameraBlendTime);
+		}
+		SetActorHiddenInGame(false);
+	}
 }
 
 void AOJJ_Player::BuildPlace(const FInputActionValue& Value)
