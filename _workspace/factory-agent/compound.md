@@ -243,3 +243,22 @@
 - 새 문서를 만들기 전 기존 AGENTS.md, 프로젝트 문서, 최근 사용자 지시의 언어 규칙을 확인한다.
 - 영어 식별자, 코드 심볼, 명령어는 그대로 두되 설명 문장은 한국어로 작성한다.
 - 작성 후 `sed -n '1,80p' <문서>`로 첫 화면을 확인해 제목과 본문 언어가 맞는지 점검한다.
+
+### 14. Smoke test 추가 시점을 규칙으로 고정하지 않음
+
+실수:
+
+- Agent pipeline이 WebSocket endpoint와 LangGraph 실행 경로까지 갖춘 뒤에도 smoke test 추가 시점을 명시 규칙으로 두지 않았다.
+- unit/edge test만으로 충분한지, 실제 서버 경유 smoke를 언제 추가해야 하는지 판단 기준이 문서화되지 않았다.
+
+영향:
+
+- 실제 실행 경로가 준비되어도 smoke test가 후순위로 밀릴 수 있다.
+- provider, local LLM, WebSocket transport처럼 unit test로만 잡기 어려운 연결 문제가 늦게 발견될 수 있다.
+
+재발 방지:
+
+- 서버, pipeline, WebSocket, provider 연결처럼 실제 실행 경로가 생기면 smoke test 또는 smoke script를 함께 추가한다.
+- 외부 API나 local service가 필요한 smoke는 기본 test suite에 넣지 않고 opt-in profile로 분리한다.
+- API key 없이 가능한 smoke는 기본 profile로 만들고, provider smoke는 명시 환경 변수로만 실행한다.
+- smoke 추가가 가능한지 작업 계획 단계에서 먼저 판단하고, 가능하면 acceptance에 포함한다.

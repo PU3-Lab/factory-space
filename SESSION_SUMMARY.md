@@ -3,8 +3,8 @@
 ## 현재 상태
 
 - 브랜치: `feature/issue-19-agent-routing-terms`
-- 최신 커밋: `ab146be Refs #19 manual_qa를 operator_guide로 변경`
-- 현재 미커밋 변경: 이 세션 요약 파일
+- 최신 커밋: `94590dc docs: 세션 요약과 실수 기록 추가`
+- 현재 미커밋 변경: Agent pipeline smoke runner, smoke env 문서, 작업 규칙 갱신
 
 ## 완료한 작업
 
@@ -34,12 +34,24 @@
 - 리뷰 결과는 날짜별 리뷰 파일에 기록했다.
 - 리뷰, 수정, 재리뷰 루프를 `중요 발견 없음`이 나올 때까지 반복했다.
 
+### Agent pipeline smoke runner
+
+- `backend/scripts/smoke_agent_pipeline.py`를 추가했다.
+- `none`, `local`, `providers` profile을 순서대로 구성했다.
+- `none` profile은 외부 API 없이 `/health`, invalid JSON, invalid envelope, routing unavailable 경로를 확인한다.
+- `local` profile은 local LLM backend를 대상으로 네 Agent 경로를 확인한다.
+- `providers` profile은 `FACTORY_SMOKE_EXTERNAL_PROVIDER=1` opt-in일 때만 외부 provider backend를 대상으로 실행한다.
+- `.env.example`에 smoke runner 기본 URL과 opt-in 변수를 추가했다.
+- `smoke-none.env.example`에 LLM provider를 모두 `none`으로 둔 smoke 전용 env 예시를 추가했다.
+- smoke profile contract unit test를 추가했다: `backend/tests/test_smoke_agent_pipeline_script.py`
+
 ## 검증
 
 - `backend/`에서 `uv run --extra dev ruff check .`: 통과
-- `backend/`에서 `uv run --extra dev pytest -q`: 88 passed
+- `backend/`에서 `uv run --extra dev pytest -q`: 95 passed
 - `git diff --check`: 통과
 - `protocol_plans.md`, `backend/src`, `backend/tests`, `backend/docs`에서 이전 용어 검색: `manual_qa`, `ManualQa`, `MANUAL_QA`, `Manual Q&A`, `매뉴얼 Q&A`, `route_manual`, `buildManualQaContext` 모두 no matches
+- `none` smoke: `uv run --env-file smoke-none.env.example python scripts/smoke_agent_pipeline.py none --base-url http://127.0.0.1:18082` 통과
 
 ## 최근 커밋
 
@@ -59,3 +71,4 @@
 - 완료 보고나 커밋 전에 reviewer sub-agent를 사용한다.
 - 리뷰 결과를 기록하고, 수정 후에는 재리뷰를 반복한다.
 - 앞으로 리뷰 파일은 날짜별로 남긴다.
+- 서버, pipeline, WebSocket처럼 실제 실행 경로 확인이 가능한 단계라면 smoke test 또는 smoke script도 추가한다.

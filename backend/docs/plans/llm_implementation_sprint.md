@@ -268,9 +268,38 @@ Acceptance:
 - invalid decision은 임의 fallback agent를 고르지 않는다.
 - routing prompt output은 JSON이 아니라 허용 id 문자열 하나로 고정된다.
 
-## Sprint 7: 문서 정리
+## Sprint 7: Smoke test
 
-### Task 7.1 운영 문서와 결정 로그 갱신
+### Task 7.1 Agent pipeline smoke runner
+
+Files:
+
+- `backend/scripts/smoke_agent_pipeline.py`
+- `backend/tests/test_smoke_agent_pipeline_script.py`
+- `backend/README.md`
+- `backend/.env.example`
+- `backend/smoke-none.env.example`
+
+Steps:
+
+- [x] 외부 API 없는 `none` profile 추가
+- [x] local LLM용 `local` profile 추가
+- [x] 외부 provider용 `providers` profile 추가
+- [x] provider smoke는 `FACTORY_SMOKE_EXTERNAL_PROVIDER=1` opt-in으로 분리
+- [x] smoke runner 기본 URL과 opt-in 값을 `.env.example`에 문서화
+- [x] LLM provider를 모두 `none`으로 두는 `smoke-none.env.example` 추가
+- [x] smoke profile contract unit test 추가
+- [x] `uv run --extra dev pytest tests/test_smoke_agent_pipeline_script.py -q` 실행
+
+Acceptance:
+
+- CI 기본 unit test는 실제 server, local LLM, 외부 API key를 요구하지 않는다.
+- 실행 중인 backend server가 있으면 `uv run python scripts/smoke_agent_pipeline.py none`으로 WebSocket smoke를 실행할 수 있다.
+- local/provider smoke는 명시 profile로만 실행한다.
+
+## Sprint 8: 문서 정리
+
+### Task 8.1 운영 문서와 결정 로그 갱신
 
 Files:
 
