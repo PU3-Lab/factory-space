@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 import llm.adapter as adapter_module
@@ -50,6 +52,50 @@ class FakeGoogleModels:
 class FakeGoogleClient:
     def __init__(self, models: FakeGoogleModels) -> None:
         self.models = models
+
+
+class FakeHttpResponse:
+    def __init__(self, status_code: int, body: dict[str, Any]) -> None:
+        self.status_code = status_code
+        self.body = body
+
+
+class FakeOpenAiHttpClient:
+    def __init__(
+        self,
+        response: FakeHttpResponse | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self.response = response or FakeHttpResponse(
+            200,
+            {
+                "choices": [
+                    {"message": {"content": '{"summary":"ok"}'}},
+                ],
+            },
+        )
+        self.error = error
+        self.calls: list[dict[str, Any]] = []
+
+    def post(
+        self,
+        *,
+        url: str,
+        headers: dict[str, str],
+        json_body: dict[str, Any],
+        timeout_ms: int,
+    ) -> FakeHttpResponse:
+        self.calls.append(
+            {
+                "url": url,
+                "headers": headers,
+                "json_body": json_body,
+                "timeout_ms": timeout_ms,
+            }
+        )
+        if self.error is not None:
+            raise self.error
+        return self.response
 
 
 def test_noop_llm_adapter_returns_none() -> None:
@@ -207,3 +253,135 @@ def test_google_llm_adapter_returns_none_for_provider_error() -> None:
     )
 
     assert adapter.invoke("prompt") is None
+
+
+def test_openai_llm_adapter_returns_response_text() -> None:
+    http_client = FakeOpenAiHttpClient()
+    adapter = OpenAiLlmAdapter(
+        LlmModelSlot(
+            name="fallback1",
+            provider="openai",
+            model="gpt-5.5",
+            api_key="openai-key",
+        ),
+        http_client=http_client,
+        timeout_ms=1234,
+        max_output_tokens=64,
+        temperature=0.1,
+    )
+
+    result = adapter.invoke("prompt")
+
+    assert result == '{"summary":"ok"}'
+    assert http_client.calls == [
+        {
+            "url": "https://api.openai.com/v1/chat/completions",
+            "headers": {
+                "Authorization": "Bearer openai-key",
+                "Content-Type": "application/json",
+            },
+            "json_body": {
+                "model": "gpt-5.5",
+                "messages": [{"role": "user", "content": "prompt"}],
+                "max_tokens": 64,
+                "temperature": 0.1,
+            },
+            "timeout_ms": 1234,
+        },
+    ]
+
+
+def test_openai_llm_adapter_returns_none_without_api_key() -> None:
+    http_client = FakeOpenAiHttpClient()
+    adapter = OpenAiLlmAdapter(
+        LlmModelSlot(
+            name="fallback1",
+            provider="openai",
+            model="gpt-5.5",
+            api_key="",
+        ),
+        http_client=http_client,
+    )
+
+    assert adapter.invoke("prompt") is None
+    assert http_client.calls == []
+
+
+def test_openai_llm_adapter_returns_none_for_provider_error() -> None:
+    http_client = FakeOpenAiHttpClient(error=RuntimeError("provider failed"))
+    adapter = OpenAiLlmAdapter(
+        LlmModelSlot(
+            name="fallback1",
+            provider="openai",
+            model="gpt-5.5",
+            api_key="openai-key",
+        ),
+        http_client=http_client,
+    )
+
+    assert adapter.invoke("prompt") is None
+
+
+def test_openai_llm_adapter_returns_none_for_http_error_response() -> None:
+    http_client = FakeOpenAiHttpClient(
+        FakeHttpResponse(500, {"error": {"message": "provider failed"}})
+    )
+    adapter = OpenAiLlmAdapter(
+        LlmModelSlot(
+            name="fallback1",
+            provider="openai",
+            model="gpt-5.5",
+            api_key="openai-key",
+        ),
+        http_client=http_client,
+    )
+
+    assert adapter.invoke("prompt") is None
+
+
+def test_openai_llm_adapter_returns_none_for_empty_response_text() -> None:
+    http_client = FakeOpenAiHttpClient(
+        FakeHttpResponse(
+            200,
+            {
+                "choices": [
+                    {"message": {"content": "   "}},
+                ],
+            },
+        )
+    )
+    adapter = OpenAiLlmAdapter(
+        LlmModelSlot(
+            name="fallback1",
+            provider="openai",
+            model="gpt-5.5",
+            api_key="openai-key",
+        ),
+        http_client=http_client,
+    )
+
+    assert adapter.invoke("prompt") is None
+
+
+def test_openai_llm_adapter_preserves_json_object_response_text() -> None:
+    http_client = FakeOpenAiHttpClient(
+        FakeHttpResponse(
+            200,
+            {
+                "choices": [
+                    {"message": {"content": '  {"route":"manual_qa"}\n'}},
+                ],
+            },
+        )
+    )
+    adapter = OpenAiLlmAdapter(
+        LlmModelSlot(
+            name="fallback1",
+            provider="openai",
+            model="gpt-5.5",
+            api_key="openai-key",
+        ),
+        http_client=http_client,
+    )
+
+    assert adapter.invoke("prompt") == '  {"route":"manual_qa"}\n'

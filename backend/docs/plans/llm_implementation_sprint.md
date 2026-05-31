@@ -165,19 +165,20 @@ Files:
 
 Steps:
 
-- [ ] fake HTTP client로 GPT/OpenAI-compatible 성공 응답 테스트 작성
-- [ ] API key 없음은 `None` 반환 테스트 작성
-- [ ] provider error는 `None` 반환 테스트 작성
-- [ ] JSON object raw text를 그대로 반환하는 테스트 작성
-- [ ] adapter 구현
-- [ ] adapter 테스트 GREEN 확인
-- [ ] 커밋: `feat: OpenAI-compatible LLM adapter 추가`
+- [x] fake HTTP client로 GPT/OpenAI-compatible 성공 응답 테스트 작성
+- [x] API key 없음은 `None` 반환 테스트 작성
+- [x] provider error는 `None` 반환 테스트 작성
+- [x] JSON object raw text를 그대로 반환하는 테스트 작성
+- [x] adapter 구현
+- [x] adapter 테스트 GREEN 확인
+- [x] 커밋: `feat: OpenAI-compatible LLM adapter 추가`
 
 Acceptance:
 
 - model 이름은 설정에서만 온다.
 - API key는 slot key 또는 `OPENAI_API_KEY`에서 온다.
 - 실제 OpenAI API는 unit test에서 호출하지 않는다.
+- OpenAI-compatible 호출은 Chat Completions 형식인 `POST /v1/chat/completions`를 사용한다.
 
 ### Task 4.4 Local OpenAI-compatible adapter
 

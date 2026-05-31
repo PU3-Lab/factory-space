@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from llm.settings import LlmModelSlot
+
+_OPENAI_BASE_URL = "https://api.openai.com/v1"
 
 
 class LlmAdapter(Protocol):
@@ -28,6 +31,23 @@ class _GoogleModelsClient(Protocol):
 
 class _GoogleClient(Protocol):
     models: _GoogleModelsClient
+
+
+class _HttpResponse(Protocol):
+    status_code: int
+    body: object
+
+
+class _HttpClient(Protocol):
+    def post(
+        self,
+        *,
+        url: str,
+        headers: dict[str, str],
+        json_body: dict[str, Any],
+        timeout_ms: int,
+    ) -> _HttpResponse:
+        """Send JSON HTTP POST."""
 
 
 @dataclass(frozen=True)
@@ -81,14 +101,41 @@ class GoogleGenAiLlmAdapter:
 
 @dataclass(frozen=True)
 class OpenAiLlmAdapter:
-    """OpenAI-compatible adapter contract placeholder."""
+    """OpenAI-compatible Chat Completions adapter."""
 
     slot: LlmModelSlot
+    http_client: _HttpClient | None = None
+    timeout_ms: int = 20000
+    max_output_tokens: int = 2048
+    temperature: float = 0.2
 
     def invoke(self, prompt: str) -> str | None:
-        """Return no output until provider calls are implemented."""
+        """Return raw generated text from an OpenAI-compatible endpoint."""
 
-        return None
+        if not self.slot.model or not self.slot.api_key:
+            return None
+        try:
+            http_client = self.http_client or _UrlLibHttpClient()
+            response = http_client.post(
+                url=_openai_chat_completions_url(self.slot.base_url),
+                headers={
+                    "Authorization": f"Bearer {self.slot.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json_body={
+                    "model": self.slot.model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": self.max_output_tokens,
+                    "temperature": self.temperature,
+                },
+                timeout_ms=self.timeout_ms,
+            )
+        except Exception:
+            return None
+
+        if response.status_code < 200 or response.status_code >= 300:
+            return None
+        return _extract_openai_message_content(response.body)
 
 
 @dataclass(frozen=True)
@@ -137,3 +184,62 @@ def _google_generate_config(
         temperature=temperature,
         http_options=types.HttpOptions(timeout=timeout_ms),
     )
+
+
+@dataclass(frozen=True)
+class _HttpJsonResponse:
+    status_code: int
+    body: object
+
+
+class _UrlLibHttpClient:
+    def post(
+        self,
+        *,
+        url: str,
+        headers: dict[str, str],
+        json_body: dict[str, Any],
+        timeout_ms: int,
+    ) -> _HttpJsonResponse:
+        import urllib.error
+        import urllib.request
+
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(json_body).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=timeout_ms / 1000,
+            ) as response:
+                body = json.loads(response.read().decode("utf-8"))
+                return _HttpJsonResponse(status_code=response.status, body=body)
+        except urllib.error.HTTPError as exc:
+            return _HttpJsonResponse(status_code=exc.code, body={})
+
+
+def _openai_chat_completions_url(base_url: str | None) -> str:
+    return f"{(base_url or _OPENAI_BASE_URL).rstrip('/')}/chat/completions"
+
+
+def _extract_openai_message_content(body: object) -> str | None:
+    if not isinstance(body, dict):
+        return None
+    choices = body.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    first_choice = choices[0]
+    if not isinstance(first_choice, dict):
+        return None
+    message = first_choice.get("message")
+    if not isinstance(message, dict):
+        return None
+    content = message.get("content")
+    if not isinstance(content, str):
+        return None
+    if not content.strip():
+        return None
+    return content

@@ -185,3 +185,58 @@ Reviewer: `Dalton` sub-agent
 - reviewer: `Averroes` sub-agent
 - result: no unresolved findings
 - 확인: client initialization failure 테스트가 `_create_google_client` 예외 경로를 고정하고, `review-feedback.md` 상태값과 `compound.md` 기록이 현재 변경 이력과 일치한다.
+
+## 2026-05-31 OpenAI-compatible Adapter Review
+
+Status: resolved
+
+Reviewer: `Aristotle` sub-agent
+
+### 1. HTTP non-2xx 응답 테스트 누락
+
+- severity: low
+- file: `backend/tests/test_llm_adapter.py`
+
+문제:
+
+- provider 실패 요구사항이 예외 케이스로만 고정되어 있다.
+- 구현은 non-2xx 응답을 `None`으로 처리하지만, 429/500 같은 HTTP error response 경로를 고정하는 테스트가 없다.
+
+영향:
+
+- 이후 변경에서 non-2xx 응답 본문을 정상 응답처럼 파싱하거나 예외 전파로 회귀해도 테스트가 놓칠 수 있다.
+
+필요 작업:
+
+- fake HTTP client가 `FakeHttpResponse(500, {...})`를 반환할 때 `invoke()`가 `None`을 반환하는 테스트를 추가한다.
+
+수정:
+
+- `test_openai_llm_adapter_returns_none_for_http_error_response`를 추가했다.
+
+### 2. 빈 assistant content 테스트 누락
+
+- severity: low
+- file: `backend/tests/test_llm_adapter.py`
+
+문제:
+
+- raw 문자열 보존 테스트는 있지만 OpenAI adapter가 빈 assistant content를 `None`으로 반환하는 테스트가 없다.
+
+영향:
+
+- 빈 응답 판단이 제거되거나 `strip()` 반환으로 바뀌는 회귀를 놓칠 수 있다.
+
+필요 작업:
+
+- `choices[0].message.content`가 `""` 또는 blank-only 문자열일 때 `None`을 반환하는 테스트를 추가한다.
+
+수정:
+
+- `test_openai_llm_adapter_returns_none_for_empty_response_text`를 추가했다.
+
+최종 재리뷰:
+
+- reviewer: `Erdos` sub-agent
+- result: no unresolved findings
+- 확인: HTTP non-2xx 응답과 blank-only assistant content 테스트가 추가되었고, Sprint 4.3 체크 상태가 구현/테스트 완료 상태와 일치한다.
