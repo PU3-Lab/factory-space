@@ -55,10 +55,10 @@ class GoogleGenAiLlmAdapter:
 
         if not self.slot.model:
             return None
-        client = self.client or _create_google_client(self.slot.api_key)
-        if client is None:
-            return None
         try:
+            client = self.client or _create_google_client(self.slot.api_key)
+            if client is None:
+                return None
             response = client.models.generate_content(
                 model=self.slot.model,
                 contents=prompt,
@@ -74,8 +74,9 @@ class GoogleGenAiLlmAdapter:
         text = getattr(response, "text", None)
         if not isinstance(text, str):
             return None
-        stripped = text.strip()
-        return stripped or None
+        if not text.strip():
+            return None
+        return text
 
 
 @dataclass(frozen=True)
@@ -115,7 +116,7 @@ def create_llm_adapter(slot: LlmModelSlot) -> LlmAdapter:
 
 
 def _create_google_client(api_key: str | None) -> _GoogleClient | None:
-    if api_key is None:
+    if not api_key:
         return None
     from google import genai
 

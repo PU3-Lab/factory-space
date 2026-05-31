@@ -90,3 +90,68 @@ Reviewer: `Socrates` sub-agent
 - `google-genai>=1.33.0` 추가.
 - FastAPI는 최신 0.136 patch 라인인 `fastapi>=0.136.3,<0.137.0`로 축소.
 - `uv.lock` root metadata와 package lock이 `pyproject.toml`과 일치한다.
+
+## 2026-05-31 Google Gen AI Adapter Review
+
+Status: resolved
+
+Reviewer: `Harvey` sub-agent
+
+### 1. API key/client initialization 예외가 `invoke()` 밖으로 전파될 수 있음
+
+- severity: medium
+- file: `backend/src/llm/adapter.py`
+
+문제:
+
+- `_create_google_client()` 호출이 `try` 밖에 있다.
+- `api_key=""` 또는 SDK client 초기화 예외가 발생하면 `invoke()`가 `None`을 반환하지 않고 예외를 전파할 수 있다.
+
+필요 작업:
+
+- missing/blank API key와 client initialization failure가 `None`을 반환하는 테스트를 추가한다.
+- client 생성도 `try` 경계 안에서 처리하거나 `_create_google_client()`가 예외를 삼키도록 수정한다.
+
+수정:
+
+- blank API key 테스트를 추가했다.
+- `_create_google_client()`는 falsy key를 `None`으로 처리한다.
+- client 생성과 provider 호출을 같은 `try` 경계 안에서 처리한다.
+
+### 2. 성공 응답이 raw text로 반환되지 않음
+
+- severity: low
+- file: `backend/src/llm/adapter.py`
+
+문제:
+
+- 현재 구현은 `response.text.strip()`을 반환한다.
+- 계약이 raw text 반환이라면 whitespace 보존이 필요하고, `strip()`은 빈 응답 판단에만 써야 한다.
+
+필요 작업:
+
+- whitespace가 포함된 응답을 그대로 반환하는 테스트를 추가한다.
+- 빈 응답 확인은 `text.strip()`으로 하되 반환값은 원본 `text`로 유지한다.
+
+수정:
+
+- whitespace 포함 응답을 raw text 그대로 반환하도록 테스트와 구현을 수정했다.
+
+### 3. 필수 edge case 테스트 누락
+
+- severity: low
+- file: `backend/tests/test_llm_adapter.py`
+
+문제:
+
+- non-string `response.text`와 missing API key 테스트가 없다.
+
+필요 작업:
+
+- non-string `response.text`는 `None` 반환으로 고정한다.
+- missing/blank API key는 실제 Google API 호출 없이 `None` 반환으로 고정한다.
+
+수정:
+
+- non-string response text 테스트를 추가했다.
+- missing/blank API key 테스트를 추가했다.

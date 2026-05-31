@@ -92,3 +92,21 @@
 - pipeline 작업 시 error correlation, cache key, cache value, metadata 보존을 별도 테스트 항목으로 둔다.
 - cache는 payload만 볼 것이 아니라 payload와 metadata를 함께 검증한다.
 - WebSocket 경유 error response도 pipeline 직접 호출과 같은 contract를 만족하는지 확인한다.
+
+### 6. 완료 보고 전에 서브 에이전트 리뷰를 누락함
+
+실수:
+
+- Sprint 4.2 Google Gen AI adapter 구현 후 TDD, 관련 회귀, 전체 테스트, Ruff는 실행했다.
+- 하지만 사용자가 정한 "리뷰 전용 에이전트 사용" 규칙에 따라 서브 에이전트 리뷰를 완료하기 전에 작업 완료를 보고했다.
+
+영향:
+
+- 구현 품질 검증 루프가 사용자 합의 절차와 어긋났다.
+- 리뷰 결과가 `_workspace/factory-agent/review-feedback.md`에 남기 전에 커밋이 먼저 생성됐다.
+
+재발 방지:
+
+- 기능 구현 커밋 전 또는 완료 보고 전 `reviewer` sub-agent를 반드시 실행한다.
+- 서브 에이전트 리뷰가 완료되기 전에는 "완료"라고 말하지 않는다.
+- 리뷰에서 나온 finding은 즉시 `_workspace/factory-agent/review-feedback.md`에 기록하고, unresolved finding이 있으면 수정 후 재검증한다.

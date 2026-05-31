@@ -11,7 +11,7 @@ from llm.settings import LlmModelSlot
 
 
 class FakeGoogleResponse:
-    def __init__(self, text: str | None) -> None:
+    def __init__(self, text: object) -> None:
         self.text = text
 
 
@@ -103,7 +103,7 @@ def test_create_llm_adapter_returns_local_adapter_for_local_slot() -> None:
 
 
 def test_google_llm_adapter_returns_response_text() -> None:
-    models = FakeGoogleModels(FakeGoogleResponse('{"summary":"ok"}'))
+    models = FakeGoogleModels(FakeGoogleResponse('  {"summary":"ok"}  '))
     adapter = GoogleGenAiLlmAdapter(
         LlmModelSlot(
             name="default",
@@ -119,7 +119,7 @@ def test_google_llm_adapter_returns_response_text() -> None:
 
     result = adapter.invoke("prompt")
 
-    assert result == '{"summary":"ok"}'
+    assert result == '  {"summary":"ok"}  '
     assert models.calls[0]["model"] == "gemini-2.5-flash"
     assert models.calls[0]["contents"] == "prompt"
     config = models.calls[0]["config"]
@@ -139,6 +139,34 @@ def test_google_llm_adapter_returns_none_for_empty_response() -> None:
             api_key="key",
         ),
         client=FakeGoogleClient(models),
+    )
+
+    assert adapter.invoke("prompt") is None
+
+
+def test_google_llm_adapter_returns_none_for_non_string_response_text() -> None:
+    models = FakeGoogleModels(FakeGoogleResponse({"summary": "ok"}))
+    adapter = GoogleGenAiLlmAdapter(
+        LlmModelSlot(
+            name="default",
+            provider="google",
+            model="gemini-2.5-flash",
+            api_key="key",
+        ),
+        client=FakeGoogleClient(models),
+    )
+
+    assert adapter.invoke("prompt") is None
+
+
+def test_google_llm_adapter_returns_none_without_api_key() -> None:
+    adapter = GoogleGenAiLlmAdapter(
+        LlmModelSlot(
+            name="default",
+            provider="google",
+            model="gemini-2.5-flash",
+            api_key="",
+        )
     )
 
     assert adapter.invoke("prompt") is None
