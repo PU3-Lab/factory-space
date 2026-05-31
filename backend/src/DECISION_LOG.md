@@ -190,7 +190,9 @@
 - WebSocket message를 직접 읽거나 쓰지 않는다.
 - LLM 호출을 직접 소유하지 않는다.
 - cache key 생성, retry, fallback, response envelope 생성은 `agents/pipeline.py`가 담당한다.
-- routing 실패나 판단 불가 상태는 `agent.error`가 아니라 기본 sub-agent 선택 정책으로 복구하는 것을 우선한다.
+- routing 실패나 판단 불가 상태는 기본 sub-agent 선택 정책으로 복구하지 않는다.
+- 명시적으로 전달된 유효한 `sub_agent`만 검증 후 사용할 수 있다.
+- LLM router가 허용된 `sub_agent`를 반환하지 못하면 `ROUTING_UNAVAILABLE` error로 종료한다.
 
 ## 7. 각 Agent 역할은 어디에 기록하는가?
 
@@ -253,3 +255,150 @@
 - 도메인별 세부 분기 정책을 각 도메인 내부에 유지한다.
 - 서버 전체 오케스트레이터의 책임을 최상위 도메인 선택으로 제한한다.
 - leaf Agent 추가나 분기 기준 변경이 전체 오케스트레이터로 번지지 않게 한다.
+
+## 10. Agent routing은 로직으로 구분하는가?
+
+결정: Agent가 판단하는 routing은 코드 로직으로 구분하지 않고 prompt 기반 LLM 결정으로 처리한다.
+
+원칙:
+
+- `agents/orchestrator.py`는 routing prompt를 만들고 LLM의 선택 결과를 파싱한다.
+- `manual_qa/agent.py`와 `quest_generator/agent.py`도 같은 방식으로 sub-agent routing prompt를 만든다.
+- 명시적으로 전달된 `agent` 또는 `sub_agent` 값은 검증 후 사용할 수 있다.
+- keyword, if/else, score table 같은 코드 로직으로 Agent나 sub-agent를 추론하지 않는다.
+- LLM routing 결과가 없거나 허용 목록 밖이면 임의 fallback 선택을 하지 않고 routing error로 종료한다.
+
+이유:
+
+- 오케스트레이터 Agent의 역할은 규칙 기반 router가 아니라 의도 판단이다.
+- routing 기준이 prompt에 있어야 모델 교체, prompt tuning, eval 설계가 가능하다.
+- 코드 로직으로 분기하면 Agent를 쓰는 의미가 줄고, 도메인 정책이 다시 하드코딩된다.
+
+## 11. WebSocket package 이름은 무엇으로 하는가?
+
+결정: transport package 이름은 `websocket`이 아니라 `websocket_gateway`로 둔다.
+
+이유:
+
+- `websocket`은 Python 환경에서 외부 패키지 이름과 충돌할 수 있다.
+- 실제 테스트에서 `from websocket.gateway import ...`가 외부 `websocket` package와 충돌해 import가 실패했다.
+- `websocket_gateway`는 역할이 명확하고 충돌 가능성이 낮다.
+
+현재 구조:
+
+- `websocket_gateway/gateway.py`: `/ws/agent` endpoint와 JSON 송수신
+- `websocket_gateway/connection.py`: WebSocket connection helper 영역
+
+## 12. 명시된 `sub_agent`가 잘못된 경우 어떻게 처리하는가?
+
+결정: 명시된 `sub_agent`는 authoritative input으로 보고, 허용 목록 검증에 실패하면 LLM routing으로 우회하지 않고 error로 종료한다.
+
+원칙:
+
+- `manual_qa` 요청의 `sub_agent`는 `manual_qa.*` 허용 목록에 있어야 한다.
+- `quest_generator` 요청의 `sub_agent`는 `quest_generator.*` 허용 목록에 있어야 한다.
+- `process_optimizer` 요청의 `sub_agent`는 없거나 `process_optimizer`여야 한다.
+- `new_material_generator` 요청의 `sub_agent`는 없거나 `new_material_generator`여야 한다.
+- 명시 `sub_agent`가 없을 때만 해당 도메인 서브 오케스트레이터의 routing prompt를 호출한다.
+- 명시 `sub_agent`가 있지만 현재 top-level Agent와 맞지 않거나 허용 목록 밖이면 `INVALID_SUB_AGENT`를 반환한다.
+
+이유:
+
+- 클라이언트가 잘못 보낸 명시 값을 LLM이 조용히 다른 선택으로 덮어쓰면 입력 오류가 숨는다.
+- top-level `agent` 검증과 같은 방식으로 explicit routing input을 다룬다.
+
+## 13. Agent response cache key는 무엇을 포함하는가?
+
+결정: response cache key는 `agent`, `sub_agent`, `payload`, 실행 context metadata를 포함한다.
+
+원칙:
+
+- cache key에는 `session_id`, `client_id`, `context.metadata`를 포함한다.
+- `request_id`는 cache key에 넣지 않는다.
+- Agent prompt는 request id에 의존하지 않는다.
+- context에 따라 prompt나 응답이 달라질 수 있으므로 payload만으로 cache key를 만들지 않는다.
+
+이유:
+
+- 같은 payload라도 세션, 클라이언트, 선택 화면, 공장 구역 등 context가 다르면 응답이 달라질 수 있다.
+- request id는 추적용 값이므로 prompt와 cache 의미에 들어가면 안 된다.
+
+## 14. Superpowers 방식의 개발 harness를 어떻게 구성하는가?
+
+결정: backend agent 작업은 repo-local Superpowers harness로 진행한다.
+
+구성:
+
+- `docs/harness/factory-agent/team-spec.md`: 역할, handoff artifact, review gate, 실패 정책을 정의한다.
+- `.agents/skills/factory-agent-superpowers/SKILL.md`: coordinator가 사용할 top-level workflow다.
+- `.agents/skills/factory-agent-implementer/SKILL.md`: 단일 작업 구현자 역할이다.
+- `.agents/skills/factory-agent-spec-reviewer/SKILL.md`: 사용자 요청과 결정 로그 준수 여부를 검토한다.
+- `.agents/skills/factory-agent-quality-reviewer/SKILL.md`: spec 통과 후 코드 품질, 테스트, 경계 일관성을 검토한다.
+- `_workspace/factory-agent/`: 작업별 request, red, implementation, spec review, quality review, verification artifact를 보관한다.
+
+채택한 패턴:
+
+- Pipeline + Producer-Reviewer
+
+이유:
+
+- backend agent 작업은 protocol, LangGraph pipeline, prompt routing, WebSocket gateway가 순서대로 맞물린다.
+- 사용자 요구사항과 결정 로그 준수 여부는 일반 코드 리뷰와 별도로 검토해야 한다.
+- behavior 변경은 테스트를 먼저 만들고, 구현 후 spec review와 quality review를 분리해야 누락을 줄일 수 있다.
+
+검증 명령:
+
+```bash
+uv run --extra dev pytest
+uv run --extra dev ruff check .
+```
+
+운영 원칙:
+
+- behavior 변경은 failing test를 먼저 만든다.
+- spec review가 pass 되기 전에는 quality review로 넘어가지 않는다.
+- 완료 또는 커밋 전에는 fresh verification 결과를 기록한다.
+- Superpowers 플러그인이 세션 스킬로 직접 노출되지 않아도 repo-local harness artifact를 기준으로 같은 절차를 따른다.
+
+## 15. 현재 리뷰에서 발견된 pipeline 문제는 무엇인가?
+
+결정: 다음 두 이슈는 구현 전에 테스트로 고정하고 수정해야 한다.
+
+### 15.1 malformed envelope 오류에서 request correlation이 보존되지 않는다
+
+문제:
+
+- `AgentPipeline.run()`이 `AgentRequestEnvelope.model_validate()`를 먼저 호출한다.
+- `type`이 `agent.request`가 아니거나 `payload`가 object가 아니면 Pydantic `ValidationError`가 먼저 발생한다.
+- 이 경우 graph 내부의 `INVALID_MESSAGE_TYPE`, `INVALID_PAYLOAD` 분기까지 도달하지 않는다.
+- `_build_validation_error()`는 raw message를 알지 못해서 `request_id`, `session_id`, `client_id`, `agent`를 error envelope에 보존하지 못한다.
+
+영향:
+
+- 클라이언트가 잘못된 요청에 대한 `agent.error`를 받아도 어떤 요청의 오류인지 매칭하기 어렵다.
+- `validate_envelope()`에 존재하는 세부 error branch가 dict 입력 경로에서는 사실상 unreachable해진다.
+
+수정 방향:
+
+- 잘못된 type 또는 payload에서도 raw dict의 correlation field를 보존하는 테스트를 먼저 추가한다.
+- validation error builder가 raw message에서 `request_id`, `session_id`, `client_id`, `agent`를 가능한 한 보존하도록 수정한다.
+- 또는 envelope parsing을 느슨하게 분리해서 graph 내부 validation branch가 실제로 실행되도록 한다.
+
+### 15.2 cache hit 응답에서 원래 response metadata가 사라진다
+
+문제:
+
+- cache write는 `responsePayload`만 저장한다.
+- cache hit은 `responseMetadata`를 `{"cache": "hit"}`로 새로 만든다.
+- 첫 응답에 있던 `fallback: true`, `llm: used` 같은 실행 metadata가 hit 응답에서 사라진다.
+
+영향:
+
+- 같은 요청의 첫 응답과 cache hit 응답이 metadata 관점에서 다른 의미를 가진다.
+- 클라이언트나 디버깅 도구가 fallback/LLM 사용 여부를 일관되게 추적하기 어렵다.
+
+수정 방향:
+
+- cache entry에 response payload와 response metadata를 함께 저장한다.
+- hit 응답에서는 기존 metadata를 유지하면서 `cache: hit`만 추가한다.
+- 첫 응답과 cache hit 응답의 metadata 일관성을 검증하는 테스트를 추가한다.

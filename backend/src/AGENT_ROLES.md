@@ -53,6 +53,13 @@ Agent가 아닌 실행 구성요소:
 
 역할: 서버 전체 요청을 어떤 최상위 Agent가 처리할지 선택한다.
 
+선택 방식:
+
+- 기본 선택은 `orchestrator.py`가 만든 routing prompt의 LLM 응답으로만 한다.
+- 명시적인 `agent` 값이 요청에 있으면 그 값을 검증해서 사용한다.
+- keyword, if/else, score table 같은 코드 로직으로 Agent를 추론하지 않는다.
+- LLM routing 결과가 없거나 허용 목록 밖이면 임의 fallback 선택을 하지 않고 routing error로 종료한다.
+
 입력:
 
 - 검증된 `agent.request`
@@ -158,6 +165,13 @@ Agent가 아닌 실행 구성요소:
 
 역할: 매뉴얼 Q&A 도메인 서브 오케스트레이터다.
 
+선택 방식:
+
+- 기본 선택은 `manual_qa/agent.py`가 만든 routing prompt의 LLM 응답으로만 한다.
+- 명시적인 `sub_agent` 값이 요청에 있으면 그 값을 검증해서 사용한다.
+- 질문 keyword를 코드에서 직접 분류하지 않는다.
+- LLM routing 결과가 없거나 허용 목록 밖이면 임의 fallback 선택을 하지 않고 routing error로 종료한다.
+
 입력:
 
 - 사용자 질문
@@ -178,9 +192,9 @@ Agent가 아닌 실행 구성요소:
 
 주요 판단:
 
-- 질문이 레시피 설명인지, 장비 도움말인지, 문제 해결인지 구분한다.
-- 질문이 모호하면 현재 화면 context를 우선한다.
-- 어느 서브 에이전트로도 안전하게 분류할 수 없으면 `machine_help` 또는 일반 도움말 fallback으로 보낸다.
+- routing prompt는 질문이 레시피 설명인지, 장비 도움말인지, 문제 해결인지 판단하도록 지시한다.
+- 질문이 모호할 때는 LLM router가 현재 화면 context를 판단 근거로 사용한다.
+- LLM router가 허용된 `sub_agent`를 반환하지 못하면 기본 sub-agent로 복구하지 않고 routing error로 종료한다.
 
 소유하지 않는 책임:
 
@@ -246,6 +260,13 @@ Agent가 아닌 실행 구성요소:
 
 역할: 퀘스트 생성 도메인 서브 오케스트레이터다.
 
+선택 방식:
+
+- 기본 선택은 `quest_generator/agent.py`가 만든 routing prompt의 LLM 응답으로만 한다.
+- 명시적인 `sub_agent` 값이 요청에 있으면 그 값을 검증해서 사용한다.
+- 진행도, 이벤트, quest type을 코드 if/else로 직접 분류하지 않는다.
+- LLM routing 결과가 없거나 허용 목록 밖이면 임의 fallback 선택을 하지 않고 routing error로 종료한다.
+
 입력:
 
 - 플레이어 진행도
@@ -269,9 +290,10 @@ Agent가 아닌 실행 구성요소:
 
 주요 판단:
 
-- 지금 필요한 퀘스트가 온보딩인지, 생산 개선인지, 탐험 유도인지, 경제 균형인지 구분한다.
-- 명시된 quest type이 있으면 우선한다.
-- 명시된 quest type이 없으면 진행도와 최근 이벤트를 기준으로 선택한다.
+- routing prompt는 지금 필요한 퀘스트가 온보딩인지, 생산 개선인지, 탐험 유도인지, 경제 균형인지 판단하도록 지시한다.
+- `quest_type`, 진행도, 최근 이벤트는 LLM router가 참고하는 입력 신호다.
+- 코드가 `quest_type`, 진행도, 최근 이벤트를 if/else로 분류해서 sub-agent를 선택하지 않는다.
+- 명시적으로 사용할 수 있는 값은 검증된 `sub_agent`뿐이며, `quest_type`은 직접 라우팅 값으로 사용하지 않는다.
 
 소유하지 않는 책임:
 

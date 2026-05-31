@@ -8,7 +8,7 @@ Agent별 세부 책임은 `AGENT_ROLES.md`에 둔다.
 ```txt
 backend/src
  ├─ app.py
- ├─ websocket
+ ├─ websocket_gateway
  ├─ protocol
  ├─ agents
  ├─ llm
@@ -33,7 +33,7 @@ FastAPI application entrypoint다.
 - LLM 호출
 - 요청 payload 검증 세부 로직
 
-## `websocket`
+## `websocket_gateway`
 
 WebSocket transport 계층이다.
 
@@ -215,8 +215,8 @@ MVP 제약:
 권장 의존 방향:
 
 ```txt
-websocket -> protocol
-websocket -> agents.pipeline
+websocket_gateway -> protocol
+websocket_gateway -> agents.pipeline
 agents.pipeline -> agents.router
 agents.pipeline -> cache
 agents.pipeline -> llm
@@ -227,7 +227,7 @@ agents.new_material_generator -> visual
 피해야 할 의존:
 
 - `protocol`이 `agents`를 import하지 않는다.
-- `llm`이 `websocket`을 import하지 않는다.
+- `llm`이 `websocket_gateway`를 import하지 않는다.
 - `cache`가 Agent별 구현을 import하지 않는다.
 - Agent module이 WebSocket connection object를 직접 다루지 않는다.
 - `agents/orchestrator.py`는 실행 흐름을 직접 소유하지 않고, 어떤 전문 Agent를 사용할지 결정하는 역할만 맡는다.
