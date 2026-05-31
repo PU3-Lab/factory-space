@@ -9,9 +9,9 @@ from tests.harness import StubLLM, top_agent_decision
 @pytest.mark.parametrize(
     ("agent", "sub_agent", "expected_type"),
     [
-        ("manual_qa", "manual_qa.machine_help", "machine"),
-        ("manual_qa", "manual_qa.recipe_explainer", "recipe"),
-        ("manual_qa", "manual_qa.troubleshooter", "troubleshooting"),
+        ("operator_guide", "operator_guide.machine_help", "machine"),
+        ("operator_guide", "operator_guide.recipe_explainer", "recipe"),
+        ("operator_guide", "operator_guide.troubleshooter", "troubleshooting"),
         ("quest_generator", "quest_generator.tutorial_quest", "tutorial"),
         ("quest_generator", "quest_generator.production_quest", "production"),
         ("quest_generator", "quest_generator.exploration_quest", "exploration"),

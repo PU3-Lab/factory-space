@@ -100,7 +100,7 @@ AI Agent 실행 계층이다.
 - `orchestrator`
 - `process_optimizer`
 - `quest_generator`
-- `manual_qa`
+- `operator_guide`
 - `new_material_generator`
 
 대표 파일:
@@ -116,17 +116,17 @@ AI Agent 실행 계층이다.
 - `orchestrator.py`: 요청 의도 분석과 전문 Agent 선택을 담당하는 오케스트레이터 Agent
 - `process_optimizer.py`: 공정 최적화 Agent
 - `quest_generator/`: 퀘스트 생성 Agent와 서브 에이전트
-- `manual_qa/`: 매뉴얼 Q&A Agent와 서브 에이전트
+- `operator_guide/`: 운영자 가이드 Agent와 서브 에이전트
 - `new_material_generator.py`: 신물질 생성 Agent
 
 오케스트레이터 수:
 
 - 서버 전체 오케스트레이터 Agent는 `orchestrator.py` 1개다.
-- 도메인 오케스트레이터는 `manual_qa/agent.py`, `quest_generator/agent.py` 2개다.
+- 도메인 오케스트레이터는 `operator_guide/agent.py`, `quest_generator/agent.py` 2개다.
 - `pipeline/`은 실행 파이프라인이고, `router.py`는 registry/router이므로 오케스트레이터가 아니다.
-- `manual_qa/agent.py`와 `quest_generator/agent.py`는 각 도메인 내부에서 서브 에이전트 선택, payload 정리, 결과 정규화를 맡는 도메인 오케스트레이터다.
+- `operator_guide/agent.py`와 `quest_generator/agent.py`는 각 도메인 내부에서 서브 에이전트 선택, payload 정리, 결과 정규화를 맡는 도메인 오케스트레이터다.
 - top-level Agent 중 `process_optimizer`, `new_material_generator`는 현재 내부 서브 에이전트가 없으므로 leaf Agent로 처리한다.
-- top-level Agent라도 내부 서브 에이전트나 실행 전략을 다시 선택해야 하는 도메인은 `manual_qa`, `quest_generator`처럼 도메인 오케스트레이터로 분리한다.
+- top-level Agent라도 내부 서브 에이전트나 실행 전략을 다시 선택해야 하는 도메인은 `operator_guide`, `quest_generator`처럼 도메인 오케스트레이터로 분리한다.
 
 공식 용어:
 
@@ -134,9 +134,9 @@ AI Agent 실행 계층이다.
 - `Domain Orchestrator`: 도메인 오케스트레이터, 즉 중간 계층에서 하위 Agent를 고르는 Agent
 - `Leaf Agent`: 하위 Agent를 고르지 않는 실행 Agent
 
-`manual_qa/` 내부:
+`operator_guide/` 내부:
 
-- `agent.py`: 매뉴얼 Q&A 요청을 서브 에이전트로 분기하는 도메인 오케스트레이터
+- `agent.py`: 운영자 가이드 요청을 서브 에이전트로 분기하는 도메인 오케스트레이터
 - `recipe_explainer.py`: 레시피 설명 서브 에이전트
 - `machine_help.py`: 장비 도움말 서브 에이전트
 - `troubleshooter.py`: 문제 해결 서브 에이전트
@@ -267,22 +267,22 @@ flowchart TD
     RouteTopAgent --> RouteSelectedAgent{route_selected_agent}
 
     RouteSelectedAgent -->|process_optimizer| ProcessPayload[validate_process_payload]
-    RouteSelectedAgent -->|manual_qa| ManualRoute[manual_qa.route_sub_agent]
+    RouteSelectedAgent -->|operator_guide| OperatorGuideRoute[operator_guide.route_sub_agent]
     RouteSelectedAgent -->|quest_generator| QuestRoute[quest_generator.route_sub_agent]
     RouteSelectedAgent -->|new_material_generator| MaterialPayload[validate_material_payload]
     RouteSelectedAgent -->|unknown / invalid| ErrorNode[build_agent_error]
 
     ProcessPayload --> ProcessLeafResult{route_selected_leaf_agent}
-    ManualRoute --> ManualLeafResult{route_selected_leaf_agent}
+    OperatorGuideRoute --> OperatorGuideLeafResult{route_selected_leaf_agent}
     QuestRoute --> QuestLeafResult{route_selected_leaf_agent}
     MaterialPayload --> MaterialLeafResult{route_selected_leaf_agent}
 
     ProcessLeafResult -->|valid| CacheLookup[cache_lookup]
-    ManualLeafResult -->|valid| CacheLookup
+    OperatorGuideLeafResult -->|valid| CacheLookup
     QuestLeafResult -->|valid| CacheLookup
     MaterialLeafResult -->|valid| CacheLookup
     ProcessLeafResult -->|error| ErrorNode
-    ManualLeafResult -->|error| ErrorNode
+    OperatorGuideLeafResult -->|error| ErrorNode
     QuestLeafResult -->|error| ErrorNode
     MaterialLeafResult -->|error| ErrorNode
 
@@ -315,7 +315,7 @@ flowchart TD
 
 ### LangGraph State
 
-`route_selected_leaf_agent`는 `selectedLeafAgent`가 선택된 top-level Agent의 허용 leaf Agent id인지 확인하는 공통 validity/error edge다. `manual_qa`, `quest_generator`는 도메인 오케스트레이터 prompt 결과를 여기서 검증하고, `process_optimizer`, `new_material_generator`는 leaf top-level Agent라서 payload validation 결과를 이 공통 edge에 넘긴다.
+`route_selected_leaf_agent`는 `selectedLeafAgent`가 선택된 top-level Agent의 허용 leaf Agent id인지 확인하는 공통 validity/error edge다. `operator_guide`, `quest_generator`는 도메인 오케스트레이터 prompt 결과를 여기서 검증하고, `process_optimizer`, `new_material_generator`는 leaf top-level Agent라서 payload validation 결과를 이 공통 edge에 넘긴다.
 
 ```txt
 AgentGraphState
@@ -348,7 +348,7 @@ AgentGraphState
 - `validate_envelope`: public message envelope를 검증한다.
 - `route_top_agent`: 최상위 Agent 선택 prompt를 호출하고 `selectedAgent` state를 기록한다. 명시 `agent`는 prompt hint일 뿐 직접 선택 shortcut으로 쓰지 않는다.
 - `route_selected_agent`: `selectedAgent` state를 보고 LangGraph conditional edge로 최상위 Agent 경로를 나눈다.
-- `manual_qa.route_sub_agent`: structured prompt를 호출하고 raw decision을 `selectedLeafAgent` state에 기록한다.
+- `operator_guide.route_sub_agent`: structured prompt를 호출하고 raw decision을 `selectedLeafAgent` state에 기록한다.
 - `quest_generator.route_sub_agent`: structured prompt를 호출하고 raw decision을 `selectedLeafAgent` state에 기록한다.
 - `route_selected_leaf_agent`: `selectedLeafAgent`가 선택된 top-level Agent의 허용 leaf Agent id인지 검증하고 다음 실행 단계와 error 경로를 나눈다.
 - `cache_lookup`: cache key로 이전 response payload를 찾는다.

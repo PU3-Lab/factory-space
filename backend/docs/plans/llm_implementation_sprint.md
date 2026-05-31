@@ -256,7 +256,7 @@ Files:
 
 Steps:
 
-- [ ] top-level orchestrator가 structured prompt 응답 문자열로 `manual_qa`를 선택하는 테스트 추가
+- [ ] top-level orchestrator가 structured prompt 응답 문자열로 `operator_guide`를 선택하는 테스트 추가
 - [ ] `quest_generator`가 structured prompt 응답 문자열로 `quest_generator.production_quest`를 선택하는 테스트 추가
 - [ ] top-level/sub-agent routing에서 JSON output이 `ROUTING_UNAVAILABLE`로 종료되는 테스트 추가
 - [ ] `uv run --extra dev pytest tests/test_pipeline_edges.py -q` 실행

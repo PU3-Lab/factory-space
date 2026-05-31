@@ -11,7 +11,10 @@ from langgraph.graph.state import CompiledStateGraph
 from pydantic import ValidationError
 
 from agents.base import AgentContext
-from agents.manual_qa.agent import MANUAL_QA_SUB_AGENT_IDS, ManualQaAgent
+from agents.operator_guide.agent import (
+    OPERATOR_GUIDE_LEAF_AGENT_IDS,
+    OperatorGuideAgent,
+)
 from agents.orchestrator import TOP_LEVEL_AGENT_IDS, OrchestratorAgent
 from agents.pipeline.graph_edges import wire_agent_graph
 from agents.pipeline.llm_fallback import build_llm_call_slots, invoke_llm_call_slot
@@ -80,7 +83,7 @@ class AgentPipeline:
         )
         routing_llm = self.llm or llm_slots[0].adapter
         orchestrator = OrchestratorAgent()
-        manual_qa = ManualQaAgent()
+        operator_guide = OperatorGuideAgent()
         quest_generator = QuestGeneratorAgent()
 
         def build_context(state: AgentGraphState) -> AgentGraphState:
@@ -161,23 +164,23 @@ class AgentPipeline:
                 }
             return {"selectedLeafAgent": "new_material_generator"}
 
-        def route_manual_sub_agent(state: AgentGraphState) -> AgentGraphState:
+        def route_operator_guide_sub_agent(state: AgentGraphState) -> AgentGraphState:
             explicit_sub_agent = state["typedPayload"].get("sub_agent")
             if explicit_sub_agent is not None:
                 if (
                     isinstance(explicit_sub_agent, str)
-                    and explicit_sub_agent in MANUAL_QA_SUB_AGENT_IDS
+                    and explicit_sub_agent in OPERATOR_GUIDE_LEAF_AGENT_IDS
                 ):
                     return {"selectedLeafAgent": explicit_sub_agent}
                 return {
                     "error": build_error_payload(
                         "INVALID_SUB_AGENT",
-                        "Explicit sub_agent is not valid for manual_qa.",
+                        "Explicit sub_agent is not valid for operator_guide.",
                         details={"sub_agent": explicit_sub_agent},
                     )
                 }
 
-            routing_prompt = manual_qa.build_routing_prompt(
+            routing_prompt = operator_guide.build_routing_prompt(
                 state["typedPayload"],
                 state["context"],
             )
@@ -368,7 +371,7 @@ class AgentPipeline:
         graph.add_node("validate_envelope", validate_envelope)
         graph.add_node("route_top_agent", route_top_agent)
         graph.add_node("validate_process_payload", validate_process_payload)
-        graph.add_node("manual_qa.route_sub_agent", route_manual_sub_agent)
+        graph.add_node("operator_guide.route_sub_agent", route_operator_guide_sub_agent)
         graph.add_node("quest_generator.route_sub_agent", route_quest_sub_agent)
         graph.add_node("validate_material_payload", validate_material_payload)
         graph.add_node("cache_lookup", cache_lookup)

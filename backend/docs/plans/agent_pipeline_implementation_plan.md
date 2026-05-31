@@ -60,7 +60,7 @@ flowchart TD
 
     Registry --> ProcessAgent[process_optimizer]
     Registry --> QuestAgent[quest_generator]
-    Registry --> ManualAgent[manual_qa]
+    Registry --> OperatorGuideAgent[operator_guide]
     Registry --> MaterialAgent[new_material_generator]
 
     ProcessAgent --> ProcessSchema[Payload / Response Schema]
@@ -71,9 +71,9 @@ flowchart TD
     QuestAgent --> QuestPrompt[Prompt Builder]
     QuestAgent --> QuestFallback[Fallback Rules]
 
-    ManualAgent --> ManualSchema[Payload / Response Schema]
-    ManualAgent --> ManualPrompt[Prompt Builder]
-    ManualAgent --> ManualFallback[Fallback Rules]
+    OperatorGuideAgent --> OperatorGuideSchema[Payload / Response Schema]
+    OperatorGuideAgent --> OperatorGuidePrompt[Prompt Builder]
+    OperatorGuideAgent --> OperatorGuideFallback[Fallback Rules]
 
     MaterialAgent --> MaterialSchema[Payload / Response Schema]
     MaterialAgent --> MaterialPrompt[Prompt Builder]
@@ -148,7 +148,7 @@ sequenceDiagram
 flowchart LR
     Base[BaseAgent Interface] --> PA[ProcessOptimizerAgent]
     Base --> QA[QuestGeneratorAgent]
-    Base --> MA[ManualQaAgent]
+    Base --> MA[OperatorGuideAgent]
     Base --> NGA[NewMaterialGeneratorAgent]
 
     PA --> PA1[ProcessOptimizationPayload]
@@ -159,9 +159,9 @@ flowchart LR
     QA --> QA2[QuestGenerationResponse]
     QA --> QA3[Quest Fallback]
 
-    MA --> MA1[ManualQaPayload]
-    MA --> MA2[ManualQaResponse]
-    MA --> MA3[Manual QA Fallback]
+    MA --> MA1[OperatorGuidePayload]
+    MA --> MA2[OperatorGuideResponse]
+    MA --> MA3[Operator Guide Fallback]
 
     NGA --> NGA1[NewMaterialPayload]
     NGA --> NGA2[NewMaterialResponse]
@@ -432,7 +432,7 @@ fallback:
 - 최근 생산품이 있으면 다음 가공 단계 퀘스트를 만든다.
 - 정보가 부족하면 stage 기반 탐색 퀘스트를 만든다.
 
-### 14.3 `manual_qa`
+### 14.3 `operator_guide`
 
 입력:
 
@@ -492,7 +492,7 @@ fallback:
 6. `AgentPipeline`을 구현한다.
 7. `process_optimizer` agent를 구현한다.
 8. `quest_generator` agent를 구현한다.
-9. `manual_qa` agent를 구현한다.
+9. `operator_guide` agent를 구현한다.
 10. `new_material_generator` agent와 `visualProfile` builder를 구현한다.
 11. WebSocket gateway에서 pipeline을 호출하도록 연결한다.
 12. unit test를 작성한다.
@@ -518,7 +518,7 @@ fallback:
 
 - `process_optimizer`는 소비량이 생산량보다 큰 item을 병목으로 잡는다.
 - `quest_generator`는 `unusedSystems` 기반 퀘스트를 우선 생성한다.
-- `manual_qa`는 질문과 context 기반 답변을 생성한다.
+- `operator_guide`는 질문과 context 기반 답변을 생성한다.
 - `new_material_generator`는 material, recipe, visualProfile을 항상 반환한다.
 
 ### WebSocket Tests

@@ -1,4 +1,4 @@
-"""Manual Q&A orchestrating agent."""
+"""Operator guide orchestrating agent."""
 
 from __future__ import annotations
 
@@ -6,31 +6,31 @@ from typing import Any
 
 from agents.base import AgentContext
 
-MANUAL_QA_SUB_AGENT_IDS = (
-    "manual_qa.recipe_explainer",
-    "manual_qa.machine_help",
-    "manual_qa.troubleshooter",
+OPERATOR_GUIDE_LEAF_AGENT_IDS = (
+    "operator_guide.recipe_explainer",
+    "operator_guide.machine_help",
+    "operator_guide.troubleshooter",
 )
 
 
-class ManualQaAgent:
-    """Select the manual Q&A leaf agent for a user question."""
+class OperatorGuideAgent:
+    """Select the operator guide leaf agent for a user question."""
 
-    agent_id = "manual_qa"
+    agent_id = "operator_guide"
 
     def build_routing_prompt(
         self,
         payload: dict[str, Any],
         context: AgentContext,
     ) -> str:
-        """Build the prompt used to select a manual Q&A leaf agent."""
+        """Build the prompt used to select an operator guide leaf agent."""
 
         allowed_leaf_agent_ids = "\n".join(
-            f"- {sub_agent_id}" for sub_agent_id in MANUAL_QA_SUB_AGENT_IDS
+            f"- {sub_agent_id}" for sub_agent_id in OPERATOR_GUIDE_LEAF_AGENT_IDS
         )
         return (
             "[ROLE]\n"
-            "매뉴얼 Q&A 도메인 오케스트레이터\n\n"
+            "운영자 가이드 도메인 오케스트레이터\n\n"
             "[TASK]\n"
             "사용자 요청을 처리할 leaf Agent id를 하나만 결정한다.\n\n"
             "[ALLOWED_LEAF_AGENT_IDS]\n"

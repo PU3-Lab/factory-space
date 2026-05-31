@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from agents.base import AgentContext
-from agents.manual_qa.agent import ManualQaAgent
+from agents.operator_guide.agent import OperatorGuideAgent
 from agents.quest_generator.agent import QuestGeneratorAgent
 from agents.router import create_default_agent_router
 
@@ -10,10 +10,10 @@ def test_default_agent_router_contains_leaf_agents() -> None:
     router = create_default_agent_router()
 
     assert router.list_agent_ids() == [
-        "manual_qa.machine_help",
-        "manual_qa.recipe_explainer",
-        "manual_qa.troubleshooter",
         "new_material_generator",
+        "operator_guide.machine_help",
+        "operator_guide.recipe_explainer",
+        "operator_guide.troubleshooter",
         "process_optimizer",
         "quest_generator.economy_quest",
         "quest_generator.exploration_quest",
@@ -23,14 +23,14 @@ def test_default_agent_router_contains_leaf_agents() -> None:
 
 
 def test_sub_orchestrators_use_structured_prompt_id_contract() -> None:
-    manual = ManualQaAgent()
+    operator_guide = OperatorGuideAgent()
     quest = QuestGeneratorAgent()
     context = AgentContext(
         request_id="request-contract",
         metadata={"screen": "factory-floor"},
     )
 
-    manual_prompt = manual.build_routing_prompt(
+    operator_guide_prompt = operator_guide.build_routing_prompt(
         {"question": "How do I use this machine?"},
         context,
     )
@@ -39,7 +39,7 @@ def test_sub_orchestrators_use_structured_prompt_id_contract() -> None:
         context,
     )
 
-    for prompt in (manual_prompt, quest_prompt):
+    for prompt in (operator_guide_prompt, quest_prompt):
         assert "[ROLE]" in prompt
         assert "[TASK]" in prompt
         assert "[ALLOWED_LEAF_AGENT_IDS]" in prompt
@@ -49,9 +49,9 @@ def test_sub_orchestrators_use_structured_prompt_id_contract() -> None:
         assert "compact JSON" not in prompt
         assert '{"sub_agent"' not in prompt
 
-    assert "manual_qa.machine_help" in manual_prompt
-    assert "manual_qa.recipe_explainer" in manual_prompt
-    assert "manual_qa.troubleshooter" in manual_prompt
+    assert "operator_guide.machine_help" in operator_guide_prompt
+    assert "operator_guide.recipe_explainer" in operator_guide_prompt
+    assert "operator_guide.troubleshooter" in operator_guide_prompt
     assert "quest_generator.production_quest" in quest_prompt
     assert "quest_generator.tutorial_quest" in quest_prompt
     assert "quest_generator.exploration_quest" in quest_prompt

@@ -1,4 +1,4 @@
-"""Troubleshooting sub-agent."""
+"""Machine help sub-agent."""
 
 from __future__ import annotations
 
@@ -7,13 +7,13 @@ from typing import Any
 from agents.base import AgentContext, AgentRunResult
 
 
-class TroubleshooterAgent:
-    """Diagnose blocked production and error states."""
+class MachineHelpAgent:
+    """Explain machine state, usage, and UI context."""
 
-    agent_id = "manual_qa.troubleshooter"
+    agent_id = "operator_guide.machine_help"
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
-        return f"다음 공장 문제를 진단하고 해결 순서를 제안하세요: {payload}"
+        return f"다음 설비 도움말 질문에 답변하세요: {payload}"
 
     def fallback(
         self,
@@ -22,11 +22,11 @@ class TroubleshooterAgent:
     ) -> AgentRunResult:
         question = str(payload.get("question") or payload.get("message") or "")
         return AgentRunResult(
-            agent="manual_qa",
+            agent="operator_guide",
             payload={
-                "answer": "입력 재료 부족, 출력 저장소 포화, 전력 부족, 설비 정지 상태를 순서대로 확인하세요.",
+                "answer": "선택한 설비의 상태값, 입력/출력 연결, 사용 가능한 레시피를 확인하세요.",
                 "question": question,
-                "topic": "troubleshooting",
+                "topic": "machine",
             },
             metadata={"fallback": True, "sub_agent": self.agent_id},
         )

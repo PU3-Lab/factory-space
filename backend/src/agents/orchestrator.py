@@ -8,7 +8,7 @@ from agents.base import AgentContext
 
 TOP_LEVEL_AGENT_IDS = (
     "process_optimizer",
-    "manual_qa",
+    "operator_guide",
     "quest_generator",
     "new_material_generator",
 )

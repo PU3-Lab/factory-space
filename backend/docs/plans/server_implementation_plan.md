@@ -69,7 +69,7 @@ wss://{api-host}/ws/agent
 |---|---|
 | `process_optimizer` | 생산량, 소비량, 전력, 병목 후보를 분석해 최적화 제안 생성 |
 | `quest_generator` | 진행도, 해금 상태, 최근 생산 정보를 기반으로 다음 퀘스트 생성 |
-| `manual_qa` | 질문과 현재 플레이 컨텍스트를 기반으로 매뉴얼 답변 생성 |
+| `operator_guide` | 질문과 현재 플레이 컨텍스트를 기반으로 운영자 가이드 답변 생성 |
 | `new_material_generator` | 미등록 재료 조합을 기반으로 신물질, 레시피, 비주얼 프로파일 생성 |
 
 ### Request Envelope
@@ -140,7 +140,7 @@ backend
  │   │   │   └─ utils.py
  │   │   ├─ process_optimizer.py
  │   │   ├─ quest_generator.py
- │   │   ├─ manual_qa.py
+ │   │   ├─ operator_guide.py
  │   │   └─ new_material_generator.py
  │   ├─ llm
  │   │   ├─ adapter.py
@@ -297,7 +297,7 @@ fallback 규칙:
 - 부족 자원 정보가 있으면 해당 자원 생산 또는 확보 퀘스트를 생성한다.
 - 정보가 부족하면 현재 stage 기준 탐색 퀘스트를 생성한다.
 
-### 7.3 `manual_qa`
+### 7.3 `operator_guide`
 
 입력 payload:
 
@@ -444,7 +444,7 @@ agent + leaf_agent + payload + session_id + client_id + context.metadata
 - `request_id`는 cache key에 포함하지 않는다.
 - cache hit 시 LLM을 호출하지 않고 이전 `agent.response` payload를 반환한다.
 - cache는 프로세스 재시작 시 사라진다.
-- `manual_qa`는 question이 payload에 포함되므로 별도 key field를 추가하지 않는다.
+- `operator_guide`는 question이 payload에 포함되므로 별도 key field를 추가하지 않는다.
 
 ## 10. Error Handling
 
@@ -468,7 +468,7 @@ Agent 실행 단계의 LLM provider 오류는 `agent.error`가 아니라 fallbac
 6. LLM adapter와 mock adapter를 구현한다.
 7. `process_optimizer` schema, prompt, fallback을 구현한다.
 8. `quest_generator` schema, prompt, fallback을 구현한다.
-9. `manual_qa` schema, prompt, fallback을 구현한다.
+9. `operator_guide` schema, prompt, fallback을 구현한다.
 10. `new_material_generator` schema, prompt, fallback, visual profile builder를 구현한다.
 11. unit test와 WebSocket integration test를 작성한다.
 12. README 또는 backend 실행 문서를 새 endpoint 기준으로 갱신한다.
@@ -498,7 +498,7 @@ Agent 실행 단계의 LLM provider 오류는 `agent.error`가 아니라 fallbac
 - unknown agent 요청 시 `agent.error` 반환
 - process optimizer 요청이 병목 suggestion을 반환
 - quest generator 요청이 quest를 반환
-- manual QA 요청이 answer를 반환
+- operator guide 요청이 answer를 반환
 - new material 요청이 material, recipe, visualProfile을 반환
 
 ### Acceptance Criteria

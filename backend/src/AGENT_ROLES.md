@@ -19,12 +19,12 @@ flowchart TD
 
     Orchestrator --> Process[process_optimizer]
     Orchestrator --> Material[new_material_generator]
-    Orchestrator --> Manual[manual_qa.agent]
+    Orchestrator --> OperatorGuide[operator_guide.agent]
     Orchestrator --> Quest[quest_generator.agent]
 
-    Manual --> Recipe[manual_qa.recipe_explainer]
-    Manual --> Machine[manual_qa.machine_help]
-    Manual --> Trouble[manual_qa.troubleshooter]
+    OperatorGuide --> Recipe[operator_guide.recipe_explainer]
+    OperatorGuide --> Machine[operator_guide.machine_help]
+    OperatorGuide --> Trouble[operator_guide.troubleshooter]
 
     Quest --> Tutorial[quest_generator.tutorial_quest]
     Quest --> Production[quest_generator.production_quest]
@@ -40,7 +40,7 @@ flowchart TD
 
 도메인 오케스트레이터:
 
-- `agents/manual_qa/agent.py`
+- `agents/operator_guide/agent.py`
 - `agents/quest_generator/agent.py`
 
 Agent가 아닌 실행 구성요소:
@@ -56,7 +56,7 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 용어:
 
 - `Global Orchestrator`: 서버 전체 요청을 어떤 top-level Agent가 처리할지 결정하는 최상위 오케스트레이터다. 현재는 `agents/orchestrator.py`다.
-- `Domain Orchestrator`: 특정 도메인 안에서 하위 서브 에이전트나 내부 실행 전략을 고르는 중간 계층 Agent다. 현재는 `manual_qa`, `quest_generator`다.
+- `Domain Orchestrator`: 특정 도메인 안에서 하위 서브 에이전트나 내부 실행 전략을 고르는 중간 계층 Agent다. 현재는 `operator_guide`, `quest_generator`다.
 - `Leaf Agent`: 더 이상 하위 Agent를 고르지 않고 prompt/schema/fallback 계약을 제공하는 실행 Agent다. 현재 top-level leaf는 `process_optimizer`, `new_material_generator`다.
 
 한국어 문서에서는 `Domain Orchestrator`를 `도메인 오케스트레이터`라고 부른다. `중간 에이전트` 같은 계층 위치 표현은 책임을 드러내지 못하므로 공식 용어로 쓰지 않는다.
@@ -65,7 +65,7 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 - 하위 실행 단위가 없고 `build_prompt()`, response schema, `fallback()` 정책만 제공하면 leaf Agent로 처리한다.
 - leaf Agent도 직접 LLM을 호출하거나 envelope를 만들지 않는다. pipeline이 Agent 계약을 실행한다.
 - top-level routing 결과는 항상 `selectedAgent`로 기록하고, leaf인지 도메인 오케스트레이터인지는 LangGraph edge가 다음 node를 선택하면서 드러낸다.
-- `manual_qa`, `quest_generator`는 내부 서브 에이전트가 있으므로 도메인 오케스트레이터다.
+- `operator_guide`, `quest_generator`는 내부 서브 에이전트가 있으므로 도메인 오케스트레이터다.
 - `process_optimizer`, `new_material_generator`는 현재 내부 서브 에이전트가 없으므로 leaf top-level Agent다.
 
 따라서 top-level Agent를 "오케스트레이터처럼" 처리해야 하는 경우는 그 Agent가 다시 하위 Agent를 선택하는 책임을 가질 때뿐이다.
@@ -98,7 +98,7 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 선택 가능한 Agent:
 
 - `process_optimizer`
-- `manual_qa`
+- `operator_guide`
 - `quest_generator`
 - `new_material_generator`
 
@@ -112,8 +112,8 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 
 직접 서브 에이전트까지 분기하지 않는 이유:
 
-- `orchestrator.py`가 `manual_qa.recipe_explainer`, `quest_generator.production_quest` 같은 leaf Agent까지 직접 고르면 도메인별 세부 정책이 서버 전체 오케스트레이터로 새어 나온다.
-- 도메인별 서브 에이전트 선택 기준은 서로 다르다. 매뉴얼 Q&A는 질문 의도와 화면 context가 중요하고, 퀘스트 생성은 진행도, 최근 이벤트, 경제/생산/탐험 우선순위가 중요하다.
+- `orchestrator.py`가 `operator_guide.recipe_explainer`, `quest_generator.production_quest` 같은 leaf Agent까지 직접 고르면 도메인별 세부 정책이 서버 전체 오케스트레이터로 새어 나온다.
+- 도메인별 서브 에이전트 선택 기준은 서로 다르다. 운영자 가이드는 질문 의도와 화면 context가 중요하고, 퀘스트 생성은 진행도, 최근 이벤트, 경제/생산/탐험 우선순위가 중요하다.
 - leaf Agent가 늘어날 때마다 서버 전체 오케스트레이터를 수정하게 되면 변경 범위가 커진다.
 - 따라서 `orchestrator.py`는 최상위 Agent만 선택하고, 세부 분기는 도메인 오케스트레이터가 맡는다.
 
@@ -151,7 +151,7 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 - 실제 게임 상태 변경
 - 액션 실행
 - 퀘스트 생성
-- 매뉴얼 Q&A
+- 운영자 가이드
 
 ## `agents/new_material_generator.py`
 
@@ -184,9 +184,9 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 - 퀘스트 자동 생성
 - 시각 asset 생성
 
-## `agents/manual_qa/agent.py`
+## `agents/operator_guide/agent.py`
 
-역할: 매뉴얼 Q&A 도메인 오케스트레이터다.
+역할: 운영자 가이드 도메인 오케스트레이터다.
 
 도메인 오케스트레이터의 공통 책임:
 
@@ -216,11 +216,11 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 
 선택 방식:
 
-- 기본 선택은 `manual_qa/agent.py`가 만든 routing prompt의 LLM 응답으로만 한다.
+- 기본 선택은 `operator_guide/agent.py`가 만든 routing prompt의 LLM 응답으로만 한다.
 - 명시적인 `sub_agent` 값이 요청에 있으면 그 값을 검증해서 사용한다.
 - 질문 keyword를 코드에서 직접 분류하지 않는다.
 - LLM routing 결과가 없거나 허용 목록 밖이면 임의 fallback 선택을 하지 않고 routing error로 종료한다.
-- routing prompt는 structured prompt로 작성하고, 출력은 허용된 `manual_qa.*` leaf Agent id 문자열 하나만 허용한다.
+- routing prompt는 structured prompt로 작성하고, 출력은 허용된 `operator_guide.*` leaf Agent id 문자열 하나만 허용한다.
 - JSON, markdown, 설명, reason, 따옴표, 코드블록은 routing output으로 허용하지 않는다.
 
 입력:
@@ -254,7 +254,7 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 - 공정 최적화
 - WebSocket 송수신
 
-## `agents/manual_qa/recipe_explainer.py`
+## `agents/operator_guide/recipe_explainer.py`
 
 역할: 레시피와 생산 체인을 설명한다.
 
@@ -272,7 +272,7 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 - 추천 사용처
 - 초보자용 설명 또는 상세 설명
 
-## `agents/manual_qa/machine_help.py`
+## `agents/operator_guide/machine_help.py`
 
 역할: 설비, UI, 조작, 상태 표시를 설명한다.
 
@@ -289,7 +289,7 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 - 사용 방법
 - 관련 레시피 또는 연결 설비
 
-## `agents/manual_qa/troubleshooter.py`
+## `agents/operator_guide/troubleshooter.py`
 
 역할: 생산 중단, 병목, 오류 상태의 원인을 진단한다.
 

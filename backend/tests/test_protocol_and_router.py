@@ -53,7 +53,7 @@ def test_agent_response_and_error_envelopes_dump_protocol_shapes() -> None:
     )
     error = AgentErrorEnvelope(
         request_id="request-2",
-        agent="manual_qa",
+        agent="operator_guide",
         error=build_error_payload("INVALID_INPUT", "Bad input"),
     )
 

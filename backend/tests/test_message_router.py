@@ -40,16 +40,16 @@ def test_pipeline_uses_prompt_based_top_level_routing() -> None:
     assert "[OUTPUT_CONTRACT]" in llm.prompts[1]
 
 
-def test_pipeline_uses_prompt_based_manual_sub_agent_routing() -> None:
+def test_pipeline_uses_prompt_based_operator_guide_sub_agent_routing() -> None:
     response, llm = run_pipeline_scenario(
         PipelineScenario(
-            name="prompt routed manual",
-            agent="manual_qa",
+            name="prompt routed operator guide",
+            agent="operator_guide",
             payload={"question": "How do I use this panel?"},
-            request_id="request-manual-routing",
+            request_id="request-operator-guide-routing",
             llm_responses=[
-                top_agent_decision("manual_qa"),
-                leaf_agent_decision("manual_qa.machine_help"),
+                top_agent_decision("operator_guide"),
+                leaf_agent_decision("operator_guide.machine_help"),
                 None,
             ],
         )
@@ -57,12 +57,12 @@ def test_pipeline_uses_prompt_based_manual_sub_agent_routing() -> None:
 
     assert_agent_response(
         response,
-        agent="manual_qa",
-        sub_agent="manual_qa.machine_help",
+        agent="operator_guide",
+        sub_agent="operator_guide.machine_help",
     )
     assert response["payload"]["topic"] == "machine"
     assert "서버 전체 오케스트레이터" in llm.prompts[0]
-    assert "매뉴얼 Q&A 도메인 오케스트레이터" in llm.prompts[1]
+    assert "운영자 가이드 도메인 오케스트레이터" in llm.prompts[1]
     assert "[ALLOWED_LEAF_AGENT_IDS]" in llm.prompts[1]
     assert "[OUTPUT_CONTRACT]" in llm.prompts[1]
 
@@ -93,7 +93,7 @@ def test_pipeline_routes_explicit_agent_through_top_level_prompt() -> None:
 
 
 def test_pipeline_treats_explicit_agent_as_top_level_prompt_hint_only() -> None:
-    llm = StubLLM([top_agent_decision("manual_qa"), None])
+    llm = StubLLM([top_agent_decision("operator_guide"), None])
     pipeline = AgentPipeline(llm=llm)
 
     response = pipeline.run(
@@ -102,7 +102,7 @@ def test_pipeline_treats_explicit_agent_as_top_level_prompt_hint_only() -> None:
             "request_id": "request-explicit-agent-hint-only",
             "agent": "process_optimizer",
             "payload": {
-                "sub_agent": "manual_qa.machine_help",
+                "sub_agent": "operator_guide.machine_help",
                 "question": "How do I use this panel?",
             },
         }
@@ -110,8 +110,8 @@ def test_pipeline_treats_explicit_agent_as_top_level_prompt_hint_only() -> None:
 
     assert_agent_response(
         response,
-        agent="manual_qa",
-        sub_agent="manual_qa.machine_help",
+        agent="operator_guide",
+        sub_agent="operator_guide.machine_help",
     )
     assert "[REQUEST_HINT]\nagent: process_optimizer" in llm.prompts[0]
 
@@ -170,14 +170,14 @@ def test_pipeline_returns_error_when_agent_routing_model_is_unavailable() -> Non
     assert_agent_error(response, code="ROUTING_UNAVAILABLE")
 
 
-def test_pipeline_rejects_invalid_explicit_manual_sub_agent() -> None:
-    pipeline = AgentPipeline(llm=StubLLM([top_agent_decision("manual_qa")]))
+def test_pipeline_rejects_invalid_explicit_operator_guide_sub_agent() -> None:
+    pipeline = AgentPipeline(llm=StubLLM([top_agent_decision("operator_guide")]))
 
     response = pipeline.run(
         {
             "type": "agent.request",
-            "request_id": "request-invalid-manual-sub-agent",
-            "agent": "manual_qa",
+            "request_id": "request-invalid-operator-guide-sub-agent",
+            "agent": "operator_guide",
             "payload": {"sub_agent": "quest_generator.production_quest"},
         }
     )
@@ -193,7 +193,7 @@ def test_pipeline_rejects_invalid_explicit_quest_sub_agent() -> None:
             "type": "agent.request",
             "request_id": "request-invalid-quest-sub-agent",
             "agent": "quest_generator",
-            "payload": {"sub_agent": "manual_qa.machine_help"},
+            "payload": {"sub_agent": "operator_guide.machine_help"},
         }
     )
 
@@ -208,7 +208,7 @@ def test_pipeline_rejects_invalid_explicit_process_sub_agent() -> None:
             "type": "agent.request",
             "request_id": "request-invalid-process-sub-agent",
             "agent": "process_optimizer",
-            "payload": {"sub_agent": "manual_qa.machine_help"},
+            "payload": {"sub_agent": "operator_guide.machine_help"},
         }
     )
 
@@ -237,7 +237,7 @@ def test_pipeline_rejects_invalid_explicit_sub_agent_after_top_level_routing() -
         {
             "type": "agent.request",
             "request_id": "request-invalid-routed-sub-agent",
-            "payload": {"sub_agent": "manual_qa.machine_help"},
+            "payload": {"sub_agent": "operator_guide.machine_help"},
         }
     )
 

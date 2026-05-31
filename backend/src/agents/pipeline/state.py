@@ -9,7 +9,7 @@ from protocol.messages import AgentRequestEnvelope
 
 TopRoute = Literal[
     "process_optimizer",
-    "manual_qa",
+    "operator_guide",
     "quest_generator",
     "new_material_generator",
     "error",

@@ -6,7 +6,7 @@ from typing import Literal
 
 from langgraph.graph import END, START, StateGraph
 
-from agents.manual_qa.agent import MANUAL_QA_SUB_AGENT_IDS
+from agents.operator_guide.agent import OPERATOR_GUIDE_LEAF_AGENT_IDS
 from agents.orchestrator import TOP_LEVEL_AGENT_IDS
 from agents.pipeline.state import AgentGraphState, TopRoute
 from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS
@@ -26,7 +26,7 @@ def wire_agent_graph(graph: StateGraph) -> None:
         route_selected_agent,
         {
             "process_optimizer": "validate_process_payload",
-            "manual_qa": "manual_qa.route_sub_agent",
+            "operator_guide": "operator_guide.route_sub_agent",
             "quest_generator": "quest_generator.route_sub_agent",
             "new_material_generator": "validate_material_payload",
             "error": "build_agent_error",
@@ -34,7 +34,7 @@ def wire_agent_graph(graph: StateGraph) -> None:
     )
     for node in (
         "validate_process_payload",
-        "manual_qa.route_sub_agent",
+        "operator_guide.route_sub_agent",
         "quest_generator.route_sub_agent",
         "validate_material_payload",
     ):
@@ -126,7 +126,7 @@ def route_selected_leaf_agent(state: AgentGraphState) -> Literal["valid", "error
     selected_leaf_agent = state.get("selectedLeafAgent")
     allowed_leaf_agent_ids = {
         **SINGLE_LEAF_AGENT_IDS,
-        "manual_qa": MANUAL_QA_SUB_AGENT_IDS,
+        "operator_guide": OPERATOR_GUIDE_LEAF_AGENT_IDS,
         "quest_generator": QUEST_SUB_AGENT_IDS,
     }.get(selected_agent, ())
     if selected_leaf_agent in allowed_leaf_agent_ids:

@@ -369,7 +369,7 @@ def test_openai_llm_adapter_preserves_json_object_response_text() -> None:
             200,
             {
                 "choices": [
-                    {"message": {"content": '  {"route":"manual_qa"}\n'}},
+                    {"message": {"content": '  {"route":"operator_guide"}\n'}},
                 ],
             },
         )
@@ -384,7 +384,7 @@ def test_openai_llm_adapter_preserves_json_object_response_text() -> None:
         http_client=http_client,
     )
 
-    assert adapter.invoke("prompt") == '  {"route":"manual_qa"}\n'
+    assert adapter.invoke("prompt") == '  {"route":"operator_guide"}\n'
 
 
 def test_local_llm_adapter_returns_response_text_without_api_key() -> None:
