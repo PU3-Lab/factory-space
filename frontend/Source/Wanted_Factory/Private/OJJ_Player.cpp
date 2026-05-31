@@ -7,6 +7,8 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/PlayerController.h"
+#include "Camera/PlayerCameraManager.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
@@ -56,6 +58,13 @@ void AOJJ_Player::BeginPlay()
 			{
 				Subsystem->AddMappingContext(IMC_Player, 0);
 			}
+		}
+
+		// 카메라 상하 회전 제한 — 뒤집힘 방지 (bUsePawnControlRotation 카메라는 CameraManager가 pitch를 clamp)
+		if (APlayerCameraManager* CameraManager = PC->PlayerCameraManager)
+		{
+			CameraManager->ViewPitchMin = CameraPitchMin;
+			CameraManager->ViewPitchMax = CameraPitchMax;
 		}
 	}
 }
@@ -112,8 +121,9 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 void AOJJ_Player::Look(const FInputActionValue& Value)
 {
 	const FVector2D Axis = Value.Get<FVector2D>();
-	AddControllerYawInput(Axis.X);
-	AddControllerPitchInput(Axis.Y);
+	// 마우스 raw 델타가 그대로 회전량이 되지 않도록 감도 배율을 곱해 완화
+	AddControllerYawInput(Axis.X * LookYawSensitivity);
+	AddControllerPitchInput(Axis.Y * LookPitchSensitivity);
 }
 
 void AOJJ_Player::Zoom(const FInputActionValue& Value)
