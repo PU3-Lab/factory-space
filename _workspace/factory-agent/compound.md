@@ -110,3 +110,21 @@
 - 기능 구현 커밋 전 또는 완료 보고 전 `reviewer` sub-agent를 반드시 실행한다.
 - 서브 에이전트 리뷰가 완료되기 전에는 "완료"라고 말하지 않는다.
 - 리뷰에서 나온 finding은 즉시 `_workspace/factory-agent/review-feedback.md`에 기록하고, unresolved finding이 있으면 수정 후 재검증한다.
+
+### 7. 리뷰 finding 수정 후 재리뷰를 누락함
+
+실수:
+
+- Sprint 4.2 Google Gen AI adapter 리뷰에서 나온 finding을 수정하고 검증/커밋했다.
+- 하지만 수정 결과를 같은 기준으로 다시 서브 에이전트 리뷰하지 않은 채 완료로 간주했다.
+
+영향:
+
+- 수정이 reviewer의 원래 지적을 실제로 해결했는지 독립 확인이 빠졌다.
+- 수정 과정에서 새 regression이나 새 edge case가 생겼는지 확인하는 루프가 닫히지 않았다.
+
+재발 방지:
+
+- reviewer finding이 하나라도 있고 코드를 수정했다면, 수정 후 같은 범위로 `reviewer` sub-agent 재리뷰를 실행한다.
+- 재리뷰 결과가 `no unresolved findings`가 될 때까지 수정 -> 검증 -> 재리뷰를 반복한다.
+- 최종 보고에는 "리뷰", "수정", "재리뷰" 결과를 구분해서 적는다.

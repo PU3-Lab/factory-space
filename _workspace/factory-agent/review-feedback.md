@@ -155,3 +155,33 @@ Reviewer: `Harvey` sub-agent
 
 - non-string response text 테스트를 추가했다.
 - missing/blank API key 테스트를 추가했다.
+
+## 2026-05-31 Google Gen AI Adapter Re-review
+
+Status: resolved
+
+Reviewer: `Dalton` sub-agent
+
+### 1. Client initialization failure 테스트 누락
+
+- severity: low
+- file: `backend/tests/test_llm_adapter.py`
+
+문제:
+
+- `invoke()` 구현은 `_create_google_client()` 예외를 `None`으로 흡수하도록 수정됐지만, 이 경로를 고정하는 테스트가 없었다.
+- client 생성이 다시 `try` 밖으로 이동해도 기존 테스트만으로는 회귀를 잡기 어렵다.
+
+필요 작업:
+
+- `_create_google_client`를 monkeypatch로 예외 발생시키고 `invoke()`가 `None`을 반환하는 테스트를 추가한다.
+
+수정:
+
+- `test_google_llm_adapter_returns_none_when_client_creation_fails`를 추가했다.
+
+최종 재리뷰:
+
+- reviewer: `Averroes` sub-agent
+- result: no unresolved findings
+- 확인: client initialization failure 테스트가 `_create_google_client` 예외 경로를 고정하고, `review-feedback.md` 상태값과 `compound.md` 기록이 현재 변경 이력과 일치한다.

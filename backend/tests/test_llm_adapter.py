@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+
+import llm.adapter as adapter_module
 from llm.adapter import (
     GoogleGenAiLlmAdapter,
     LocalLlmAdapter,
@@ -166,6 +169,25 @@ def test_google_llm_adapter_returns_none_without_api_key() -> None:
             provider="google",
             model="gemini-2.5-flash",
             api_key="",
+        )
+    )
+
+    assert adapter.invoke("prompt") is None
+
+
+def test_google_llm_adapter_returns_none_when_client_creation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raise_client_error(api_key: str | None) -> object:
+        raise RuntimeError("client init failed")
+
+    monkeypatch.setattr(adapter_module, "_create_google_client", raise_client_error)
+    adapter = GoogleGenAiLlmAdapter(
+        LlmModelSlot(
+            name="default",
+            provider="google",
+            model="gemini-2.5-flash",
+            api_key="key",
         )
     )
 
