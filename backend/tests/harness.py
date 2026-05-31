@@ -1,114 +1,77 @@
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
-from factory_space.core.actions.schemas import Action
-from factory_space.core.agents.orchestrator import AgentOrchestrator
-from factory_space.core.agents.registry import create_default_registry
-from factory_space.messages.protocol import ErrorMessage, MessageEnvelope
-from factory_space.messages.router import MessageRouter
+from agents.pipeline import AgentPipeline
+
+
+class StubLlm:
+    """Small LLM stub that only answers routing prompts."""
+
+    def __init__(self, responses: list[str | None]) -> None:
+        self.responses = responses
+        self.prompts: list[str] = []
+
+    def invoke(self, prompt: str) -> str | None:
+        self.prompts.append(prompt)
+        if not self.responses:
+            return None
+        return self.responses.pop(0)
 
 
 @dataclass(frozen=True)
-class AgentScenario:
-    """Scenario input for one agent contract check."""
+class PipelineScenario:
+    """Reusable input for an agent pipeline scenario."""
 
     name: str
-    agent: str
+    agent: str | None
     payload: dict[str, Any]
-    session_id: str = "smoke-session"
-    client_id: str = "smoke-client"
-    request_id: str | None = None
-    version: str = "1.0"
-    expected_action_names: tuple[str, ...] = field(default_factory=tuple)
+    request_id: str = "request-harness"
+    context: dict[str, Any] = field(default_factory=dict)
+    llm_responses: list[str | None] = field(default_factory=list)
 
 
-def run_agent_scenario(scenario: AgentScenario) -> MessageEnvelope | ErrorMessage:
-    """Run an agent request through the real message router."""
+def run_pipeline_scenario(scenario: PipelineScenario) -> tuple[dict[str, Any], StubLlm]:
+    """Run one scenario through the real LangGraph-backed pipeline."""
 
-    request_id = scenario.request_id or f"req-{scenario.agent}-smoke"
-    envelope = MessageEnvelope(
-        type="agent_request",
-        version=scenario.version,
-        request_id=request_id,
-        session_id=scenario.session_id,
-        client_id=scenario.client_id,
-        agent=scenario.agent,
-        payload=scenario.payload,
+    llm = StubLlm(list(scenario.llm_responses))
+    pipeline = AgentPipeline(llm=llm)
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": scenario.request_id,
+            "agent": scenario.agent,
+            "payload": scenario.payload,
+            "context": scenario.context,
+        }
     )
+    return response, llm
 
-    return _route(envelope)
 
-
-def run_ping_scenario(
+def assert_agent_response(
+    response: dict[str, Any],
     *,
-    payload: dict[str, Any] | None = None,
-    session_id: str = "smoke-session",
-    client_id: str = "smoke-client",
-    request_id: str = "req-ping-smoke",
-) -> MessageEnvelope | ErrorMessage:
-    """Run a ping through the real message router."""
-
-    envelope = MessageEnvelope(
-        type="ping",
-        request_id=request_id,
-        session_id=session_id,
-        client_id=client_id,
-        payload=payload or {},
-    )
-
-    return _route(envelope)
-
-
-def assert_agent_response_contract(
-    response: MessageEnvelope,
-    *,
-    expected_agent: str,
-    expected_action_names: tuple[str, ...] = (),
+    agent: str,
+    sub_agent: str | None = None,
 ) -> None:
-    """Assert the stable Unreal-facing agent response shape."""
+    """Assert the common agent.response shape."""
 
-    assert response.type == "agent_response"
-    assert response.version == "1.0"
-    assert response.session_id
-    assert response.client_id
-    assert response.request_id
-    assert response.agent == expected_agent
-
-    assert isinstance(response.payload, dict)
-    assert isinstance(response.payload.get("text"), str)
-    assert isinstance(response.payload.get("metadata"), dict)
-
-    actions = response.payload.get("actions")
-    assert isinstance(actions, list)
-    assert actions, "agent_response payload.actions must include at least one action"
-
-    action_names: list[str] = []
-    for action_payload in actions:
-        action = Action.model_validate(action_payload)
-        action_names.append(action.name)
-
-    for expected_action_name in expected_action_names:
-        assert expected_action_name in action_names
+    assert response["type"] == "agent.response"
+    assert response["agent"] == agent
+    assert isinstance(response["payload"], dict)
+    assert isinstance(response["payload"]["metadata"], dict)
+    assert response["payload"]["metadata"]["selectedAgent"] == agent
+    if sub_agent is not None:
+        assert response["payload"]["metadata"]["selectedSubAgent"] == sub_agent
 
 
-def assert_error_contract(
-    response: ErrorMessage,
+def assert_agent_error(
+    response: dict[str, Any],
     *,
-    expected_code: str,
+    code: str,
 ) -> None:
-    """Assert the stable Unreal-facing error response shape."""
+    """Assert the common agent.error shape."""
 
-    assert response.type == "error"
-    assert response.version == "1.0"
-    assert response.session_id
-    assert response.payload.code == expected_code
-    assert response.payload.message
-    assert isinstance(response.payload.details, dict)
-
-
-def _route(envelope: MessageEnvelope) -> MessageEnvelope | ErrorMessage:
-    router = MessageRouter(AgentOrchestrator(create_default_registry()))
-    return asyncio.run(router.route(envelope))
+    assert response["type"] == "agent.error"
+    assert response["error"]["code"] == code
