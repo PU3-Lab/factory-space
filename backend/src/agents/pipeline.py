@@ -43,6 +43,7 @@ class AgentGraphState(TypedDict, total=False):
     typedPayload: dict[str, Any]
     cacheKey: str
     cachedPayload: dict[str, Any]
+    cachedMetadata: dict[str, Any]
     prompt: str
     routingPrompt: str
     routingRaw: str | None
@@ -270,14 +271,21 @@ def build_agent_graph(
             state["typedPayload"],
             state["context"],
         )
-        cached_payload = response_cache.get(cache_key)
+        cached_entry = response_cache.get_entry(cache_key)
         output: AgentGraphState = {"cacheKey": cache_key}
-        if cached_payload is not None:
-            output["cachedPayload"] = cached_payload
+        if cached_entry is not None:
+            output["cachedPayload"] = cached_entry.payload
+            output["cachedMetadata"] = cached_entry.metadata
         return output
 
     def build_cached_response(state: AgentGraphState) -> AgentGraphState:
-        return {"responsePayload": state["cachedPayload"], "responseMetadata": {"cache": "hit"}}
+        return {
+            "responsePayload": state["cachedPayload"],
+            "responseMetadata": {
+                **state.get("cachedMetadata", {}),
+                "cache": "hit",
+            },
+        }
 
     def build_prompt(state: AgentGraphState) -> AgentGraphState:
         try:
@@ -342,7 +350,11 @@ def build_agent_graph(
         return {}
 
     def cache_write(state: AgentGraphState) -> AgentGraphState:
-        response_cache.set(state["cacheKey"], state["responsePayload"])
+        response_cache.set(
+            state["cacheKey"],
+            state["responsePayload"],
+            state.get("responseMetadata", {}),
+        )
         return {}
 
     def build_agent_response(state: AgentGraphState) -> AgentGraphState:

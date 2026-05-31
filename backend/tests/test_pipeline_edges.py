@@ -120,6 +120,24 @@ def test_pipeline_cache_hit_skips_second_llm_call() -> None:
     assert len(llm.prompts) == 1
 
 
+def test_pipeline_cache_hit_preserves_original_response_metadata() -> None:
+    llm = StubLlm(['{"summary":"first"}'])
+    pipeline = AgentPipeline(llm=llm)
+    message = {
+        "type": "agent.request",
+        "request_id": "request-cache-metadata-first",
+        "agent": "process_optimizer",
+        "payload": {"machines": [{"id": "m-1"}]},
+    }
+
+    first = pipeline.run(message)
+    second = pipeline.run({**message, "request_id": "request-cache-metadata-second"})
+
+    assert first["payload"]["metadata"]["llm"] == "used"
+    assert second["payload"]["metadata"]["llm"] == "used"
+    assert second["payload"]["metadata"]["cache"] == "hit"
+
+
 def test_build_agent_graph_returns_compiled_graph() -> None:
     graph = build_agent_graph(llm=StubLlm([]))
 
