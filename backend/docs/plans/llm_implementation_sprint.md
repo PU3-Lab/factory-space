@@ -8,6 +8,8 @@
 
 ## Sprint 1: Pipeline edge 선행 수정
 
+Status: completed
+
 ### Task 1.1 cache metadata 보존
 
 Files:
@@ -18,12 +20,12 @@ Files:
 
 Steps:
 
-- [ ] `test_pipeline_cache_hit_preserves_original_response_metadata` 실패 테스트 추가
-- [ ] `uv run --extra dev pytest tests/test_pipeline_edges.py::test_pipeline_cache_hit_preserves_original_response_metadata -q`로 RED 확인
-- [ ] cache entry에 `payload`와 `metadata`를 함께 저장하도록 `ResponseCache` 수정
-- [ ] cache hit에서 기존 metadata를 유지하고 `cache: hit`만 추가
-- [ ] 동일 테스트 GREEN 확인
-- [ ] 커밋: `fix: cache hit metadata 보존`
+- [x] `test_pipeline_cache_hit_preserves_original_response_metadata` 실패 테스트 추가
+- [x] `uv run --extra dev pytest tests/test_pipeline_edges.py::test_pipeline_cache_hit_preserves_original_response_metadata -q`로 RED 확인
+- [x] cache entry에 `payload`와 `metadata`를 함께 저장하도록 `ResponseCache` 수정
+- [x] cache hit에서 기존 metadata를 유지하고 `cache: hit`만 추가
+- [x] 동일 테스트 GREEN 확인
+- [x] 커밋: `b3c7f1e fix: cache hit metadata 보존`
 
 ### Task 1.2 malformed envelope correlation 보존
 
@@ -34,13 +36,15 @@ Files:
 
 Steps:
 
-- [ ] `test_pipeline_validation_error_preserves_raw_correlation_fields` 실패 테스트 추가
-- [ ] `uv run --extra dev pytest tests/test_pipeline_edges.py::test_pipeline_validation_error_preserves_raw_correlation_fields -q`로 RED 확인
-- [ ] `_build_validation_error()`가 raw message에서 correlation field를 복구하도록 수정
-- [ ] 동일 테스트 GREEN 확인
-- [ ] 커밋: `fix: validation error correlation 보존`
+- [x] `test_pipeline_validation_error_preserves_raw_correlation_fields` 실패 테스트 추가
+- [x] `uv run --extra dev pytest tests/test_pipeline_edges.py::test_pipeline_validation_error_preserves_raw_correlation_fields -q`로 RED 확인
+- [x] `_build_validation_error()`가 raw message에서 correlation field를 복구하도록 수정
+- [x] 동일 테스트 GREEN 확인
+- [x] 커밋: `7d09463 fix: validation error correlation 보존`
 
 ## Sprint 2: LLM slot 설정
+
+Status: completed
 
 ### Task 2.1 settings 모델 추가
 
@@ -52,17 +56,18 @@ Files:
 
 Steps:
 
-- [ ] default/fallback1/fallback2 slot 기본값 테스트 작성
-- [ ] `ENVIRONMENT=development`에서 default slot이 local provider를 사용하는 테스트 작성
-- [ ] provider 검증 테스트 작성
-- [ ] provider별 API key alias 우선순위 테스트 작성
-- [ ] local provider는 `BASE_URL`을 요구하는 테스트 작성
-- [ ] `uv run --extra dev pytest tests/test_llm_settings.py -q`로 RED 확인
-- [ ] `LlmSettings.from_env()` 구현
-- [ ] `.env.example`을 `FACTORY_LLM_*` 기준으로 갱신
-- [ ] `.env.example`의 development 예시는 local LLM을 기본 provider로 둔다.
-- [ ] settings 테스트 GREEN 확인
-- [ ] 커밋: `test: LLM 설정 계약 추가`
+- [x] default/fallback1/fallback2 slot 기본값 테스트 작성
+- [x] `ENVIRONMENT=development`에서 default slot이 local provider를 사용하는 테스트 작성
+- [x] provider 검증 테스트 작성
+- [x] provider별 API key alias 우선순위 테스트 작성
+- [x] local provider는 `BASE_URL`을 요구하는 테스트 작성
+- [x] `uv run --extra dev pytest tests/test_llm_settings.py -q`로 RED 확인
+- [x] `LlmSettings.from_env()` 구현
+- [x] `.env.example`을 `FACTORY_LLM_*` 기준으로 갱신
+- [x] `.env.example`의 development 예시는 local LLM을 기본 provider로 둔다.
+- [x] settings 테스트 GREEN 확인
+- [x] 커밋: `a5aa46a test: LLM 설정 계약 추가`
+- [x] 리뷰 반영: `abaef31 chore: LLM 의존성 정리 및 리뷰 반영`
 
 Acceptance:
 
@@ -79,6 +84,8 @@ Acceptance:
 
 ## Sprint 3: 의존성 정리
 
+Status: completed
+
 ### Task 3.1 provider SDK 정리
 
 Files:
@@ -88,13 +95,14 @@ Files:
 
 Steps:
 
-- [ ] `rg -n "google-generativeai|google.generativeai|langchain-google-genai|langchain" backend/src backend/tests backend/pyproject.toml` 실행
-- [ ] 기존 미사용 LLM 의존성 제거
-- [ ] `google-genai>=1.33.0` 추가
-- [ ] OpenAI-compatible HTTP 호출을 표준 라이브러리로 처리할지, `httpx`를 추가할지 결정
-- [ ] `uv lock` 실행
-- [ ] `uv run --extra dev pytest tests/test_llm_settings.py -q` 실행
-- [ ] 커밋: `chore: Google Gen AI SDK 의존성 정리`
+- [x] `rg -n "google-generativeai|google.generativeai|langchain-google-genai|langchain" backend/src backend/tests backend/pyproject.toml` 실행
+- [x] 기존 미사용 LLM 의존성 제거
+- [x] `google-genai>=1.33.0` 추가
+- [x] OpenAI-compatible HTTP 호출은 별도 의존성 없이 표준 라이브러리 기반으로 진행
+- [x] FastAPI 범위를 최신 0.136 patch line인 `fastapi>=0.136.3,<0.137.0`로 축소
+- [x] `uv lock` 실행
+- [x] `uv run --extra dev pytest tests/test_llm_settings.py -q` 실행
+- [x] 커밋: `abaef31 chore: LLM 의존성 정리 및 리뷰 반영`
 
 Acceptance:
 
@@ -102,6 +110,8 @@ Acceptance:
 - lock file이 갱신된다.
 
 ## Sprint 4: Adapter 구현
+
+Status: in progress
 
 ### Task 4.1 Noop adapter와 slot factory
 
@@ -112,15 +122,15 @@ Files:
 
 Steps:
 
-- [ ] `NoopLlmAdapter.invoke()`가 `None`을 반환하는 테스트 작성
-- [ ] `none` provider slot은 `NoopLlmAdapter`를 반환하는 테스트 작성
-- [ ] Google slot은 `GoogleGenAiLlmAdapter`를 반환하는 테스트 작성
-- [ ] OpenAI slot은 `OpenAiLlmAdapter`를 반환하는 테스트 작성
-- [ ] Local slot은 `LocalLlmAdapter`를 반환하는 테스트 작성
-- [ ] `uv run --extra dev pytest tests/test_llm_adapter.py -q`로 RED 확인
-- [ ] `LlmAdapter` protocol, `NoopLlmAdapter`, `create_llm_adapter(slot)` 구현
-- [ ] adapter 테스트 GREEN 확인
-- [ ] 커밋: `test: LLM slot adapter 계약 추가`
+- [x] `NoopLlmAdapter.invoke()`가 `None`을 반환하는 테스트 작성
+- [x] `none` provider slot은 `NoopLlmAdapter`를 반환하는 테스트 작성
+- [x] Google slot은 `GoogleGenAiLlmAdapter`를 반환하는 테스트 작성
+- [x] OpenAI slot은 `OpenAiLlmAdapter`를 반환하는 테스트 작성
+- [x] Local slot은 `LocalLlmAdapter`를 반환하는 테스트 작성
+- [x] `uv run --extra dev pytest tests/test_llm_adapter.py -q`로 RED 확인
+- [x] `LlmAdapter` protocol, `NoopLlmAdapter`, `create_llm_adapter(slot)` 구현
+- [x] adapter 테스트 GREEN 확인
+- [x] 커밋: `e5021ed test: LLM slot adapter 계약 추가`
 
 ### Task 4.2 Google Gen AI adapter
 
@@ -178,7 +188,7 @@ Files:
 
 Steps:
 
-- [ ] local base URL이 없으면 disabled 처리되는 테스트 작성
+- [ ] local base URL 누락 정책을 settings와 정합화한다. 현재 `LlmSettings`는 local provider에 model/base URL을 요구한다.
 - [ ] fake local endpoint 성공 응답 테스트 작성
 - [ ] local endpoint error는 `None` 반환 테스트 작성
 - [ ] adapter 구현
