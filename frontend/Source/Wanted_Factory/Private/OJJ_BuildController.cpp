@@ -94,6 +94,9 @@ void AOJJ_BuildController::ExitBuildMode()
 
 	// 재진입 시 같은 셀에 정지해 있어도 첫 갱신이 동작하도록 sentinel로 리셋
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+
+	// 회전 상태도 리셋 — 다음 진입은 미회전(0)으로 시작(EnterBuildMode 초기화와 일관).
+	HoverRotationSteps = 0;
 }
 
 void AOJJ_BuildController::ToggleBuildMode()
@@ -118,10 +121,10 @@ void AOJJ_BuildController::RotateHoverClockwise()
 
 	HoverRotationSteps = (HoverRotationSteps + 1) % 4;
 
-	// [임시 진단] 단계 2: R 입력 도달 + step 순환(0→1→2→3→0) 확인. 단계 3에서 호버 반영 추가 시 정리.
-	UE_LOG(LogTemp, Warning, TEXT("[BuildController] 머신 회전 step=%d"), HoverRotationSteps);
-
-	// 단계 3 예정: 여기서 CurrentHoverCell sentinel 리셋 + UpdateMouseHover 호출로 즉시 미리보기 갱신.
+	// 마우스가 같은 셀에 멈춰 있어도 회전이 즉시 미리보기에 반영되도록 sentinel 리셋 후 강제 갱신.
+	// (UpdateMouseHover는 CursorCell==CurrentHoverCell이면 rebuild를 스킵하므로 sentinel이 필요.)
+	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+	UpdateMouseHover();
 }
 
 FIntPoint AOJJ_BuildController::ComputeOriginFromCursorCell(FIntPoint CursorCell, AMachineBase* Machine, int32 RotationSteps) const
@@ -208,9 +211,9 @@ void AOJJ_BuildController::UpdateMouseHover()
 	// +X,+Y로 새서 빨강 표시되는데, 왼쪽/위는 anchor 자체가 음수가 되어 hover 사라짐).
 	// 이제 origin이 그리드 음수/초과여도 그대로 넘김 → CanPlaceMachine이 풋프린트 셀별
 	// IsValidGridCell 검사로 false → UpdateHoverPreview가 풋프린트 전체 빨강 (대칭).
-	const FIntPoint Origin = ComputeOriginFromCursorCell(CursorCell, DefaultMachine);
+	const FIntPoint Origin = ComputeOriginFromCursorCell(CursorCell, DefaultMachine, HoverRotationSteps);
 
-	TargetGrid->UpdateHoverPreview(DefaultMachine, Origin);
+	TargetGrid->UpdateHoverPreview(DefaultMachine, Origin, HoverRotationSteps);
 	CurrentHoverCell = CursorCell;
 }
 
@@ -254,6 +257,9 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	// 미리보기와 실제 배치 위치가 어긋나지 않음. CanPlaceMachine이 IsValidGridCell +
 	// OccupiedCells 통합 판정하므로 anchor 음수/초과도 자연 거부됨 → 사전 bounds
 	// 차단(IsValidGridCell)은 더 이상 필요 없음.
+	// 단계 3은 배치를 미회전(step 0)으로 고정 — 회전 배치는 점유·메시·중심을 한 번에 맞추는
+	// 단계 4에서 활성화. 여기서 회전을 흘리면 점유(회전 footprint)와 미회전 메시가 어긋남(Codex 지적).
+	// origin/CanPlace/TryPlace 셋 다 같은 step(0)이어야 정합하므로 셋 모두 미회전.
 	const FIntPoint Origin = ComputeOriginFromCursorCell(CurrentHoverCell, DefaultMachine);
 
 	if (!TargetGrid->CanPlaceMachine(DefaultMachine, Origin))
@@ -292,6 +298,10 @@ void AOJJ_BuildController::OnLeftClickPressed()
 		NewMachine->Destroy();
 		return;
 	}
+
+	// 단계 4 예정: 배치 회전을 여기서 한 번에 활성화 — TryPlaceMachine(.., HoverRotationSteps)로
+	// 회전 footprint 점유 + SetActorRotation(yaw=90°×step)로 메시 회전을 동시에 적용해
+	// 점유·메시·중심이 항상 일치하도록 한다.
 
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s 머신 배치 성공"),
 		*Origin.ToString());
