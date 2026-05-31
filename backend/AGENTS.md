@@ -48,7 +48,7 @@ tests/          # agent 테스트
 scenarios/      # agent 시나리오
 ```
 
-`protocol/`, `agents/base.py`, `agents/router.py`, `agents/pipeline.py`는 모든 agent가 따라야 하는 공통 계약과 실행 흐름에만 사용합니다. 별도 shared 영역은 둘 이상의 agent가 실제로 같은 구현을 공유해야 할 때만 추가합니다.
+`protocol/`, `agents/base.py`, `agents/router.py`, `agents/pipeline/`는 모든 agent가 따라야 하는 공통 계약과 실행 흐름에만 사용합니다. 별도 shared 영역은 둘 이상의 agent가 실제로 같은 구현을 공유해야 할 때만 추가합니다.
 
 ## 공통 영역
 
@@ -65,7 +65,7 @@ src/websocket_gateway/
 - `protocol/`: WebSocket으로 들어오고 나가는 message envelope와 error payload
 - `agents/base.py`: Agent 공통 interface와 context/result 계약
 - `agents/orchestrator.py`: 최상위 Agent를 선택하는 prompt 기반 orchestrator
-- `agents/pipeline.py`: LangGraph 기반 실행 파이프라인
+- `agents/pipeline/`: LangGraph 기반 실행 파이프라인 패키지
 - `agents/router.py`: agent id를 구현체로 매핑하는 registry
 - `llm/`: LLM adapter와 prompt 관련 코드
 - `cache/`: response cache
@@ -187,6 +187,7 @@ Unreal이 예측 가능하게 실행할 수 있도록 backend의 action schema�
 - agent 동작이 바뀌면 테스트나 시나리오도 함께 추가/수정합니다.
 - schema는 Pydantic model로 명시적으로 정의합니다.
 - import는 항상 파일 상단에 둡니다. 함수나 메서드 내부 import는 금지합니다.
+- 일반 source 파일은 500줄을 넘기지 않습니다. 넘기면 역할 기준으로 파일을 분리합니다.
 - 모듈은 작고 책임이 분명하게 유지합니다.
 - 임시 데이터나 생성물은 의도된 fixture가 아니라면 source control에 넣지 않습니다.
 - 새로운 message type, action type, shared contract를 추가하면 문서화합니다.

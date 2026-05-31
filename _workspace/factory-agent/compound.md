@@ -147,3 +147,22 @@
 - import는 항상 파일 상단에 둔다.
 - 함수나 메서드 내부 import는 금지한다.
 - 새 파일 작성 후 `rg -n "^\\s+import |^\\s+from .* import" <path>`로 내부 import가 없는지 확인한다.
+
+### 9. source 파일 500줄 초과 방치
+
+실수:
+
+- `backend/src/agents/pipeline.py`가 700줄을 넘었는데도 기능을 계속 추가했다.
+- 사용자가 "코드 500줄 넘기지 말라는 규칙이 없던가?"라고 지적한 뒤에야 명시 규칙을 추가했다.
+
+영향:
+
+- pipeline의 validation, routing, cache, LLM fallback, response assembly 책임이 한 파일에 과도하게 모인다.
+- 리뷰와 테스트 실패 원인 추적 비용이 커진다.
+- 후속 작업자가 변경 범위를 과대하게 잡기 쉽다.
+
+재발 방지:
+
+- 일반 source 파일은 500줄을 넘기지 않는다.
+- 500줄을 넘기면 역할 기준으로 파일을 분리한다.
+- 작업 전후 `wc -l`로 주요 source 파일 길이를 확인한다.
