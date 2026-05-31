@@ -13,7 +13,7 @@ class TroubleshooterAgent:
     agent_id = "manual_qa.troubleshooter"
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
-        return f"Troubleshoot this factory issue: {payload}"
+        return f"다음 공장 문제를 진단하고 해결 순서를 제안하세요: {payload}"
 
     def fallback(
         self,

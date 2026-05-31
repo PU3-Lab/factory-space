@@ -27,14 +27,14 @@ class ManualQaAgent:
         """Build the prompt used to select a manual Q&A sub-agent."""
 
         return (
-            "You are the manual Q&A domain sub-orchestrator.\n"
-            "Select exactly one sub-agent for the user request.\n"
-            "Allowed sub-agents: manual_qa.recipe_explainer, "
+            "당신은 매뉴얼 Q&A 도메인 서브 오케스트레이터입니다.\n"
+            "사용자 요청을 처리할 서브 에이전트를 정확히 하나 선택하세요.\n"
+            "허용 서브 에이전트: manual_qa.recipe_explainer, "
             "manual_qa.machine_help, manual_qa.troubleshooter.\n"
-            "Return compact JSON only: "
-            '{"sub_agent":"<allowed_sub_agent>","reason":"<short reason>"}\n'
-            f"Request context: {context.metadata}\n"
-            f"Request payload: {payload}"
+            "반드시 다음 compact JSON만 반환하세요: "
+            '{"sub_agent":"<허용된_서브_에이전트>","reason":"<짧은 이유>"}\n'
+            f"요청 context: {context.metadata}\n"
+            f"요청 payload: {payload}"
         )
 
     def parse_sub_agent_selection(self, raw: str | None) -> str | None:

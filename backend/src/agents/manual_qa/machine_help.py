@@ -13,7 +13,7 @@ class MachineHelpAgent:
     agent_id = "manual_qa.machine_help"
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
-        return f"Answer this machine help question: {payload}"
+        return f"다음 설비 도움말 질문에 답변하세요: {payload}"
 
     def fallback(
         self,

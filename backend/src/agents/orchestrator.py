@@ -28,14 +28,14 @@ class OrchestratorAgent:
         """Build the prompt used to select a top-level agent."""
 
         return (
-            "You are the server-level orchestrator for a factory simulation AI.\n"
-            "Select exactly one top-level agent for the request.\n"
-            "Allowed agents: process_optimizer, manual_qa, quest_generator, "
+            "당신은 공장 시뮬레이션 AI의 서버 전체 오케스트레이터입니다.\n"
+            "요청을 처리할 최상위 에이전트를 정확히 하나 선택하세요.\n"
+            "허용 에이전트: process_optimizer, manual_qa, quest_generator, "
             "new_material_generator.\n"
-            "Return compact JSON only: "
-            '{"agent":"<allowed_agent>","reason":"<short reason>"}\n'
-            f"Request context: {context.metadata}\n"
-            f"Request payload: {payload}"
+            "반드시 다음 compact JSON만 반환하세요: "
+            '{"agent":"<허용된_에이전트>","reason":"<짧은 이유>"}\n'
+            f"요청 context: {context.metadata}\n"
+            f"요청 payload: {payload}"
         )
 
     def parse_agent_selection(self, raw: str | None) -> str | None:

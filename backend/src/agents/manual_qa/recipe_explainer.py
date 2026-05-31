@@ -13,7 +13,7 @@ class RecipeExplainerAgent:
     agent_id = "manual_qa.recipe_explainer"
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
-        return f"Explain this recipe question: {payload}"
+        return f"다음 레시피 질문에 답변하세요: {payload}"
 
     def fallback(
         self,

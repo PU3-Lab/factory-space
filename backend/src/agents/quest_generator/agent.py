@@ -28,15 +28,15 @@ class QuestGeneratorAgent:
         """Build the prompt used to select a quest sub-agent."""
 
         return (
-            "You are the quest generation domain sub-orchestrator.\n"
-            "Select exactly one sub-agent for the quest request.\n"
-            "Allowed sub-agents: quest_generator.tutorial_quest, "
+            "당신은 퀘스트 생성 도메인 서브 오케스트레이터입니다.\n"
+            "퀘스트 요청을 처리할 서브 에이전트를 정확히 하나 선택하세요.\n"
+            "허용 서브 에이전트: quest_generator.tutorial_quest, "
             "quest_generator.production_quest, quest_generator.exploration_quest, "
             "quest_generator.economy_quest.\n"
-            "Return compact JSON only: "
-            '{"sub_agent":"<allowed_sub_agent>","reason":"<short reason>"}\n'
-            f"Request context: {context.metadata}\n"
-            f"Request payload: {payload}"
+            "반드시 다음 compact JSON만 반환하세요: "
+            '{"sub_agent":"<허용된_서브_에이전트>","reason":"<짧은 이유>"}\n'
+            f"요청 context: {context.metadata}\n"
+            f"요청 payload: {payload}"
         )
 
     def parse_sub_agent_selection(self, raw: str | None) -> str | None:

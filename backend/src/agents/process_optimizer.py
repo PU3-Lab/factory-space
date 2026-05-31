@@ -13,7 +13,7 @@ class ProcessOptimizerAgent:
     agent_id = "process_optimizer"
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
-        return f"Find process bottlenecks for this factory snapshot: {payload}"
+        return f"공장 snapshot에서 공정 병목과 개선 우선순위를 찾아주세요: {payload}"
 
     def fallback(
         self,

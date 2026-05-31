@@ -45,7 +45,7 @@ def test_process_optimizer_prompt_excludes_request_id(context: AgentContext) -> 
 
     prompt = agent.build_prompt({"machines": [{"id": "m-1"}]}, context)
 
-    assert "Find process bottlenecks" in prompt
+    assert "공장 snapshot에서 공정 병목" in prompt
     assert "m-1" in prompt
     assert context.request_id not in prompt
 
@@ -80,7 +80,7 @@ def test_new_material_generator_uses_goal_as_material_role(
     prompt = agent.build_prompt({"goal": "heat resistant plate"}, context)
     result = agent.fallback({"goal": "heat resistant plate"}, context)
 
-    assert "Generate a factory material" in prompt
+    assert "공장 신소재 후보" in prompt
     assert context.request_id not in prompt
     assert result.agent == "new_material_generator"
     assert result.payload["materials"][0]["role"] == "heat resistant plate"
@@ -90,9 +90,9 @@ def test_new_material_generator_uses_goal_as_material_role(
 @pytest.mark.parametrize(
     ("agent", "expected_topic", "expected_prompt"),
     [
-        (RecipeExplainerAgent(), "recipe", "Explain this recipe question"),
-        (MachineHelpAgent(), "machine", "Answer this machine help question"),
-        (TroubleshooterAgent(), "troubleshooting", "Troubleshoot this factory issue"),
+        (RecipeExplainerAgent(), "recipe", "레시피 질문에 답변"),
+        (MachineHelpAgent(), "machine", "설비 도움말 질문에 답변"),
+        (TroubleshooterAgent(), "troubleshooting", "공장 문제를 진단"),
     ],
 )
 def test_manual_qa_leaf_agents_return_normalized_fallbacks(
@@ -116,10 +116,10 @@ def test_manual_qa_leaf_agents_return_normalized_fallbacks(
 @pytest.mark.parametrize(
     ("agent", "expected_type", "expected_prompt"),
     [
-        (TutorialQuestAgent(), "tutorial", "Create a tutorial quest"),
-        (ProductionQuestAgent(), "production", "Create a production quest"),
-        (ExplorationQuestAgent(), "exploration", "Create an exploration quest"),
-        (EconomyQuestAgent(), "economy", "Create an economy quest"),
+        (TutorialQuestAgent(), "tutorial", "튜토리얼 퀘스트를 생성"),
+        (ProductionQuestAgent(), "production", "생산 퀘스트를 생성"),
+        (ExplorationQuestAgent(), "exploration", "탐험 퀘스트를 생성"),
+        (EconomyQuestAgent(), "economy", "경제 퀘스트를 생성"),
     ],
 )
 def test_quest_leaf_agents_return_normalized_fallbacks(

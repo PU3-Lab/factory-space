@@ -402,3 +402,21 @@ uv run --extra dev ruff check .
 - cache entry에 response payload와 response metadata를 함께 저장한다.
 - hit 응답에서는 기존 metadata를 유지하면서 `cache: hit`만 추가한다.
 - 첫 응답과 cache hit 응답의 metadata 일관성을 검증하는 테스트를 추가한다.
+
+## 16. Agent prompt는 어떤 언어로 작성하는가?
+
+결정: backend agent와 orchestrator에 들어가는 prompt 본문은 한글로 작성한다.
+
+대상:
+
+- `agents/orchestrator.py`의 top-level routing prompt
+- `agents/manual_qa/agent.py`의 manual Q&A sub-agent routing prompt
+- `agents/quest_generator/agent.py`의 quest sub-agent routing prompt
+- leaf agent의 `build_prompt()` prompt
+
+원칙:
+
+- agent id, sub_agent id, JSON key 이름은 protocol 계약이므로 영어 식별자를 유지한다.
+- prompt 지시문, 역할 설명, 요청 설명은 한글로 작성한다.
+- routing prompt는 계속 compact JSON만 반환하도록 요구한다.
+- prompt 변경은 테스트에서 한글 문구를 검증해 회귀를 막는다.

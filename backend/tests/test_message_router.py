@@ -31,8 +31,8 @@ def test_pipeline_uses_prompt_based_top_level_routing() -> None:
         sub_agent="quest_generator.production_quest",
     )
     assert response["payload"]["quest"]["type"] == "production"
-    assert "server-level orchestrator" in llm.prompts[0]
-    assert "quest generation domain sub-orchestrator" in llm.prompts[1]
+    assert "서버 전체 오케스트레이터" in llm.prompts[0]
+    assert "퀘스트 생성 도메인 서브 오케스트레이터" in llm.prompts[1]
 
 
 def test_pipeline_uses_prompt_based_manual_sub_agent_routing() -> None:
@@ -55,7 +55,7 @@ def test_pipeline_uses_prompt_based_manual_sub_agent_routing() -> None:
         sub_agent="manual_qa.machine_help",
     )
     assert response["payload"]["topic"] == "machine"
-    assert "manual Q&A domain sub-orchestrator" in llm.prompts[0]
+    assert "매뉴얼 Q&A 도메인 서브 오케스트레이터" in llm.prompts[0]
 
 
 def test_pipeline_uses_explicit_agent_without_top_level_routing_prompt() -> None:
@@ -73,7 +73,7 @@ def test_pipeline_uses_explicit_agent_without_top_level_routing_prompt() -> None
 
     assert_agent_response(response, agent="process_optimizer")
     assert len(llm.prompts) == 1
-    assert "Find process bottlenecks" in llm.prompts[0]
+    assert "공장 snapshot에서 공정 병목" in llm.prompts[0]
 
 
 def test_pipeline_returns_error_when_agent_routing_model_is_unavailable() -> None:

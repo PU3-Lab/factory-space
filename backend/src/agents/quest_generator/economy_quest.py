@@ -13,7 +13,7 @@ class EconomyQuestAgent:
     agent_id = "quest_generator.economy_quest"
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
-        return f"Create an economy quest: {payload}"
+        return f"다음 요청을 바탕으로 경제 퀘스트를 생성하세요: {payload}"
 
     def fallback(
         self,
