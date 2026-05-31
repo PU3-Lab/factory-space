@@ -257,12 +257,12 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	// 미리보기와 실제 배치 위치가 어긋나지 않음. CanPlaceMachine이 IsValidGridCell +
 	// OccupiedCells 통합 판정하므로 anchor 음수/초과도 자연 거부됨 → 사전 bounds
 	// 차단(IsValidGridCell)은 더 이상 필요 없음.
-	// 단계 3은 배치를 미회전(step 0)으로 고정 — 회전 배치는 점유·메시·중심을 한 번에 맞추는
-	// 단계 4에서 활성화. 여기서 회전을 흘리면 점유(회전 footprint)와 미회전 메시가 어긋남(Codex 지적).
-	// origin/CanPlace/TryPlace 셋 다 같은 step(0)이어야 정합하므로 셋 모두 미회전.
-	const FIntPoint Origin = ComputeOriginFromCursorCell(CurrentHoverCell, DefaultMachine);
+	// 배치도 회전 반영(단계 4). origin/CanPlace/TryPlace + 메시 yaw 모두 같은 HoverRotationSteps를
+	// 써야 점유·중심·메시가 일치(Codex 지적 핵심). 호버 미리보기(UpdateMouseHover)와도 동일 step이라
+	// "미리보기 = 실제 배치" 정합.
+	const FIntPoint Origin = ComputeOriginFromCursorCell(CurrentHoverCell, DefaultMachine, HoverRotationSteps);
 
-	if (!TargetGrid->CanPlaceMachine(DefaultMachine, Origin))
+	if (!TargetGrid->CanPlaceMachine(DefaultMachine, Origin, HoverRotationSteps))
 	{
 		UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s 배치 불가 (bounds/점유)"),
 			*Origin.ToString());
@@ -292,16 +292,17 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	}
 
 	FString OutReason;
-	if (!TargetGrid->TryPlaceMachine(NewMachine, Origin, OutReason))
+	if (!TargetGrid->TryPlaceMachine(NewMachine, Origin, OutReason, HoverRotationSteps))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] TryPlaceMachine 실패: %s"), *OutReason);
 		NewMachine->Destroy();
 		return;
 	}
 
-	// 단계 4 예정: 배치 회전을 여기서 한 번에 활성화 — TryPlaceMachine(.., HoverRotationSteps)로
-	// 회전 footprint 점유 + SetActorRotation(yaw=90°×step)로 메시 회전을 동시에 적용해
-	// 점유·메시·중심이 항상 일치하도록 한다.
+	// 메시 yaw 회전 — TryPlaceMachine이 회전 footprint 중심(GetMachinePlacementLocation(.., step))에
+	// 액터를 놓았으므로, 그 중심을 기준으로 yaw만 돌리면 center-anchor 메시가 회전 footprint와 정렬.
+	// 시계방향 90°×step (R 방향). 부호가 R 의도와 반대면 -90.f로.
+	NewMachine->SetActorRotation(FRotator(0.f, 90.f * HoverRotationSteps, 0.f));
 
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s 머신 배치 성공"),
 		*Origin.ToString());
