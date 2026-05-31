@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import json
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from typing import Any, Protocol
+
+from google import genai
+from google.genai import types
 
 from llm.settings import LlmModelSlot
 
@@ -112,42 +117,45 @@ class OpenAiLlmAdapter:
     def invoke(self, prompt: str) -> str | None:
         """Return raw generated text from an OpenAI-compatible endpoint."""
 
-        if not self.slot.model or not self.slot.api_key:
+        if not self.slot.api_key:
             return None
-        try:
-            http_client = self.http_client or _UrlLibHttpClient()
-            response = http_client.post(
-                url=_openai_chat_completions_url(self.slot.base_url),
-                headers={
-                    "Authorization": f"Bearer {self.slot.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json_body={
-                    "model": self.slot.model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": self.max_output_tokens,
-                    "temperature": self.temperature,
-                },
-                timeout_ms=self.timeout_ms,
-            )
-        except Exception:
-            return None
-
-        if response.status_code < 200 or response.status_code >= 300:
-            return None
-        return _extract_openai_message_content(response.body)
+        return _invoke_openai_compatible(
+            slot=self.slot,
+            prompt=prompt,
+            http_client=self.http_client,
+            timeout_ms=self.timeout_ms,
+            max_output_tokens=self.max_output_tokens,
+            temperature=self.temperature,
+            base_url=self.slot.base_url or _OPENAI_BASE_URL,
+            api_key=self.slot.api_key,
+        )
 
 
 @dataclass(frozen=True)
 class LocalLlmAdapter:
-    """Local OpenAI-compatible adapter contract placeholder."""
+    """Local OpenAI-compatible Chat Completions adapter."""
 
     slot: LlmModelSlot
+    http_client: _HttpClient | None = None
+    timeout_ms: int = 20000
+    max_output_tokens: int = 2048
+    temperature: float = 0.2
 
     def invoke(self, prompt: str) -> str | None:
-        """Return no output until provider calls are implemented."""
+        """Return raw generated text from a local OpenAI-compatible endpoint."""
 
-        return None
+        if not self.slot.base_url:
+            return None
+        return _invoke_openai_compatible(
+            slot=self.slot,
+            prompt=prompt,
+            http_client=self.http_client,
+            timeout_ms=self.timeout_ms,
+            max_output_tokens=self.max_output_tokens,
+            temperature=self.temperature,
+            base_url=self.slot.base_url,
+            api_key=self.slot.api_key,
+        )
 
 
 def create_llm_adapter(slot: LlmModelSlot) -> LlmAdapter:
@@ -165,7 +173,6 @@ def create_llm_adapter(slot: LlmModelSlot) -> LlmAdapter:
 def _create_google_client(api_key: str | None) -> _GoogleClient | None:
     if not api_key:
         return None
-    from google import genai
 
     return genai.Client(api_key=api_key)
 
@@ -176,8 +183,6 @@ def _google_generate_config(
     max_output_tokens: int,
     temperature: float,
 ) -> object:
-    from google.genai import types
-
     return types.GenerateContentConfig(
         response_mime_type="application/json",
         max_output_tokens=max_output_tokens,
@@ -201,9 +206,6 @@ class _UrlLibHttpClient:
         json_body: dict[str, Any],
         timeout_ms: int,
     ) -> _HttpJsonResponse:
-        import urllib.error
-        import urllib.request
-
         request = urllib.request.Request(
             url,
             data=json.dumps(json_body).encode("utf-8"),
@@ -223,6 +225,43 @@ class _UrlLibHttpClient:
 
 def _openai_chat_completions_url(base_url: str | None) -> str:
     return f"{(base_url or _OPENAI_BASE_URL).rstrip('/')}/chat/completions"
+
+
+def _invoke_openai_compatible(
+    *,
+    slot: LlmModelSlot,
+    prompt: str,
+    http_client: _HttpClient | None,
+    timeout_ms: int,
+    max_output_tokens: int,
+    temperature: float,
+    base_url: str,
+    api_key: str | None,
+) -> str | None:
+    if not slot.model:
+        return None
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    try:
+        client = http_client or _UrlLibHttpClient()
+        response = client.post(
+            url=_openai_chat_completions_url(base_url),
+            headers=headers,
+            json_body={
+                "model": slot.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_output_tokens,
+                "temperature": temperature,
+            },
+            timeout_ms=timeout_ms,
+        )
+    except Exception:
+        return None
+
+    if response.status_code < 200 or response.status_code >= 300:
+        return None
+    return _extract_openai_message_content(response.body)
 
 
 def _extract_openai_message_content(body: object) -> str | None:

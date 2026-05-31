@@ -240,3 +240,18 @@ Reviewer: `Aristotle` sub-agent
 - reviewer: `Erdos` sub-agent
 - result: no unresolved findings
 - 확인: HTTP non-2xx 응답과 blank-only assistant content 테스트가 추가되었고, Sprint 4.3 체크 상태가 구현/테스트 완료 상태와 일치한다.
+
+## 2026-05-31 Local OpenAI-compatible Adapter Review
+
+Status: resolved
+
+Reviewer: `Bacon` sub-agent
+
+최종 리뷰:
+
+- result: no unresolved findings
+- 확인: `LocalLlmAdapter`가 slot의 `base_url`과 `model`만 사용해 Chat Completions compatible endpoint를 호출한다.
+- 확인: local provider는 API key 없이 `Authorization` header 없이 요청한다.
+- 확인: provider/endpoint 실패는 예외 전파 없이 `None`으로 수렴한다.
+- 확인: fallback 순서는 adapter에 들어가 있지 않다.
+- 확인: 함수/메서드 내부 import 금지 규칙이 문서에 반영되었고 내부 import 검색 결과가 비어 있다.

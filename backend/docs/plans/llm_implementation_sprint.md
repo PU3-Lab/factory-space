@@ -189,17 +189,18 @@ Files:
 
 Steps:
 
-- [ ] local base URL 누락 정책을 settings와 정합화한다. 현재 `LlmSettings`는 local provider에 model/base URL을 요구한다.
-- [ ] fake local endpoint 성공 응답 테스트 작성
-- [ ] local endpoint error는 `None` 반환 테스트 작성
-- [ ] adapter 구현
-- [ ] adapter 테스트 GREEN 확인
-- [ ] 커밋: `feat: local LLM adapter 추가`
+- [x] local base URL 누락 정책을 settings와 정합화한다. 현재 `LlmSettings`는 local provider에 model/base URL을 요구한다.
+- [x] fake local endpoint 성공 응답 테스트 작성
+- [x] local endpoint error는 `None` 반환 테스트 작성
+- [x] adapter 구현
+- [x] adapter 테스트 GREEN 확인
+- [x] 커밋: `feat: local LLM adapter 추가`
 
 Acceptance:
 
 - 로컬 LLM은 API key 없이도 동작할 수 있다.
 - endpoint/base URL은 slot 설정으로만 주입한다.
+- OpenAI-compatible 호출은 Chat Completions 형식인 `POST /v1/chat/completions`를 사용한다.
 
 ## Sprint 5: LangGraph fallback wiring
 

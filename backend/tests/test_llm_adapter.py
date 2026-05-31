@@ -385,3 +385,85 @@ def test_openai_llm_adapter_preserves_json_object_response_text() -> None:
     )
 
     assert adapter.invoke("prompt") == '  {"route":"manual_qa"}\n'
+
+
+def test_local_llm_adapter_returns_response_text_without_api_key() -> None:
+    http_client = FakeOpenAiHttpClient()
+    adapter = LocalLlmAdapter(
+        LlmModelSlot(
+            name="default",
+            provider="local",
+            model="llama3.1:8b",
+            base_url="http://localhost:11434/v1",
+        ),
+        http_client=http_client,
+        timeout_ms=1234,
+        max_output_tokens=64,
+        temperature=0.1,
+    )
+
+    result = adapter.invoke("prompt")
+
+    assert result == '{"summary":"ok"}'
+    assert http_client.calls == [
+        {
+            "url": "http://localhost:11434/v1/chat/completions",
+            "headers": {
+                "Content-Type": "application/json",
+            },
+            "json_body": {
+                "model": "llama3.1:8b",
+                "messages": [{"role": "user", "content": "prompt"}],
+                "max_tokens": 64,
+                "temperature": 0.1,
+            },
+            "timeout_ms": 1234,
+        },
+    ]
+
+
+def test_local_llm_adapter_returns_none_without_base_url() -> None:
+    http_client = FakeOpenAiHttpClient()
+    adapter = LocalLlmAdapter(
+        LlmModelSlot(
+            name="default",
+            provider="local",
+            model="llama3.1:8b",
+        ),
+        http_client=http_client,
+    )
+
+    assert adapter.invoke("prompt") is None
+    assert http_client.calls == []
+
+
+def test_local_llm_adapter_returns_none_for_endpoint_error() -> None:
+    http_client = FakeOpenAiHttpClient(error=RuntimeError("provider failed"))
+    adapter = LocalLlmAdapter(
+        LlmModelSlot(
+            name="default",
+            provider="local",
+            model="llama3.1:8b",
+            base_url="http://localhost:11434/v1",
+        ),
+        http_client=http_client,
+    )
+
+    assert adapter.invoke("prompt") is None
+
+
+def test_local_llm_adapter_returns_none_for_http_error_response() -> None:
+    http_client = FakeOpenAiHttpClient(
+        FakeHttpResponse(500, {"error": {"message": "provider failed"}})
+    )
+    adapter = LocalLlmAdapter(
+        LlmModelSlot(
+            name="default",
+            provider="local",
+            model="llama3.1:8b",
+            base_url="http://localhost:11434/v1",
+        ),
+        http_client=http_client,
+    )
+
+    assert adapter.invoke("prompt") is None
