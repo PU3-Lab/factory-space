@@ -98,5 +98,5 @@ private:
 	// ⚠️ 입력 방향(cursor → origin). 시각 보정인 AOJJ_Grid::GetMachinePlacementLocation
 	// (origin → footprint center 액터 위치)과 반대 방향이지만 같은 size 정수화 규칙
 	// (CeilToInt + Max(1))을 따라야 호버/배치와 occupancy/시각이 어긋나지 않는다.
-	FIntPoint ComputeOriginFromCursorCell(FIntPoint CursorCell, AMachineBase* Machine) const;
+	FIntPoint ComputeOriginFromCursorCell(FIntPoint CursorCell, AMachineBase* Machine, int32 RotationSteps = 0) const;
 };

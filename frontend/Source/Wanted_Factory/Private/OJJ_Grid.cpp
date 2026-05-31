@@ -123,7 +123,17 @@ FVector AOJJ_Grid::GetGridCenter() const
 	return FVector(CenterX, CenterY, Origin.Z);
 }
 
-FVector AOJJ_Grid::GetMachinePlacementLocation(AMachineBase* Machine, FIntPoint Origin) const
+FIntPoint AOJJ_Grid::EffectiveSize(FVector2D RawSize, int32 RotationSteps)
+{
+	// CalculateFootprint / GetMachinePlacementLocation과 동일한 정수화 규칙(CeilToInt + Max 1).
+	const int32 X = FMath::Max(1, FMath::CeilToInt(RawSize.X));
+	const int32 Y = FMath::Max(1, FMath::CeilToInt(RawSize.Y));
+
+	// 90°/270°(홀수 step)에서 치수 swap. 음수 step도 parity로 정상 동작.
+	return ((RotationSteps % 2) != 0) ? FIntPoint(Y, X) : FIntPoint(X, Y);
+}
+
+FVector AOJJ_Grid::GetMachinePlacementLocation(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps) const
 {
 	// 방어층: 머신 없으면 lower-left 셀 중심 반환 (호출자가 잘못 부른 경우 안전한 fallback).
 	if (!Machine)
@@ -131,16 +141,14 @@ FVector AOJJ_Grid::GetMachinePlacementLocation(AMachineBase* Machine, FIntPoint 
 		return GridToWorld(Origin);
 	}
 
-	// CalculateFootprint와 동일한 정수화 규칙(CeilToInt + Max 1). 두 경로가 같은 size
-	// 가정에서 동작해야 occupancy 셀과 visual 위치가 정확히 일치.
-	const FVector2D Size = Machine->GetMachineSize();
-	const int32 SizeX = FMath::Max(1, FMath::CeilToInt(Size.X));
-	const int32 SizeY = FMath::Max(1, FMath::CeilToInt(Size.Y));
+	// CalculateFootprint와 동일한 정수화·회전 규칙(EffectiveSize). 두 경로가 같은 size
+	// 가정에서 동작해야 occupancy 셀과 visual 위치가 정확히 일치. step 0이면 기존과 동일.
+	const FIntPoint Size = EffectiveSize(Machine->GetMachineSize(), RotationSteps);
 
 	// lower-left cell 중심에서 footprint 전체 center로 이동. 1x1이면 offset 0 (회귀 없음).
 	const FVector LowerLeftCenter = GridToWorld(Origin);
-	const float OffsetX = (SizeX - 1) * CellSize * 0.5f;
-	const float OffsetY = (SizeY - 1) * CellSize * 0.5f;
+	const float OffsetX = (Size.X - 1) * CellSize * 0.5f;
+	const float OffsetY = (Size.Y - 1) * CellSize * 0.5f;
 	return FVector(LowerLeftCenter.X + OffsetX, LowerLeftCenter.Y + OffsetY, LowerLeftCenter.Z);
 }
 
@@ -150,7 +158,7 @@ bool AOJJ_Grid::IsValidGridCell(FIntPoint Cell) const
 		&& Cell.Y >= 0 && Cell.Y < GridSize.Y;
 }
 
-TArray<FIntPoint> AOJJ_Grid::CalculateFootprint(AMachineBase* Machine, FIntPoint Origin) const
+TArray<FIntPoint> AOJJ_Grid::CalculateFootprint(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps) const
 {
 	TArray<FIntPoint> Cells;
 	if (!Machine)
@@ -158,14 +166,13 @@ TArray<FIntPoint> AOJJ_Grid::CalculateFootprint(AMachineBase* Machine, FIntPoint
 		return Cells;
 	}
 
-	const FVector2D Size = Machine->GetMachineSize();
-	const int32 SizeX = FMath::Max(1, FMath::CeilToInt(Size.X));
-	const int32 SizeY = FMath::Max(1, FMath::CeilToInt(Size.Y));
+	// 회전·정수화 규칙은 EffectiveSize로 통일. step 0이면 기존 (CeilToInt+Max1) 동일.
+	const FIntPoint Size = EffectiveSize(Machine->GetMachineSize(), RotationSteps);
 
-	Cells.Reserve(SizeX * SizeY);
-	for (int32 X = 0; X < SizeX; ++X)
+	Cells.Reserve(Size.X * Size.Y);
+	for (int32 X = 0; X < Size.X; ++X)
 	{
-		for (int32 Y = 0; Y < SizeY; ++Y)
+		for (int32 Y = 0; Y < Size.Y; ++Y)
 		{
 			Cells.Add(Origin + FIntPoint(X, Y));
 		}
@@ -173,7 +180,7 @@ TArray<FIntPoint> AOJJ_Grid::CalculateFootprint(AMachineBase* Machine, FIntPoint
 	return Cells;
 }
 
-bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin) const
+bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps) const
 {
 	if (!Machine)
 	{
@@ -182,7 +189,7 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin) const
 
 	// 모든 placement entry point가 같은 invariant 따르도록 풋프린트 전체 셀에 대해
 	// bounds + 점유를 동시에 검사 (단일 패스).
-	for (const FIntPoint& Cell : CalculateFootprint(Machine, Origin))
+	for (const FIntPoint& Cell : CalculateFootprint(Machine, Origin, RotationSteps))
 	{
 		if (!IsValidGridCell(Cell))
 		{
@@ -218,7 +225,7 @@ void AOJJ_Grid::SweepStaleEntries()
 	}
 }
 
-bool AOJJ_Grid::RegisterMachineInternal(AMachineBase* Machine, FIntPoint Origin, FString& OutReason)
+bool AOJJ_Grid::RegisterMachineInternal(AMachineBase* Machine, FIntPoint Origin, FString& OutReason, int32 RotationSteps)
 {
 	if (!HasAuthority())
 	{
@@ -241,13 +248,13 @@ bool AOJJ_Grid::RegisterMachineInternal(AMachineBase* Machine, FIntPoint Origin,
 		return false;
 	}
 
-	if (!CanPlaceMachine(Machine, Origin))
+	if (!CanPlaceMachine(Machine, Origin, RotationSteps))
 	{
 		OutReason = TEXT("Cell already occupied");
 		return false;
 	}
 
-	TArray<FIntPoint> Footprint = CalculateFootprint(Machine, Origin);
+	TArray<FIntPoint> Footprint = CalculateFootprint(Machine, Origin, RotationSteps);
 	for (const FIntPoint& Cell : Footprint)
 	{
 		OccupiedCells.Add(Cell, Machine);
@@ -258,15 +265,15 @@ bool AOJJ_Grid::RegisterMachineInternal(AMachineBase* Machine, FIntPoint Origin,
 	return true;
 }
 
-bool AOJJ_Grid::TryPlaceMachine(AMachineBase* Machine, FIntPoint Origin, FString& OutReason)
+bool AOJJ_Grid::TryPlaceMachine(AMachineBase* Machine, FIntPoint Origin, FString& OutReason, int32 RotationSteps)
 {
-	if (!RegisterMachineInternal(Machine, Origin, OutReason))
+	if (!RegisterMachineInternal(Machine, Origin, OutReason, RotationSteps))
 	{
 		return false;
 	}
 
-	// center anchor 보정 (헬퍼 안에 합의 contract 명시)
-	if (!Machine->SetActorLocation(GetMachinePlacementLocation(Machine, Origin)))
+	// center anchor 보정 (헬퍼 안에 합의 contract 명시). 회전 시 회전된 footprint center로 정렬.
+	if (!Machine->SetActorLocation(GetMachinePlacementLocation(Machine, Origin, RotationSteps)))
 	{
 		RemoveMachine(Machine);
 		OutReason = TEXT("Failed to move machine to target location");
@@ -329,7 +336,7 @@ void AOJJ_Grid::SetVisualizationVisible(bool bVisible)
 	}
 }
 
-void AOJJ_Grid::UpdateHoverPreview(AMachineBase* Machine, FIntPoint Origin)
+void AOJJ_Grid::UpdateHoverPreview(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps)
 {
 	ClearHoverPreview();
 
@@ -342,14 +349,14 @@ void AOJJ_Grid::UpdateHoverPreview(AMachineBase* Machine, FIntPoint Origin)
 	// 풋프린트 중 한 칸이라도 점유 / out-of-bounds이면 전체 빨강. 시각 피드백이 실제
 	// CanPlaceMachine 결과와 항상 일치 → "겹친 칸만 빨강, 나머지 녹색" 같은 거짓말 제거.
 	// (이전 셀별 판정 — bIsOccupied/bIsOutOfBounds를 셀마다 OR — 으로 인한 회귀.)
-	const bool bCanPlace = CanPlaceMachine(Machine, Origin);
+	const bool bCanPlace = CanPlaceMachine(Machine, Origin, RotationSteps);
 	UInstancedStaticMeshComponent* TargetISM = bCanPlace ? ValidHoverISM.Get() : InvalidHoverISM.Get();
 	if (!TargetISM)
 	{
 		return;
 	}
 
-	const TArray<FIntPoint> FootprintCells = CalculateFootprint(Machine, Origin);
+	const TArray<FIntPoint> FootprintCells = CalculateFootprint(Machine, Origin, RotationSteps);
 	for (const FIntPoint& Cell : FootprintCells)
 	{
 		// 베이스 그리드 평면(Z=1)보다 위로 +2 오프셋 → 가림 방지

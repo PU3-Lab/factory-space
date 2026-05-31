@@ -82,14 +82,15 @@ protected:
 	TMap<TWeakObjectPtr<AMachineBase>, TArray<FIntPoint>> MachineToCells;
 
 private:
-	// Origin부터 머신 풋프린트가 차지하는 셀 좌표 목록
-	TArray<FIntPoint> CalculateFootprint(AMachineBase* Machine, FIntPoint Origin) const;
+	// Origin부터 머신 풋프린트가 차지하는 셀 좌표 목록. RotationSteps로 90° 회전 footprint 지원(기본 0).
+	TArray<FIntPoint> CalculateFootprint(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
 
 	// GC/Destroy된 머신 엔트리를 양방향 맵에서 정리. write 경로 진입부에서 호출.
 	void SweepStaleEntries();
 
 	// 양방향 맵에 머신 등록. 위치 갱신은 호출자가 별도 처리. 모든 write 검증을 포함.
-	bool RegisterMachineInternal(AMachineBase* Machine, FIntPoint Origin, FString& OutReason);
+	// RotationSteps는 점유 footprint 계산(CanPlace/CalculateFootprint)에 전달(기본 0).
+	bool RegisterMachineInternal(AMachineBase* Machine, FIntPoint Origin, FString& OutReason, int32 RotationSteps = 0);
 
 public:
 	virtual void Tick(float DeltaTime) override;
@@ -108,6 +109,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
 	FVector GetGridCenter() const;
 
+	// 머신 raw 치수(GetMachineSize)를 정수화(CeilToInt+Max 1)하고 90° 회전 step을 적용한
+	// 유효 footprint 치수. step 짝수(0,2)→(X,Y), 홀수(1,3)→(Y,X). footprint/호버/배치/시각 보정이
+	// 이 함수 하나로 회전·정수화 규칙을 공유 → 경로 간 어긋남 방지. step 0이면 기존 정수화와 동일.
+	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
+	static FIntPoint EffectiveSize(FVector2D RawSize, int32 RotationSteps);
+
 	// 머신 mesh는 center anchor (머신 팀과 합의된 contract). 그리드 lower-left 좌표계와
 	// 정렬을 맞추기 위해 풋프린트 전체 center에 머신 액터 중심을 배치한다.
 	// 1x1은 offset (0,0) → GridToWorld(Origin)과 동일하므로 회귀 없음.
@@ -115,19 +122,19 @@ public:
 	//  - TryPlaceMachine: 이 값으로 spawn 액터 위치를 보정
 	//  - RegisterExistingMachine: 이 값과 사전 배치 액터 위치(XY) 일치 검증
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
-	FVector GetMachinePlacementLocation(AMachineBase* Machine, FIntPoint Origin) const;
+	FVector GetMachinePlacementLocation(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
 
 	// 셀이 그리드 유효 범위 ([0, VisualizationRange) × [0, VisualizationRange)) 내인지 검사
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
 	bool IsValidGridCell(FIntPoint Cell) const;
 
-	// Origin부터 머신 풋프린트만큼의 셀이 모두 비어있는지 검사
+	// Origin부터 머신 풋프린트만큼의 셀이 모두 비어있는지 검사. RotationSteps로 회전 footprint 검사(기본 0).
 	UFUNCTION(BlueprintPure, Category = "Grid|Placement")
-	bool CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin) const;
+	bool CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
 
-	// Origin에 머신 배치 시도. 실패 시 OutReason에 사유 기록 (서버 권위 전용)
+	// Origin에 머신 배치 시도. 실패 시 OutReason에 사유 기록 (서버 권위 전용). RotationSteps로 회전 배치(기본 0).
 	UFUNCTION(BlueprintCallable, Category = "Grid|Placement")
-	bool TryPlaceMachine(AMachineBase* Machine, FIntPoint Origin, FString& OutReason);
+	bool TryPlaceMachine(AMachineBase* Machine, FIntPoint Origin, FString& OutReason, int32 RotationSteps = 0);
 
 	// 머신 인스턴스를 그리드에서 제거 (서버 권위 전용)
 	UFUNCTION(BlueprintCallable, Category = "Grid|Placement")
@@ -157,9 +164,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Visualization")
 	UStaticMeshComponent* GetGridFloorMesh() const { return GridFloorMesh; }
 
-	// Origin에 머신을 호버 시 셀별 가능/불가 미리보기 갱신 (호출 시 기존 미리보기 클리어).
+	// Origin에 머신을 호버 시 셀별 가능/불가 미리보기 갱신 (호출 시 기존 미리보기 클리어). RotationSteps로 회전 미리보기(기본 0).
 	UFUNCTION(BlueprintCallable, Category = "Grid|Hover")
-	void UpdateHoverPreview(AMachineBase* Machine, FIntPoint Origin);
+	void UpdateHoverPreview(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0);
 
 	// 호버 미리보기 모두 제거 (머신 placement 완료 / 호버 해제 시 호출).
 	UFUNCTION(BlueprintCallable, Category = "Grid|Hover")

@@ -105,22 +105,20 @@ void AOJJ_BuildController::ToggleBuildMode()
 	}
 }
 
-FIntPoint AOJJ_BuildController::ComputeOriginFromCursorCell(FIntPoint CursorCell, AMachineBase* Machine) const
+FIntPoint AOJJ_BuildController::ComputeOriginFromCursorCell(FIntPoint CursorCell, AMachineBase* Machine, int32 RotationSteps) const
 {
 	if (!Machine)
 	{
 		return CursorCell;
 	}
 
-	// AOJJ_Grid::CalculateFootprint / GetMachinePlacementLocation과 동일한 정수화 규칙.
+	// AOJJ_Grid::CalculateFootprint / GetMachinePlacementLocation과 동일한 정수화·회전 규칙(EffectiveSize).
 	// 입력(cursor → origin)과 시각 보정(origin → footprint center)이 반대 방향이지만
-	// 같은 size 가정에서 동작해야 호버/배치와 occupancy/메시 위치가 어긋나지 않음.
-	const FVector2D Size = Machine->GetMachineSize();
-	const int32 SizeX = FMath::Max(1, FMath::CeilToInt(Size.X));
-	const int32 SizeY = FMath::Max(1, FMath::CeilToInt(Size.Y));
+	// 같은 size 가정에서 동작해야 호버/배치와 occupancy/메시 위치가 어긋나지 않음. step 0이면 기존과 동일.
+	const FIntPoint Size = AOJJ_Grid::EffectiveSize(Machine->GetMachineSize(), RotationSteps);
 
 	// (Size-1)/2 정수 나눗셈 → lower-left bias. 1x1 offset 0 (회귀 없음).
-	return FIntPoint(CursorCell.X - (SizeX - 1) / 2, CursorCell.Y - (SizeY - 1) / 2);
+	return FIntPoint(CursorCell.X - (Size.X - 1) / 2, CursorCell.Y - (Size.Y - 1) / 2);
 }
 
 void AOJJ_BuildController::UpdateMouseHover()
