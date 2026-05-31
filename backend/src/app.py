@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from websocket.gateway import router as websocket_router
+from websocket_gateway.gateway import router as websocket_router
 
 
 def create_app() -> FastAPI:
