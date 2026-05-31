@@ -151,6 +151,15 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 		UE_LOG(LogTemp, Warning,
 			TEXT("[OJJ_Player] IA_BuildPlace 미할당 — 배치(좌클릭) 비활성. BP_OJJ_Player에 IA_BuildPlace 에셋 할당 필요."));
 	}
+	if (IA_BuildPan)
+	{
+		// 매 프레임 입력(연속 이동) → Triggered
+		EnhancedInput->BindAction(IA_BuildPan, ETriggerEvent::Triggered, this, &AOJJ_Player::BuildPan);
+	}
+	if (IA_BuildRotate)
+	{
+		EnhancedInput->BindAction(IA_BuildRotate, ETriggerEvent::Triggered, this, &AOJJ_Player::BuildRotate);
+	}
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -279,4 +288,21 @@ void AOJJ_Player::BuildPlace(const FInputActionValue& Value)
 	}
 	// 빌드모드 밖이면 OnLeftClickPressed 내부 가드(bIsBuildMode)로 no-op
 	BuildController->OnLeftClickPressed();
+}
+
+void AOJJ_Player::BuildPan(const FInputActionValue& Value)
+{
+	// IA_BuildPan은 IMC_Build에만 매핑되므로 빌드모드에서만 호출됨. Pan 내부에서 0입력/DeltaSeconds 처리.
+	if (BuildCamera)
+	{
+		BuildCamera->Pan(Value.Get<FVector2D>());
+	}
+}
+
+void AOJJ_Player::BuildRotate(const FInputActionValue& Value)
+{
+	if (BuildCamera)
+	{
+		BuildCamera->Rotate(Value.Get<float>());
+	}
 }
