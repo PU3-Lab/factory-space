@@ -85,7 +85,7 @@ class AgentPipeline:
                 else AgentRequestEnvelope.model_validate(message)
             )
         except ValidationError as exc:
-            return _build_validation_error(exc)
+            return _build_validation_error(exc, message)
 
         state = self.graph.invoke({"envelope": envelope})
         return state["responseEnvelope"]
@@ -564,11 +564,18 @@ def run_agent_pipeline(message: AgentRequestEnvelope | dict[str, Any]) -> dict[s
     try:
         return AgentPipeline().run(message)
     except ValidationError as exc:
-        return _build_validation_error(exc)
+        return _build_validation_error(exc, message)
 
 
-def _build_validation_error(exc: ValidationError) -> dict[str, Any]:
+def _build_validation_error(
+    exc: ValidationError,
+    raw_message: AgentRequestEnvelope | dict[str, Any] | None = None,
+) -> dict[str, Any]:
     error = AgentErrorEnvelope(
+        request_id=_raw_string_field(raw_message, "request_id"),
+        session_id=_raw_string_field(raw_message, "session_id"),
+        client_id=_raw_string_field(raw_message, "client_id"),
+        agent=_raw_string_field(raw_message, "agent"),
         error=build_error_payload(
             "INVALID_ENVELOPE",
             "Agent request envelope validation failed.",
@@ -576,3 +583,17 @@ def _build_validation_error(exc: ValidationError) -> dict[str, Any]:
         )
     )
     return error.model_dump(mode="json")
+
+
+def _raw_string_field(
+    raw_message: AgentRequestEnvelope | dict[str, Any] | None,
+    field: str,
+) -> str | None:
+    if raw_message is None:
+        return None
+    value = (
+        raw_message.get(field)
+        if isinstance(raw_message, dict)
+        else getattr(raw_message, field, None)
+    )
+    return value if isinstance(value, str) else None

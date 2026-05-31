@@ -154,3 +154,22 @@ def test_run_agent_pipeline_returns_validation_error_for_bad_envelope() -> None:
     )
 
     assert_agent_error(response, code="INVALID_ENVELOPE")
+
+
+def test_pipeline_validation_error_preserves_raw_correlation_fields() -> None:
+    response = run_agent_pipeline(
+        {
+            "type": "wrong.type",
+            "request_id": "request-invalid-correlated",
+            "session_id": "session-1",
+            "client_id": "client-1",
+            "agent": "process_optimizer",
+            "payload": {},
+        }
+    )
+
+    assert_agent_error(response, code="INVALID_ENVELOPE")
+    assert response["request_id"] == "request-invalid-correlated"
+    assert response["session_id"] == "session-1"
+    assert response["client_id"] == "client-1"
+    assert response["agent"] == "process_optimizer"
