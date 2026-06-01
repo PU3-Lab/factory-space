@@ -165,7 +165,7 @@ protected:
 	TArray<FMachinePortData> OutputPorts;
 
 	// 출력 포트별 연결 정보
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine | Ports")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Ports")
 	TArray<FMachinePortConnection> OutputConnections;
 
 public:
