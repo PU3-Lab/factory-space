@@ -167,11 +167,18 @@ frontend/**/*.xcworkspace/
 frontend/**/*.xcodeproj/
 frontend/**/*.xcuserdata/
 
+# Meshy raw import sources (FBX/텍스처) — UE는 cooked .uasset만 필요하므로 원본은 추적 제외
+frontend/Content/MeshyImports/
+
+# Meshy 임포트 플러그인 (로컬 도구 — 런타임 의존성 아님, 각자 설치)
+frontend/Plugins/meshy-unreal-plugin-*/
+
 # Local git worktrees / scratch checkouts
 worktree/
 
 # Agent metadata
 .antigravitycli/
+.omc/
 
 # Keep environment templates tracked even though real env files are ignored.
 !.env.example
