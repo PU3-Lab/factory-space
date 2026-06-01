@@ -83,6 +83,7 @@ from agents.base import AgentContext, AgentRunResult
 
 class SomeAgent:
     agent_id = "some_agent"
+    tools = ()
 
     def build_prompt(
         self,
@@ -98,6 +99,8 @@ class SomeAgent:
     ) -> AgentRunResult:
         ...
 ```
+
+tool이 없는 agent는 `tools = ()`를 둡니다. tool이 필요한 agent는 `agents.base.AgentTool` 계약을 따르는 read-only tool tuple을 연결합니다.
 
 agent는 Unreal로 직렬화해서 보낼 수 있는 구조화된 응답을 반환해야 합니다.
 

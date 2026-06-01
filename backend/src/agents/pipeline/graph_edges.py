@@ -16,6 +16,13 @@ SINGLE_LEAF_AGENT_IDS = {
     "process_optimizer": ("process_optimizer",),
 }
 
+TOP_LEVEL_AGENT_BRANCHES = {
+    "process_optimizer": "validate_process_payload",
+    "operator_guide": "operator_guide.route_sub_agent",
+    "quest_generator": "quest_generator.route_sub_agent",
+    "new_material_generator": "validate_material_payload",
+}
+
 
 def wire_agent_graph(graph: StateGraph) -> None:
     graph.add_edge(START, "build_context")
@@ -25,10 +32,7 @@ def wire_agent_graph(graph: StateGraph) -> None:
         "route_top_agent",
         route_selected_agent,
         {
-            "process_optimizer": "validate_process_payload",
-            "operator_guide": "operator_guide.route_sub_agent",
-            "quest_generator": "quest_generator.route_sub_agent",
-            "new_material_generator": "validate_material_payload",
+            **TOP_LEVEL_AGENT_BRANCHES,
             "error": "build_agent_error",
         },
     )

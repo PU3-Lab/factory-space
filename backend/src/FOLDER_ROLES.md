@@ -107,6 +107,7 @@ AI Agent 실행 계층이다.
 
 - `base.py`: Agent interface와 공통 타입
 - `router.py`: agent id 기반 registry/router
+- `agent_catalog.py`: top-level routing prompt에 넣는 read-only routing support tool과 Agent capability catalog
 - `pipeline/`: LangGraph 실행 파이프라인 패키지
   - `runtime.py`: validation/cache/prompt/response envelope 실행 흐름
   - `graph_edges.py`: LangGraph node edge와 routing predicate

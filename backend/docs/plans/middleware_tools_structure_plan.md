@@ -10,9 +10,11 @@
 
 - `middleware`는 FastAPI/ASGI middleware가 아니라 `AgentPipeline` 실행 middleware를 의미한다.
 - `tools`는 Unreal action이 아니라 LLM generation 단계에서 사용할 backend read-only tool을 의미한다.
+- 모든 Agent는 `agents.base.Agent` 계약상 `tools` tuple을 가질 수 있다. tool이 없으면 빈 tuple을 사용한다.
 - v1 tool calling은 provider-native function calling이 아니라 provider-neutral JSON 계약으로 시작한다.
 - OpenAI/Gemini native tool calling은 후속 확장 지점으로만 남긴다.
 - routing 단계에는 tool calling을 적용하지 않는다.
+- routing prompt 보강용 deterministic tool interface는 허용한다. 현재 구현은 `agents.agent_catalog.AgentCatalogTool`이며, 이는 LLM이 호출하는 tool이 아니라 오케스트레이터가 직접 호출하는 read-only routing support tool이다.
 - generation 단계에서만 tool request를 감지하고 실행한다.
 - v1 tool loop는 최대 1회만 허용한다.
 - v1 tool catalog는 read-only context tool만 포함한다.
@@ -34,6 +36,7 @@
 
 - FastAPI middleware, CORS, auth, rate limit
 - Unreal action catalog 실행
+- routing 단계의 LLM tool calling
 - OpenAI/Gemini native function calling schema 매핑 구현
 - tool 결과 streaming
 - write/update/delete tool
@@ -245,6 +248,38 @@ factory_context.get_selected_object
 - tool은 write action을 만들지 않는다.
 
 ## 8. Prompt 정책
+
+### 8.1 Routing prompt 보강
+
+Top-level orchestrator에는 generation tool catalog를 붙이지 않는다. 대신 공통 `AgentTool`의 routing specialization인 `RoutingSupportTool`을 `OrchestratorAgent.tools`에 연결한다. 오케스트레이터는 이 deterministic read-only tool을 직접 호출하고, 그 결과를 prompt section으로 주입한다.
+
+현재 routing prompt에는 다음 섹션을 둔다.
+
+```txt
+[ALLOWED_AGENT_IDS]
+- process_optimizer
+- operator_guide
+- quest_generator
+- new_material_generator
+
+[AGENT_CAPABILITIES]
+- process_optimizer: ...
+- operator_guide: ...
+- quest_generator: ...
+- new_material_generator: ...
+```
+
+규칙:
+
+- routing support tool은 `invoke(payload, context) -> RoutingToolResult` 계약을 따른다.
+- `RoutingToolResult`는 prompt section 이름과 content만 제공한다.
+- `AgentCatalogTool`은 top-level Agent id, summary, when-to-use 설명만 제공한다.
+- `AgentCatalogTool`은 database, file system, Unreal runtime을 읽지 않는다.
+- LLM은 `AgentCatalogTool`을 tool로 호출하지 않는다. 오케스트레이터가 prompt 생성 전에 deterministic하게 호출한다.
+- routing output 계약은 계속 허용된 agent id 문자열 하나다.
+- routing LLM이 `tool_call` JSON을 반환하면 기존처럼 `ROUTING_UNAVAILABLE`이다.
+
+### 8.2 Generation prompt tool 정책
 
 Agent generation prompt에는 사용 가능한 tool catalog를 짧게 추가한다.
 주입 위치는 pipeline 공통 prompt augmentation으로 고정한다. 각 agent의 `build_prompt()`는 기존 책임을 유지하고, generation LLM 호출 직전에 `tool_middleware.py`가 catalog와 output contract를 덧붙인다.

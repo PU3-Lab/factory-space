@@ -5,6 +5,7 @@
 ## 원칙
 
 - Agent는 도메인 판단, prompt 구성, response payload 해석, deterministic fallback 정책을 가진다.
+- Agent는 공통 `tools` tuple을 가질 수 있다. tool이 없으면 빈 tuple을 둔다.
 - Agent는 WebSocket connection을 직접 읽거나 쓰지 않는다.
 - Agent는 public message envelope 생성을 직접 소유하지 않는다.
 - LLM 호출, cache, retry, 최종 envelope 생성은 `agents/pipeline/`가 담당한다.
@@ -47,6 +48,7 @@ Agent가 아닌 실행 구성요소:
 
 - `agents/pipeline/`: LangGraph 기반 공통 실행 파이프라인 패키지
 - `agents/router.py`: agent id를 구현체로 매핑하는 registry/router
+- `agents/agent_catalog.py`: top-level routing prompt에 넣는 read-only routing support tool과 Agent capability catalog
 - `agents/base.py`: Agent interface와 공통 타입
 
 ## top-level Agent 처리 기준
@@ -80,7 +82,8 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 - 명시적인 `agent` 값이 요청에 있으면 prompt hint로만 전달하고, 선택 확정은 LLM 응답으로만 한다.
 - keyword, if/else, score table 같은 코드 로직으로 Agent를 추론하지 않는다.
 - LLM routing 결과가 없거나 허용 목록 밖이면 임의 fallback 선택을 하지 않고 routing error로 종료한다.
-- routing prompt는 `[ROLE]`, `[TASK]`, `[ALLOWED_AGENT_IDS]`, `[REQUEST_HINT]`, `[REQUEST_CONTEXT]`, `[REQUEST_PAYLOAD]`, `[OUTPUT_CONTRACT]` 섹션을 가진 structured prompt로 만든다.
+- routing prompt는 `[ROLE]`, `[TASK]`, `[ALLOWED_AGENT_IDS]`, `[AGENT_CAPABILITIES]`, `[REQUEST_HINT]`, `[REQUEST_CONTEXT]`, `[REQUEST_PAYLOAD]`, `[OUTPUT_CONTRACT]` 섹션을 가진 structured prompt로 만든다.
+- `[AGENT_CAPABILITIES]`는 `agents.agent_catalog.AgentCatalogTool`이 `RoutingSupportTool` 인터페이스로 제공한다. 이는 LLM tool calling이 아니라 오케스트레이터가 deterministic하게 호출하는 routing prompt 보강용 tool이다.
 - 출력 계약은 `TOP_LEVEL_AGENT_IDS` 중 하나의 id 문자열만 허용하며 JSON, markdown, 설명, reason, 따옴표, 코드블록은 허용하지 않는다.
 
 입력:

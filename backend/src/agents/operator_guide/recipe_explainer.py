@@ -11,6 +11,7 @@ class RecipeExplainerAgent:
     """Explain recipes and production chains."""
 
     agent_id = "operator_guide.recipe_explainer"
+    tools = ()
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
         return f"다음 레시피 질문에 답변하세요: {payload}"

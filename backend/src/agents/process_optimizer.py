@@ -11,6 +11,7 @@ class ProcessOptimizerAgent:
     """Suggest process improvements from a factory snapshot."""
 
     agent_id = "process_optimizer"
+    tools = ()
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
         return f"공장 snapshot에서 공정 병목과 개선 우선순위를 찾아주세요: {payload}"

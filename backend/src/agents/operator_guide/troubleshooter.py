@@ -11,6 +11,7 @@ class TroubleshooterAgent:
     """Diagnose blocked production and error states."""
 
     agent_id = "operator_guide.troubleshooter"
+    tools = ()
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
         return f"다음 공장 문제를 진단하고 해결 순서를 제안하세요: {payload}"
