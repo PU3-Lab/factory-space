@@ -171,18 +171,19 @@ LLM provider adapter 계층이다.
 - API key가 없을 때 fallback 경로로 전환할 수 있는 no-op adapter 제공
 - 테스트용 fake adapter 제공
 - LLM timeout과 provider error를 pipeline이 처리할 수 있는 형태로 변환
-- Agent prompt helper 제공
+- LLM slot provider/model/base URL/API key 설정 해석
 
 하지 않는 일:
 
 - WebSocket message 송신
 - Agent별 fallback 판단
+- Agent별 prompt 구성
 - 클라이언트 응답 envelope 생성
 
 대표 파일:
 
 - `adapter.py`: LLM adapter interface 및 provider 구현
-- `prompts.py`: 공통 prompt helper
+- `settings.py`: LLM slot 설정 해석
 
 ## `cache`
 
