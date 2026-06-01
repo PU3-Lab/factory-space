@@ -5,7 +5,7 @@ import pytest
 from agents.base import AgentContext, AgentRunResult
 from agents.router import AgentRouter, UnknownAgentError
 from cache.response_cache import ResponseCache
-from llm.adapter import LlmAdapter
+from llm.adapter import NoopLLMAdapter
 from protocol.errors import build_error_payload
 from protocol.messages import (
     AgentErrorEnvelope,
@@ -53,7 +53,7 @@ def test_agent_response_and_error_envelopes_dump_protocol_shapes() -> None:
     )
     error = AgentErrorEnvelope(
         request_id="request-2",
-        agent="manual_qa",
+        agent="operator_guide",
         error=build_error_payload("INVALID_INPUT", "Bad input"),
     )
 
@@ -113,5 +113,5 @@ def test_response_cache_returns_stored_payload_by_key() -> None:
     assert cache.get("missing") is None
 
 
-def test_default_llm_adapter_forces_fallback_path() -> None:
-    assert LlmAdapter().invoke("prompt") is None
+def test_noop_llm_adapter_forces_fallback_path() -> None:
+    assert NoopLLMAdapter().invoke("prompt") is None

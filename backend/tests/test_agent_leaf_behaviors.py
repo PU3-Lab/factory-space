@@ -5,10 +5,10 @@ from typing import Protocol
 import pytest
 
 from agents.base import AgentContext, AgentRunResult
-from agents.manual_qa.machine_help import MachineHelpAgent
-from agents.manual_qa.recipe_explainer import RecipeExplainerAgent
-from agents.manual_qa.troubleshooter import TroubleshooterAgent
 from agents.new_material_generator import NewMaterialGeneratorAgent
+from agents.operator_guide.machine_help import MachineHelpAgent
+from agents.operator_guide.recipe_explainer import RecipeExplainerAgent
+from agents.operator_guide.troubleshooter import TroubleshooterAgent
 from agents.process_optimizer import ProcessOptimizerAgent
 from agents.quest_generator.economy_quest import EconomyQuestAgent
 from agents.quest_generator.exploration_quest import ExplorationQuestAgent
@@ -95,7 +95,7 @@ def test_new_material_generator_uses_goal_as_material_role(
         (TroubleshooterAgent(), "troubleshooting", "공장 문제를 진단"),
     ],
 )
-def test_manual_qa_leaf_agents_return_normalized_fallbacks(
+def test_operator_guide_leaf_agents_return_normalized_fallbacks(
     agent: LeafAgent,
     expected_topic: str,
     expected_prompt: str,
@@ -107,7 +107,7 @@ def test_manual_qa_leaf_agents_return_normalized_fallbacks(
     result = agent.fallback(payload, context)
 
     assert expected_prompt in prompt
-    assert result.agent == "manual_qa"
+    assert result.agent == "operator_guide"
     assert result.payload["question"] == "How does this work?"
     assert result.payload["topic"] == expected_topic
     assert result.metadata == {"fallback": True, "sub_agent": agent.agent_id}

@@ -6,7 +6,7 @@ from typing import Any
 from agents.pipeline import AgentPipeline
 
 
-class StubLlm:
+class StubLLM:
     """Small LLM stub that only answers routing prompts."""
 
     def __init__(self, responses: list[str | None]) -> None:
@@ -18,6 +18,18 @@ class StubLlm:
         if not self.responses:
             return None
         return self.responses.pop(0)
+
+
+def top_agent_decision(agent: str) -> str:
+    """Build a top-level routing decision for tests."""
+
+    return agent
+
+
+def leaf_agent_decision(leaf_agent: str) -> str:
+    """Build a leaf agent routing decision for tests."""
+
+    return leaf_agent
 
 
 @dataclass(frozen=True)
@@ -32,10 +44,10 @@ class PipelineScenario:
     llm_responses: list[str | None] = field(default_factory=list)
 
 
-def run_pipeline_scenario(scenario: PipelineScenario) -> tuple[dict[str, Any], StubLlm]:
+def run_pipeline_scenario(scenario: PipelineScenario) -> tuple[dict[str, Any], StubLLM]:
     """Run one scenario through the real LangGraph-backed pipeline."""
 
-    llm = StubLlm(list(scenario.llm_responses))
+    llm = StubLLM(list(scenario.llm_responses))
     pipeline = AgentPipeline(llm=llm)
     response = pipeline.run(
         {
@@ -62,8 +74,8 @@ def assert_agent_response(
     assert isinstance(response["payload"], dict)
     assert isinstance(response["payload"]["metadata"], dict)
     assert response["payload"]["metadata"]["selectedAgent"] == agent
-    if sub_agent is not None:
-        assert response["payload"]["metadata"]["selectedSubAgent"] == sub_agent
+    assert response["payload"]["metadata"]["selectedLeafAgent"] == (sub_agent or agent)
+    assert "selectedSubAgent" not in response["payload"]["metadata"]
 
 
 def assert_agent_error(

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from agents.manual_qa.agent import ManualQaAgent
-from agents.orchestrator import OrchestratorAgent
+from agents.base import AgentContext
+from agents.operator_guide.agent import OperatorGuideAgent
 from agents.quest_generator.agent import QuestGeneratorAgent
 from agents.router import create_default_agent_router
 
@@ -10,10 +10,10 @@ def test_default_agent_router_contains_leaf_agents() -> None:
     router = create_default_agent_router()
 
     assert router.list_agent_ids() == [
-        "manual_qa.machine_help",
-        "manual_qa.recipe_explainer",
-        "manual_qa.troubleshooter",
         "new_material_generator",
+        "operator_guide.machine_help",
+        "operator_guide.recipe_explainer",
+        "operator_guide.troubleshooter",
         "process_optimizer",
         "quest_generator.economy_quest",
         "quest_generator.exploration_quest",
@@ -22,33 +22,37 @@ def test_default_agent_router_contains_leaf_agents() -> None:
     ]
 
 
-def test_orchestrator_parses_only_allowed_model_selection() -> None:
-    orchestrator = OrchestratorAgent()
-
-    assert (
-        orchestrator.parse_agent_selection(
-            '{"agent":"quest_generator","reason":"needs a quest"}'
-        )
-        == "quest_generator"
-    )
-    assert orchestrator.parse_agent_selection('{"agent":"unknown"}') is None
-
-
-def test_sub_orchestrators_parse_only_allowed_model_selection() -> None:
-    manual = ManualQaAgent()
+def test_sub_orchestrators_use_structured_prompt_id_contract() -> None:
+    operator_guide = OperatorGuideAgent()
     quest = QuestGeneratorAgent()
+    context = AgentContext(
+        request_id="request-contract",
+        metadata={"screen": "factory-floor"},
+    )
 
-    assert (
-        manual.parse_sub_agent_selection(
-            '{"sub_agent":"manual_qa.machine_help","reason":"machine question"}'
-        )
-        == "manual_qa.machine_help"
+    operator_guide_prompt = operator_guide.build_routing_prompt(
+        {"question": "How do I use this machine?"},
+        context,
     )
-    assert (
-        quest.parse_sub_agent_selection(
-            '{"sub_agent":"quest_generator.production_quest","reason":"production"}'
-        )
-        == "quest_generator.production_quest"
+    quest_prompt = quest.build_routing_prompt(
+        {"message": "create a production quest"},
+        context,
     )
-    assert manual.parse_sub_agent_selection('{"sub_agent":"manual_qa.unknown"}') is None
-    assert quest.parse_sub_agent_selection('{"sub_agent":"quest_generator.unknown"}') is None
+
+    for prompt in (operator_guide_prompt, quest_prompt):
+        assert "[ROLE]" in prompt
+        assert "[TASK]" in prompt
+        assert "[ALLOWED_LEAF_AGENT_IDS]" in prompt
+        assert "[REQUEST_CONTEXT]" in prompt
+        assert "[REQUEST_PAYLOAD]" in prompt
+        assert "[OUTPUT_CONTRACT]" in prompt
+        assert "compact JSON" not in prompt
+        assert '{"sub_agent"' not in prompt
+
+    assert "operator_guide.machine_help" in operator_guide_prompt
+    assert "operator_guide.recipe_explainer" in operator_guide_prompt
+    assert "operator_guide.troubleshooter" in operator_guide_prompt
+    assert "quest_generator.production_quest" in quest_prompt
+    assert "quest_generator.tutorial_quest" in quest_prompt
+    assert "quest_generator.exploration_quest" in quest_prompt
+    assert "quest_generator.economy_quest" in quest_prompt

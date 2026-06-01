@@ -75,7 +75,7 @@ flowchart TD
 - 클라이언트 요약 스냅샷 파싱
 - 공정 최적화 Agent 실행
 - 퀘스트 생성 Agent 실행
-- 매뉴얼 Q&A Agent 실행
+- 운영자 가이드 Agent 실행
 - 신물질 생성 Agent 실행
 - RAG / 게임 DB 조회
 - Agent 결과 반환
@@ -239,7 +239,7 @@ FactoryState
 AgentSnapshotBuilder
  ├─ buildProcessOptimizationSnapshot()
  ├─ buildQuestSnapshot()
- ├─ buildManualQaContext()
+ ├─ buildOperatorGuideContext()
  ├─ buildNewMaterialSnapshot()
  └─ buildDebugFullSnapshot()
 ```
@@ -392,7 +392,7 @@ Agent별로 필요한 데이터만 선별해 WebSocket 메시지 payload를 구�
 
 ---
 
-### 13.3 매뉴얼 Q&A Agent
+### 13.3 운영자 가이드 Agent
 
 #### 필요한 데이터
 
@@ -414,8 +414,8 @@ Agent별로 필요한 데이터만 선별해 WebSocket 메시지 payload를 구�
 ```json
 {
   "type": "agent.request",
-  "requestId": "req_manual_001",
-  "agent": "manual_qa",
+  "requestId": "req_operator_guide_001",
+  "agent": "operator_guide",
   "snapshotType": "context",
   "payload": {
     "question": "철 부품은 어떻게 만들어?",
@@ -530,14 +530,14 @@ flowchart TD
     H --> I[클라이언트 분석 패널 표시]
 ```
 
-### 매뉴얼 Q&A Agent
+### 운영자 가이드 Agent
 
 ```mermaid
 flowchart TD
     A[플레이어 질문 입력] --> B[클라이언트 컨텍스트 생성]
     B --> C[WebSocket agent.request 전송]
     C --> D[서버 RAG / 게임 DB 검색]
-    D --> E[매뉴얼 Q&A Agent 답변 생성]
+    D --> E[운영자 가이드 Agent 답변 생성]
     E --> F[agent.response 반환]
     F --> G[채팅 UI 표시]
 ```
@@ -618,7 +618,7 @@ Agent 호출은 특정 이벤트 기준으로만 실행한다.
 |---|---|
 | 공정 최적화 Agent | 분석 버튼 클릭 시 |
 | 퀘스트 생성 Agent | 퀘스트 완료 후 또는 수동 갱신 |
-| 매뉴얼 Q&A Agent | 질문 입력 시 |
+| 운영자 가이드 Agent | 질문 입력 시 |
 | 신물질 생성 Agent | 미등록 조합 시도 시 |
 
 매 tick마다 Agent를 호출하지 않는다.
@@ -631,7 +631,7 @@ Agent 호출은 특정 이벤트 기준으로만 실행한다.
 |---|---|
 | 공정 최적화 Agent | 10~30초 쿨타임 |
 | 퀘스트 생성 Agent | 퀘스트 완료 후 또는 수동 갱신 |
-| 매뉴얼 Q&A Agent | 질문 입력 시 |
+| 운영자 가이드 Agent | 질문 입력 시 |
 | 신물질 생성 Agent | 미등록 조합 시도 시 |
 
 ---
@@ -671,7 +671,7 @@ Agent 요청 payload는 가능한 작게 유지한다.
 
 | 요청 타입 | 권장 크기 |
 |---|---|
-| 매뉴얼 Q&A | 매우 작음 |
+| 운영자 가이드 | 매우 작음 |
 | 퀘스트 생성 | 작음 |
 | 신물질 생성 | 작음 |
 | 공정 최적화 요약 | 중간 |
@@ -711,7 +711,7 @@ flowchart TD
     B --> C{Agent Type}
     C --> D[Process Optimizer Agent]
     C --> E[Quest Generator Agent]
-    C --> F[Manual Q&A Agent]
+    C --> F[Operator Guide Agent]
     C --> G[New Material Generator Agent]
     F --> H[RAG Search]
     F --> I[Game DB]
@@ -732,7 +732,7 @@ server
  ├─ agents
  │   ├─ process_optimizer
  │   ├─ quest_generator
- │   ├─ manual_qa
+ │   ├─ operator_guide
  │   └─ new_material_generator
  ├─ rag
  │   ├─ retriever
@@ -1203,7 +1203,7 @@ MVP에서는 다음 기능을 포함한다.
 - Agent 스트리밍 응답 선택 적용
 - Agent별 요약 스냅샷 생성
 - 공정 최적화 Agent
-- 매뉴얼 Q&A Agent
+- 운영자 가이드 Agent
 - 퀘스트 생성 Agent
 - 신물질 생성 Agent 기본 구조
 - 신물질 비주얼 프로파일 생성
@@ -1217,7 +1217,7 @@ MVP에서는 다음 기능을 포함한다.
 MVP 서버는 실시간 게임 서버가 아니라 **WebSocket 기반 Agent 서버**로 설계한다.
 
 클라이언트는 공장 상태를 로컬에서 관리하고, 장비 설치와 배치 판단을 즉시 처리한다.  
-서버는 클라이언트가 보낸 Agent별 요약 스냅샷을 기반으로 분석, 추천, 퀘스트 생성, 매뉴얼 Q&A, 신물질 생성을 수행한다.
+서버는 클라이언트가 보낸 Agent별 요약 스냅샷을 기반으로 분석, 추천, 퀘스트 생성, 운영자 가이드, 신물질 생성을 수행한다.
 
 전체 공장 상태를 매번 서버로 보내지 않고, Agent가 판단하는 데 필요한 요약 데이터만 전송한다.  
 이를 통해 서버 병목, 네트워크 부담, LLM 토큰 비용을 줄이고 MVP 개발 속도를 높일 수 있다.

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from agents.base import Agent
-from agents.manual_qa.machine_help import MachineHelpAgent
-from agents.manual_qa.recipe_explainer import RecipeExplainerAgent
-from agents.manual_qa.troubleshooter import TroubleshooterAgent
 from agents.new_material_generator import NewMaterialGeneratorAgent
+from agents.operator_guide.machine_help import MachineHelpAgent
+from agents.operator_guide.recipe_explainer import RecipeExplainerAgent
+from agents.operator_guide.troubleshooter import TroubleshooterAgent
 from agents.process_optimizer import ProcessOptimizerAgent
 from agents.quest_generator.economy_quest import EconomyQuestAgent
 from agents.quest_generator.exploration_quest import ExplorationQuestAgent

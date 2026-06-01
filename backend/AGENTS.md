@@ -26,7 +26,6 @@ Factory Space는 Unreal Engine과 WebSocket으로 통신하는 Python 백엔드 
 - 공통 코드는 작고 명확하게 유지합니다.
 - 한 agent가 다른 agent의 내부 파일에 직접 의존하지 않도록 합니다.
 - agent가 DB에 접근해야 할 때는 service/repository 계층을 통해 접근합니다.
-- backend agent 작업은 `docs/harness/factory-agent/team-spec.md`의 Superpowers harness를 따릅니다.
 
 ## 담당 영역 구조
 
@@ -49,7 +48,7 @@ tests/          # agent 테스트
 scenarios/      # agent 시나리오
 ```
 
-`protocol/`, `agents/base.py`, `agents/router.py`, `agents/pipeline.py`는 모든 agent가 따라야 하는 공통 계약과 실행 흐름에만 사용합니다. 별도 shared 영역은 둘 이상의 agent가 실제로 같은 구현을 공유해야 할 때만 추가합니다.
+`protocol/`, `agents/base.py`, `agents/router.py`, `agents/pipeline/`는 모든 agent가 따라야 하는 공통 계약과 실행 흐름에만 사용합니다. 별도 shared 영역은 둘 이상의 agent가 실제로 같은 구현을 공유해야 할 때만 추가합니다.
 
 ## 공통 영역
 
@@ -66,7 +65,7 @@ src/websocket_gateway/
 - `protocol/`: WebSocket으로 들어오고 나가는 message envelope와 error payload
 - `agents/base.py`: Agent 공통 interface와 context/result 계약
 - `agents/orchestrator.py`: 최상위 Agent를 선택하는 prompt 기반 orchestrator
-- `agents/pipeline.py`: LangGraph 기반 실행 파이프라인
+- `agents/pipeline/`: LangGraph 기반 실행 파이프라인 패키지
 - `agents/router.py`: agent id를 구현체로 매핑하는 registry
 - `llm/`: LLM adapter와 prompt 관련 코드
 - `cache/`: response cache
@@ -187,6 +186,8 @@ Unreal이 예측 가능하게 실행할 수 있도록 backend의 action schema�
 - 한 agent 작업 중 관련 없는 다른 agent를 리팩터링하지 않습니다.
 - agent 동작이 바뀌면 테스트나 시나리오도 함께 추가/수정합니다.
 - schema는 Pydantic model로 명시적으로 정의합니다.
+- import는 항상 파일 상단에 둡니다. 함수나 메서드 내부 import는 금지합니다.
+- 일반 source 파일은 500줄을 넘기지 않습니다. 넘기면 역할 기준으로 파일을 분리합니다.
 - 모듈은 작고 책임이 분명하게 유지합니다.
 - 임시 데이터나 생성물은 의도된 fixture가 아니라면 source control에 넣지 않습니다.
 - 새로운 message type, action type, shared contract를 추가하면 문서화합니다.
@@ -199,26 +200,6 @@ Unreal이 예측 가능하게 실행할 수 있도록 backend의 action schema�
 4. 중앙 registry에 agent를 등록합니다.
 5. 최소 1개의 scenario 또는 test를 추가합니다.
 6. 사용자나 다른 담당자가 알아야 하는 agent라면 README 또는 docs를 갱신합니다.
-
-## Superpowers Harness
-
-backend agent 작업은 repo-local harness를 따른다.
-
-- team spec: `docs/harness/factory-agent/team-spec.md`
-- coordinator skill: `.agents/skills/factory-agent-superpowers/SKILL.md`
-- implementer skill: `.agents/skills/factory-agent-implementer/SKILL.md`
-- spec reviewer skill: `.agents/skills/factory-agent-spec-reviewer/SKILL.md`
-- quality reviewer skill: `.agents/skills/factory-agent-quality-reviewer/SKILL.md`
-- handoff artifacts: `_workspace/factory-agent/`
-
-기본 순서:
-
-1. request artifact 작성
-2. behavior 변경이면 failing test 먼저 작성
-3. 최소 구현
-4. spec review
-5. quality review
-6. `uv run --extra dev pytest`와 `uv run --extra dev ruff check .` fresh run
 
 ## POC 기준
 

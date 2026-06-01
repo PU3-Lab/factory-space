@@ -7,7 +7,7 @@
 - Agent는 도메인 판단, prompt 구성, response payload 해석, deterministic fallback 정책을 가진다.
 - Agent는 WebSocket connection을 직접 읽거나 쓰지 않는다.
 - Agent는 public message envelope 생성을 직접 소유하지 않는다.
-- LLM 호출, cache, retry, 최종 envelope 생성은 `agents/pipeline.py`가 담당한다.
+- LLM 호출, cache, retry, 최종 envelope 생성은 `agents/pipeline/`가 담당한다.
 - Agent 간 호출은 오케스트레이션 계층에서만 일어나며, leaf Agent가 다른 Agent를 직접 호출하지 않는다.
 
 ## Agent 계층
@@ -19,12 +19,12 @@ flowchart TD
 
     Orchestrator --> Process[process_optimizer]
     Orchestrator --> Material[new_material_generator]
-    Orchestrator --> Manual[manual_qa.agent]
+    Orchestrator --> OperatorGuide[operator_guide.agent]
     Orchestrator --> Quest[quest_generator.agent]
 
-    Manual --> Recipe[manual_qa.recipe_explainer]
-    Manual --> Machine[manual_qa.machine_help]
-    Manual --> Trouble[manual_qa.troubleshooter]
+    OperatorGuide --> Recipe[operator_guide.recipe_explainer]
+    OperatorGuide --> Machine[operator_guide.machine_help]
+    OperatorGuide --> Trouble[operator_guide.troubleshooter]
 
     Quest --> Tutorial[quest_generator.tutorial_quest]
     Quest --> Production[quest_generator.production_quest]
@@ -38,16 +38,37 @@ flowchart TD
 
 - `agents/orchestrator.py`
 
-도메인 서브 오케스트레이터:
+도메인 오케스트레이터:
 
-- `agents/manual_qa/agent.py`
+- `agents/operator_guide/agent.py`
 - `agents/quest_generator/agent.py`
 
 Agent가 아닌 실행 구성요소:
 
-- `agents/pipeline.py`: LangGraph 기반 공통 실행 파이프라인
+- `agents/pipeline/`: LangGraph 기반 공통 실행 파이프라인 패키지
 - `agents/router.py`: agent id를 구현체로 매핑하는 registry/router
 - `agents/base.py`: Agent interface와 공통 타입
+
+## top-level Agent 처리 기준
+
+top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는다. 기준은 하위 실행 단위가 있는지다.
+
+용어:
+
+- `Global Orchestrator`: 서버 전체 요청을 어떤 top-level Agent가 처리할지 결정하는 최상위 오케스트레이터다. 현재는 `agents/orchestrator.py`다.
+- `Domain Orchestrator`: 특정 도메인 안에서 하위 서브 에이전트나 내부 실행 전략을 고르는 중간 계층 Agent다. 현재는 `operator_guide`, `quest_generator`다.
+- `Leaf Agent`: 더 이상 하위 Agent를 고르지 않고 prompt/schema/fallback 계약을 제공하는 실행 Agent다. 현재 top-level leaf는 `process_optimizer`, `new_material_generator`다.
+
+한국어 문서에서는 `Domain Orchestrator`를 `도메인 오케스트레이터`라고 부른다. `중간 에이전트` 같은 계층 위치 표현은 책임을 드러내지 못하므로 공식 용어로 쓰지 않는다.
+
+- 하위 서브 에이전트나 내부 전략 중 하나를 선택해야 하면 도메인 오케스트레이터로 처리한다.
+- 하위 실행 단위가 없고 `build_prompt()`, response schema, `fallback()` 정책만 제공하면 leaf Agent로 처리한다.
+- leaf Agent도 직접 LLM을 호출하거나 envelope를 만들지 않는다. pipeline이 Agent 계약을 실행한다.
+- top-level routing 결과는 항상 `selectedAgent`로 기록하고, leaf인지 도메인 오케스트레이터인지는 LangGraph edge가 다음 node를 선택하면서 드러낸다.
+- `operator_guide`, `quest_generator`는 내부 서브 에이전트가 있으므로 도메인 오케스트레이터다.
+- `process_optimizer`, `new_material_generator`는 현재 내부 서브 에이전트가 없으므로 leaf top-level Agent다.
+
+따라서 top-level Agent를 "오케스트레이터처럼" 처리해야 하는 경우는 그 Agent가 다시 하위 Agent를 선택하는 책임을 가질 때뿐이다.
 
 ## `agents/orchestrator.py`
 
@@ -56,9 +77,11 @@ Agent가 아닌 실행 구성요소:
 선택 방식:
 
 - 기본 선택은 `orchestrator.py`가 만든 routing prompt의 LLM 응답으로만 한다.
-- 명시적인 `agent` 값이 요청에 있으면 그 값을 검증해서 사용한다.
+- 명시적인 `agent` 값이 요청에 있으면 prompt hint로만 전달하고, 선택 확정은 LLM 응답으로만 한다.
 - keyword, if/else, score table 같은 코드 로직으로 Agent를 추론하지 않는다.
 - LLM routing 결과가 없거나 허용 목록 밖이면 임의 fallback 선택을 하지 않고 routing error로 종료한다.
+- routing prompt는 `[ROLE]`, `[TASK]`, `[ALLOWED_AGENT_IDS]`, `[REQUEST_HINT]`, `[REQUEST_CONTEXT]`, `[REQUEST_PAYLOAD]`, `[OUTPUT_CONTRACT]` 섹션을 가진 structured prompt로 만든다.
+- 출력 계약은 `TOP_LEVEL_AGENT_IDS` 중 하나의 id 문자열만 허용하며 JSON, markdown, 설명, reason, 따옴표, 코드블록은 허용하지 않는다.
 
 입력:
 
@@ -68,14 +91,14 @@ Agent가 아닌 실행 구성요소:
 
 출력:
 
-- `selectedAgent`
-- 선택 근거 metadata
-- 필요하면 최상위 Agent에 넘길 normalized payload
+- `selectedAgent` state
+- observability용 `routingPrompt`
+- observability용 `routingRaw`
 
 선택 가능한 Agent:
 
 - `process_optimizer`
-- `manual_qa`
+- `operator_guide`
 - `quest_generator`
 - `new_material_generator`
 
@@ -89,14 +112,14 @@ Agent가 아닌 실행 구성요소:
 
 직접 서브 에이전트까지 분기하지 않는 이유:
 
-- `orchestrator.py`가 `manual_qa.recipe_explainer`, `quest_generator.production_quest` 같은 leaf Agent까지 직접 고르면 도메인별 세부 정책이 서버 전체 오케스트레이터로 새어 나온다.
-- 도메인별 서브 에이전트 선택 기준은 서로 다르다. 매뉴얼 Q&A는 질문 의도와 화면 context가 중요하고, 퀘스트 생성은 진행도, 최근 이벤트, 경제/생산/탐험 우선순위가 중요하다.
+- `orchestrator.py`가 `operator_guide.recipe_explainer`, `quest_generator.production_quest` 같은 leaf Agent까지 직접 고르면 도메인별 세부 정책이 서버 전체 오케스트레이터로 새어 나온다.
+- 도메인별 서브 에이전트 선택 기준은 서로 다르다. 운영자 가이드는 질문 의도와 화면 context가 중요하고, 퀘스트 생성은 진행도, 최근 이벤트, 경제/생산/탐험 우선순위가 중요하다.
 - leaf Agent가 늘어날 때마다 서버 전체 오케스트레이터를 수정하게 되면 변경 범위가 커진다.
-- 따라서 `orchestrator.py`는 최상위 Agent만 선택하고, 세부 분기는 도메인 서브 오케스트레이터가 맡는다.
+- 따라서 `orchestrator.py`는 최상위 Agent만 선택하고, 세부 분기는 도메인 오케스트레이터가 맡는다.
 
 예외:
 
-- 도메인이 leaf Agent 하나만 가진다면 도메인 서브 오케스트레이터 없이 `orchestrator.py`가 바로 해당 Agent를 선택해도 된다.
+- 도메인이 leaf Agent 하나만 가진다면 도메인 오케스트레이터 없이 `orchestrator.py`가 바로 해당 Agent를 선택해도 된다.
 - 여러 도메인을 가로지르는 긴급 fallback이나 안전 차단 정책은 `orchestrator.py`에서 처리할 수 있다.
 
 ## `agents/process_optimizer.py`
@@ -128,7 +151,7 @@ Agent가 아닌 실행 구성요소:
 - 실제 게임 상태 변경
 - 액션 실행
 - 퀘스트 생성
-- 매뉴얼 Q&A
+- 운영자 가이드
 
 ## `agents/new_material_generator.py`
 
@@ -161,16 +184,44 @@ Agent가 아닌 실행 구성요소:
 - 퀘스트 자동 생성
 - 시각 asset 생성
 
-## `agents/manual_qa/agent.py`
+## `agents/operator_guide/agent.py`
 
-역할: 매뉴얼 Q&A 도메인 서브 오케스트레이터다.
+역할: 운영자 가이드 도메인 오케스트레이터다.
+
+도메인 오케스트레이터의 공통 책임:
+
+- 도메인 내부 하위 Agent 후보 목록을 소유한다.
+- structured routing prompt 계약을 만든다.
+- 요청 payload와 context 중 하위 Agent 선택에 필요한 정보만 prompt에 전달한다.
+- 모델이 반환해야 하는 하위 Agent id 출력 계약을 명확히 한다.
+- 하위 Agent 선택 결과를 pipeline state의 `selectedLeafAgent`로 넘길 수 있게 한다.
+
+하위 Agent 결과 통합이 필요한 경우:
+
+- 기본 구조는 하위 Agent 하나를 선택해 실행하므로 통합 단계가 없다.
+- 한 요청에서 여러 하위 Agent를 실행해야 하는 fan-out 구조가 생기면 도메인 오케스트레이터가 통합 계약을 소유한다.
+- 이때도 도메인 오케스트레이터가 직접 LLM을 호출하지 않고, pipeline이 child 실행 결과를 모은 뒤 domain merge node를 실행한다.
+- 도메인 오케스트레이터는 merge prompt, merge schema, 충돌 해결 기준, 결과 우선순위 같은 도메인 통합 정책만 제공한다.
+- 단순히 여러 결과를 이어 붙이는 수준이면 별도 도메인 통합 단계를 만들지 않는다.
+
+소유하지 않는 책임:
+
+- leaf Agent의 최종 답변 생성
+- LLM 호출 실행
+- cache, retry, fallback node 제어
+- public `agent.response` / `agent.error` envelope 생성
+- leaf Agent response parsing
+
+따라서 도메인 오케스트레이터는 두껍게 만들지 않는다. 도메인 공통 정책이나 multi-agent 결과 통합 요구가 실제로 생기기 전까지는 하위 Agent 선택 prompt와 허용 목록만 가진 얇은 계층으로 둔다.
 
 선택 방식:
 
-- 기본 선택은 `manual_qa/agent.py`가 만든 routing prompt의 LLM 응답으로만 한다.
+- 기본 선택은 `operator_guide/agent.py`가 만든 routing prompt의 LLM 응답으로만 한다.
 - 명시적인 `sub_agent` 값이 요청에 있으면 그 값을 검증해서 사용한다.
 - 질문 keyword를 코드에서 직접 분류하지 않는다.
 - LLM routing 결과가 없거나 허용 목록 밖이면 임의 fallback 선택을 하지 않고 routing error로 종료한다.
+- routing prompt는 structured prompt로 작성하고, 출력은 허용된 `operator_guide.*` leaf Agent id 문자열 하나만 허용한다.
+- JSON, markdown, 설명, reason, 따옴표, 코드블록은 routing output으로 허용하지 않는다.
 
 입력:
 
@@ -180,7 +231,7 @@ Agent가 아닌 실행 구성요소:
 
 출력:
 
-- `selectedSubAgent`
+- `selectedLeafAgent`
 - 서브 에이전트에 넘길 normalized question
 - 답변 정규화 metadata
 
@@ -203,7 +254,7 @@ Agent가 아닌 실행 구성요소:
 - 공정 최적화
 - WebSocket 송수신
 
-## `agents/manual_qa/recipe_explainer.py`
+## `agents/operator_guide/recipe_explainer.py`
 
 역할: 레시피와 생산 체인을 설명한다.
 
@@ -221,7 +272,7 @@ Agent가 아닌 실행 구성요소:
 - 추천 사용처
 - 초보자용 설명 또는 상세 설명
 
-## `agents/manual_qa/machine_help.py`
+## `agents/operator_guide/machine_help.py`
 
 역할: 설비, UI, 조작, 상태 표시를 설명한다.
 
@@ -238,7 +289,7 @@ Agent가 아닌 실행 구성요소:
 - 사용 방법
 - 관련 레시피 또는 연결 설비
 
-## `agents/manual_qa/troubleshooter.py`
+## `agents/operator_guide/troubleshooter.py`
 
 역할: 생산 중단, 병목, 오류 상태의 원인을 진단한다.
 
@@ -258,7 +309,7 @@ Agent가 아닌 실행 구성요소:
 
 ## `agents/quest_generator/agent.py`
 
-역할: 퀘스트 생성 도메인 서브 오케스트레이터다.
+역할: 퀘스트 생성 도메인 오케스트레이터다.
 
 선택 방식:
 
@@ -266,6 +317,8 @@ Agent가 아닌 실행 구성요소:
 - 명시적인 `sub_agent` 값이 요청에 있으면 그 값을 검증해서 사용한다.
 - 진행도, 이벤트, quest type을 코드 if/else로 직접 분류하지 않는다.
 - LLM routing 결과가 없거나 허용 목록 밖이면 임의 fallback 선택을 하지 않고 routing error로 종료한다.
+- routing prompt는 structured prompt로 작성하고, 출력은 허용된 `quest_generator.*` leaf Agent id 문자열 하나만 허용한다.
+- JSON, markdown, 설명, reason, 따옴표, 코드블록은 routing output으로 허용하지 않는다.
 
 입력:
 
@@ -277,7 +330,7 @@ Agent가 아닌 실행 구성요소:
 
 출력:
 
-- `selectedSubAgent`
+- `selectedLeafAgent`
 - 서브 에이전트에 넘길 normalized quest context
 - 선택 근거 metadata
 
@@ -374,9 +427,17 @@ Agent가 아닌 실행 구성요소:
 
 ## 실행 구성요소
 
-### `agents/pipeline.py`
+### `agents/pipeline/`
 
 역할: Agent 실행을 LangGraph로 연결하는 공통 파이프라인이다.
+
+구성:
+
+- `runtime.py`: pipeline public API와 LangGraph node 구현
+- `graph_edges.py`: node 연결과 conditional edge predicate
+- `llm_fallback.py`: default/fallback1/fallback2 LLM slot 호출
+- `state.py`: graph state 타입
+- `utils.py`: cache key, fallback, validation error helper
 
 담당:
 
