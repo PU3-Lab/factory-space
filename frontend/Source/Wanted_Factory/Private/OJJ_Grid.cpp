@@ -208,6 +208,84 @@ FIntPoint AOJJ_Grid::GetMachineOrigin(AMachineBase* Machine) const
 	return Origin;
 }
 
+// === Grid Conveyor (출력포트 자급 판별 — ssr 포트 시스템 미변경) ===
+
+FIntPoint AOJJ_Grid::CardinalFromVector(FVector V)
+{
+	// 비유한/거의 0인 XY 입력 방어 → 방향 없음(ZeroValue). public/BlueprintPure라 직접 오용 대비 (Codex 지적).
+	// (GetMachineOutputDir 경로는 yaw-only 단위 forward라 정상이지만 외부 직접 호출 보호.)
+	const double Mag2 = static_cast<double>(V.X) * V.X + static_cast<double>(V.Y) * V.Y;
+	if (!FMath::IsFinite(Mag2) || Mag2 < UE_KINDA_SMALL_NUMBER)
+	{
+		return FIntPoint::ZeroValue;
+	}
+
+	// 우세 축 스냅: |X| >= |Y| 면 X축, 아니면 Y축. 대각선 방지 (Codex 검증 반영).
+	// tie(|X|==|Y|, 예: 정확히 45°)는 결정적으로 X 선택. 평면 그리드라 Z 무시.
+	if (FMath::Abs(V.X) >= FMath::Abs(V.Y))
+	{
+		return FIntPoint(V.X >= 0.f ? 1 : -1, 0);
+	}
+	return FIntPoint(0, V.Y >= 0.f ? 1 : -1);
+}
+
+FIntPoint AOJJ_Grid::GetMachineOutputDir(AMachineBase* Machine) const
+{
+	if (!IsValid(Machine))
+	{
+		return FIntPoint::ZeroValue;
+	}
+	// 출력 = 머신 뒤(-Front). 액터 yaw가 source of truth → R키 회전/사전배치 모두 반영.
+	const FVector Back = -Machine->GetActorForwardVector();
+	return CardinalFromVector(Back);
+}
+
+TArray<FIntPoint> AOJJ_Grid::GetMachineOutputCells(AMachineBase* Machine) const
+{
+	TArray<FIntPoint> Result;
+
+	const TArray<FIntPoint>* Cells = GetMachineCells(Machine);  // 내부 IsValid 가드
+	if (!Cells || Cells->Num() == 0)
+	{
+		return Result;
+	}
+
+	const FIntPoint Dir = GetMachineOutputDir(Machine);
+	if (Dir == FIntPoint::ZeroValue)
+	{
+		return Result;
+	}
+
+	// footprint 셀 C 중 (C + Dir)이 footprint 밖이면 C는 Dir쪽 모서리 → 그 이웃이 타깃.
+	// 모양/회전 무관, 멀티셀이면 모서리 셀마다 타깃 생성.
+	const TSet<FIntPoint> Footprint(*Cells);
+	for (const FIntPoint& Cell : *Cells)
+	{
+		const FIntPoint Target = Cell + Dir;
+		if (!Footprint.Contains(Target))
+		{
+			Result.AddUnique(Target);
+		}
+	}
+	return Result;
+}
+
+TArray<AMachineBase*> AOJJ_Grid::GetMachineOutputTargets(AMachineBase* Machine) const
+{
+	TArray<AMachineBase*> Targets;
+	for (const FIntPoint& Cell : GetMachineOutputCells(Machine))
+	{
+		if (AMachineBase* Target = GetMachineAtCell(Cell))  // 유효(weak Get)만 반환
+		{
+			if (Target != Machine)  // self 제외 (이론상 불가하나 방어)
+			{
+				Targets.AddUnique(Target);
+			}
+		}
+	}
+	return Targets;
+}
+
 TArray<FIntPoint> AOJJ_Grid::CalculateFootprint(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps) const
 {
 	TArray<FIntPoint> Cells;
