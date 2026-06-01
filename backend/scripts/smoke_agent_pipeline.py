@@ -16,7 +16,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from websockets.asyncio.client import connect
 
-DEFAULT_BASE_URL = "http://127.0.0.1:8000"
+DEFAULT_BASE_URL = "http://127.0.0.1:18000"
 DEFAULT_WS_PATH = "/ws/agent"
 EXTERNAL_PROVIDER_OPT_IN = "FACTORY_SMOKE_EXTERNAL_PROVIDER"
 
