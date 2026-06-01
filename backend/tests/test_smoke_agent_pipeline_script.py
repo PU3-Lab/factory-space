@@ -13,6 +13,7 @@ def test_none_profile_contains_no_external_api_cases() -> None:
     assert profile.name == "none"
     assert [case.name for case in profile.cases] == [
         "health",
+        "agent_connection_manifest",
         "invalid_json",
         "invalid_envelope",
         "routing_unavailable",
@@ -79,6 +80,39 @@ def test_websocket_url_is_derived_from_http_base_url() -> None:
         smoke.build_websocket_url("https://example.test/api", "ws/agent")
         == "wss://example.test/api/ws/agent"
     )
+
+
+def test_agent_connection_manifest_check_validates_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requested_urls: list[str] = []
+
+    class FakeResponse:
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return (
+                b'{"status":"ok","websocket_path":"/ws/agent",'
+                b'"request_type":"agent.request",'
+                b'"response_types":["agent.response","agent.error"],'
+                b'"top_level_agents":["process_optimizer"]}'
+            )
+
+    def fake_urlopen(url: str, timeout: int) -> FakeResponse:
+        requested_urls.append(url)
+        assert timeout == 5
+        return FakeResponse()
+
+    monkeypatch.setattr(smoke.urllib.request, "urlopen", fake_urlopen)
+
+    response = smoke.check_agent_connection_manifest("http://127.0.0.1:18000")
+
+    assert requested_urls == ["http://127.0.0.1:18000/api/v1/agent-connection"]
+    assert response == {"type": None}
 
 
 def test_response_validation_accepts_expected_agent_response() -> None:

@@ -61,3 +61,40 @@ Resolution:
 - 이전 finding 4건은 해소됐다.
 - README와 결정 로그 설명은 `LLMSettings`, Google adapter raw text 반환 및 `None` 수렴, LangGraph routing/generation 검증 책임과 충돌하지 않는다.
 - 낡은 provider 문구 검색 결과는 runtime 설정 문구가 아니라 sprint 문서의 체크리스트/설명 문맥에서만 나온다.
+
+## FastAPI Agent Connection Manifest
+
+### Review 1
+
+- Reviewer: Epicurus (`reviewer`, gpt-5.5 high)
+- Scope:
+  - `backend/src/agent_connection/router.py`
+  - `backend/src/app.py`
+  - `backend/scripts/smoke_agent_pipeline.py`
+  - `backend/tests/test_agent_connection_router.py`
+  - `backend/tests/test_websocket_endpoint.py`
+  - `backend/tests/test_smoke_agent_pipeline_script.py`
+  - `backend/README.md`
+  - `SESSION_SUMMARY.md`
+  - `backend/docs/plans/2026-06-01-fastapi-agent-pipeline-connection-plan.md`
+- Status: findings resolved
+
+Findings:
+
+- 계획 문서의 예상 test count가 실제 테스트 수와 달랐다. WebSocket test는 5개, manifest+WebSocket 조합은 7개가 맞다.
+- 계획 문서의 `none` smoke 예상 출력에 새 `agent_connection_manifest` 확인이 빠져 있었다.
+
+Resolution:
+
+- 계획 문서의 예상 count를 `5 passed`, `7 passed`로 수정했다.
+- `none` smoke 예상 출력에 `PASS none/agent_connection_manifest`를 추가했다.
+
+### Review 2
+
+- Reviewer: Mencius (`reviewer`, gpt-5.5 high)
+- Status: 중요 발견 없음
+
+결과:
+
+- 계획 문서의 예상 test count와 smoke output이 구현된 테스트 및 smoke runner와 일치한다.
+- FastAPI manifest route와 smoke runner 변경에서 correctness, security, regression finding은 없다.
