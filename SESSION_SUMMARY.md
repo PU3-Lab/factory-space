@@ -4,10 +4,11 @@
 
 - 작업 디렉터리: `/Users/kimkyungpyo/Workspaces/projests/factory-space`
 - 현재 브랜치: `feat/fastapi-agent-pipeline-connection`
-- 원격 추적: 없음. 기준 branch는 `main`/`origin/main`.
-- 최신 커밋: `67a8f83 Merge pull request #44 from PU3-Lab/feature/fastapi-lifespan-runner`
-- 기준 상태: `feat/fastapi-agent-pipeline-connection`은 `main`에서 분기했다.
-- 현재 미커밋 변경: FastAPI agent connection manifest route, WebSocket correlation contract test, smoke runner manifest check, README/plan/session summary.
+- 원격 추적: `origin/feat/fastapi-agent-pipeline-connection`
+- 최신 커밋: `364a2ad feat: FastAPI agent connection manifest 추가`
+- 기준 상태: `feat/fastapi-agent-pipeline-connection`은 `main`에서 분기했고 원격에 push됐다.
+- PR 상태: Draft PR #45 `FastAPI agent 연결 manifest 추가` 생성됨. <https://github.com/PU3-Lab/factory-space/pull/45>
+- 현재 미커밋 변경: 없음.
 
 ## 프로젝트 구조
 
@@ -41,7 +42,7 @@
 ### Agent backend 현황
 
 - backend는 FastAPI WebSocket endpoint와 LangGraph 기반 agent pipeline 구조를 가진다.
-- Unreal 클라이언트 discovery용 `GET /api/v1/agent-connection` route를 추가하는 작업이 진행 중이다.
+- Unreal 클라이언트 discovery용 `GET /api/v1/agent-connection` route가 PR #45에 추가됐다.
 - 새 route는 `/health`, `/ws/agent`, 지원 top-level/leaf agent id, 샘플 `agent.request` envelope를 반환한다.
 - 주요 agent 계층은 server orchestrator, domain orchestrator, leaf agent, common pipeline으로 구분한다.
 - `backend/src/DECISION_LOG.md`에 pipeline, orchestrator, operator guide, quest generator, LangGraph 적용 범위와 책임 경계가 기록되어 있음.
@@ -56,6 +57,7 @@
   - `backend/`에서 `uv run --extra dev pytest -q` → `117 passed`
   - `backend/`에서 `uv run ruff check .` → passed
   - `backend/`에서 `uv run --env-file smoke-none.env.example python scripts/run_server.py --port 18003` 실행 후 `uv run --env-file smoke-none.env.example python scripts/smoke_agent_pipeline.py none --base-url http://127.0.0.1:18003` → health/manifest/WebSocket smoke passed
+  - `reviewer` sub-agent (`gpt-5.5 high`) 1차 리뷰 finding 수정 후 재리뷰 → No findings
 - 최근 기록상 backend 검증 명령은 다음 기준을 사용한다.
   - `backend/`에서 `uv run --extra dev ruff check .`
   - `backend/`에서 `uv run --extra dev pytest -q`
