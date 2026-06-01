@@ -16,6 +16,13 @@ SINGLE_LEAF_AGENT_IDS = {
     "process_optimizer": ("process_optimizer",),
 }
 
+TOP_LEVEL_AGENT_BRANCHES = {
+    "process_optimizer": "validate_process_payload",
+    "operator_guide": "operator_guide.route_sub_agent",
+    "quest_generator": "quest_generator.route_sub_agent",
+    "new_material_generator": "validate_material_payload",
+}
+
 
 def wire_agent_graph(graph: StateGraph) -> None:
     graph.add_edge(START, "build_context")
@@ -25,10 +32,7 @@ def wire_agent_graph(graph: StateGraph) -> None:
         "route_top_agent",
         route_selected_agent,
         {
-            "process_optimizer": "validate_process_payload",
-            "operator_guide": "operator_guide.route_sub_agent",
-            "quest_generator": "quest_generator.route_sub_agent",
-            "new_material_generator": "validate_material_payload",
+            **TOP_LEVEL_AGENT_BRANCHES,
             "error": "build_agent_error",
         },
     )
@@ -51,10 +55,11 @@ def wire_agent_graph(graph: StateGraph) -> None:
         route_cache_result,
         {
             "hit": "build_cached_response",
-            "miss": "build_prompt",
+            "miss": "agent.middleware.before",
         },
     )
     graph.add_edge("build_cached_response", "build_agent_response")
+    graph.add_edge("agent.middleware.before", "build_prompt")
     graph.add_edge("build_prompt", "call_llm.default")
     graph.add_conditional_edges(
         "call_llm.default",
@@ -79,7 +84,7 @@ def wire_agent_graph(graph: StateGraph) -> None:
         route_llm_result,
         {
             "valid": "parse_llm_response",
-            "fallback": "build_fallback",
+            "fallback": "agent.middleware.fallback",
             "error": "build_agent_error",
         },
     )
@@ -91,7 +96,7 @@ def wire_agent_graph(graph: StateGraph) -> None:
             "error": "build_agent_error",
         },
     )
-    graph.add_edge("build_fallback", "validate_response_schema")
+    graph.add_edge("agent.middleware.fallback", "validate_response_schema")
     graph.add_conditional_edges(
         "validate_response_schema",
         route_response_validation,
@@ -100,7 +105,8 @@ def wire_agent_graph(graph: StateGraph) -> None:
             "error": "build_agent_error",
         },
     )
-    graph.add_edge("cache_write", "build_agent_response")
+    graph.add_edge("cache_write", "agent.middleware.after")
+    graph.add_edge("agent.middleware.after", "build_agent_response")
     graph.add_edge("build_agent_response", END)
     graph.add_edge("build_agent_error", END)
 

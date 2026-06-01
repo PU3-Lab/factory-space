@@ -18,6 +18,7 @@ class QuestGeneratorAgent:
     """Select the quest generation leaf agent."""
 
     agent_id = "quest_generator"
+    tools = ()
 
     def build_routing_prompt(
         self,

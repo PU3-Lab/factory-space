@@ -42,16 +42,12 @@ def build_llm_call_slots(
 
 def invoke_llm_call_slot(slot: LLMCallSlot, prompt: str) -> AgentGraphState:
     raw = slot.adapter.invoke(prompt)
-    if not raw:
-        return {"llmRaw": None}
-
     output: AgentGraphState = {
         "llmRaw": raw,
         "llmSlot": slot.name,
         "llmProvider": slot.provider,
+        "llmModel": slot.model or "",
     }
-    if slot.model:
-        output["llmModel"] = slot.model
     return output
 
 

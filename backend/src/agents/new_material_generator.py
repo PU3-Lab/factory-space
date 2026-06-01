@@ -11,6 +11,7 @@ class NewMaterialGeneratorAgent:
     """Generate a candidate material from design constraints."""
 
     agent_id = "new_material_generator"
+    tools = ()
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
         return f"다음 제약 조건을 바탕으로 공장 신소재 후보를 생성하세요: {payload}"

@@ -12,6 +12,7 @@ class ProductionQuestAgent:
     """Generate production improvement quests."""
 
     agent_id = "quest_generator.production_quest"
+    tools = ()
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
         return f"다음 요청을 바탕으로 생산 퀘스트를 생성하세요: {payload}"

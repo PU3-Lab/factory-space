@@ -107,6 +107,7 @@ AI Agent 실행 계층이다.
 
 - `base.py`: Agent interface와 공통 타입
 - `router.py`: agent id 기반 registry/router
+- `agent_catalog.py`: top-level routing prompt에 넣는 read-only routing support tool과 Agent capability catalog
 - `pipeline/`: LangGraph 실행 파이프라인 패키지
   - `runtime.py`: validation/cache/prompt/response envelope 실행 흐름
   - `graph_edges.py`: LangGraph node edge와 routing predicate
@@ -289,8 +290,9 @@ flowchart TD
 
     CacheLookup --> CacheDecision{cache_hit?}
     CacheDecision -->|yes| BuildCachedResponse[build_cached_response]
-    CacheDecision -->|no| BuildPrompt[build_prompt]
+    CacheDecision -->|no| AgentBefore[agent.middleware.before]
 
+    AgentBefore --> BuildPrompt[build_prompt]
     BuildPrompt --> DefaultLLM[call_llm.default]
     DefaultLLM --> DefaultDecision{default valid?}
     DefaultDecision -->|yes| ParseLLM[parse_llm_response]
@@ -300,15 +302,16 @@ flowchart TD
     Fallback1Decision -->|no| Fallback2LLM[call_llm.fallback2]
     Fallback2LLM --> Fallback2Decision{fallback2 valid?}
     Fallback2Decision -->|yes| ParseLLM
-    Fallback2Decision -->|no| BuildFallback[build_fallback]
+    Fallback2Decision -->|no| AgentFallback[agent.middleware.fallback]
     ParseLLM --> ValidateResponse[validate_response_schema]
-    BuildFallback --> ValidateResponse
+    AgentFallback --> ValidateResponse
 
     ValidateResponse --> ResponseDecision{response_valid?}
     ResponseDecision -->|yes| CacheWrite[cache_write]
     ResponseDecision -->|no| ErrorNode
 
-    CacheWrite --> BuildResponse[build_agent_response]
+    CacheWrite --> AgentAfter[agent.middleware.after]
+    AgentAfter --> BuildResponse[build_agent_response]
     BuildCachedResponse --> BuildResponse
     BuildResponse --> End
     ErrorNode --> End
@@ -336,6 +339,7 @@ AgentGraphState
  ├─ llmProvider
  ├─ llmModel
  ├─ fallbackReason
+ ├─ middlewareLogs
  ├─ responsePayload
  ├─ responseMetadata
  ├─ responseEnvelope
@@ -357,7 +361,9 @@ AgentGraphState
 - `call_llm.default`: 기본 LLM slot adapter를 호출한다.
 - `call_llm.fallback1`: 기본 slot이 응답하지 못했을 때 1차 fallback slot adapter를 호출한다.
 - `call_llm.fallback2`: fallback1 slot이 응답하지 못했을 때 2차 fallback slot adapter를 호출한다.
-- `build_fallback`: LLM 실패 또는 API key 없음 상태에서 deterministic fallback을 만든다.
+- `agent.middleware.before`: cache miss 이후 selected leaf Agent 실행 직전 middleware log를 남긴다.
+- `agent.middleware.fallback`: LLM 실패 또는 API key 없음 상태에서 기존 deterministic fallback을 실행하고 middleware log를 남긴다.
+- `agent.middleware.after`: response schema 검증과 cache write 이후 middleware log를 남긴다.
 - `validate_response_schema`: 최종 payload가 Agent response schema를 만족하는지 검증한다.
 - `cache_write`: 검증된 payload를 cache에 저장한다.
 - `build_agent_response`: `agent.response` envelope를 만든다.

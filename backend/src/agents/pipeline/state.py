@@ -35,6 +35,7 @@ class AgentGraphState(TypedDict, total=False):
     llmProvider: str
     llmModel: str
     fallbackReason: str
+    middlewareLogs: list[dict[str, Any]]
     responsePayload: dict[str, Any]
     responseMetadata: dict[str, Any]
     streams: list[dict[str, Any]]
