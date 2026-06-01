@@ -1,65 +1,53 @@
 from __future__ import annotations
 
+import random
+
 from pydantic import ValidationError
 
 from agents.quest_generator.schemas import QuestResponse
 from agents.quest_generator.service import QuestAgentService
 
 
-def test_service_generates_iron_ore_mining_quest_from_mock_game_state() -> None:
-    service = QuestAgentService()
+def test_service_returns_five_random_quests_from_example_pool() -> None:
+    service = QuestAgentService(rng=random.Random(0))
 
-    result = service.generate_quest_json(
-        {
-            "quest_case": "mine_iron_ore_10",
-            "inventory": {"iron_ore": 0},
-        }
-    )
+    result = service.generate_quest_json()
 
     QuestResponse.model_validate(result)
-    quest = result["quest"]
-    assert quest["id"] == "quest_mine_iron_ore_10"
-    assert quest["type"] == "production"
-    assert quest["title"] == "철광석 10개 채굴"
-    assert quest["objectives"] == [
-        {
-            "action": "mine",
-            "target_item_id": "iron_ore",
-            "target_item_name": "철광석",
-            "quantity": 10,
-        }
-    ]
+    quests = result["quests"]
+    assert len(quests) == 5
+    assert len({quest["id"] for quest in quests}) == 5
+    assert {quest["id"] for quest in quests}.issubset({1, 2, 3, 4, 5, 6})
+    assert all(isinstance(quest["id"], int) for quest in quests)
 
 
-def test_service_generates_default_production_quest_from_empty_game_state() -> None:
-    service = QuestAgentService()
+def test_service_quest_objectives_keep_item_id_and_quantity_only() -> None:
+    service = QuestAgentService(rng=random.Random(1))
 
-    result = service.generate_quest_json({})
+    result = service.generate_quest_json()
 
-    QuestResponse.model_validate(result)
-    quest = result["quest"]
-    assert quest["id"] == "quest_factory_checkup"
-    assert quest["type"] == "production"
-    assert quest["objectives"][0]["action"] == "inspect"
-    assert quest["objectives"][0]["quantity"] == 1
+    objective = result["quests"][0]["objectives"][0]
+    assert set(objective) == {"target_item_id", "quantity"}
+    assert "action" not in objective
+    assert "target_item_name" not in objective
 
 
 def test_quest_response_rejects_invalid_quantity() -> None:
     invalid_response = {
-        "quest": {
-            "id": "quest_invalid",
-            "type": "production",
-            "title": "invalid",
-            "description": "invalid",
-            "objectives": [
-                {
-                    "action": "mine",
-                    "target_item_id": "iron_ore",
-                    "target_item_name": "철광석",
-                    "quantity": 0,
-                }
-            ],
-        }
+        "quests": [
+            {
+                "id": 1,
+                "type": "production",
+                "title": "invalid",
+                "description": "invalid",
+                "objectives": [
+                    {
+                        "target_item_id": "iron_ore",
+                        "quantity": 0,
+                    }
+                ],
+            }
+        ]
     }
 
     try:

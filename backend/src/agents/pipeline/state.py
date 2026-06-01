@@ -23,6 +23,7 @@ class AgentGraphState(TypedDict, total=False):
     context: AgentContext
     selectedAgent: str
     selectedLeafAgent: str
+    skipLlm: bool
     typedPayload: dict[str, Any]
     cacheKey: str
     cachedPayload: dict[str, Any]

@@ -323,7 +323,8 @@ def test_pipeline_routes_production_quest_from_llm_leaf_decision() -> None:
         agent="quest_generator",
         sub_agent="quest_generator.production_quest",
     )
-    assert response["payload"]["quest"]["type"] == "production"
+    assert len(response["payload"]["quests"]) == 5
+    assert response["payload"]["quests"][0]["type"] == "production"
     assert "퀘스트 생성 도메인 오케스트레이터" in llm.prompts[1]
 
 

@@ -10,16 +10,14 @@ from pydantic import BaseModel, Field
 class QuestObjective(BaseModel):
     """Single measurable quest objective."""
 
-    action: Literal["mine", "inspect"]
     target_item_id: str = Field(min_length=1)
-    target_item_name: str = Field(min_length=1)
     quantity: int = Field(gt=0)
 
 
 class Quest(BaseModel):
     """Validated quest payload returned to the client."""
 
-    id: str = Field(min_length=1)
+    id: int = Field(gt=0)
     type: Literal["production", "tutorial", "exploration", "economy"]
     title: str = Field(min_length=1)
     description: str = Field(min_length=1)
@@ -29,4 +27,4 @@ class Quest(BaseModel):
 class QuestResponse(BaseModel):
     """Top-level quest response payload."""
 
-    quest: Quest
+    quests: list[Quest] = Field(min_length=1)
