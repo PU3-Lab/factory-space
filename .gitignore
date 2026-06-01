@@ -177,6 +177,10 @@ frontend/Content/OJJ/MeshyMachines/Textures/**/*.png
 # 폴더명 변형(meshy-ue-plugin 등) 모두 커버
 frontend/Plugins/meshy-*/
 
+# 에디터 개인 설정 (프리뷰 씬 프로파일 등 로컬 전용)
+# 주의: 이미 추적 중인 파일이라 별도로 `git rm --cached`를 해야 실제 제외됨 (팀 합의 후)
+frontend/Config/DefaultEditor.ini
+
 # Local git worktrees / scratch checkouts
 worktree/
 
