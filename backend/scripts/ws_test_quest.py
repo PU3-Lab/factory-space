@@ -5,7 +5,7 @@ from websockets.asyncio.client import connect
 
 
 async def main() -> None:
-    uri = "ws://127.0.0.1:8000/ws"
+    uri = "ws://127.0.0.1:18000/ws/agent"
 
     async with connect(uri) as websocket:
         await websocket.send(

@@ -23,9 +23,10 @@ FastAPI application entrypoint다.
 역할:
 
 - FastAPI app 생성
+- lifespan에서 application-scoped dependency 초기화
 - `GET /health` 등록
 - WebSocket router 등록
-- uvicorn 실행 대상 app 제공
+- uvicorn factory 실행 대상 `create_app` 제공
 
 하지 않는 일:
 

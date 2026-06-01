@@ -72,8 +72,8 @@ def test_provider_profile_skips_without_explicit_opt_in(
 
 def test_websocket_url_is_derived_from_http_base_url() -> None:
     assert (
-        smoke.build_websocket_url("http://127.0.0.1:8000", "/ws/agent")
-        == "ws://127.0.0.1:8000/ws/agent"
+        smoke.build_websocket_url("http://127.0.0.1:18000", "/ws/agent")
+        == "ws://127.0.0.1:18000/ws/agent"
     )
     assert (
         smoke.build_websocket_url("https://example.test/api", "ws/agent")
