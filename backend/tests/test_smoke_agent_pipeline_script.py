@@ -36,6 +36,9 @@ def test_local_profile_exercises_all_agent_paths() -> None:
         "quest_generator.production_quest",
         "new_material_generator",
     ]
+    quest_case = profile.cases[2]
+    assert quest_case.expected_quest_id == "quest_mine_iron_ore_10"
+    assert quest_case.message["payload"]["game_state"]["quest_case"] == "mine_iron_ore_10"
 
 
 def test_provider_profile_requires_explicit_opt_in() -> None:
@@ -131,5 +134,34 @@ def test_response_validation_rejects_wrong_error_code() -> None:
         )
     except smoke.SmokeError as exc:
         assert "ROUTING_UNAVAILABLE" in str(exc)
+    else:
+        raise AssertionError("Expected SmokeError")
+
+
+def test_response_validation_rejects_wrong_quest_id() -> None:
+    case = smoke.SmokeCase(
+        name="quest",
+        message={
+            "type": "agent.request",
+            "request_id": "request-smoke",
+            "agent": "quest_generator",
+            "payload": {"game_state": {"quest_case": "mine_iron_ore_10"}},
+        },
+        expected_type="agent.response",
+        expected_agent="quest_generator",
+        expected_quest_id="quest_mine_iron_ore_10",
+    )
+
+    try:
+        smoke.validate_case_response(
+            case,
+            {
+                "type": "agent.response",
+                "agent": "quest_generator",
+                "payload": {"quest": {"id": "quest_factory_checkup"}},
+            },
+        )
+    except smoke.SmokeError as exc:
+        assert "quest_mine_iron_ore_10" in str(exc)
     else:
         raise AssertionError("Expected SmokeError")
