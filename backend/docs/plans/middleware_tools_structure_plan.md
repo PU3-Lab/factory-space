@@ -16,6 +16,8 @@
 - generation 단계에서만 tool request를 감지하고 실행한다.
 - v1 tool loop는 최대 1회만 허용한다.
 - v1 tool catalog는 read-only context tool만 포함한다.
+- agent middleware는 LangChain `create_agent`로 이관하지 않고 기존 LangGraph `StateGraph`의 공통 node/edge로 붙인다.
+- fallback은 agent 내부에 숨기지 않고 실패 edge에서 fallback node로 분기하는 B 패턴을 유지한다.
 
 ## 3. 범위
 
@@ -65,6 +67,52 @@ backend/src/
 
 ## 5. Middleware 위치
 
+LangGraph `StateGraph`를 직접 쓰는 현재 구조에서는 별도 middleware stack API가 아니라 명시적인 node/edge가 정석이다. 따라서 middleware는 각 Agent 파일에 중복으로 붙이지 않고, 모든 selected leaf agent가 통과하는 공통 execution lane에 한 번만 붙인다.
+
+일반 패턴:
+
+```txt
+resolve selected agent
+ -> cache_lookup
+    -> hit: build_cached_response -> build_agent_response
+    -> miss:
+        -> agent.middleware.before
+        -> agent execution
+        -> agent.middleware.after
+        -> build_agent_response
+```
+
+fallback은 B 패턴으로 둔다.
+
+```txt
+agent execution
+ -> success: agent.middleware.after
+ -> failure: agent.middleware.fallback -> agent.middleware.after
+```
+
+이 설계의 v1 agent middleware node:
+
+```txt
+agent.middleware.before
+agent.middleware.fallback
+agent.middleware.after
+```
+
+역할:
+
+- `agent.middleware.before`: selected leaf agent 실행 직전에 middleware log를 남긴다.
+- `agent.middleware.fallback`: 모든 LLM slot 실패 후 기존 deterministic fallback을 실행하고 middleware log를 남긴다.
+- `agent.middleware.after`: response schema 검증과 cache write 이후 middleware log를 남긴다.
+
+제약:
+
+- cache hit은 agent 실행이 아니므로 agent middleware를 타지 않는다.
+- top-level routing과 sub-agent routing은 agent execution lane이 아니므로 agent middleware를 타지 않는다.
+- 각 Agent 구현 파일에는 middleware를 붙이지 않는다.
+- `agent.middleware.fallback`은 기존 `run_fallback()`과 Agent별 `fallback()` 계약을 재사용한다.
+- middleware log에는 node/event와 selected agent id만 남기고 prompt 전문, LLM raw output, tool result data는 넣지 않는다.
+- 현재 사용 모델 표시는 generation metadata에 `currentModel`로 남긴다.
+
 현재 generation 흐름은 다음과 같다.
 
 ```txt
@@ -86,7 +134,8 @@ build_prompt
 tool middleware가 들어간 후 목표 흐름:
 
 ```txt
-build_prompt
+agent.middleware.before
+ -> build_prompt
  -> call_llm.default / fallback1 / fallback2 중 raw를 반환한 generation slot
  -> inspect_tool_request
     -> no tool: parse_llm_response
@@ -96,6 +145,7 @@ build_prompt
  -> parse_llm_response
  -> validate_response_schema
  -> cache_write
+ -> agent.middleware.after
  -> build_agent_response
 ```
 
@@ -104,6 +154,7 @@ build_prompt
 - `route_top_agent`, `operator_guide.route_sub_agent`, `quest_generator.route_sub_agent`에는 tool middleware를 붙이지 않는다.
 - routing LLM output이 tool request 형태면 허용 agent id가 아니므로 기존처럼 `ROUTING_UNAVAILABLE`로 종료한다.
 - tool follow-up 호출은 tool request를 반환한 generation slot과 같은 adapter를 1회 더 호출한다.
+- 모든 generation slot 실패는 `agent.middleware.fallback`으로 분기한다.
 
 ## 6. Tool 계약
 
@@ -222,6 +273,8 @@ prompt 예시:
 `AgentGraphState`에는 다음 값이 추가될 수 있다.
 
 ```txt
+middlewareLogs
+currentModel
 toolCallRequest
 toolCallResult
 toolCallCount
@@ -233,6 +286,17 @@ toolCalls
 
 ```json
 {
+  "currentModel": {
+    "slot": "fallback1",
+    "provider": "openai",
+    "model": "gpt-5.5"
+  },
+  "middlewareLogs": [
+    {
+      "node": "agent.middleware.before",
+      "event": "agent_started"
+    }
+  ],
   "toolCalls": [
     {
       "name": "factory_context.get_machines",
@@ -244,6 +308,9 @@ toolCalls
 
 규칙:
 
+- `currentModel`은 실제 response 생성에 사용된 마지막 generation slot 기준으로 기록한다.
+- provider/model 값이 없으면 존재하는 key만 남긴다.
+- `middlewareLogs`는 public debug metadata이며 prompt, raw response, tool data를 포함하지 않는다.
 - tool result 전체 data를 metadata에 넣지 않는다.
 - tool data는 모델 follow-up prompt에만 들어간다.
 - cache key는 기존처럼 selected agent, selected leaf agent, payload, context를 포함한다. tool result는 payload/context에서 파생된 값이므로 별도 cache key에 추가하지 않는다.
@@ -301,7 +368,7 @@ class LLMAdapter(Protocol):
 - Python prebuilt middleware: https://docs.langchain.com/oss/python/langchain/middleware/built-in
 - Python tools overview: https://docs.langchain.com/oss/python/langchain/tools
 
-LangChain의 prebuilt middleware는 `create_agent(..., middleware=[...])` 구조에 붙는 provider-agnostic middleware다. 현재 설계는 기존 `AgentPipeline`과 `LLMAdapter.invoke(prompt) -> str | None` 계약을 유지하므로 LangChain middleware를 직접 채택하지 않는다. 다만 구현 시 개념과 테스트 기준은 아래 항목을 참고한다.
+LangChain의 prebuilt middleware는 `create_agent(..., middleware=[...])` 구조에 붙는 provider-agnostic middleware다. 현재 설계는 기존 `AgentPipeline`, LangGraph `StateGraph`, `LLMAdapter.invoke(prompt) -> str | None` 계약을 유지하므로 LangChain middleware를 직접 채택하지 않는다. built-in middleware는 필수가 아니며, 이 문서의 v1 구현은 LangChain dependency를 추가하지 않는다. 다만 구현 시 개념과 테스트 기준은 아래 항목을 참고한다.
 
 | LangChain 항목 | 용도 | v1 채택 여부 |
 | --- | --- | --- |
@@ -362,6 +429,12 @@ LangChain tools 문서는 web search, code interpretation, database access 등 p
 
 필수 pipeline test:
 
+- `agent.middleware.before`, `agent.middleware.fallback`, `agent.middleware.after`가 LangGraph node로 등록된다.
+- cache miss는 `agent.middleware.before`를 1회 통과한 뒤 selected leaf agent prompt를 만든다.
+- cache hit은 agent middleware를 통과하지 않는다.
+- 모든 LLM slot이 실패하면 `agent.middleware.fallback`으로 분기해 deterministic fallback을 반환한다.
+- successful generation과 deterministic fallback 모두 `agent.middleware.after`를 통과한다.
+- metadata에 `middlewareLogs`와 `currentModel` summary가 남는다.
 - generation LLM이 tool request를 반환하면 tool 실행 후 follow-up prompt가 호출된다.
 - tool result 이후 final response JSON이 `agent.response`로 반환된다.
 - metadata에 `toolCalls` summary가 남는다.
