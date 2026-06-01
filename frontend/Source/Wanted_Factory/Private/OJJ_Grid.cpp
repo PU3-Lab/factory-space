@@ -158,6 +158,56 @@ bool AOJJ_Grid::IsValidGridCell(FIntPoint Cell) const
 		&& Cell.Y >= 0 && Cell.Y < GridSize.Y;
 }
 
+// === Grid Query (GridManager/컨베이어용 읽기 전용 조회) — 순수 추가, write 경로 미변경 ===
+
+AMachineBase* AOJJ_Grid::GetMachineAtCell(FIntPoint Cell) const
+{
+	if (const TWeakObjectPtr<AMachineBase>* Found = OccupiedCells.Find(Cell))
+	{
+		// Get()은 유효하면 ptr, GC됐으면 nullptr 반환 → stale 셀 자체 방어
+		return Found->Get();
+	}
+	return nullptr;
+}
+
+bool AOJJ_Grid::IsCellOccupied(FIntPoint Cell) const
+{
+	// Contains 대신 GetMachineAtCell 위임 → 파괴된 머신 셀을 "비점유"로 일관 처리
+	return GetMachineAtCell(Cell) != nullptr;
+}
+
+const TArray<FIntPoint>* AOJJ_Grid::GetMachineCells(AMachineBase* Machine) const
+{
+	// IsValid: nullptr + pending-kill/garbage 모두 거부.
+	// GetMachineAtCell이 weak Get()으로 stale을 nullptr 처리하는 것과 일관되게,
+	// 죽은(=곧 GC될) 머신의 footprint/origin 메타데이터가 새지 않도록 차단 (Codex 지적: 양방향 일관성).
+	if (!IsValid(Machine))
+	{
+		return nullptr;
+	}
+	// MachineToCells는 weak-key 맵 — raw ptr로 조회 가능(암시적 TWeakObjectPtr 변환)
+	return MachineToCells.Find(Machine);
+}
+
+FIntPoint AOJJ_Grid::GetMachineOrigin(AMachineBase* Machine) const
+{
+	const TArray<FIntPoint>* Cells = GetMachineCells(Machine);
+	if (!Cells || Cells->Num() == 0)
+	{
+		// 미등록 머신 센티넬 (BuildController의 INT_MIN 컨벤션과 일치)
+		return FIntPoint(INT_MIN, INT_MIN);
+	}
+
+	// 풋프린트는 Origin부터 비음수 offset → min corner == 등록 시 Origin (회전 무관)
+	FIntPoint Origin = (*Cells)[0];
+	for (const FIntPoint& Cell : *Cells)
+	{
+		Origin.X = FMath::Min(Origin.X, Cell.X);
+		Origin.Y = FMath::Min(Origin.Y, Cell.Y);
+	}
+	return Origin;
+}
+
 TArray<FIntPoint> AOJJ_Grid::CalculateFootprint(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps) const
 {
 	TArray<FIntPoint> Cells;

@@ -128,6 +128,28 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
 	bool IsValidGridCell(FIntPoint Cell) const;
 
+	// === Grid Query (GridManager/컨베이어용 읽기 전용 조회) ===
+	// OccupiedCells / MachineToCells를 노출만 함 — write 경로/데이터는 건드리지 않음.
+
+	// 셀에 등록된 머신 반환. 비점유/GC된 머신이면 nullptr.
+	// const라 SweepStaleEntries는 못 부르지만 weak ptr Get()으로 stale을 nullptr 처리.
+	UFUNCTION(BlueprintPure, Category = "Grid|Query")
+	AMachineBase* GetMachineAtCell(FIntPoint Cell) const;
+
+	// 셀 점유 여부. stale(파괴된) 머신 셀은 false (GetMachineAtCell과 일관).
+	UFUNCTION(BlueprintPure, Category = "Grid|Query")
+	bool IsCellOccupied(FIntPoint Cell) const;
+
+	// 머신 풋프린트의 lower-left(=등록 시 Origin). 미등록 머신이면 (INT_MIN, INT_MIN) 센티넬.
+	// 풋프린트 셀은 Origin부터 비음수 offset이라 min(X),min(Y) == Origin (회전 무관 — EffectiveSize가 X/Y만 swap).
+	UFUNCTION(BlueprintPure, Category = "Grid|Query")
+	FIntPoint GetMachineOrigin(AMachineBase* Machine) const;
+
+	// 머신 점유 셀 목록(footprint) 포인터. 미등록/무효(IsValid 실패) 머신이면 nullptr. C++ 전용(BP 비호환 반환형).
+	// ⚠️ 수명: 반환 포인터는 MachineToCells 내부를 가리킴 — 다음 grid 변경(TryPlace/Remove/stale sweep, rehash)
+	//    시 무효화됨. 즉시(같은 프레임) 읽기 전용으로만 사용하고 절대 캐싱하지 말 것. 보관이 필요하면 값 복사.
+	const TArray<FIntPoint>* GetMachineCells(AMachineBase* Machine) const;
+
 	// Origin부터 머신 풋프린트만큼의 셀이 모두 비어있는지 검사. RotationSteps로 회전 footprint 검사(기본 0).
 	UFUNCTION(BlueprintPure, Category = "Grid|Placement")
 	bool CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
