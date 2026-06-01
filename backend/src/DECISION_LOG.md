@@ -292,7 +292,8 @@ Pipeline 흐름:
 - `OrchestratorAgent`는 최상위 Agent 판단을 위한 prompt 계약을 소유한다.
 - 허용 가능한 최상위 Agent 후보는 `TOP_LEVEL_AGENT_IDS`로 제한한다.
 - LLM에는 `TOP_LEVEL_AGENT_IDS` 중 하나만 반환하도록 요구한다.
-- prompt는 `[ROLE]`, `[TASK]`, `[ALLOWED_AGENT_IDS]`, `[REQUEST_HINT]`, `[REQUEST_CONTEXT]`, `[REQUEST_PAYLOAD]`, `[OUTPUT_CONTRACT]` 섹션을 가진 structured prompt로 구성한다.
+- prompt는 `[ROLE]`, `[TASK]`, `[ALLOWED_AGENT_IDS]`, `[AGENT_CAPABILITIES]`, `[REQUEST_HINT]`, `[REQUEST_CONTEXT]`, `[REQUEST_PAYLOAD]`, `[OUTPUT_CONTRACT]` 섹션을 가진 structured prompt로 구성한다.
+- `[AGENT_CAPABILITIES]`는 `OrchestratorAgent.tools`에 연결된 `agents.agent_catalog.AgentCatalogTool`이 `RoutingSupportTool` 인터페이스로 제공하며, routing 단계의 LLM tool calling은 아니다.
 - output contract는 단일 Agent id 문자열만 허용하고 JSON, markdown, 설명, reason, 따옴표, 코드블록은 금지한다.
 - `OrchestratorAgent`는 Agent 실행, cache, fallback, response envelope 생성, LangGraph edge 분기를 소유하지 않는다.
 - 실제 경로 구분은 `route_selected_agent` conditional edge가 담당한다.

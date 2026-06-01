@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -35,6 +36,8 @@ from protocol.messages import (
     AgentRequestEnvelope,
     AgentResponseEnvelope,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 class AgentPipeline:
@@ -98,6 +101,17 @@ class AgentPipeline:
                 "typedPayload": envelope.payload,
                 "streams": [],
             }
+
+        def log_agent_started(state: AgentGraphState) -> AgentGraphState:
+            return append_middleware_log(
+                state,
+                "agent.middleware.before",
+                "agent_started",
+                {
+                    "selectedAgent": state["selectedAgent"],
+                    "selectedLeafAgent": state["selectedLeafAgent"],
+                },
+            )
 
         def validate_envelope(state: AgentGraphState) -> AgentGraphState:
             envelope = state["envelope"]
@@ -299,14 +313,34 @@ class AgentPipeline:
                 metadata["llmProvider"] = state["llmProvider"]
             if state.get("llmModel"):
                 metadata["llmModel"] = state["llmModel"]
+            current_model = build_current_model_metadata(state)
+            if current_model is not None:
+                metadata["currentModel"] = current_model
             return {"responsePayload": payload, "responseMetadata": metadata}
 
         def build_fallback(state: AgentGraphState) -> AgentGraphState:
             result = run_fallback(agent_router, state)
-            return {
+            metadata = dict(result.metadata)
+            current_model = build_current_model_metadata(state)
+            if current_model is not None:
+                metadata["currentModel"] = current_model
+            output: AgentGraphState = {
                 "fallbackReason": "llm_unavailable",
                 "responsePayload": result.payload,
-                "responseMetadata": result.metadata,
+                "responseMetadata": metadata,
+            }
+            return {
+                **output,
+                **append_middleware_log(
+                    state,
+                    "agent.middleware.fallback",
+                    "deterministic_fallback",
+                    {
+                        "reason": "llm_unavailable",
+                        "selectedAgent": state["selectedAgent"],
+                        "selectedLeafAgent": state["selectedLeafAgent"],
+                    },
+                ),
             }
 
         def validate_response_schema(state: AgentGraphState) -> AgentGraphState:
@@ -328,8 +362,26 @@ class AgentPipeline:
             )
             return {}
 
+        def log_agent_finished(state: AgentGraphState) -> AgentGraphState:
+            return append_middleware_log(
+                state,
+                "agent.middleware.after",
+                "agent_finished",
+                {
+                    "selectedAgent": state["selectedAgent"],
+                    "selectedLeafAgent": state["selectedLeafAgent"],
+                },
+            )
+
         def build_agent_response(state: AgentGraphState) -> AgentGraphState:
             envelope = state["envelope"]
+            metadata = {
+                **state.get("responseMetadata", {}),
+                "selectedAgent": state["selectedAgent"],
+                "selectedLeafAgent": state["selectedLeafAgent"],
+            }
+            if state.get("middlewareLogs"):
+                metadata["middlewareLogs"] = state["middlewareLogs"]
             response = AgentResponseEnvelope(
                 request_id=envelope.request_id,
                 session_id=envelope.session_id,
@@ -337,11 +389,7 @@ class AgentPipeline:
                 agent=state["selectedAgent"],
                 payload={
                     **state["responsePayload"],
-                    "metadata": {
-                        **state.get("responseMetadata", {}),
-                        "selectedAgent": state["selectedAgent"],
-                        "selectedLeafAgent": state["selectedLeafAgent"],
-                    },
+                    "metadata": metadata,
                 },
                 streams=state.get("streams", []),
             )
@@ -368,6 +416,7 @@ class AgentPipeline:
 
         graph = StateGraph(AgentGraphState)
         graph.add_node("build_context", build_context)
+        graph.add_node("agent.middleware.before", log_agent_started)
         graph.add_node("validate_envelope", validate_envelope)
         graph.add_node("route_top_agent", route_top_agent)
         graph.add_node("validate_process_payload", validate_process_payload)
@@ -381,9 +430,10 @@ class AgentPipeline:
         graph.add_node("call_llm.fallback1", call_llm_fallback1)
         graph.add_node("call_llm.fallback2", call_llm_fallback2)
         graph.add_node("parse_llm_response", parse_llm_response)
-        graph.add_node("build_fallback", build_fallback)
+        graph.add_node("agent.middleware.fallback", build_fallback)
         graph.add_node("validate_response_schema", validate_response_schema)
         graph.add_node("cache_write", cache_write)
+        graph.add_node("agent.middleware.after", log_agent_finished)
         graph.add_node("build_agent_response", build_agent_response)
         graph.add_node("build_agent_error", build_agent_error)
 
@@ -398,3 +448,47 @@ def run_agent_pipeline(message: AgentRequestEnvelope | dict[str, Any]) -> dict[s
         return AgentPipeline().run(message)
     except ValidationError as exc:
         return build_validation_error(exc, message)
+
+
+def append_middleware_log(
+    state: AgentGraphState,
+    node: str,
+    event: str,
+    details: dict[str, Any],
+) -> AgentGraphState:
+    """Append one middleware log entry using the graph state."""
+
+    LOGGER.info(
+        "%s %s",
+        node,
+        event,
+        extra={"middleware_node": node, "middleware_event": event},
+    )
+    return {
+        "middlewareLogs": [
+            *state.get("middlewareLogs", []),
+            {
+                "node": node,
+                "event": event,
+                "details": details,
+            },
+        ]
+    }
+
+
+def build_current_model_metadata(state: AgentGraphState) -> dict[str, str] | None:
+    """Build response metadata for the latest LLM slot used by the graph."""
+
+    slot = state.get("llmSlot")
+    provider = state.get("llmProvider")
+    if not slot or not provider:
+        return None
+
+    metadata = {
+        "slot": slot,
+        "provider": provider,
+    }
+    model = state.get("llmModel")
+    if model:
+        metadata["model"] = model
+    return metadata

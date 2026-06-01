@@ -17,6 +17,7 @@ class OperatorGuideAgent:
     """Select the operator guide leaf agent for a user question."""
 
     agent_id = "operator_guide"
+    tools = ()
 
     def build_routing_prompt(
         self,

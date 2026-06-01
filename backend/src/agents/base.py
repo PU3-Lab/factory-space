@@ -25,10 +25,24 @@ class AgentRunResult:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+class AgentTool(Protocol):
+    """Common read-only tool contract attachable to agents."""
+
+    name: str
+
+    def invoke(
+        self,
+        payload: dict[str, Any],
+        context: AgentContext,
+    ) -> object:
+        """Execute the tool with request payload and agent context."""
+
+
 class Agent(Protocol):
     """Minimal contract for executable agents."""
 
     agent_id: str
+    tools: tuple[AgentTool, ...]
 
     def build_prompt(
         self,

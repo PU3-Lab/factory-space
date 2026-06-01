@@ -11,6 +11,7 @@ class ExplorationQuestAgent:
     """Generate exploration quests."""
 
     agent_id = "quest_generator.exploration_quest"
+    tools = ()
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
         return f"다음 요청을 바탕으로 탐험 퀘스트를 생성하세요: {payload}"

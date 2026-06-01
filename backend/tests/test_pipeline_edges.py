@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from agents.base import AgentContext, AgentRunResult
@@ -113,6 +115,11 @@ def test_pipeline_uses_settings_slot_adapters_before_deterministic_fallback() ->
     assert response["payload"]["metadata"]["llmSlot"] == "fallback1"
     assert response["payload"]["metadata"]["llmProvider"] == "openai"
     assert response["payload"]["metadata"]["llmModel"] == "gpt-5.5"
+    assert response["payload"]["metadata"]["currentModel"] == {
+        "slot": "fallback1",
+        "provider": "openai",
+        "model": "gpt-5.5",
+    }
     assert len(adapters["default"].prompts) == 2
     assert len(adapters["fallback1"].prompts) == 1
     assert len(adapters["fallback2"].prompts) == 0
@@ -164,6 +171,47 @@ def test_pipeline_uses_fallback2_when_default_and_fallback1_fail() -> None:
     assert len(adapters["fallback2"].prompts) == 1
 
 
+def test_pipeline_clears_stale_model_metadata_when_next_slot_has_no_model() -> None:
+    settings = LLMSettings(
+        default=LLMModelSlot(name="default", provider="none"),
+        fallback1=LLMModelSlot(
+            name="fallback1",
+            provider="openai",
+            model="gpt-5.5",
+            api_key="key",
+        ),
+        fallback2=LLMModelSlot(name="fallback2", provider="none"),
+    )
+    adapters = {
+        "default": StubLLM([top_agent_decision("process_optimizer"), None]),
+        "fallback1": StubLLM([None]),
+        "fallback2": StubLLM(['{"summary":"from fallback2 without model"}']),
+    }
+    pipeline = AgentPipeline(
+        llm_settings=settings,
+        llm_adapter_factory=lambda slot: adapters[slot.name],
+    )
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-clear-stale-model",
+            "agent": "process_optimizer",
+            "payload": {"machines": []},
+        }
+    )
+
+    assert_agent_response(response, agent="process_optimizer")
+    metadata = response["payload"]["metadata"]
+    assert metadata["llmSlot"] == "fallback2"
+    assert metadata["llmProvider"] == "none"
+    assert "llmModel" not in metadata
+    assert metadata["currentModel"] == {
+        "slot": "fallback2",
+        "provider": "none",
+    }
+
+
 def test_pipeline_uses_deterministic_fallback_after_all_slots_fail() -> None:
     settings = LLMSettings(
         default=LLMModelSlot(name="default", provider="none"),
@@ -197,6 +245,102 @@ def test_pipeline_uses_deterministic_fallback_after_all_slots_fail() -> None:
     assert len(adapters["fallback2"].prompts) == 1
 
 
+def test_pipeline_deterministic_fallback_clears_stale_model_metadata() -> None:
+    settings = LLMSettings(
+        default=LLMModelSlot(name="default", provider="none"),
+        fallback1=LLMModelSlot(
+            name="fallback1",
+            provider="openai",
+            model="gpt-5.5",
+            api_key="key",
+        ),
+        fallback2=LLMModelSlot(name="fallback2", provider="none"),
+    )
+    adapters = {
+        "default": StubLLM([top_agent_decision("process_optimizer"), None]),
+        "fallback1": StubLLM([None]),
+        "fallback2": StubLLM([None]),
+    }
+    pipeline = AgentPipeline(
+        llm_settings=settings,
+        llm_adapter_factory=lambda slot: adapters[slot.name],
+    )
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-fallback-clear-stale-model",
+            "agent": "process_optimizer",
+            "payload": {"machines": []},
+        }
+    )
+
+    assert_agent_response(response, agent="process_optimizer")
+    metadata = response["payload"]["metadata"]
+    assert metadata["fallback"] is True
+    assert metadata["currentModel"] == {
+        "slot": "fallback2",
+        "provider": "none",
+    }
+
+
+def test_pipeline_attaches_log_and_fallback_middleware_as_langgraph_nodes() -> None:
+    graph = AgentPipeline(llm=StubLLM([])).graph.get_graph()
+
+    assert "agent.middleware.before" in graph.nodes
+    assert "agent.middleware.fallback" in graph.nodes
+    assert "agent.middleware.after" in graph.nodes
+
+
+def test_pipeline_records_middleware_logs_and_current_model(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="agents.pipeline.runtime")
+    settings = LLMSettings(
+        default=LLMModelSlot(name="default", provider="none"),
+        fallback1=LLMModelSlot(name="fallback1", provider="none"),
+        fallback2=LLMModelSlot(name="fallback2", provider="none"),
+    )
+    adapters = {
+        "default": StubLLM([top_agent_decision("process_optimizer"), None]),
+        "fallback1": StubLLM([None]),
+        "fallback2": StubLLM([None]),
+    }
+    pipeline = AgentPipeline(
+        llm_settings=settings,
+        llm_adapter_factory=lambda slot: adapters[slot.name],
+    )
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-middleware-log",
+            "agent": "process_optimizer",
+            "payload": {"machines": []},
+        }
+    )
+
+    assert_agent_response(response, agent="process_optimizer")
+    metadata = response["payload"]["metadata"]
+    assert metadata["currentModel"] == {
+        "slot": "fallback2",
+        "provider": "none",
+    }
+    assert [
+        log["node"] for log in metadata["middlewareLogs"]
+    ] == [
+        "agent.middleware.before",
+        "agent.middleware.fallback",
+        "agent.middleware.after",
+    ]
+    assert [
+        log["event"] for log in metadata["middlewareLogs"]
+    ] == ["agent_started", "deterministic_fallback", "agent_finished"]
+    assert "agent.middleware.before agent_started" in caplog.messages
+    assert "agent.middleware.fallback deterministic_fallback" in caplog.messages
+    assert "agent.middleware.after agent_finished" in caplog.messages
+
+
 def test_pipeline_uses_valid_llm_json_response_without_fallback() -> None:
     pipeline = AgentPipeline(
         llm=StubLLM(
@@ -219,6 +363,16 @@ def test_pipeline_uses_valid_llm_json_response_without_fallback() -> None:
     assert_agent_response(response, agent="process_optimizer")
     assert response["payload"]["summary"] == "from model"
     assert response["payload"]["metadata"]["llm"] == "used"
+    assert response["payload"]["metadata"]["currentModel"] == {
+        "slot": "injected",
+        "provider": "injected",
+    }
+    assert [
+        log["node"] for log in response["payload"]["metadata"]["middlewareLogs"]
+    ] == [
+        "agent.middleware.before",
+        "agent.middleware.after",
+    ]
 
 
 def test_pipeline_rejects_non_json_llm_response() -> None:
@@ -410,6 +564,7 @@ def test_pipeline_cache_hit_skips_second_llm_call() -> None:
     assert first["payload"]["summary"] == "first"
     assert second["payload"]["summary"] == "first"
     assert second["payload"]["metadata"]["cache"] == "hit"
+    assert "middlewareLogs" not in second["payload"]["metadata"]
     assert_agent_response(first, agent="process_optimizer")
     assert_agent_response(second, agent="process_optimizer")
     assert len(llm.prompts) == 3
@@ -437,6 +592,7 @@ def test_pipeline_cache_hit_preserves_original_response_metadata() -> None:
     assert first["payload"]["metadata"]["llm"] == "used"
     assert second["payload"]["metadata"]["llm"] == "used"
     assert second["payload"]["metadata"]["cache"] == "hit"
+    assert "middlewareLogs" not in second["payload"]["metadata"]
 
 
 def test_agent_pipeline_builds_compiled_graph() -> None:
