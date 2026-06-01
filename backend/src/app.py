@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from agent_connection.router import router as agent_connection_router
 from agents.pipeline import AgentPipeline
 from websocket_gateway.gateway import router as websocket_router
 
@@ -29,5 +30,6 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    app.include_router(agent_connection_router)
     app.include_router(websocket_router)
     return app

@@ -49,10 +49,17 @@ uv run python scripts/run_server.py
 
 ```text
 Health check: http://127.0.0.1:18000/health
+Agent connection manifest: http://127.0.0.1:18000/api/v1/agent-connection
 WebSocket: ws://127.0.0.1:18000/ws/agent
 ```
 
 Postman이나 Unreal 클라이언트에서는 HTTP POST가 아니라 WebSocket 연결로 `ws://127.0.0.1:18000/ws/agent`에 접속한 뒤 JSON 메시지를 전송합니다. 다른 포트가 필요하면 `uv run python scripts/run_server.py --port 18001`처럼 실행합니다.
+
+Unreal 클라이언트 연결 순서는 다음과 같습니다.
+
+1. `GET /health`로 서버 liveness를 확인합니다.
+2. `GET /api/v1/agent-connection`으로 WebSocket path, 지원 agent id, 샘플 `agent.request` envelope를 확인합니다.
+3. manifest의 `websocket_path`인 `/ws/agent`에 WebSocket으로 접속하고 `agent.request` JSON 메시지를 전송합니다.
 
 ### Agent pipeline smoke test
 

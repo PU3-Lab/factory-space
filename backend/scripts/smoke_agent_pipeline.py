@@ -67,6 +67,11 @@ def build_profile(name: str) -> SmokeProfile:
             cases=(
                 SmokeCase(name="health", message=None, transport="http_health"),
                 SmokeCase(
+                    name="agent_connection_manifest",
+                    message=None,
+                    transport="http_agent_connection_manifest",
+                ),
+                SmokeCase(
                     name="invalid_json",
                     message="{not-json",
                     expected_type="agent.error",
@@ -164,6 +169,8 @@ async def run_profile(profile: SmokeProfile, base_url: str, ws_path: str) -> int
     for case in profile.cases:
         if case.transport == "http_health":
             response = check_health(base_url)
+        elif case.transport == "http_agent_connection_manifest":
+            response = check_agent_connection_manifest(base_url)
         else:
             response = await request_websocket_case(websocket_url, case)
         validate_case_response(case, response)
@@ -184,6 +191,34 @@ def check_health(base_url: str) -> dict[str, Any]:
 
     if body != {"status": "ok"}:
         raise SmokeError(f"health: expected {{'status': 'ok'}}, got {body}")
+    return {"type": None}
+
+
+def check_agent_connection_manifest(base_url: str) -> dict[str, Any]:
+    """Call the agent connection manifest and validate the Unreal contract."""
+
+    manifest_url = urljoin(f"{base_url.rstrip('/')}/", "api/v1/agent-connection")
+    try:
+        with urllib.request.urlopen(manifest_url, timeout=5) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except (OSError, json.JSONDecodeError, URLError) as exc:
+        raise SmokeError(f"manifest: failed to call {manifest_url}: {exc}") from exc
+
+    expected_fields = {
+        "status": "ok",
+        "websocket_path": "/ws/agent",
+        "request_type": "agent.request",
+        "response_types": ["agent.response", "agent.error"],
+    }
+    for field, expected_value in expected_fields.items():
+        if body.get(field) != expected_value:
+            raise SmokeError(
+                f"manifest: expected {field} {expected_value}, got {body.get(field)}"
+            )
+
+    top_level_agents = body.get("top_level_agents")
+    if not isinstance(top_level_agents, list) or not top_level_agents:
+        raise SmokeError("manifest: expected non-empty top_level_agents")
     return {"type": None}
 
 
