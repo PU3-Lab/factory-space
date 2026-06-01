@@ -17,6 +17,56 @@ enum class EMachineState : uint8
 	Disabled // On/Off
 };
 
+// 포트 타입 : 입력 포트, 출력 포트
+UENUM(BlueprintType)
+enum class EPortType : uint8
+{
+	Input,
+	Output
+};
+
+// 기계가 가진 포트 정보
+USTRUCT(BlueprintType)
+struct FMachinePortData
+{
+	GENERATED_BODY()
+	
+	// 포트 번호
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine | Ports")
+	int32 PortIndex = 0;
+
+	// 입력 / 출력 구분
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine | Ports")
+	EPortType PortType = EPortType::Input;
+
+	// 이 포트가 받을/보낼 아이템 제한용
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine | Ports")
+	FName AcceptedItemID;
+
+	// 현재 연결되어 있는지
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Ports")
+	bool bIsConnected = false;
+};
+
+// 출력 포트 하나가 어느 기계의 입력 포트와 연결되어 있는지 저장
+USTRUCT(BlueprintType)
+struct FMachinePortConnection
+{
+	GENERATED_BODY()
+
+	// 내 출력 포트 번호
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine | Ports")
+	int32 FromOutputPortIndex = 0;
+
+	// 연결할 대상 기계
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine | Ports")
+	AMachineBase* TargetMachine = nullptr;
+
+	// 대상 기계의 입력 포트 번호
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine | Ports")
+	int32 TargetInputPortIndex = 0;
+};
+
 UCLASS()
 class WANTED_FACTORY_API AMachineBase : public AActor
 {
@@ -74,24 +124,49 @@ protected:
 	// 타이머
 	FTimerHandle ProcessTimer;
 
-	// 현재 입력 아이템, 수량
-	UPROPERTY(visibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
-	FName CurrentInputItem;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
-	int32 CurrentInputCount = 0;
+	// // 현재 입력 아이템, 수량
+	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
+	// FName CurrentInputItem;
+	//
+	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
+	// int32 CurrentInputCount = 0;
 
 	// 입력 인벤토리
-	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
-	// TMap<FName, TArray<FName>> InputToRecipeMap;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
+	TMap<FName, int32> InputInventory;
+	
+	// 입력 인벤토리 최대 수량
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine | Inventory", meta = (ClampMin = "1"))
+	int32 MaxInputPerItem = 50;
 
-	// 출력 인벤토리
+	// 나중에 창고/컨베이어로 빠져나간 최종 출력 저장소로 사용 가능
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
 	TMap<FName, int32> OutputInventory;
 
 	// 현재 사용 중인 레시피
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
 	FRecipeTable CurrentRecipe;
+	
+	// 기계 내부 출력 버퍼
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	TMap<FName, int32> OutputBuffer;
+	
+	// 버퍼 최대량
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	int32 MaxBufferPerItem = 50;
+	
+	// 포트 부분
+	// 입력 포트 목록 : 기계마다 개수 다르게 설정 가능
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine | Ports")
+	TArray<FMachinePortData> InputPorts;
+
+	// 출력 포트 목록 : 기계마다 개수 다르게 설정 가능
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine | Ports")
+	TArray<FMachinePortData> OutputPorts;
+
+	// 출력 포트별 연결 정보
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Ports")
+	TArray<FMachinePortConnection> OutputConnections;
 
 public:
 	// 기능들
@@ -112,8 +187,8 @@ public:
 
 	// 임시 테스트 용 : 아이템 투입
 	UFUNCTION(BlueprintCallable, Category = "Machine | Inventory")
-	virtual void AddItem(FName ItemID, int32 Count);
-
+	virtual bool AddItem(FName ItemID, int32 Count);
+	
 	// 자동 레시피 탐색
 	UFUNCTION(BlueprintCallable, Category = "Machine | Process")
 	virtual void TryStartProcess();
@@ -135,4 +210,40 @@ public:
 	// 기계 정지
 	UFUNCTION(BlueprintCallable)
 	virtual void StopProcess();
+	
+	// 입력 버퍼에 들어갈수 있는지
+	UFUNCTION(BlueprintCallable, Category = "Machine | Inventory")
+	bool CanAddInputItem(FName ItemID, int32 Count) const;
+	
+	// 재료가 충분히 있나?
+	bool HasEnoughIngredients(const FRecipeTable& Recipe) const;
+	// 재료 소모하고 결과물 뽑는다
+	void ConsumeIngredients(const FRecipeTable& Recipe);
+	// 결과물 추가합니다
+	void AddOutputItem(FName ItemID, int32 Count);
+	
+	// 출력 버퍼가 꽉차 있으면 생산 금지
+	bool CanAddToOutputBuffer(const FRecipeTable& Recipe) const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Machine | Buffer")
+	bool TakeOutputItem(FName ItemID, int32 Count);
+	
+	UFUNCTION(BlueprintCallable, Category = "Machine | Transfer")
+	bool TransferOutputToMachine(AMachineBase* TargetMachine, FName ItemID, int32 Count);
+	
+	
+	// 포트 부분
+	
+	// 내 출력 포트와 상대 입력 포트를 연결
+	UFUNCTION(BlueprintCallable, Category = "Machine | Ports")
+	bool ConnectOutputToMachine(int32 OutputPortIndex, AMachineBase* TargetMachine, int32 TargetInputPortIndex);
+
+	// 특정 출력 포트로 아이템 전송
+	UFUNCTION(BlueprintCallable, Category = "Machine | Ports")
+	bool TransferOutputByPort(int32 OutputPortIndex, FName ItemID, int32 Count);
+	
+	UFUNCTION(BlueprintCallable, Category = "Machine | Debug")
+	void DebugInventory();
+	
+	
 };

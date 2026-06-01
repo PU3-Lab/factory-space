@@ -16,11 +16,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	UDataTable* RecipeTable;
 
-	TMap<FName, FName> InputToRecipeMap;
+	// Key : 재료 ID
+	// Value : 해당 재료가 포함된 레시피 RowName 목록
+	
+	TMap<FName, TArray<FName>> InputToRecipeMap;
 
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 
 	void BuildRecipeIndex();
 
 	bool FindRecipeByInputItem(FName InputItem, FRecipeTable& OutRecipe);
+	
+	bool FindRecipesByInputItem(FName InputItem, TArray<FRecipeTable>& OutRecipes);
 };
