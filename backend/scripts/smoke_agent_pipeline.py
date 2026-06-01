@@ -34,6 +34,7 @@ class SmokeCase:
     expected_type: str | None = None
     expected_agent: str | None = None
     expected_sub_agent: str | None = None
+    expected_quest_id: str | None = None
     expected_error_code: str | None = None
     transport: str = "websocket"
 
@@ -139,6 +140,14 @@ def validate_case_response(case: SmokeCase, response: dict[str, Any]) -> None:
             raise SmokeError(
                 f"{case.name}: expected selected leaf {case.expected_sub_agent}, "
                 f"got {selected_leaf_agent}"
+            )
+
+    if case.expected_quest_id is not None:
+        quest_id = _quest_id(response)
+        if quest_id != case.expected_quest_id:
+            raise SmokeError(
+                f"{case.name}: expected quest id {case.expected_quest_id}, "
+                f"got {quest_id}"
             )
 
 
@@ -290,13 +299,15 @@ def _agent_response_cases() -> tuple[SmokeCase, ...]:
                 "client_id": "smoke-client",
                 "agent": "quest_generator",
                 "payload": {
-                    "message": "Create a production quest.",
+                    "message": "Create an iron ore mining quest.",
                     "sub_agent": "quest_generator.production_quest",
+                    "game_state": {"quest_case": "mine_iron_ore_10"},
                 },
             },
             expected_type="agent.response",
             expected_agent="quest_generator",
             expected_sub_agent="quest_generator.production_quest",
+            expected_quest_id="quest_mine_iron_ore_10",
         ),
         SmokeCase(
             name="new_material_generator",
@@ -328,6 +339,19 @@ def _selected_leaf_agent(response: dict[str, Any]) -> str | None:
 
     sub_agent = response.get("sub_agent")
     return sub_agent if isinstance(sub_agent, str) else None
+
+
+def _quest_id(response: dict[str, Any]) -> str | None:
+    payload = response.get("payload")
+    if not isinstance(payload, dict):
+        return None
+
+    quest = payload.get("quest")
+    if not isinstance(quest, dict):
+        return None
+
+    quest_id = quest.get("id")
+    return quest_id if isinstance(quest_id, str) else None
 
 
 if __name__ == "__main__":

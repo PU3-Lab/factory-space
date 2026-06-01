@@ -135,3 +135,19 @@ def test_quest_leaf_agents_return_normalized_fallbacks(
     assert result.agent == "quest_generator"
     assert result.payload["quest"]["type"] == expected_type
     assert result.metadata == {"fallback": True, "sub_agent": agent.agent_id}
+
+
+def test_production_quest_fallback_uses_mock_game_state(
+    context: AgentContext,
+) -> None:
+    agent = ProductionQuestAgent()
+
+    result = agent.fallback(
+        {"game_state": {"quest_case": "mine_iron_ore_10"}},
+        context,
+    )
+
+    assert result.agent == "quest_generator"
+    assert result.payload["quest"]["title"] == "철광석 10개 채굴"
+    assert result.payload["quest"]["objectives"][0]["quantity"] == 10
+    assert result.metadata == {"fallback": True, "sub_agent": agent.agent_id}
