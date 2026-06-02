@@ -1,6 +1,7 @@
 
 #include "MachineBase.h"
 
+#include "Components/TextRenderComponent.h"
 #include "RecipeManagerSubsystem.h"
 #include "Wanted_Factory.h"
 #include "Algo/Count.h"
@@ -33,6 +34,31 @@ namespace
 		AddRecipeItemQuantity(OutputQuantities, Recipe.OutputItem2, Recipe.OutputQty2);
 		return OutputQuantities;
 	}
+
+	FString FormatItemMap(const TMap<FName, int32>& Items)
+	{
+		if (Items.Num() == 0)
+		{
+			return TEXT("None");
+		}
+
+		FString Result;
+		for (const TPair<FName, int32>& Item : Items)
+		{
+			if (Item.Key.IsNone() || Item.Value <= 0)
+			{
+				continue;
+			}
+
+			if (!Result.IsEmpty())
+			{
+				Result += TEXT("\n");
+			}
+			Result += FString::Printf(TEXT("%s x%d"), *Item.Key.ToString(), Item.Value);
+		}
+
+		return Result.IsEmpty() ? FString(TEXT("None")) : Result;
+	}
 }
 
 AMachineBase::AMachineBase()
@@ -51,6 +77,15 @@ AMachineBase::AMachineBase()
 			TEXT("Mesh"));
 
 	MeshComponent->SetupAttachment(Root);
+
+	DebugBufferText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("DebugBufferText"));
+	DebugBufferText->SetupAttachment(Root);
+	DebugBufferText->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	DebugBufferText->SetHorizontalAlignment(EHTA_Center);
+	DebugBufferText->SetVerticalAlignment(EVRTA_TextCenter);
+	DebugBufferText->SetWorldSize(DebugTextWorldSize);
+	DebugBufferText->SetRelativeLocation(DebugTextOffset);
+	DebugBufferText->SetRelativeRotation(FRotator(60.0f, 0.0f, 0.0f));
 
 	ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Engine/BasicShapes/Cube.Cube"));
 	if (CubeMesh.Succeeded())
@@ -81,6 +116,8 @@ void AMachineBase::OnConstruction(const FTransform& Transform)
 		float ScaleY = GridSize.Y;
 		MeshComponent->SetWorldScale3D(FVector(ScaleX, ScaleY, 1.0f));
 	}
+
+	UpdateDebugBufferText();
 }
 
 // Called every frame
@@ -130,6 +167,7 @@ bool AMachineBase::AddItem(FName ItemID, int32 Count)
 		MachineState = EMachineState::Idle;
 	}
 
+	UpdateDebugBufferText();
 	TryStartProcess();
 	
 	return true;
@@ -330,6 +368,8 @@ void AMachineBase::ConsumeIngredients(const FRecipeTable& Recipe)
 			InputInventory.Remove(InputQuantity.Key);
 		}
 	}
+
+	UpdateDebugBufferText();
 }
 
 void AMachineBase::AddOutputItem(FName ItemID, int32 Count)
@@ -362,6 +402,8 @@ void AMachineBase::AddOutputItem(FName ItemID, int32 Count)
 		BufferCount,
 		MaxBufferPerItem
 	);
+
+	UpdateDebugBufferText();
 }
 
 bool AMachineBase::CanAddToOutputBuffer(const FRecipeTable& Recipe) const
@@ -416,7 +458,75 @@ bool AMachineBase::TakeOutputItem(FName ItemID, int32 Count)
 		TryStartProcess();
 	}
 
+	UpdateDebugBufferText();
+
 	return true;
+}
+
+bool AMachineBase::PeekFirstOutputItem(FName& OutItemID) const
+{
+	OutItemID = NAME_None;
+
+	for (const TPair<FName, int32>& Output : OutputBuffer)
+	{
+		if (!Output.Key.IsNone() && Output.Value > 0)
+		{
+			OutItemID = Output.Key;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool AMachineBase::TryTakeFirstOutputItem(FName& OutItemID)
+{
+	if (!PeekFirstOutputItem(OutItemID))
+	{
+		return false;
+	}
+
+	if (!TakeOutputItem(OutItemID, 1))
+	{
+		OutItemID = NAME_None;
+		return false;
+	}
+
+	return true;
+}
+
+bool AMachineBase::CanReceiveConveyorItem(FName ItemID, int32 Count) const
+{
+	return CanAddInputItem(ItemID, Count);
+}
+
+bool AMachineBase::ReceiveConveyorItem(FName ItemID, int32 Count)
+{
+	const bool bAdded = AddItem(ItemID, Count);
+	UpdateDebugBufferText();
+	return bAdded;
+}
+
+void AMachineBase::UpdateDebugBufferText()
+{
+	if (!DebugBufferText)
+	{
+		return;
+	}
+
+	DebugBufferText->SetVisibility(bShowDebugBufferText);
+	DebugBufferText->SetWorldSize(DebugTextWorldSize);
+	DebugBufferText->SetRelativeLocation(DebugTextOffset);
+	if (!bShowDebugBufferText)
+	{
+		return;
+	}
+
+	const FString DebugText = FString::Printf(
+		TEXT("Input\n%s\n\nOutput\n%s"),
+		*FormatItemMap(InputInventory),
+		*FormatItemMap(OutputBuffer));
+	DebugBufferText->SetText(FText::FromString(DebugText));
 }
 
 bool AMachineBase::TransferOutputToMachine(AMachineBase* TargetMachine, FName ItemID, int32 Count)
