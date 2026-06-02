@@ -1,0 +1,7 @@
+﻿equipment_id,name,category,role,input_resources,output_resources,power_required,connectable_equipment,related_recipes,common_issues
+equipment_miner,채굴기,production,원석 자원을 채굴하는 기본 생산 장비,none,resource_iron_ore;resource_copper_ore,5,equipment_conveyor,,issue_no_power;issue_output_full
+equipment_smelter,제련기,production,광석을 금속 자원으로 변환하는 생산 장비,resource_iron_ore;resource_copper_ore,resource_iron_ingot;resource_copper_ingot,10,equipment_conveyor,recipe_iron_ingot;recipe_copper_ingot,issue_no_power;issue_no_input;issue_output_full
+equipment_assembler,조립기,production,가공 자원을 조립해 부품을 제작하는 장비,resource_iron_ingot;resource_copper_ingot;resource_gear;resource_wire,resource_gear;resource_wire;resource_basic_motor,15,equipment_conveyor,recipe_gear;recipe_wire;recipe_basic_motor,issue_no_power;issue_no_input;issue_input_imbalance
+equipment_generator,발전기,power,공장 설비에 전력을 공급하는 장비,resource_fuel,resource_power,0,equipment_conveyor,,issue_no_fuel;issue_no_power
+equipment_conveyor,컨베이어,logistics,자원을 장비 사이로 운반하는 물류 장비,any,any,0,equipment_conveyor,,issue_conveyor_blocked;issue_output_full
+equipment_storage,저장고,storage,자원을 임시 저장하는 장비,any,any,0,equipment_conveyor,,issue_output_full
