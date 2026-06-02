@@ -1,0 +1,9 @@
+﻿resource_id,name,kind,acquisition_method,produced_by,used_for,used_in_recipes,related_resources
+resource_iron_ore,철광석,raw,철광석 노드에 채굴기를 설치한다,equipment_miner,철괴 제작에 사용,recipe_iron_ingot,resource_iron_ingot
+resource_iron_ingot,철괴,processed,철광석을 제련기에서 제련한다,equipment_smelter,기어 및 기본 모터 제작에 사용,recipe_gear;recipe_basic_motor,resource_iron_ore;resource_gear;resource_basic_motor
+resource_copper_ore,구리광석,raw,구리광석 노드에 채굴기를 설치한다,equipment_miner,구리괴 제작에 사용,recipe_copper_ingot,resource_copper_ingot
+resource_copper_ingot,구리괴,processed,구리광석을 제련기에서 제련한다,equipment_smelter,전선 제작에 사용,recipe_wire,resource_copper_ore;resource_wire
+resource_gear,기어,component,철괴를 조립기에서 가공한다,equipment_assembler,기본 모터 제작에 사용,recipe_basic_motor,resource_iron_ingot;resource_basic_motor
+resource_wire,전선,component,구리괴를 조립기에서 가공한다,equipment_assembler,기본 모터 제작에 사용,recipe_basic_motor,resource_copper_ingot;resource_basic_motor
+resource_power,전력,utility,발전기에서 공급한다,equipment_generator,생산 장비와 물류 장비 가동에 사용,,
+resource_basic_motor,기본 모터,component,기어와 전선을 조립기에서 조립한다,equipment_assembler,상위 부품 제작에 사용,,resource_gear;resource_wire;resource_iron_ingot;resource_copper_ingot
