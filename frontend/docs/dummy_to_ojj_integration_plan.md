@@ -3,8 +3,14 @@
 > 목표: 공장의 머신 + 컨베이어를 **공간(그리드)**과 **전체 상태 집계(매니저)**로 책임 분리한다.
 > - `AOJJ_Grid` = **공간/배치의 단일 소스** (셀 점유·머신 위치·컨베이어 경로).
 > - `AFactoryManager`(`UGameInstanceSubsystem`) = **전체 상태 집계** (연결 그래프·스냅샷, 향후 전력·생산).
-> 컨베이어 클래스 `ADummyConveyor`는 **그대로 사용**한다(이식·개명·폐기 없음).
-> 그리드가 *기존* `ADummyConveyor`를 **인지·등록**하고, 매니저가 그리드를 조회해 **연결을 집계**하는 것이 핵심.
+> 컨베이어 클래스는 팀 합의로 `ADummyConveyor` → **`AConveyor`로 rename 완료**(커밋 `1b22341`, `Conveyor.h/.cpp`). 그 외 Dummy 파일은 불가침.
+> 그리드가 *기존* `AConveyor`를 **인지·등록**하고, 매니저가 그리드를 조회해 **연결을 집계**하는 것이 핵심.
+
+## 0-Z. 범위 원칙 (2026-06-02 재확정)
+- **Dummy_* 파일 = 불가침(읽기 전용).** 통합은 **`OJJ_` 영역에만** 신설/작업한다. Dummy를 수정·폐기하는 단계는 **없다**(참고·이식 소스로만 읽음).
+- **컨베이어는 예외 — 이미 처리됨.** 팀 합의로 `ADummyConveyor` → `AConveyor` rename 완료(`Conveyor.h/.cpp`, 커밋 `1b22341`, BP 보호 CoreRedirect 포함). 이후 단계는 `AConveyor`를 **그대로 사용**(추가 개명·폐기 없음).
+- **`ADummyMachineBase` = 범위 제외(읽기만).** 머신베이스 담당자 영역 — 본 계획서는 참조만 하고 수정하지 않는다.
+- **폐기(deprecation) 단계 없음.** `ADummyGrid` 등 프로토타입 제거는 본 통합 범위 밖.
 
 ## 0-A. 아키텍처 — 책임 분리 (2026-06-02 회의 반영)
 **집계 책임을 `AOJJ_Grid`가 아닌 별도 `AFactoryManager`로 분리한다.**
@@ -20,17 +26,17 @@
 
 ## 0. 확정 결정사항 (사용자)
 - **머신 식별 = 좌표(`FIntPoint` Origin).** 안정적 id 없음, 포인터 직렬화 불가 → 모든 조회/연결은 좌표 키.
-- **컨베이어 클래스는 손대지 않는다.** `ADummyConveyor`의 `SetPath` / `ConfigureTransport` / `OccupiedGridCells` 등 기존 인터페이스를 그대로 호출만 한다.
+- **컨베이어 클래스는 rename(완료) 외 손대지 않는다.** `AConveyor`의 `SetPath` / `ConfigureTransport` / `OccupiedGridCells` 등 기존 인터페이스를 그대로 호출만 한다. (단 Step 3에서 `ConfigureTransport` 인자 1줄 완화 = c-1.)
 - **직렬화(JSON)·웹소켓 전송은 범위 밖** — 다음 단계. 단, 스냅샷 USTRUCT는 *좌표 기반*이라 다음 단계에서 그대로 직렬화 가능하도록 설계.
 - **향후 정보(전력·생산량 등)는 구조만 확장 가능하게, 지금은 미구현(YAGNI).**
-- **이번 통합 범위 = Step 5(스냅샷)까지.**
+- **이번 통합 범위 = Step 1~6.** (Step 6 = OJJ_Player·BuildController 컨베이어 입력. 폐기 단계 없음.)
 - **제약:** `main` 미수정. 신규 심볼은 `OJJ_` prefix. Step마다 **빌드 통과 + `/codex:adversarial-review`** 통과 후 다음 Step.
 
 ## 1. 현황 요약 (조사 결과)
 - `AOJJ_Grid` 저장: `TMap<FIntPoint, TWeakObjectPtr<AMachineBase>> OccupiedCells`, `TMap<TWeakObjectPtr<AMachineBase>, TArray<FIntPoint>> MachineToCells` — **머신만** 인지.
 - 출력 포트 API 존재: `GetMachineOutputDir/Cells/Targets`, `CardinalFromVector`. **입력 포트 API 없음.**
 - 컨베이어 인지 로직은 **`ADummyGrid`(프로토타입)에만** 완성: `TryPlaceConveyor`, `BuildConveyorPlacementPath`, `CanPlaceConveyorPath` + 익명 네임스페이스 헬퍼(`IsMachineBackOutputPair`, `IsMachineFrontInputPair`, `FindInputMachineAtPathEnd`, `CollectConveyorReservedCells`). 저장 타입이 `TWeakObjectPtr<AActor>`라 컨베이어를 셀에 담음.
-- `ADummyConveyor`(AActor 직속)는 **그리드를 역참조하지 않음** — 그리드가 일방적으로 구동.
+- `AConveyor`(AActor 직속)는 **그리드를 역참조하지 않음** — 그리드가 일방적으로 구동.
 - 아이템 전송은 **`ADummyMachineBase` 엔드포인트 필수**(아이템 I/O API가 거기 있음). `AMachineBase`만으로는 전송 불가 ← **놓치기 쉬운 의존성**.
 
 ## 1-A. 선결 확인 결과 — 등록 머신 타입 (읽기 전용, 코드 증거)
@@ -51,13 +57,13 @@
 - ~~(b) `AMinerMachine`/`AGrinder`를 `ADummyMachineBase` 하위로 reparent~~ — Dummy 상속을 프로덕션에 전파(역방향). 기각.
 - **(c) ✅ 채택 — `UInterface IOJJ_ConveyorEndpoint`** 도입, 엔드포인트 머신이 구현(느슨한 결합, 경계 최선).
   - 참고: `AMachineBase`에 이미 `CanAddInputItem`/`TakeOutputItem` 존재(`MachineBase.h:216`) → 인터페이스가 이를 위임/표준화.
-  - **(c-1) `ADummyConveyor::ConfigureTransport`의 `ADummyMachineBase*` 인자를 `IOJJ_ConveyorEndpoint`(또는 `AActor*`)로 완화** — 한 줄 시그니처 수정 + 내부 weak ptr 저장 타입을 interface-capable(`TWeakObjectPtr<AActor>`/`TScriptInterface`)로 변경. **클래스명·액터(`ADummyConveyor`)는 그대로 유지** (개명·폐기 없음).
+  - **(c-1) `AConveyor::ConfigureTransport`의 `ADummyMachineBase*` 인자를 `IOJJ_ConveyorEndpoint`(또는 `AActor*`)로 완화** — 한 줄 시그니처 수정 + 내부 weak ptr 저장 타입을 interface-capable(`TWeakObjectPtr<AActor>`/`TScriptInterface`)로 변경. **클래스명·액터(`AConveyor`)는 그대로 유지** (개명·폐기 없음).
 > Step 1·2는 이 결정과 독립적으로 진행 가능. Step 3 진입 시 (c-1) 적용.
 
 ---
 
 ## Step 1 — 저장 타입 일반화 (`AMachineBase*` → `AActor*`), 동작 무변경
-**왜:** 컨베이어(`ADummyConveyor : AActor`, 머신 아님)를 셀에 등록하려면 컨테이너가 `AActor`를 담아야 함. `ADummyGrid`가 이미 이 형태(`OccupiedCells: TWeakObjectPtr<AActor>`, `ActorToCells`).
+**왜:** 컨베이어(`AConveyor : AActor`, 머신 아님)를 셀에 등록하려면 컨테이너가 `AActor`를 담아야 함. `ADummyGrid`가 이미 이 형태(`OccupiedCells: TWeakObjectPtr<AActor>`, `ActorToCells`).
 
 **변경:**
 - `OccupiedCells` → `TMap<FIntPoint, TWeakObjectPtr<AActor>>`
@@ -103,17 +109,17 @@
 
 ---
 
-## Step 3 — 그리드가 기존 `ADummyConveyor`를 인지·등록 (클래스 무변경)
-**왜:** 컨베이어 경로 유효성 판정 + 셀 점유 등록을 `AOJJ_Grid`로 가져온다. **`ADummyConveyor`는 그대로**, 그리드가 그 actor에 대해 `SetPath`/`ConfigureTransport`만 호출.
+## Step 3 — 그리드가 기존 `AConveyor`를 인지·등록 (클래스 무변경)
+**왜:** 컨베이어 경로 유효성 판정 + 셀 점유 등록을 `AOJJ_Grid`로 가져온다. **`AConveyor`는 그대로**, 그리드가 그 actor에 대해 `SetPath`/`ConfigureTransport`만 호출.
 
 **선결:** 1-A 엔드포인트 = ✅ (c-1) 확정. 진입 시 적용:
 - `UInterface IOJJ_ConveyorEndpoint` 신설 + 엔드포인트 머신이 구현(`CanAddInputItem`/`TakeOutputItem` 위임).
-- **(c-1)** `ADummyConveyor::ConfigureTransport(ADummyMachineBase*, ADummyMachineBase*)` → `(...IOJJ_ConveyorEndpoint... / AActor*)`로 한 줄 완화. 내부 `SourceMachine`/`TargetMachine` weak ptr 저장 타입도 interface-capable로. **`ADummyConveyor` 클래스명·액터 유지.**
+- **(c-1)** `AConveyor::ConfigureTransport(ADummyMachineBase*, ADummyMachineBase*)` → `(...IOJJ_ConveyorEndpoint... / AActor*)`로 한 줄 완화. 내부 `SourceMachine`/`TargetMachine` weak ptr 저장 타입도 interface-capable로. **`AConveyor` 클래스명·액터 유지.**
 
 **추가 (Dummy_GridConveyor.cpp 로직을 OJJ_ 메서드로 가져옴, 컨베이어/머신 클래스 미변경):**
 - 익명 네임스페이스 헬퍼 이식: `OJJ_*` — `GetMachineBackStep/FrontStep`, `IsMachineBackOutputPair`, `IsMachineFrontInputPair`, `FindInputMachineAtPathEnd`, `CollectConveyorReservedCells`.
-- 그리드 메서드: `OJJ_BuildConveyorPlacementPath`, `OJJ_CanPlaceConveyorPath`, `OJJ_TryPlaceConveyor(ADummyConveyor*, PathCells, OutReason)`, `OJJ_RemoveActorAt(FIntPoint)`.
-- `OJJ_TryPlaceConveyor` 내부: `OJJ_RegisterActorCells(Conveyor, ReservedCells)` → `Conveyor->SetActorLocation(...)` → `Conveyor->SetPath(...)` → `Conveyor->ConfigureTransport(cells, source, target)`. **(전부 기존 ADummyConveyor 공개 API)**
+- 그리드 메서드: `OJJ_BuildConveyorPlacementPath`, `OJJ_CanPlaceConveyorPath`, `OJJ_TryPlaceConveyor(AConveyor*, PathCells, OutReason)`, `OJJ_RemoveActorAt(FIntPoint)`.
+- `OJJ_TryPlaceConveyor` 내부: `OJJ_RegisterActorCells(Conveyor, ReservedCells)` → `Conveyor->SetActorLocation(...)` → `Conveyor->SetPath(...)` → `Conveyor->ConfigureTransport(cells, source, target)`. **(전부 기존 AConveyor 공개 API)**
 
 **⚠️ 빠뜨리기 쉬운 의존성 (검토 포인트 직접 대응):**
 1. **엔드포인트 타입(1-A).** `CollectConveyorReservedCells`는 source/target이 아이템 I/O 가능 타입이어야 통과. 현재 프로덕션 머신은 순수 `AMachineBase` → 1-A 결정 미반영 시 **항상 실패**.
@@ -146,7 +152,7 @@
 **통지 방식 — ✅ 2번(이벤트에 데이터 실어 증분 갱신)으로 팀 합의.** 상세 이벤트 명세(종류/페이로드/식별키/재동기화 안전장치)는 Step 4에서 설계. Step 1~3(그리드 공간 작업)과는 독립.
 
 **설계 결정 — 파생 vs 저장:** 기본은 **파생(derive-on-query)**. 연결은 컨베이어의 `OccupiedGridCells` 양끝 + source/target에서 계산 가능 → 매니저가 별도 상태 중복 저장 안 함(불변식 깨질 여지 최소화, YAGNI). 성능 이슈 시에만 매니저 측 캐시.
-- 그리드 측 조회 헬퍼: `OJJ_GetConveyorAtCell(FIntPoint) : ADummyConveyor*` (공간 정보 — 그리드 소속).
+- 그리드 측 조회 헬퍼: `OJJ_GetConveyorAtCell(FIntPoint) : AConveyor*` (공간 정보 — 그리드 소속).
 - 매니저가 그리드(들)를 순회하여 연결쌍(SourceOrigin→TargetOrigin) 집계 → Step 5 스냅샷으로 노출.
 
 **검증:** 다중 컨베이어/분기 시 매니저 집계 연결쌍 정확성. **빌드 + adversarial-review.**
@@ -183,7 +189,7 @@ USTRUCT() struct FOJJ_GridSnapshot {
 };
 ```
 - `UFUNCTION(BlueprintCallable) FOJJ_GridSnapshot AFactoryManager::GetFactorySnapshot() const;` — 매니저가 그리드(들)를 순회하여 머신/컨베이어 각각 채움. 컨베이어의 source/target은 **Origin 좌표로 환산**(포인터 비직렬화 회피).
-- **🚫 sentinel 계약 (Codex 보강):** `ADummyConveyor`는 source/target을 **weak ptr**로 보관(`dummy_converyor.h:75`)이라 stale 가능. 스냅샷 생성 시 endpoint가 유효·등록됨이면 `bHasValidSource/Target=true` + 실제 Origin, **무효/미등록이면 `false`로 두고 `INT_MIN` origin을 무음으로 방출하지 않는다**(소비자가 `bHasValid*`로 분기). 직렬화는 범위 밖이지만 **이 in-memory sentinel 계약은 지금(마지막 범위 Step) 확정**한다.
+- **🚫 sentinel 계약 (Codex 보강):** `AConveyor`는 source/target을 **weak ptr**로 보관(`Conveyor.h`)이라 stale 가능. 스냅샷 생성 시 endpoint가 유효·등록됨이면 `bHasValidSource/Target=true` + 실제 Origin, **무효/미등록이면 `false`로 두고 `INT_MIN` origin을 무음으로 방출하지 않는다**(소비자가 `bHasValid*`로 분기). 직렬화는 범위 밖이지만 **이 in-memory sentinel 계약은 지금(마지막 범위 Step) 확정**한다.
 - **확장 규칙:** 향후 정보는 USTRUCT에 필드 추가만으로 확장(구조 안정). **지금은 추가 안 함.**
 - **범위 밖 명시:** JSON 직렬화·WS 송신은 다음 단계. 스냅샷은 순수 데이터 반환까지.
 
@@ -191,9 +197,25 @@ USTRUCT() struct FOJJ_GridSnapshot {
 
 ---
 
+## Step 6 — `OJJ_Player` · `OJJ_BuildController` 컨베이어 입력 (OJJ_ 영역 신설)
+**왜:** 플레이어가 빌드모드에서 **컨베이어를 드래그로 배치**할 수 있게 한다. 현재 `OJJ_BuildController`는 머신 단일 모드, `OJJ_Player`는 컨베이어 입력이 없다. Dummy(`ADummyBuildController`/`ADummyPlayer`)는 **참고 소스로만 읽고**, 구현은 `OJJ_` 쪽에 신설.
+
+**선결:** Step 3(그리드 컨베이어 인지·`OJJ_TryPlaceConveyor`) 완료 — 입력이 호출할 배치 API가 있어야 함.
+
+**추가 (`OJJ_` 영역만 수정, Dummy 불가침):**
+- `AOJJ_BuildController`: 배치 모드 enum(`EOJJ_BuildPlacementMode { Machine, Conveyor }`) + 컨베이어 드래그 상태(`ConveyorDragCells`) + 드래그 시작/갱신/커밋(`OJJ_TryPlaceConveyor` 호출) + 경로 호버 프리뷰.
+- `AOJJ_Player`: 입력 액션 신설 `IA_SetMachineMode`/`IA_SetConveyorMode`(모드 전환), 좌클릭 드래그 릴리즈/취소 핸들러(`BuildPlaceReleased`/`BuildPlaceCanceled`). `IMC_Build`에 매핑.
+- 머신 배치 경로는 **무변경 회귀**(모드=Machine이 기존 동작).
+
+**검증:** 컨베이어 모드 진입 → 드래그 → 배치 happy/실패 경로, 머신 모드 무변경 회귀. **빌드 + adversarial-review.**
+
+> 참고: Dummy의 입력/드래그 흐름(`UpdateConveyorDrag`/`CommitConveyorDrag` 등)은 **읽기 전용 참고**. `OJJ_`로 옮겨 구현하며 Dummy 파일은 수정하지 않는다.
+
+---
+
 ## 단계 순서 근거
-**[그리드 단계] 1→2→3** 완료 후 **[매니저 단계] 4→5** 진입:
-컨테이너 일반화(1) 없이는 컨베이어 등록 불가 → 입력 API(2) 없이는 경로 끝단 판정 불가 → 인지/등록(3) 없이는 연결 없음 → **(여기까지 `AOJJ_Grid`)** → 완성된 그리드 위에 `AFactoryManager`가 연결 집계(4) → 그 위에 스냅샷(5) **(여기부터 `AFactoryManager`)**. 각 Step은 **이전 Step의 회귀가 통과해야** 진행. (Step 1·2는 1-A 결정과 독립; Step 3 진입 전 1-A 확정 필요. Step 4 진입 전 그리드 Step 1~3 완료 필요.)
+**[그리드] 1→2→3 · [매니저] 4→5 · [입력] 6** (총 Step 1~6, 폐기 단계 없음):
+컨테이너 일반화(1) 없이는 컨베이어 등록 불가 → 입력 API(2) 없이는 경로 끝단 판정 불가 → 인지/등록(3) 없이는 연결 없음 → **(여기까지 `AOJJ_Grid`)** → 완성된 그리드 위에 `AFactoryManager`가 연결 집계(4) → 그 위에 스냅샷(5) **(여기부터 `AFactoryManager`)** → Step 3의 배치 API 위에 플레이어 컨베이어 입력(6) **(`OJJ_Player`/`OJJ_BuildController`)**. 각 Step은 **이전 Step의 회귀가 통과해야** 진행. (Step 1·2는 1-A 결정과 독립; Step 3 진입 전 1-A 확정 필요. Step 4·Step 6 진입 전 그리드 Step 1~3 완료 필요. Step 6은 4·5와 독립이라 순서 무관.)
 
 ## 빠진 선결조건 체크리스트 (Codex 검토용)
 - [ ] 머신 등록 경로가 컨베이어 엔드포인트 가능 타입을 보존/제공하는가(1-A 결정)?
@@ -204,8 +226,11 @@ USTRUCT() struct FOJJ_GridSnapshot {
 - [ ] 스냅샷 source/target Origin 환산이 미등록/stale 머신에서 센티넬 처리되는가?
 
 ## 비범위 (이번 통합 아님)
-- 컨베이어 클래스 수정/개명/이식.
+- **Dummy_* 파일 수정/폐기** — 불가침(읽기 전용). `ADummyGrid` 등 프로토타입 제거 단계 없음.
+- **`ADummyMachineBase` 수정** — 머신베이스 담당자 영역, 읽기만.
+- 컨베이어 추가 개명/이식 — rename은 이미 완료(`AConveyor`, 커밋 `1b22341`). 추가 작업 없음.
 - JSON 직렬화·웹소켓 송수신.
 - 전력·생산량 등 향후 정보 구현(구조만 확장 가능).
-- **빌드모드 드래그 입력 / `OJJ_Player`·`OJJ_BuildController` 플레이어 입력 통합** — 별도 후속 작업.
 - `main` 브랜치 수정.
+
+> ※ 이전 "비범위"였던 **플레이어 컨베이어 입력**은 이번에 **Step 6으로 범위 편입**됨.
