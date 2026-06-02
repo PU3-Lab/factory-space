@@ -90,6 +90,11 @@ private:
 	// Origin부터 머신 풋프린트가 차지하는 셀 좌표 목록. RotationSteps로 90° 회전 footprint 지원(기본 0).
 	TArray<FIntPoint> CalculateFootprint(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
 
+	// 포트 셀 공유 헬퍼: footprint 셀 C 중 (C+Dir)이 footprint 밖이면 C는 Dir쪽 모서리 → 그 이웃(C+Dir)이 포트 셀.
+	// 출력(GetMachineOutputCells)·입력(OJJ_GetMachineInputCells)이 방향만 바꿔 공유. Dir==(0,0)/무효 머신이면 빈 배열.
+	// footprint 모양/회전 무관(EffectiveSize가 X/Y만 swap하므로 모서리 판정 동일).
+	TArray<FIntPoint> OJJ_GetMachinePortCells(AMachineBase* Machine, FIntPoint Dir) const;
+
 	// GC/Destroy된 머신 엔트리를 양방향 맵에서 정리. write 경로 진입부에서 호출.
 	void SweepStaleEntries();
 
@@ -178,6 +183,17 @@ public:
 	// 출력 타깃 셀에 등록된 머신들 (유효만, self 제외, 중복 제거). 다운스트림 연결 후보.
 	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
 	TArray<AMachineBase*> GetMachineOutputTargets(AMachineBase* Machine) const;
+
+	// 머신 입력이 향하는 월드 grid 방향 (= +Front 카디널). 출력(-Front)의 부호 반전.
+	// 무효 머신이면 (0,0) (출력이 (0,0)이면 반전해도 (0,0)). 컨베이어 끝단이 머신 입력 포트에 닿는지 판정에 사용.
+	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
+	FIntPoint OJJ_GetMachineInputDir(AMachineBase* Machine) const;
+
+	// 머신이 아이템을 받는 입력 셀 목록 = footprint의 InputDir쪽 모서리 셀들의 +InputDir 이웃.
+	// GetMachineOutputCells의 입력 대칭(같은 헬퍼 OJJ_GetMachinePortCells 공유). footprint 모양/회전 무관.
+	// 무효/미등록이면 빈 배열. 입력 셀은 off-grid/미점유일 수 있음(호출자 판단).
+	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
+	TArray<FIntPoint> OJJ_GetMachineInputCells(AMachineBase* Machine) const;
 
 	// Origin부터 머신 풋프린트만큼의 셀이 모두 비어있는지 검사. RotationSteps로 회전 footprint 검사(기본 0).
 	UFUNCTION(BlueprintPure, Category = "Grid|Placement")

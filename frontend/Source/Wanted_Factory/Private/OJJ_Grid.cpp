@@ -243,7 +243,7 @@ FIntPoint AOJJ_Grid::GetMachineOutputDir(AMachineBase* Machine) const
 	return CardinalFromVector(Back);
 }
 
-TArray<FIntPoint> AOJJ_Grid::GetMachineOutputCells(AMachineBase* Machine) const
+TArray<FIntPoint> AOJJ_Grid::OJJ_GetMachinePortCells(AMachineBase* Machine, FIntPoint Dir) const
 {
 	TArray<FIntPoint> Result;
 
@@ -253,14 +253,13 @@ TArray<FIntPoint> AOJJ_Grid::GetMachineOutputCells(AMachineBase* Machine) const
 		return Result;
 	}
 
-	const FIntPoint Dir = GetMachineOutputDir(Machine);
 	if (Dir == FIntPoint::ZeroValue)
 	{
 		return Result;
 	}
 
-	// footprint 셀 C 중 (C + Dir)이 footprint 밖이면 C는 Dir쪽 모서리 → 그 이웃이 타깃.
-	// 모양/회전 무관, 멀티셀이면 모서리 셀마다 타깃 생성.
+	// footprint 셀 C 중 (C + Dir)이 footprint 밖이면 C는 Dir쪽 모서리 → 그 이웃이 포트 셀.
+	// 모양/회전 무관, 멀티셀이면 모서리 셀마다 포트 셀 생성.
 	const TSet<FIntPoint> Footprint(*Cells);
 	for (const FIntPoint& Cell : *Cells)
 	{
@@ -271,6 +270,25 @@ TArray<FIntPoint> AOJJ_Grid::GetMachineOutputCells(AMachineBase* Machine) const
 		}
 	}
 	return Result;
+}
+
+TArray<FIntPoint> AOJJ_Grid::GetMachineOutputCells(AMachineBase* Machine) const
+{
+	// 출력 = OutputDir(-Front) 방향 포트 셀. 동작은 기존과 동일(로직을 OJJ_GetMachinePortCells로 추출만).
+	return OJJ_GetMachinePortCells(Machine, GetMachineOutputDir(Machine));
+}
+
+FIntPoint AOJJ_Grid::OJJ_GetMachineInputDir(AMachineBase* Machine) const
+{
+	// 입력 = 앞면(+Front) = 출력(-Front)의 부호 반전. 무효 머신은 출력이 (0,0)이라 반전해도 (0,0).
+	const FIntPoint Out = GetMachineOutputDir(Machine);
+	return FIntPoint(-Out.X, -Out.Y);
+}
+
+TArray<FIntPoint> AOJJ_Grid::OJJ_GetMachineInputCells(AMachineBase* Machine) const
+{
+	// 입력 = InputDir(+Front) 방향 포트 셀. 출력 셀과 같은 헬퍼 공유, 방향만 반전.
+	return OJJ_GetMachinePortCells(Machine, OJJ_GetMachineInputDir(Machine));
 }
 
 TArray<AMachineBase*> AOJJ_Grid::GetMachineOutputTargets(AMachineBase* Machine) const
