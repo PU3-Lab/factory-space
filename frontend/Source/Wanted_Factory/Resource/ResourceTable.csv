@@ -1,4 +1,4 @@
-id,name,type,shape
+rowname,substance,type,shape
 wood,wood,organism,
 sawdust,sawdust,organism,powder
 charcoal,charcoal,fuel,
