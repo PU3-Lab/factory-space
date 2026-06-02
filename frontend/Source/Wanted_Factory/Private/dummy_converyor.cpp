@@ -4,8 +4,11 @@
 
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/TextRenderComponent.h"
+#include "Dummy_MachineBase.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
+#include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace
@@ -80,6 +83,14 @@ ADummyConveyor::ADummyConveyor()
 	CornerSegmentInstances->SetupAttachment(Root);
 	CornerSegmentInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
+	DebugStateText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("DebugStateText"));
+	DebugStateText->SetupAttachment(Root);
+	DebugStateText->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	DebugStateText->SetHorizontalAlignment(EHTA_Center);
+	DebugStateText->SetVerticalAlignment(EVRTA_TextCenter);
+	DebugStateText->SetWorldSize(DebugTextWorldSize);
+	DebugStateText->SetRelativeRotation(FRotator(60.0f, 0.0f, 0.0f));
+
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Engine/BasicShapes/Cube.Cube"));
 	if (CubeMesh.Succeeded())
 	{
@@ -101,6 +112,14 @@ void ADummyConveyor::OnConstruction(const FTransform& Transform)
 	Super::OnConstruction(Transform);
 
 	RebuildVisuals();
+	UpdateDebugStateText();
+}
+
+void ADummyConveyor::BeginPlay()
+{
+	Super::BeginPlay();
+
+	RestartItemMoveTimer();
 }
 
 void ADummyConveyor::SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize)
@@ -117,12 +136,97 @@ void ADummyConveyor::SetPath(const TArray<FIntPoint>& NewPathCells, float NewCel
 	}
 
 	RebuildVisuals();
+	UpdateDebugStateText();
+}
+
+void ADummyConveyor::ConfigureTransport(
+	const TArray<FIntPoint>& NewOccupiedGridCells,
+	ADummyMachineBase* NewSourceMachine,
+	ADummyMachineBase* NewTargetMachine)
+{
+	OccupiedGridCells.Reset(NewOccupiedGridCells.Num());
+	for (const FIntPoint& Cell : NewOccupiedGridCells)
+	{
+		OccupiedGridCells.AddUnique(Cell);
+	}
+
+	SourceMachine = NewSourceMachine;
+	TargetMachine = NewTargetMachine;
+	ResetItemSlots();
+	RestartItemMoveTimer();
+	UpdateDebugStateText();
+
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("[DummyConveyor] Occupied grid count: %d, travel time: %.2f sec"),
+		GetOccupiedGridCount(),
+		GetTravelTimePerItem());
 }
 
 void ADummyConveyor::ClearPath()
 {
 	PathCells.Reset();
+	OccupiedGridCells.Reset();
+	SourceMachine.Reset();
+	TargetMachine.Reset();
+	ItemSlots.Reset();
+	StopItemMoveTimer();
 	RebuildVisuals();
+	UpdateDebugStateText();
+}
+
+bool ADummyConveyor::IsOutputBlocked() const
+{
+	if (ItemSlots.Num() == 0)
+	{
+		return false;
+	}
+
+	const FName LastItem = ItemSlots.Last();
+	return !LastItem.IsNone()
+		&& (!TargetMachine.IsValid() || !TargetMachine->CanReceiveConveyorItem(LastItem, 1));
+}
+
+void ADummyConveyor::UpdateDebugStateText()
+{
+	if (!DebugStateText)
+	{
+		return;
+	}
+
+	DebugStateText->SetVisibility(bShowDebugStateText);
+	DebugStateText->SetWorldSize(DebugTextWorldSize);
+	DebugStateText->SetRelativeLocation(GetDebugTextLocalLocation());
+	if (!bShowDebugStateText)
+	{
+		return;
+	}
+
+	bool bSlotsFull = ItemSlots.Num() > 0;
+	for (const FName& Item : ItemSlots)
+	{
+		if (Item.IsNone())
+		{
+			bSlotsFull = false;
+			break;
+		}
+	}
+
+	const FString MovingItemSummary = BuildMovingItemSummary();
+	const bool bHasMovingItems = !MovingItemSummary.Equals(TEXT("None"));
+	const bool bFlowBlocked = IsOutputBlocked() && bSlotsFull;
+	const TCHAR* StatusText = bFlowBlocked
+		? TEXT("blocked")
+		: (bHasMovingItems ? TEXT("moving") : TEXT("idle"));
+
+	const FString DebugText = FString::Printf(
+		TEXT("Conveyor\nGrids: %d\nTravel: %.2fs\nStatus: %s\nItems\n%s"),
+		GetOccupiedGridCount(),
+		GetTravelTimePerItem(),
+		StatusText,
+		*MovingItemSummary);
+	DebugStateText->SetText(FText::FromString(DebugText));
 }
 
 void ADummyConveyor::RebuildVisuals()
@@ -178,4 +282,131 @@ void ADummyConveyor::RebuildVisuals()
 		const FVector Scale = bHorizontal ? StraightScaleX : StraightScaleY;
 		StraightSegmentInstances->AddInstance(FTransform(Rotation, LocalLocation, Scale));
 	}
+}
+
+void ADummyConveyor::ResetItemSlots()
+{
+	ItemSlots.SetNum(OccupiedGridCells.Num());
+	for (FName& ItemSlot : ItemSlots)
+	{
+		ItemSlot = NAME_None;
+	}
+}
+
+void ADummyConveyor::RestartItemMoveTimer()
+{
+	StopItemMoveTimer();
+
+	if (!bAutoMoveItems || ItemSlots.Num() == 0 || !SourceMachine.IsValid() || !TargetMachine.IsValid())
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	World->GetTimerManager().SetTimer(
+		ItemMoveTimerHandle,
+		this,
+		&ADummyConveyor::MoveItemsOneGrid,
+		FMath::Max(0.01f, SecondsPerGrid),
+		true);
+}
+
+void ADummyConveyor::StopItemMoveTimer()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ItemMoveTimerHandle);
+	}
+}
+
+void ADummyConveyor::MoveItemsOneGrid()
+{
+	if (ItemSlots.Num() == 0 || !SourceMachine.IsValid() || !TargetMachine.IsValid())
+	{
+		UpdateDebugStateText();
+		return;
+	}
+
+	const int32 LastIndex = ItemSlots.Num() - 1;
+	const FName LastItem = ItemSlots[LastIndex];
+	if (!LastItem.IsNone())
+	{
+		if (TargetMachine->CanReceiveConveyorItem(LastItem, 1)
+			&& TargetMachine->ReceiveConveyorItem(LastItem, 1))
+		{
+			ItemSlots[LastIndex] = NAME_None;
+		}
+	}
+
+	for (int32 Index = LastIndex; Index > 0; --Index)
+	{
+		if (ItemSlots[Index].IsNone() && !ItemSlots[Index - 1].IsNone())
+		{
+			ItemSlots[Index] = ItemSlots[Index - 1];
+			ItemSlots[Index - 1] = NAME_None;
+		}
+	}
+
+	if (ItemSlots[0].IsNone())
+	{
+		FName NewItem = NAME_None;
+		if (SourceMachine->TryTakeFirstOutputItem(NewItem))
+		{
+			ItemSlots[0] = NewItem;
+		}
+	}
+
+	UpdateDebugStateText();
+}
+
+FVector ADummyConveyor::GetDebugTextLocalLocation() const
+{
+	if (PathCells.Num() == 0)
+	{
+		return DebugTextOffset;
+	}
+
+	FVector Center = FVector::ZeroVector;
+	for (const FIntPoint& Cell : PathCells)
+	{
+		Center.X += (Cell.X * CellSize) + (CellSize * 0.5f);
+		Center.Y += (Cell.Y * CellSize) + (CellSize * 0.5f);
+	}
+
+	Center /= static_cast<float>(PathCells.Num());
+	return Center + DebugTextOffset;
+}
+
+FString ADummyConveyor::BuildMovingItemSummary() const
+{
+	TMap<FName, int32> MovingItems;
+	for (const FName& Item : ItemSlots)
+	{
+		if (!Item.IsNone())
+		{
+			MovingItems.FindOrAdd(Item)++;
+		}
+	}
+
+	if (MovingItems.Num() == 0)
+	{
+		return TEXT("None");
+	}
+
+	FString Result;
+	for (const TPair<FName, int32>& Item : MovingItems)
+	{
+		if (!Result.IsEmpty())
+		{
+			Result += TEXT("\n");
+		}
+		Result += FString::Printf(TEXT("%s x%d"), *Item.Key.ToString(), Item.Value);
+	}
+
+	return Result;
 }

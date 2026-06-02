@@ -6,8 +6,10 @@
 #include "GameFramework/Actor.h"
 #include "dummy_converyor.generated.h"
 
+class ADummyMachineBase;
 class UInstancedStaticMeshComponent;
 class USceneComponent;
+class UTextRenderComponent;
 
 UCLASS()
 class WANTED_FACTORY_API ADummyConveyor : public AActor
@@ -18,6 +20,7 @@ public:
 	ADummyConveyor();
 
 protected:
+	virtual void BeginPlay() override;
 	virtual void OnConstruction(const FTransform& Transform) override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Components")
@@ -28,6 +31,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Components")
 	TObjectPtr<UInstancedStaticMeshComponent> CornerSegmentInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Components")
+	TObjectPtr<UTextRenderComponent> DebugStateText;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Grid", meta = (ClampMin = "1.0"))
 	float CellSize = 100.0f;
@@ -44,9 +50,44 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Conveyor|Path")
 	TArray<FIntPoint> PathCells;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Path")
+	TArray<FIntPoint> OccupiedGridCells;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Items")
+	TArray<FName> ItemSlots;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items", meta = (ClampMin = "0.01"))
+	float SecondsPerGrid = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items")
+	bool bAutoMoveItems = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Debug")
+	bool bShowDebugStateText = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Debug")
+	FVector DebugTextOffset = FVector(0.0f, 0.0f, 90.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Debug", meta = (ClampMin = "1.0"))
+	float DebugTextWorldSize = 24.0f;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Conveyor|Items")
+	TWeakObjectPtr<ADummyMachineBase> SourceMachine;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Conveyor|Items")
+	TWeakObjectPtr<ADummyMachineBase> TargetMachine;
+
+	FTimerHandle ItemMoveTimerHandle;
+
 public:
 	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
 	void SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize);
+
+	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
+	void ConfigureTransport(
+		const TArray<FIntPoint>& NewOccupiedGridCells,
+		ADummyMachineBase* NewSourceMachine,
+		ADummyMachineBase* NewTargetMachine);
 
 	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
 	void ClearPath();
@@ -54,9 +95,30 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Conveyor|Path")
 	TArray<FIntPoint> GetPathCells() const { return PathCells; }
 
+	UFUNCTION(BlueprintPure, Category = "Conveyor|Path")
+	TArray<FIntPoint> GetOccupiedGridCells() const { return OccupiedGridCells; }
+
+	UFUNCTION(BlueprintPure, Category = "Conveyor|Path")
+	int32 GetOccupiedGridCount() const { return OccupiedGridCells.Num(); }
+
+	UFUNCTION(BlueprintPure, Category = "Conveyor|Items")
+	float GetTravelTimePerItem() const { return OccupiedGridCells.Num() * SecondsPerGrid; }
+
+	UFUNCTION(BlueprintPure, Category = "Conveyor|Items")
+	bool IsOutputBlocked() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Conveyor|Debug")
+	void UpdateDebugStateText();
+
 	UFUNCTION(BlueprintPure, Category = "Conveyor|Grid")
 	float GetCellSize() const { return CellSize; }
 
 private:
 	void RebuildVisuals();
+	void ResetItemSlots();
+	void RestartItemMoveTimer();
+	void StopItemMoveTimer();
+	void MoveItemsOneGrid();
+	FVector GetDebugTextLocalLocation() const;
+	FString BuildMovingItemSummary() const;
 };
