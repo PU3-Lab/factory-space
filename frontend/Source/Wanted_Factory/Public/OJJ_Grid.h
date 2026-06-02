@@ -128,6 +128,51 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
 	bool IsValidGridCell(FIntPoint Cell) const;
 
+	// === Grid Query (GridManager/컨베이어용 읽기 전용 조회) ===
+	// OccupiedCells / MachineToCells를 노출만 함 — write 경로/데이터는 건드리지 않음.
+
+	// 셀에 등록된 머신 반환. 비점유/GC된 머신이면 nullptr.
+	// const라 SweepStaleEntries는 못 부르지만 weak ptr Get()으로 stale을 nullptr 처리.
+	UFUNCTION(BlueprintPure, Category = "Grid|Query")
+	AMachineBase* GetMachineAtCell(FIntPoint Cell) const;
+
+	// 셀 점유 여부. stale(파괴된) 머신 셀은 false (GetMachineAtCell과 일관).
+	UFUNCTION(BlueprintPure, Category = "Grid|Query")
+	bool IsCellOccupied(FIntPoint Cell) const;
+
+	// 머신 풋프린트의 lower-left(=등록 시 Origin). 미등록 머신이면 (INT_MIN, INT_MIN) 센티넬.
+	// 풋프린트 셀은 Origin부터 비음수 offset이라 min(X),min(Y) == Origin (회전 무관 — EffectiveSize가 X/Y만 swap).
+	UFUNCTION(BlueprintPure, Category = "Grid|Query")
+	FIntPoint GetMachineOrigin(AMachineBase* Machine) const;
+
+	// 머신 점유 셀 목록(footprint) 포인터. 미등록/무효(IsValid 실패) 머신이면 nullptr. C++ 전용(BP 비호환 반환형).
+	// ⚠️ 수명: 반환 포인터는 MachineToCells 내부를 가리킴 — 다음 grid 변경(TryPlace/Remove/stale sweep, rehash)
+	//    시 무효화됨. 즉시(같은 프레임) 읽기 전용으로만 사용하고 절대 캐싱하지 말 것. 보관이 필요하면 값 복사.
+	const TArray<FIntPoint>* GetMachineCells(AMachineBase* Machine) const;
+
+	// === Grid Conveyor (출력포트 자급 판별 — ssr 포트 시스템 미변경) ===
+	// 컨벤션: 출력 = 머신 뒤(-Front). 액터 transform(yaw) 기준이라 메시 art와 무관하게 일관.
+	// 메시 art-front의 +X 시각 정합은 별도(리임포트) 작업 — 로직 정확성과 무관.
+
+	// 벡터(XY)를 가장 우세한 단일 축의 카디널 grid offset((±1,0)/(0,±1))으로 스냅. 대각선 방지.
+	// tie(|X|==|Y|, 예: 정확히 45°)는 결정적으로 X축 선택. 비유한/거의 0인 입력은 (0,0) 반환.
+	// Codex 검증: 90° 배수 정확, 임의 각도도 우세축 스냅으로 대각선 아티팩트 차단.
+	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
+	static FIntPoint CardinalFromVector(FVector V);
+
+	// 머신 출력이 향하는 월드 grid 방향 (= -Front 카디널). 무효 머신이면 (0,0).
+	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
+	FIntPoint GetMachineOutputDir(AMachineBase* Machine) const;
+
+	// 머신이 아이템을 내보내는 타깃 셀 목록 = footprint의 OutputDir쪽 모서리 셀들의 +OutputDir 이웃.
+	// footprint 모양/회전 무관. 무효/미등록이면 빈 배열. 타깃 셀은 off-grid/미점유일 수 있음(호출자 판단).
+	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
+	TArray<FIntPoint> GetMachineOutputCells(AMachineBase* Machine) const;
+
+	// 출력 타깃 셀에 등록된 머신들 (유효만, self 제외, 중복 제거). 다운스트림 연결 후보.
+	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
+	TArray<AMachineBase*> GetMachineOutputTargets(AMachineBase* Machine) const;
+
 	// Origin부터 머신 풋프린트만큼의 셀이 모두 비어있는지 검사. RotationSteps로 회전 footprint 검사(기본 0).
 	UFUNCTION(BlueprintPure, Category = "Grid|Placement")
 	bool CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
