@@ -34,6 +34,7 @@ class AgentTool(Protocol):
         self,
         payload: dict[str, Any],
         context: AgentContext,
+        args: dict[str, Any] | None = None,
     ) -> object:
         """Execute the tool with request payload and agent context."""
 
