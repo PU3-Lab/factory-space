@@ -12,8 +12,9 @@
 | Step 1 — 저장 타입 일반화 | ✅ 완료·커밋 | `4e369bd` |
 | Step 2 — 입력 포트 API | ✅ 완료·커밋 | `08701fd` |
 | Step 3-a — 컨베이어 셀 등록/조회 | ✅ 완료·커밋 | `549e771` |
-| Step 3-b — 경로/포트 인지 이식 | ⏳ 대기 | **I/O 이식 PR 후** |
-| Step 3-c — 엔드포인트 연결 | ⏳ 블록 | **담당자 `AMachineBase` I/O 이식 PR 머지+풀 선행 필요** |
+| **main 머지 (PR #55 I/O 이식)** | ✅ 완료·빌드 통과 | `495d4f3` — 블로커 해소 |
+| Step 3-b — 경로/포트 인지 이식 | ⏳ 다음 | **포트모델 A/B 결정 후 착수** |
+| Step 3-c — 엔드포인트 연결 | ⏳ 대기 | 엔드포인트=`AMachineBase*` 직접(인터페이스 불필요 확정) |
 | Step 4·5 (매니저), 6 (입력) | ⏳ 대기 | 그리드 Step 3 완료 후 |
 
 ## 0-Z. 범위 원칙 (2026-06-02 재확정)
@@ -125,9 +126,19 @@
 
 **하위 분할:** **3-a ✅(완료·커밋)** 그리드 셀 등록/조회(`OJJ_GetConveyorAtCell`/`OJJ_RegisterActorCells`/`OJJ_RemoveActorAt`) · **3-b** 경로/포트 인지 로직 이식 · **3-c** 엔드포인트 연결(아이템 transport).
 
-**선결 (3-b/3-c):** 🔄 1-A 방향 변경 — 아이템 I/O가 `AMachineBase`로 이식되면 **엔드포인트 = `AMachineBase*` 직접 사용**, `IOJJ_ConveyorEndpoint`/(c-1) **불필요(철회 검토)**.
-- `AConveyor::ConfigureTransport`의 source/target 인자는 `AMachineBase*`로 단순화 가능(I/O가 베이스에 있으므로).
-- **⛓️ 3-c는 담당자의 `AMachineBase` 아이템 I/O 이식 PR 머지+풀 선행 필요**(그 전까지 블록).
+**선결 (3-b/3-c) — ✅ 해소 (main 머지 `495d4f3`, PR #55):**
+- **`AMachineBase` 아이템 I/O 확보** — `PeekFirstOutputItem`/`TryTakeFirstOutputItem`/`CanReceiveConveyorItem`/`ReceiveConveyorItem`가 베이스로 이식됨(`ADummyMachineBase`에서 제거 = 이동).
+- **`AConveyor::ConfigureTransport(const TArray<FIntPoint>&, AMachineBase*, AMachineBase*)` 확정** — 엔드포인트 `AMachineBase*` 직접. `IsOutputBlocked`도 `TargetMachine->CanReceiveConveyorItem` 베이스 호출.
+- **`IOJJ_ConveyorEndpoint` / (c-1) 철회 확정** — I/O가 베이스에 있으므로 경계 인터페이스 불필요.
+- **Dummy 인지 헬퍼가 이미 `AMachineBase`로 일반화됨** — 머지된 `Dummy_GridConveyor.cpp`의 `CollectConveyorReservedCells`가 옛 `Cast<ADummyMachineBase>` 요구를 제거하고 일반 `if(!Source||!Target)` 체크로 변경 → **이식 시 머신 타입 치환 불필요**.
+- 머지 후 **빌드 통과** 확인(전 모듈 재컴파일 + UHT).
+
+**🔑 3-b 핵심 결정 (미정 — 착수 시 확정): 포트 판정 모델**
+| 안 | 내용 | 트레이드오프 |
+|---|---|---|
+| **(A) Dummy dot-product 헬퍼 이식** ⭐권장 | `GetMachineBackStep/FrontStep` + `IsBehind/InFrontOfMachine`(dot-product) + `IsMachineBackOutputPair`/`IsMachineFrontInputPair`를 `OJJ_*`로 그대로 이식 | **parity 보장**(원본 동일), 위험 적음. OJJ Step 2 입력 API와 중복 존재 |
+| (B) OJJ Step 2 API 재작성 | `CardinalFromVector` + `OJJ_GetMachineInputCells/OutputCells`로 포트 판정 재작성 | OJJ 자산 재사용·중복 제거. 단 포트 셀 산출 규칙이 dot-product와 미묘히 달라 **회귀 위험** |
+> **권장 = (A)** — 이식 parity 우선, 위험 최소. **OJJ Step 2 입력 API는 Step 5(스냅샷)에서 활용**(머신 입력 방향/셀 노출). 다음 세션 착수 시 A/B 최종 확정.
 
 **추가 (Dummy_GridConveyor.cpp 로직을 OJJ_ 메서드로 가져옴, 컨베이어/머신 클래스 미변경):**
 - 익명 네임스페이스 헬퍼 이식: `OJJ_*` — `GetMachineBackStep/FrontStep`, `IsMachineBackOutputPair`, `IsMachineFrontInputPair`, `FindInputMachineAtPathEnd`, `CollectConveyorReservedCells`.
@@ -135,7 +146,7 @@
 - `OJJ_TryPlaceConveyor` 내부: `OJJ_RegisterActorCells(Conveyor, ReservedCells)` → `Conveyor->SetActorLocation(...)` → `Conveyor->SetPath(...)` → `Conveyor->ConfigureTransport(cells, source, target)`. **(전부 기존 AConveyor 공개 API)**
 
 **⚠️ 빠뜨리기 쉬운 의존성 (검토 포인트 직접 대응):**
-1. **엔드포인트 타입(1-A).** `CollectConveyorReservedCells`는 source/target이 아이템 I/O 가능 타입이어야 통과. 현재 프로덕션 머신은 순수 `AMachineBase` → 1-A 결정 미반영 시 **항상 실패**.
+1. ~~**엔드포인트 타입(1-A).**~~ ✅ **해소됨** — main 머지로 I/O가 `AMachineBase`에 있어 `CollectConveyorReservedCells`가 순수 `AMachineBase` 엔드포인트로 통과(머지본이 `ADummyMachineBase` 요구 제거). 추가 조치 불필요.
 2. **`Grid->GridToWorld` / `IsValidGridCell` 의존** — 헬퍼가 그리드 좌표 변환을 호출. `AOJJ_Grid`의 동명 함수로 바인딩되는지(시그니처 동일) 확인.
 3. **포트 컨벤션 일치** — Dummy는 "출력=뒤(-Front), 입력=앞(+Front)". `AOJJ_Grid::GetMachineOutputDir`도 `-Front`. Step 2 입력 API와 **부호 컨벤션 충돌 없는지** 교차 확인.
 4. **충돌/연속성 검증** — `ManhattanDistance==1` 연속성, 점유 충돌, "입력 포트 직전 셀은 비어야 함" 규칙 누락 금지.
