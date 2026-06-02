@@ -3,6 +3,7 @@
 #include "Dummy_Grid.h"
 
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Dummy_MachineBase.h"
 #include "MachineBase.h"
 #include "dummy_converyor.h"
 
@@ -211,9 +212,19 @@ bool CollectConveyorReservedCells(
 	const TMap<TWeakObjectPtr<AActor>, TArray<FIntPoint>>& ActorToCells,
 	const TArray<FIntPoint>& PathCells,
 	TArray<FIntPoint>& OutReservedCells,
-	FString& OutReason)
+	FString& OutReason,
+	AMachineBase** OutSourceMachine = nullptr,
+	AMachineBase** OutTargetMachine = nullptr)
 {
 	OutReservedCells.Reset();
+	if (OutSourceMachine)
+	{
+		*OutSourceMachine = nullptr;
+	}
+	if (OutTargetMachine)
+	{
+		*OutTargetMachine = nullptr;
+	}
 
 	if (PathCells.Num() < 2)
 	{
@@ -242,6 +253,12 @@ bool CollectConveyorReservedCells(
 		bEndsOnMachine,
 		OutReason))
 	{
+		return false;
+	}
+
+	if (!Cast<ADummyMachineBase>(StartMachine) || !Cast<ADummyMachineBase>(EndMachine))
+	{
+		OutReason = TEXT("Conveyor item transfer requires ADummyMachineBase endpoints.");
 		return false;
 	}
 
@@ -276,6 +293,15 @@ bool CollectConveyorReservedCells(
 		}
 
 		OutReservedCells.AddUnique(Cell);
+	}
+
+	if (OutSourceMachine)
+	{
+		*OutSourceMachine = StartMachine;
+	}
+	if (OutTargetMachine)
+	{
+		*OutTargetMachine = EndMachine;
 	}
 
 	OutReason.Reset();
@@ -375,8 +401,32 @@ bool ADummyGrid::TryPlaceConveyor(ADummyConveyor* Conveyor, const TArray<FIntPoi
 	}
 
 	TArray<FIntPoint> ReservedCells;
-	if (!CollectConveyorReservedCells(this, OccupiedCells, ActorToCells, PlacementCells, ReservedCells, OutReason))
+	AMachineBase* SourceMachine = nullptr;
+	AMachineBase* TargetMachine = nullptr;
+	if (!CollectConveyorReservedCells(
+		this,
+		OccupiedCells,
+		ActorToCells,
+		PlacementCells,
+		ReservedCells,
+		OutReason,
+		&SourceMachine,
+		&TargetMachine))
 	{
+		return false;
+	}
+
+	if (ReservedCells.Num() == 0)
+	{
+		OutReason = TEXT("Conveyor must occupy at least one grid cell.");
+		return false;
+	}
+
+	ADummyMachineBase* DummySourceMachine = Cast<ADummyMachineBase>(SourceMachine);
+	ADummyMachineBase* DummyTargetMachine = Cast<ADummyMachineBase>(TargetMachine);
+	if (!DummySourceMachine || !DummyTargetMachine)
+	{
+		OutReason = TEXT("Conveyor item transfer requires ADummyMachineBase endpoints.");
 		return false;
 	}
 
@@ -387,6 +437,7 @@ bool ADummyGrid::TryPlaceConveyor(ADummyConveyor* Conveyor, const TArray<FIntPoi
 
 	Conveyor->SetActorLocation(GetActorLocation());
 	Conveyor->SetPath(PlacementCells, CellSize);
+	Conveyor->ConfigureTransport(ReservedCells, DummySourceMachine, DummyTargetMachine);
 	return true;
 }
 
