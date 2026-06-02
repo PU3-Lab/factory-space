@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "Engine/DataTable.h" // 데이터 테이블 헤더
+#include "Engine/DataTable.h"
 #include "UI_BuildModeMain.generated.h"
 
 UCLASS()
@@ -10,14 +10,28 @@ class UUI_BuildModeMain : public UUserWidget
 {
 	GENERATED_BODY()
 
+public:
+	virtual void NativeConstruct() override;
+	
+	UFUNCTION(BlueprintCallable, Category = "Quickslot")
+	void HandleQuickslotClicked(int32 SlotIndex);
+
 protected:
 	UPROPERTY(meta = (BindWidget))
 	class UHorizontalBox* HBox_QuickslotBar; 
 
-	// DT_TestFactoryData를 넣을 변수
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FactoryData")
 	class UDataTable* FactoryDataTable;
 
-public:
-	virtual void NativeConstruct() override;
+private:
+	void OnKey1Pressed();
+	void OnKey2Pressed();
+	void OnKey3Pressed();
+	void OnKey4Pressed();
+	void OnKey5Pressed();
+	void OnKey6Pressed();
+	void OnKey7Pressed();
+	void OnKey8Pressed();
+	void OnKey9Pressed();
+	void OnKey0Pressed();
 };
