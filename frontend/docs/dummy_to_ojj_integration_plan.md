@@ -1,9 +1,22 @@
 # Dummy → OJJ 그리드 컨베이어 통합 계획서
 
-> 목표: `AOJJ_Grid`를 **머신 + 컨베이어 연결의 단일 소스(single source of truth)**로 만들고,
-> 확장 가능한 **USTRUCT 스냅샷 조회 API**를 제공한다.
+> 목표: 공장의 머신 + 컨베이어를 **공간(그리드)**과 **전체 상태 집계(매니저)**로 책임 분리한다.
+> - `AOJJ_Grid` = **공간/배치의 단일 소스** (셀 점유·머신 위치·컨베이어 경로).
+> - `AFactoryManager`(`UGameInstanceSubsystem`) = **전체 상태 집계** (연결 그래프·스냅샷, 향후 전력·생산).
 > 컨베이어 클래스 `ADummyConveyor`는 **그대로 사용**한다(이식·개명·폐기 없음).
-> 그리드가 *기존* `ADummyConveyor`를 **인지·등록·연결**하게 만드는 것이 핵심.
+> 그리드가 *기존* `ADummyConveyor`를 **인지·등록**하고, 매니저가 그리드를 조회해 **연결을 집계**하는 것이 핵심.
+
+## 0-A. 아키텍처 — 책임 분리 (2026-06-02 회의 반영)
+**집계 책임을 `AOJJ_Grid`가 아닌 별도 `AFactoryManager`로 분리한다.**
+
+| 컴포넌트 | 형태 | 책임 |
+|---|---|---|
+| `AOJJ_Grid` | `AActor` (레벨 배치) | **공간/배치** — 셀 점유(`OccupiedCells`), 머신 위치/footprint(`OJJ_ActorToCells`/`OJJ_ActorToOrigin`), 컨베이어 경로 등록, 포트(입출력) 판정 |
+| `AFactoryManager` | **`UGameInstanceSubsystem`** ✅ 확정 | **전체 상태 집계** — 그리드를 조회(derive-on-query)해 연결 그래프 구성, 스냅샷 API 제공, 향후 전력·생산 등 확장 |
+
+- **매니저 형태 = `UGameInstanceSubsystem` 확정.** 웹소켓 클라(`OJJ_FactoryWSClient`)와 **동일 패턴**(레벨 독립, GameInstance 수명). 차후 WS 송신 주체와 자연 연결.
+- **선후관계:** **그리드 작업(Step 1~3)을 모두 완료한 뒤** 매니저 단계(Step 4~5)로 진입. 매니저는 완성된 그리드 조회 API 위에 얹힌다.
+- Step 1~3은 **소속/내용 변경 없음**(그대로 `AOJJ_Grid`). Step 4~5만 소유자가 `AFactoryManager`로 이동.
 
 ## 0. 확정 결정사항 (사용자)
 - **머신 식별 = 좌표(`FIntPoint` Origin).** 안정적 id 없음, 포인터 직렬화 불가 → 모든 조회/연결은 좌표 키.
@@ -123,19 +136,25 @@
 
 ---
 
-## Step 4 — 연결 그래프를 그리드가 단일 소스로 보유
-**왜:** "A(출력) →[컨베이어]→ B(입력)" 토폴로지를 그리드가 권위 있게 안다(목표의 핵심).
+## Step 4 — 연결 그래프를 `AFactoryManager`가 집계 (소속 이동: 그리드 → 매니저)
+**왜:** "A(출력) →[컨베이어]→ B(입력)" 토폴로지를 **매니저가** 권위 있게 집계한다. 그리드는 공간 정보만 제공하고, 연결 그래프 구성은 매니저 책임(0-A 분리).
 
-**설계 결정 — 파생 vs 저장:** 기본은 **파생(derive-on-query)**. 연결은 컨베이어의 `OccupiedGridCells` 양끝 + source/target에서 계산 가능 → 별도 상태 중복 저장 안 함(불변식 깨질 여지 최소화, YAGNI). 성능 이슈 시에만 캐시.
-- `OJJ_GetConveyorAtCell(FIntPoint) : ADummyConveyor*`
-- 연결 조회는 Step 5 스냅샷에서 좌표쌍(SourceOrigin→TargetOrigin)으로 노출.
+> **소속 변경 (회의 반영):** 연결 그래프는 ~~`AOJJ_Grid`~~ → **`AFactoryManager`(`UGameInstanceSubsystem`)**가 보유. 매니저가 그리드를 조회(derive-on-query)해 집계.
 
-**검증:** 다중 컨베이어/분기 시 연결쌍 정확성. **빌드 + adversarial-review.**
+**선결:** Step 1~3(그리드) 완료 후 진입. 매니저는 완성된 그리드 조회 API에 의존.
+
+**설계 결정 — 파생 vs 저장:** 기본은 **파생(derive-on-query)**. 연결은 컨베이어의 `OccupiedGridCells` 양끝 + source/target에서 계산 가능 → 매니저가 별도 상태 중복 저장 안 함(불변식 깨질 여지 최소화, YAGNI). 성능 이슈 시에만 매니저 측 캐시.
+- 그리드 측 조회 헬퍼: `OJJ_GetConveyorAtCell(FIntPoint) : ADummyConveyor*` (공간 정보 — 그리드 소속).
+- 매니저가 그리드(들)를 순회하여 연결쌍(SourceOrigin→TargetOrigin) 집계 → Step 5 스냅샷으로 노출.
+
+**검증:** 다중 컨베이어/분기 시 매니저 집계 연결쌍 정확성. **빌드 + adversarial-review.**
 
 ---
 
-## Step 5 — 확장형 USTRUCT 스냅샷 조회 API (좌표 기반)
-**왜:** 단일 소스를 외부(향후 AI/WS)가 읽을 표준 read-only 표면. **좌표 식별**이라 다음 단계 직렬화에 그대로 사용.
+## Step 5 — 확장형 USTRUCT 스냅샷 조회 API (좌표 기반, `AFactoryManager` 소속)
+**왜:** 전체 상태를 외부(향후 AI/WS)가 읽을 표준 read-only 표면. **좌표 식별**이라 다음 단계 직렬화에 그대로 사용.
+
+> **소속 변경 (회의 반영):** 스냅샷 API는 ~~`AOJJ_Grid::OJJ_GetGridSnapshot`~~ → **`AFactoryManager::GetFactorySnapshot`**로 이동. USTRUCT 설계(`FOJJ_GridSnapshot` 등)는 **그대로 유지**, 소유자만 매니저. 매니저가 그리드를 조회해 스냅샷을 구성.
 
 **USTRUCT (BlueprintType, OJJ_ prefix):**
 ```cpp
@@ -161,7 +180,7 @@ USTRUCT() struct FOJJ_GridSnapshot {
     TArray<FOJJ_ConveyorSnapshot> Conveyors;
 };
 ```
-- `UFUNCTION(BlueprintCallable) FOJJ_GridSnapshot OJJ_GetGridSnapshot() const;` — 맵 순회하여 머신/컨베이어 각각 채움. 컨베이어의 source/target은 **Origin 좌표로 환산**(포인터 비직렬화 회피).
+- `UFUNCTION(BlueprintCallable) FOJJ_GridSnapshot AFactoryManager::GetFactorySnapshot() const;` — 매니저가 그리드(들)를 순회하여 머신/컨베이어 각각 채움. 컨베이어의 source/target은 **Origin 좌표로 환산**(포인터 비직렬화 회피).
 - **🚫 sentinel 계약 (Codex 보강):** `ADummyConveyor`는 source/target을 **weak ptr**로 보관(`dummy_converyor.h:75`)이라 stale 가능. 스냅샷 생성 시 endpoint가 유효·등록됨이면 `bHasValidSource/Target=true` + 실제 Origin, **무효/미등록이면 `false`로 두고 `INT_MIN` origin을 무음으로 방출하지 않는다**(소비자가 `bHasValid*`로 분기). 직렬화는 범위 밖이지만 **이 in-memory sentinel 계약은 지금(마지막 범위 Step) 확정**한다.
 - **확장 규칙:** 향후 정보는 USTRUCT에 필드 추가만으로 확장(구조 안정). **지금은 추가 안 함.**
 - **범위 밖 명시:** JSON 직렬화·WS 송신은 다음 단계. 스냅샷은 순수 데이터 반환까지.
@@ -171,7 +190,8 @@ USTRUCT() struct FOJJ_GridSnapshot {
 ---
 
 ## 단계 순서 근거
-1→2→3→4→5: 컨테이너 일반화(1) 없이는 컨베이어 등록 불가 → 입력 API(2) 없이는 경로 끝단 판정 불가 → 인지/등록(3) 없이는 연결(4) 없음 → 연결(4) 위에 스냅샷(5). 각 Step은 **이전 Step의 회귀가 통과해야** 진행. (Step 1·2는 1-A 결정과 독립; Step 3 진입 전 1-A 확정 필요.)
+**[그리드 단계] 1→2→3** 완료 후 **[매니저 단계] 4→5** 진입:
+컨테이너 일반화(1) 없이는 컨베이어 등록 불가 → 입력 API(2) 없이는 경로 끝단 판정 불가 → 인지/등록(3) 없이는 연결 없음 → **(여기까지 `AOJJ_Grid`)** → 완성된 그리드 위에 `AFactoryManager`가 연결 집계(4) → 그 위에 스냅샷(5) **(여기부터 `AFactoryManager`)**. 각 Step은 **이전 Step의 회귀가 통과해야** 진행. (Step 1·2는 1-A 결정과 독립; Step 3 진입 전 1-A 확정 필요. Step 4 진입 전 그리드 Step 1~3 완료 필요.)
 
 ## 빠진 선결조건 체크리스트 (Codex 검토용)
 - [ ] 머신 등록 경로가 컨베이어 엔드포인트 가능 타입을 보존/제공하는가(1-A 결정)?
