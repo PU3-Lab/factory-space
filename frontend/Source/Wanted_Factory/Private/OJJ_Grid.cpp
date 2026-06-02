@@ -162,18 +162,24 @@ bool AOJJ_Grid::IsValidGridCell(FIntPoint Cell) const
 
 AMachineBase* AOJJ_Grid::GetMachineAtCell(FIntPoint Cell) const
 {
-	if (const TWeakObjectPtr<AMachineBase>* Found = OccupiedCells.Find(Cell))
+	if (const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell))
 	{
-		// Get()은 유효하면 ptr, GC됐으면 nullptr 반환 → stale 셀 자체 방어
-		return Found->Get();
+		// Get()은 유효하면 actor ptr, GC됐으면 nullptr. Cast로 머신만 좁힘 →
+		// 비머신(컨베이어 등) 점유 셀은 nullptr 반환 (의도된 동작; 의미 확정은 1-c).
+		return Cast<AMachineBase>(Found->Get());
 	}
 	return nullptr;
 }
 
 bool AOJJ_Grid::IsCellOccupied(FIntPoint Cell) const
 {
-	// Contains 대신 GetMachineAtCell 위임 → 파괴된 머신 셀을 "비점유"로 일관 처리
-	return GetMachineAtCell(Cell) != nullptr;
+	// AActor 점유 기준 — 유효한 점유 액터가 있으면 true (컨베이어 셀도 true).
+	// GetMachineAtCell(Cast로 머신만 좁힘) 위임을 끊어 의미 분리: "점유 여부" ≠ "머신 존재".
+	//   - IsCellOccupied=true / GetMachineAtCell=null  → 컨베이어 등 비머신 점유 (Step 3)
+	// 파괴된 액터 셀은 weak IsValid()로 비점유 처리 → 기존 stale 일관성 유지.
+	// (현재는 컨베이어 미등록이라 결과는 1-a 이전과 동일 — 머신만 점유.)
+	const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell);
+	return Found && Found->IsValid();
 }
 
 const TArray<FIntPoint>* AOJJ_Grid::GetMachineCells(AMachineBase* Machine) const
@@ -185,27 +191,24 @@ const TArray<FIntPoint>* AOJJ_Grid::GetMachineCells(AMachineBase* Machine) const
 	{
 		return nullptr;
 	}
-	// MachineToCells는 weak-key 맵 — raw ptr로 조회 가능(암시적 TWeakObjectPtr 변환)
-	return MachineToCells.Find(Machine);
+	// OJJ_ActorToCells는 weak-key(AActor) 맵 — 머신 raw ptr로 조회 가능(암시적 TWeakObjectPtr<AActor> 변환)
+	return OJJ_ActorToCells.Find(Machine);
 }
 
 FIntPoint AOJJ_Grid::GetMachineOrigin(AMachineBase* Machine) const
 {
-	const TArray<FIntPoint>* Cells = GetMachineCells(Machine);
-	if (!Cells || Cells->Num() == 0)
+	// min-recompute 폐기 → 등록 시점에 명시 저장한 OJJ_ActorToOrigin 조회.
+	// IsValid 가드로 nullptr/stale 머신 차단 (GetMachineCells와 동일 일관성).
+	if (!IsValid(Machine))
 	{
-		// 미등록 머신 센티넬 (BuildController의 INT_MIN 컨벤션과 일치)
 		return FIntPoint(INT_MIN, INT_MIN);
 	}
-
-	// 풋프린트는 Origin부터 비음수 offset → min corner == 등록 시 Origin (회전 무관)
-	FIntPoint Origin = (*Cells)[0];
-	for (const FIntPoint& Cell : *Cells)
+	if (const FIntPoint* Origin = OJJ_ActorToOrigin.Find(Machine))
 	{
-		Origin.X = FMath::Min(Origin.X, Cell.X);
-		Origin.Y = FMath::Min(Origin.Y, Cell.Y);
+		return *Origin;
 	}
-	return Origin;
+	// 미등록 머신 센티넬 (BuildController의 INT_MIN 컨벤션과 일치)
+	return FIntPoint(INT_MIN, INT_MIN);
 }
 
 // === Grid Conveyor (출력포트 자급 판별 — ssr 포트 시스템 미변경) ===
@@ -324,7 +327,8 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 R
 			return false;
 		}
 
-		const TWeakObjectPtr<AMachineBase>* Found = OccupiedCells.Find(Cell);
+		// AActor 점유 기준 (현재 머신만 담기므로 동작 무변경; 컨베이어 차단 의미 확정은 1-c).
+		const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell);
 		if (Found && Found->IsValid())
 		{
 			return false;
@@ -336,18 +340,20 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 R
 
 void AOJJ_Grid::SweepStaleEntries()
 {
-	for (auto It = MachineToCells.CreateIterator(); It; ++It)
+	for (auto It = OJJ_ActorToCells.CreateIterator(); It; ++It)
 	{
 		if (!It.Key().IsValid())
 		{
 			for (const FIntPoint& Cell : It.Value())
 			{
-				const TWeakObjectPtr<AMachineBase>* Found = OccupiedCells.Find(Cell);
+				const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell);
 				if (Found && !Found->IsValid())
 				{
 					OccupiedCells.Remove(Cell);
 				}
 			}
+			// origin 맵도 동일 키로 정리 (양방향 일관성 — 1-a 신설 맵 누수 방지)
+			OJJ_ActorToOrigin.Remove(It.Key());
 			It.RemoveCurrent();
 		}
 	}
@@ -370,7 +376,7 @@ bool AOJJ_Grid::RegisterMachineInternal(AMachineBase* Machine, FIntPoint Origin,
 		return false;
 	}
 
-	if (MachineToCells.Contains(Machine))
+	if (OJJ_ActorToCells.Contains(Machine))
 	{
 		OutReason = TEXT("Machine already placed. Use TryMoveMachine for repositioning.");
 		return false;
@@ -387,7 +393,9 @@ bool AOJJ_Grid::RegisterMachineInternal(AMachineBase* Machine, FIntPoint Origin,
 	{
 		OccupiedCells.Add(Cell, Machine);
 	}
-	MachineToCells.Add(Machine, MoveTemp(Footprint));
+	OJJ_ActorToCells.Add(Machine, MoveTemp(Footprint));
+	// origin 명시 저장 (min-recompute 대체) — GetMachineOrigin이 이 값을 조회.
+	OJJ_ActorToOrigin.Add(Machine, Origin);
 
 	OutReason.Reset();
 	return true;
@@ -525,7 +533,7 @@ bool AOJJ_Grid::RemoveMachine(AMachineBase* Machine)
 		return false;
 	}
 
-	const TArray<FIntPoint>* Cells = MachineToCells.Find(Machine);
+	const TArray<FIntPoint>* Cells = OJJ_ActorToCells.Find(Machine);
 	if (!Cells)
 	{
 		return false;
@@ -535,7 +543,8 @@ bool AOJJ_Grid::RemoveMachine(AMachineBase* Machine)
 	{
 		OccupiedCells.Remove(Cell);
 	}
-	MachineToCells.Remove(Machine);
+	OJJ_ActorToCells.Remove(Machine);
+	OJJ_ActorToOrigin.Remove(Machine);
 	return true;
 }
 
@@ -547,11 +556,13 @@ bool AOJJ_Grid::RemoveMachineAt(FIntPoint Coord)
 		return false;
 	}
 
-	const TWeakObjectPtr<AMachineBase>* Found = OccupiedCells.Find(Coord);
+	const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Coord);
 	if (!Found || !Found->IsValid())
 	{
 		return false;
 	}
 
-	return RemoveMachine(Found->Get());
+	// 좌표 점유 액터를 머신으로 좁혀 제거. 비머신(컨베이어)이면 Cast 실패 → RemoveMachine(nullptr)이
+	// false 반환 (컨베이어 제거는 Step 3에서 OJJ_RemoveActorAt로 별도 처리).
+	return RemoveMachine(Cast<AMachineBase>(Found->Get()));
 }

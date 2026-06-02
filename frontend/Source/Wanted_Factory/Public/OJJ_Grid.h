@@ -29,7 +29,7 @@ class UInstancedStaticMeshComponent;
  * Multi-cell machine anchor (resolved): AMachineBase mesh stays center-anchored
  * (agreed with machine team). The grid compensates at placement time by moving
  * the actor to the footprint center via GetMachinePlacementLocation. Occupancy
- * data (OccupiedCells / MachineToCells) is still keyed by lower-left Origin —
+ * data (OccupiedCells / OJJ_ActorToCells) is still keyed by lower-left Origin —
  * only the visual transform is offset. 1x1 case yields zero offset (no regression).
  *
  * To be revisited when team contracts are agreed:
@@ -74,12 +74,17 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Hover")
 	TObjectPtr<UInstancedStaticMeshComponent> InvalidHoverISM;
 
-	// 점유된 셀 → 머신 (좌표로 머신 조회)
+	// 점유된 셀 → 점유 액터 (좌표로 조회). 머신/컨베이어 모두 수용하도록 AActor로 일반화.
+	// 머신 조회는 GetMachineAtCell이 Cast<AMachineBase>로 좁힘.
 	UPROPERTY(Transient)
-	TMap<FIntPoint, TWeakObjectPtr<AMachineBase>> OccupiedCells;
+	TMap<FIntPoint, TWeakObjectPtr<AActor>> OccupiedCells;
 
-	// 머신 → 점유 셀 목록 (이미 배치 여부 판정, 제거 시 일괄 해제)
-	TMap<TWeakObjectPtr<AMachineBase>, TArray<FIntPoint>> MachineToCells;
+	// 액터 → 점유 셀 목록 (이미 배치 여부 판정, 제거 시 일괄 해제). AActor로 일반화(컨베이어 포함).
+	TMap<TWeakObjectPtr<AActor>, TArray<FIntPoint>> OJJ_ActorToCells;
+
+	// 액터 → 등록 시점 origin (lower-left). min-recompute 대신 명시 저장 →
+	// 비직사각형/등록 후 이동·회전에도 origin 식별 안정. GetMachineOrigin이 이 맵을 조회.
+	TMap<TWeakObjectPtr<AActor>, FIntPoint> OJJ_ActorToOrigin;
 
 private:
 	// Origin부터 머신 풋프린트가 차지하는 셀 좌표 목록. RotationSteps로 90° 회전 footprint 지원(기본 0).
@@ -129,14 +134,15 @@ public:
 	bool IsValidGridCell(FIntPoint Cell) const;
 
 	// === Grid Query (GridManager/컨베이어용 읽기 전용 조회) ===
-	// OccupiedCells / MachineToCells를 노출만 함 — write 경로/데이터는 건드리지 않음.
+	// OccupiedCells / OJJ_ActorToCells를 노출만 함 — write 경로/데이터는 건드리지 않음.
 
 	// 셀에 등록된 머신 반환. 비점유/GC된 머신이면 nullptr.
 	// const라 SweepStaleEntries는 못 부르지만 weak ptr Get()으로 stale을 nullptr 처리.
 	UFUNCTION(BlueprintPure, Category = "Grid|Query")
 	AMachineBase* GetMachineAtCell(FIntPoint Cell) const;
 
-	// 셀 점유 여부. stale(파괴된) 머신 셀은 false (GetMachineAtCell과 일관).
+	// AActor 점유 여부 (머신 존재와 무관 — 컨베이어 등 비머신 점유 셀도 true,
+	// GetMachineAtCell은 그 셀에 null 반환). stale(파괴된) 액터 셀은 weak IsValid()로 false.
 	UFUNCTION(BlueprintPure, Category = "Grid|Query")
 	bool IsCellOccupied(FIntPoint Cell) const;
 
@@ -146,7 +152,7 @@ public:
 	FIntPoint GetMachineOrigin(AMachineBase* Machine) const;
 
 	// 머신 점유 셀 목록(footprint) 포인터. 미등록/무효(IsValid 실패) 머신이면 nullptr. C++ 전용(BP 비호환 반환형).
-	// ⚠️ 수명: 반환 포인터는 MachineToCells 내부를 가리킴 — 다음 grid 변경(TryPlace/Remove/stale sweep, rehash)
+	// ⚠️ 수명: 반환 포인터는 OJJ_ActorToCells 내부를 가리킴 — 다음 grid 변경(TryPlace/Remove/stale sweep, rehash)
 	//    시 무효화됨. 즉시(같은 프레임) 읽기 전용으로만 사용하고 절대 캐싱하지 말 것. 보관이 필요하면 값 복사.
 	const TArray<FIntPoint>* GetMachineCells(AMachineBase* Machine) const;
 
