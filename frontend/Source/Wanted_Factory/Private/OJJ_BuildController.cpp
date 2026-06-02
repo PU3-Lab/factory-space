@@ -355,7 +355,7 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 }
 
-// === Conveyor 입력 (Step 6 — Dummy ADummyBuildController 이식, parity) ===
+// === Conveyor 입력 (Step 6 — Dummy 원본 이식(parity)) ===
 
 void AOJJ_BuildController::OnLeftClickReleased()
 {
