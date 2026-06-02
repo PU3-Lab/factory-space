@@ -5,6 +5,36 @@
 #include "Wanted_Factory.h"
 #include "Algo/Count.h"
 
+namespace
+{
+	void AddRecipeItemQuantity(TMap<FName, int32>& ItemQuantities, FName ItemID, int32 Count)
+	{
+		if (ItemID.IsNone() || Count <= 0)
+		{
+			return;
+		}
+
+		ItemQuantities.FindOrAdd(ItemID) += Count;
+	}
+
+	TMap<FName, int32> BuildInputQuantities(const FRecipeTable& Recipe)
+	{
+		TMap<FName, int32> InputQuantities;
+		AddRecipeItemQuantity(InputQuantities, Recipe.InputItem1, Recipe.InputQty1);
+		AddRecipeItemQuantity(InputQuantities, Recipe.InputItem2, Recipe.InputQty2);
+		AddRecipeItemQuantity(InputQuantities, Recipe.InputItem3, Recipe.InputQty3);
+		return InputQuantities;
+	}
+
+	TMap<FName, int32> BuildOutputQuantities(const FRecipeTable& Recipe)
+	{
+		TMap<FName, int32> OutputQuantities;
+		AddRecipeItemQuantity(OutputQuantities, Recipe.OutputItem1, Recipe.OutputQty1);
+		AddRecipeItemQuantity(OutputQuantities, Recipe.OutputItem2, Recipe.OutputQty2);
+		return OutputQuantities;
+	}
+}
+
 AMachineBase::AMachineBase()
 {
 	PrimaryActorTick.bCanEverTick = false; // true로 바꿀듯
@@ -133,6 +163,8 @@ void AMachineBase::TryStartProcess()
 		return;
 	}
 
+	bool bHasBlockedCraftableRecipe = false;
+
 	for (const TPair<FName, int32>& InputPair : InputInventory)
 	{
 		TArray<FRecipeTable> FoundRecipes;
@@ -159,10 +191,8 @@ void AMachineBase::TryStartProcess()
 			
 			if (!CanAddToOutputBuffer(Recipe))
 			{
-				MachineState = EMachineState::Blocked;
-
-				LOG_SSR_W(TEXT("Cannot start process. Output Buffer Blocked."));
-				return;
+				bHasBlockedCraftableRecipe = true;
+				continue;
 			}
 
 			CurrentRecipe = Recipe;
@@ -171,6 +201,14 @@ void AMachineBase::TryStartProcess()
 			StartProcess();
 			return;
 		}
+	}
+
+	if (bHasBlockedCraftableRecipe)
+	{
+		MachineState = EMachineState::Blocked;
+
+		LOG_SSR_W(TEXT("Cannot start process. Output Buffer Blocked."));
+		return;
 	}
 
 	LOG_SSR_W(TEXT("No craftable recipe found."));
@@ -252,56 +290,46 @@ bool AMachineBase::CanAddInputItem(FName ItemID, int32 Count) const
 
 bool AMachineBase::HasEnoughIngredients(const FRecipeTable& Recipe) const
 {
-	auto CheckIngredient = [this](FName ItemID, int32 Qty) -> bool
-	{
-		if (ItemID.IsNone() || Qty <= 0)
-		{
-			return true;
-		}
+	const TMap<FName, int32> InputQuantities = BuildInputQuantities(Recipe);
 
-		const int32* FoundCount = InputInventory.Find(ItemID);
+	for (const TPair<FName, int32>& InputQuantity : InputQuantities)
+	{
+		const int32* FoundCount = InputInventory.Find(InputQuantity.Key);
 
 		if (!FoundCount)
 		{
 			return false;
 		}
 
-		return *FoundCount >= Qty;
-	};
+		if (*FoundCount < InputQuantity.Value)
+		{
+			return false;
+		}
+	}
 
-	return
-		CheckIngredient(Recipe.InputItem1, Recipe.InputQty1) &&
-		CheckIngredient(Recipe.InputItem2, Recipe.InputQty2) &&
-		CheckIngredient(Recipe.InputItem3, Recipe.InputQty3);
+	return true;
 }
 
 void AMachineBase::ConsumeIngredients(const FRecipeTable& Recipe)
 {
-	auto Consume = [this](FName ItemID, int32 Qty)
-	{
-		if (ItemID.IsNone() || Qty <= 0)
-		{
-			return;
-		}
+	const TMap<FName, int32> InputQuantities = BuildInputQuantities(Recipe);
 
-		int32* FoundCount = InputInventory.Find(ItemID);
+	for (const TPair<FName, int32>& InputQuantity : InputQuantities)
+	{
+		int32* FoundCount = InputInventory.Find(InputQuantity.Key);
 
 		if (!FoundCount)
 		{
-			return;
+			continue;
 		}
 
-		*FoundCount -= Qty;
+		*FoundCount -= InputQuantity.Value;
 
 		if (*FoundCount <= 0)
 		{
-			InputInventory.Remove(ItemID);
+			InputInventory.Remove(InputQuantity.Key);
 		}
-	};
-
-	Consume(Recipe.InputItem1, Recipe.InputQty1);
-	Consume(Recipe.InputItem2, Recipe.InputQty2);
-	Consume(Recipe.InputItem3, Recipe.InputQty3);
+	}
 }
 
 void AMachineBase::AddOutputItem(FName ItemID, int32 Count)
@@ -338,21 +366,19 @@ void AMachineBase::AddOutputItem(FName ItemID, int32 Count)
 
 bool AMachineBase::CanAddToOutputBuffer(const FRecipeTable& Recipe) const
 {
-	auto CheckOutputSpace = [this](FName ItemID, int32 Qty) -> bool
+	const TMap<FName, int32> OutputQuantities = BuildOutputQuantities(Recipe);
+
+	for (const TPair<FName, int32>& OutputQuantity : OutputQuantities)
 	{
-		if (ItemID.IsNone() || Qty <= 0)
+		const int32 CurrentCount = OutputBuffer.FindRef(OutputQuantity.Key);
+		
+		if (CurrentCount + OutputQuantity.Value > MaxBufferPerItem)
 		{
-			return true;
+			return false;
 		}
-		
-		const int32 CurrentCount = OutputBuffer.FindRef(ItemID);
-		
-		return CurrentCount + Qty <= MaxBufferPerItem;
-	};
+	}
 	
-	return
-		CheckOutputSpace(Recipe.OutputItem1, Recipe.OutputQty1) &&
-			CheckOutputSpace(Recipe.OutputItem2, Recipe.OutputQty2);
+	return true;
 }
 
 bool AMachineBase::TakeOutputItem(FName ItemID, int32 Count)

@@ -4,18 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "ResourceData.h"
+#include "Engine/DataTable.h"
 #include "ResourceBase.generated.h"
-
-UENUM(BlueprintType)
-enum class EResourceType : uint8
-{
-	None,
-	Electricity,
-	Fire,
-	Water,
-	Ore,
-	Plant
-};
 
 UCLASS()
 class WANTED_FACTORY_API AResourceBase : public AActor
@@ -37,8 +28,8 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	UStaticMeshComponent* Mesh;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Resource")
-	EResourceType ResourceType = EResourceType::None;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Resource")
+	FDataTableRowHandle ResourceData;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Resource")
 	FName ResourceID;
@@ -61,5 +52,11 @@ public:
 
 	UFUNCTION(BlueprintCallable)
 	bool IsEmpty() const;
+	
+	UFUNCTION(BlueprintCallable, Category="Resource")
+	bool GetResourceData(FResourceData& OutResourceData) const;
+	
+	UFUNCTION(BlueprintCallable)
+	FName GetResourceRowName() const;
 
 };

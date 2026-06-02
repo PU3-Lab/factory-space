@@ -2,6 +2,19 @@
 
 #include "Wanted_Factory.h"
 #include "Engine/DataTable.h"
+#include "UObject/ConstructorHelpers.h"
+
+URecipeManagerSubsystem::URecipeManagerSubsystem()
+{
+	static ConstructorHelpers::FObjectFinder<UDataTable> RecipeTableFinder(
+		TEXT("/Game/DataTable/DT_RecipeTable.DT_RecipeTable")
+	);
+
+	if (RecipeTableFinder.Succeeded())
+	{
+		RecipeTable = RecipeTableFinder.Object;
+	}
+}
 
 void URecipeManagerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -9,21 +22,11 @@ void URecipeManagerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	if (!RecipeTable)
 	{
-		RecipeTable = LoadObject<UDataTable>(
-			nullptr,
-			TEXT("/Game/DataTable/DT_RecipeTable.DT_RecipeTable")
-		);
-
-		if (RecipeTable)
-		{
-			LOG_SSR_W(TEXT("RecipeTable Loaded"));
-		}
-		else
-		{
-			LOG_SSR_W(TEXT("RecipeTable Load Failed"));
-			return;
-		}
+		LOG_SSR_W(TEXT("RecipeTable Load Failed"));
+		return;
 	}
+
+	LOG_SSR_W(TEXT("RecipeTable Loaded"));
 
 	BuildRecipeIndex();
 }
