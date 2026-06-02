@@ -23,7 +23,11 @@ public class Wanted_Factory : ModuleRules
 			"Slate"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] {
+			"Json",
+			"JsonUtilities",
+			"WebSockets"
+		});
 
 		PublicIncludePaths.AddRange(new string[] {
 			"Wanted_Factory",
