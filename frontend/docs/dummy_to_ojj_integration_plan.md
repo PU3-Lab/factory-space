@@ -1,0 +1,189 @@
+# Dummy → OJJ 그리드 컨베이어 통합 계획서
+
+> 목표: `AOJJ_Grid`를 **머신 + 컨베이어 연결의 단일 소스(single source of truth)**로 만들고,
+> 확장 가능한 **USTRUCT 스냅샷 조회 API**를 제공한다.
+> 컨베이어 클래스 `ADummyConveyor`는 **그대로 사용**한다(이식·개명·폐기 없음).
+> 그리드가 *기존* `ADummyConveyor`를 **인지·등록·연결**하게 만드는 것이 핵심.
+
+## 0. 확정 결정사항 (사용자)
+- **머신 식별 = 좌표(`FIntPoint` Origin).** 안정적 id 없음, 포인터 직렬화 불가 → 모든 조회/연결은 좌표 키.
+- **컨베이어 클래스는 손대지 않는다.** `ADummyConveyor`의 `SetPath` / `ConfigureTransport` / `OccupiedGridCells` 등 기존 인터페이스를 그대로 호출만 한다.
+- **직렬화(JSON)·웹소켓 전송은 범위 밖** — 다음 단계. 단, 스냅샷 USTRUCT는 *좌표 기반*이라 다음 단계에서 그대로 직렬화 가능하도록 설계.
+- **향후 정보(전력·생산량 등)는 구조만 확장 가능하게, 지금은 미구현(YAGNI).**
+- **이번 통합 범위 = Step 5(스냅샷)까지.**
+- **제약:** `main` 미수정. 신규 심볼은 `OJJ_` prefix. Step마다 **빌드 통과 + `/codex:adversarial-review`** 통과 후 다음 Step.
+
+## 1. 현황 요약 (조사 결과)
+- `AOJJ_Grid` 저장: `TMap<FIntPoint, TWeakObjectPtr<AMachineBase>> OccupiedCells`, `TMap<TWeakObjectPtr<AMachineBase>, TArray<FIntPoint>> MachineToCells` — **머신만** 인지.
+- 출력 포트 API 존재: `GetMachineOutputDir/Cells/Targets`, `CardinalFromVector`. **입력 포트 API 없음.**
+- 컨베이어 인지 로직은 **`ADummyGrid`(프로토타입)에만** 완성: `TryPlaceConveyor`, `BuildConveyorPlacementPath`, `CanPlaceConveyorPath` + 익명 네임스페이스 헬퍼(`IsMachineBackOutputPair`, `IsMachineFrontInputPair`, `FindInputMachineAtPathEnd`, `CollectConveyorReservedCells`). 저장 타입이 `TWeakObjectPtr<AActor>`라 컨베이어를 셀에 담음.
+- `ADummyConveyor`(AActor 직속)는 **그리드를 역참조하지 않음** — 그리드가 일방적으로 구동.
+- 아이템 전송은 **`ADummyMachineBase` 엔드포인트 필수**(아이템 I/O API가 거기 있음). `AMachineBase`만으로는 전송 불가 ← **놓치기 쉬운 의존성**.
+
+## 1-A. 선결 확인 결과 — 등록 머신 타입 (읽기 전용, 코드 증거)
+**결론: 현재 `AOJJ_Grid`에는 순수 `AMachineBase`가 등록된다 (ADummyMachineBase 아님).**
+
+| 항목 | 코드 증거 | 결론 |
+|---|---|---|
+| 등록 주체 | `OJJ_BuildController` (production) | 이게 `AOJJ_Grid`에 머신 등록 |
+| MachineClass 타입 | `OJJ_BuildController.h:55` `TSubclassOf<AMachineBase> MachineClass` | **`AMachineBase`로만 제약** |
+| 실제 spawn/등록 | `OJJ_BuildController.cpp:282` `SpawnActor<AMachineBase>(MachineClass…)` → `:295` `TryPlaceMachine(NewMachine…)` | **순수 `AMachineBase`** 등록 |
+| 실존 머신 | `AMinerMachine : public AMachineBase`, `AGrinder : public AMachineBase` | 둘 다 순수 AMachineBase |
+| 아이템 I/O API | `PeekFirstOutputItem`/`TryTakeFirstOutputItem`/`CanReceiveConveyorItem`/`ReceiveConveyorItem` → `ADummyMachineBase.h:35-45`에만. `MachineBase.h`엔 없음(`AMachineBase : public AActor`) | I/O는 **Dummy 전용** |
+
+**→ Step 3 직격 의존성:** 이식할 컨베이어 로직(`CollectConveyorReservedCells`)은 source/target이 `ADummyMachineBase`여야 통과한다. 현재 프로덕션 머신(Miner/Grinder)은 순수 `AMachineBase`라 **그대로는 컨베이어 연결이 무조건 실패**한다.
+
+**Step 3 선결 결정 — ✅ 확정: (c) UInterface `IOJJ_ConveyorEndpoint` (변형 c-1):**
+- ~~(a) 아이템 I/O API(4종)를 `AMachineBase`로 승격~~ — 모든 머신을 강제 엔드포인트화. 기각.
+- ~~(b) `AMinerMachine`/`AGrinder`를 `ADummyMachineBase` 하위로 reparent~~ — Dummy 상속을 프로덕션에 전파(역방향). 기각.
+- **(c) ✅ 채택 — `UInterface IOJJ_ConveyorEndpoint`** 도입, 엔드포인트 머신이 구현(느슨한 결합, 경계 최선).
+  - 참고: `AMachineBase`에 이미 `CanAddInputItem`/`TakeOutputItem` 존재(`MachineBase.h:216`) → 인터페이스가 이를 위임/표준화.
+  - **(c-1) `ADummyConveyor::ConfigureTransport`의 `ADummyMachineBase*` 인자를 `IOJJ_ConveyorEndpoint`(또는 `AActor*`)로 완화** — 한 줄 시그니처 수정 + 내부 weak ptr 저장 타입을 interface-capable(`TWeakObjectPtr<AActor>`/`TScriptInterface`)로 변경. **클래스명·액터(`ADummyConveyor`)는 그대로 유지** (개명·폐기 없음).
+> Step 1·2는 이 결정과 독립적으로 진행 가능. Step 3 진입 시 (c-1) 적용.
+
+---
+
+## Step 1 — 저장 타입 일반화 (`AMachineBase*` → `AActor*`), 동작 무변경
+**왜:** 컨베이어(`ADummyConveyor : AActor`, 머신 아님)를 셀에 등록하려면 컨테이너가 `AActor`를 담아야 함. `ADummyGrid`가 이미 이 형태(`OccupiedCells: TWeakObjectPtr<AActor>`, `ActorToCells`).
+
+**변경:**
+- `OccupiedCells` → `TMap<FIntPoint, TWeakObjectPtr<AActor>>`
+- `MachineToCells` → `OJJ_ActorToCells : TMap<TWeakObjectPtr<AActor>, TArray<FIntPoint>>`
+- **신규 `OJJ_ActorToOrigin : TMap<TWeakObjectPtr<AActor>, FIntPoint>`** — origin을 `min(X),min(Y)` 재계산하지 않고 **등록 시점에 명시 저장**(Codex 지적: 비직사각형/이동·회전 후 min-recompute가 깨질 위험 제거). `GetMachineOrigin`은 이 맵을 조회, 미등록 시 `(INT_MIN,INT_MIN)` 센티넬 유지.
+- 머신 전용 함수는 **시그니처 유지**하고 내부에서 `Cast<AMachineBase>`로 좁힌다:
+  - `CalculateFootprint(AMachineBase*, …)` — 그대로(머신 footprint 전용). 컨베이어는 footprint가 아니라 PathCells 기반이라 **이 경로를 타지 않음**(Step 3에서 별도 등록 경로).
+  - `GetMachineAtCell` — `Cast<AMachineBase>` 유지 → 컨베이어 셀은 `nullptr` 반환(의도된 동작).
+  - `IsCellOccupied` — **현재 `GetMachineAtCell`에 위임(`OJJ_Grid.cpp:173`)하던 것을 끊고**, `OccupiedCells`의 `AActor` weak ptr 유효성으로 직접 판정 → 컨베이어 셀도 `true`.
+  - `CanPlaceMachine`(`OJJ_Grid.cpp:327`) — 점유 검사를 머신타입이 아닌 **`AActor` 점유** 기준으로 변경 → 머신이 컨베이어 위에 겹치지 못하게.
+  - `GetMachineOutputDir/Cells/Targets`, `GetMachineCells` — 입력은 여전히 `AMachineBase*`. 내부 맵 조회만 `OJJ_ActorToCells`로 교체.
+
+**⚠️ 깨질 위험 (검토 포인트 직접 대응):**
+1. **`IsCellOccupied` vs `GetMachineAtCell` 의미 분리.** 일반화 후 `IsCellOccupied`는 *컨베이어 셀도 true*여야 하고, `GetMachineAtCell`은 *컨베이어 셀은 nullptr*. 현재 둘이 같은 weak-machine-ptr로 판정 → **분기 명시 필요**. (회귀 1순위 지점)
+2. **`GetMachineOutputTargets`의 self/dup 제거 + `Cast<AMachineBase>`** — 출력 타깃 셀에 컨베이어가 있으면 머신 캐스트 실패로 자동 제외됨(의도). "출력이 컨베이어에 연결"은 Step 4에서 별도 처리, 여기선 머신만 반환 유지.
+3. **`SweepStaleEntries` / `RegisterMachineInternal`** 양방향 맵 정리가 `AActor` 키로 동작하는지(컨베이어 stale 포함) 회귀 확인.
+4. **`RemoveMachine(AMachineBase*)` / `RemoveMachineAt`** — 머신만 제거. 컨베이어 제거는 Step 3에서 `OJJ_RemoveActorAt` 신설.
+
+**검증:** 기존 머신 배치/제거/호버/출력타깃 동작 무변경 회귀(`OJJ_GridHoverSmokeTest` 활용). **빌드 + adversarial-review.**
+
+**🚦 Step 2 진입 전 필수 게이트 — 컨베이어 셀 회귀 (Codex 보강):**
+가짜/테스트 컨베이어(또는 AActor)를 한 셀에 등록한 뒤 **반드시** 아래 3개를 확인하고, 하나라도 실패하면 Step 2 진입 금지:
+1. `IsCellOccupied(conveyorCell) == true`
+2. `GetMachineAtCell(conveyorCell) == nullptr`
+3. `CanPlaceMachine(머신, conveyorCell …) == false` (머신이 컨베이어 위 겹침 차단)
+추가로 머신 셀 회귀: `IsCellOccupied=true / GetMachineAtCell=머신 / CanPlaceMachine=false` 무변경 확인.
+
+**롤백:** 타입만 되돌리면 복구 가능(맵 키 타입 변경 + `OJJ_ActorToOrigin` 추가가 침습 범위).
+
+---
+
+## Step 2 — 입력 포트 API 신설 (출력 포트의 대칭)
+**왜:** 컨베이어 끝단이 "머신 입력 포트"에 닿는지 판정하려면 입력 방향/셀이 필요. 현재 출력만 존재.
+
+**추가 (OJJ_ prefix, 기존 컨벤션 = 입력은 머신 앞면 +Front):**
+- `OJJ_GetMachineInputDir(AMachineBase*) : FIntPoint` (= `+Front` 카디널, `GetMachineOutputDir`의 부호 반전 재사용)
+- `OJJ_GetMachineInputCells(AMachineBase*) : TArray<FIntPoint>` (footprint의 Front쪽 모서리 +InputDir 이웃)
+- 기존 `GetMachineOutputCells` 구현을 방향 인자화하여 **출력/입력 공유**(중복 로직 방지).
+
+**좌표 식별 검증 포인트:** 멀티셀·회전 머신에서 입력/출력 셀 산출이 `EffectiveSize`(회전 step swap)와 일관되는지 — 출력 로직이 이미 footprint 모서리 기반이라 회전 무관. 입력도 동일 규칙 재사용으로 보장.
+
+**검증:** 1×1, 2×1, 2×2, 회전 0/1/2/3 케이스 입력셀 산출 단위 확인. **빌드 + adversarial-review.**
+
+---
+
+## Step 3 — 그리드가 기존 `ADummyConveyor`를 인지·등록 (클래스 무변경)
+**왜:** 컨베이어 경로 유효성 판정 + 셀 점유 등록을 `AOJJ_Grid`로 가져온다. **`ADummyConveyor`는 그대로**, 그리드가 그 actor에 대해 `SetPath`/`ConfigureTransport`만 호출.
+
+**선결:** 1-A 엔드포인트 = ✅ (c-1) 확정. 진입 시 적용:
+- `UInterface IOJJ_ConveyorEndpoint` 신설 + 엔드포인트 머신이 구현(`CanAddInputItem`/`TakeOutputItem` 위임).
+- **(c-1)** `ADummyConveyor::ConfigureTransport(ADummyMachineBase*, ADummyMachineBase*)` → `(...IOJJ_ConveyorEndpoint... / AActor*)`로 한 줄 완화. 내부 `SourceMachine`/`TargetMachine` weak ptr 저장 타입도 interface-capable로. **`ADummyConveyor` 클래스명·액터 유지.**
+
+**추가 (Dummy_GridConveyor.cpp 로직을 OJJ_ 메서드로 가져옴, 컨베이어/머신 클래스 미변경):**
+- 익명 네임스페이스 헬퍼 이식: `OJJ_*` — `GetMachineBackStep/FrontStep`, `IsMachineBackOutputPair`, `IsMachineFrontInputPair`, `FindInputMachineAtPathEnd`, `CollectConveyorReservedCells`.
+- 그리드 메서드: `OJJ_BuildConveyorPlacementPath`, `OJJ_CanPlaceConveyorPath`, `OJJ_TryPlaceConveyor(ADummyConveyor*, PathCells, OutReason)`, `OJJ_RemoveActorAt(FIntPoint)`.
+- `OJJ_TryPlaceConveyor` 내부: `OJJ_RegisterActorCells(Conveyor, ReservedCells)` → `Conveyor->SetActorLocation(...)` → `Conveyor->SetPath(...)` → `Conveyor->ConfigureTransport(cells, source, target)`. **(전부 기존 ADummyConveyor 공개 API)**
+
+**⚠️ 빠뜨리기 쉬운 의존성 (검토 포인트 직접 대응):**
+1. **엔드포인트 타입(1-A).** `CollectConveyorReservedCells`는 source/target이 아이템 I/O 가능 타입이어야 통과. 현재 프로덕션 머신은 순수 `AMachineBase` → 1-A 결정 미반영 시 **항상 실패**.
+2. **`Grid->GridToWorld` / `IsValidGridCell` 의존** — 헬퍼가 그리드 좌표 변환을 호출. `AOJJ_Grid`의 동명 함수로 바인딩되는지(시그니처 동일) 확인.
+3. **포트 컨벤션 일치** — Dummy는 "출력=뒤(-Front), 입력=앞(+Front)". `AOJJ_Grid::GetMachineOutputDir`도 `-Front`. Step 2 입력 API와 **부호 컨벤션 충돌 없는지** 교차 확인.
+4. **충돌/연속성 검증** — `ManhattanDistance==1` 연속성, 점유 충돌, "입력 포트 직전 셀은 비어야 함" 규칙 누락 금지.
+5. **컨베이어 제거 시 양방향 맵 정리** — `OJJ_RemoveActorAt`가 `OccupiedCells` + `OJJ_ActorToCells` 동시 정리.
+
+**검증 — ADummyGrid parity 8케이스 (Codex 보강, line-by-line 동작 일치 확인):**
+이식한 `AOJJ_Grid` 컨베이어 로직이 기존 `ADummyGrid`와 동일 결과를 내는지 8케이스 대조:
+1. **start-on** — 머신 출력 셀에서 시작(정상)
+2. **start-adjacent** — 머신 인접 셀에서 시작(정상)
+3. **end-on** — 머신 입력 셀에서 종료(정상)
+4. **end-adjacent** — 머신 입력 인접에서 종료(정상)
+5. **blocked** — 경로가 점유 셀로 차단(실패)
+6. **non-contiguous** — `ManhattanDistance≠1` 비연속(실패)
+7. **self-target** — source==target 동일 머신(실패)
+8. **wrong-side** — 머신의 입력/출력이 아닌 면에 접함(실패)
++ "입력 포트 직전 셀은 비어야 함", reserved 셀이 머신 시작/끝 셀 제외·경로 셀 포함 규칙 일치 확인. **빌드 + adversarial-review.**
+
+---
+
+## Step 4 — 연결 그래프를 그리드가 단일 소스로 보유
+**왜:** "A(출력) →[컨베이어]→ B(입력)" 토폴로지를 그리드가 권위 있게 안다(목표의 핵심).
+
+**설계 결정 — 파생 vs 저장:** 기본은 **파생(derive-on-query)**. 연결은 컨베이어의 `OccupiedGridCells` 양끝 + source/target에서 계산 가능 → 별도 상태 중복 저장 안 함(불변식 깨질 여지 최소화, YAGNI). 성능 이슈 시에만 캐시.
+- `OJJ_GetConveyorAtCell(FIntPoint) : ADummyConveyor*`
+- 연결 조회는 Step 5 스냅샷에서 좌표쌍(SourceOrigin→TargetOrigin)으로 노출.
+
+**검증:** 다중 컨베이어/분기 시 연결쌍 정확성. **빌드 + adversarial-review.**
+
+---
+
+## Step 5 — 확장형 USTRUCT 스냅샷 조회 API (좌표 기반)
+**왜:** 단일 소스를 외부(향후 AI/WS)가 읽을 표준 read-only 표면. **좌표 식별**이라 다음 단계 직렬화에 그대로 사용.
+
+**USTRUCT (BlueprintType, OJJ_ prefix):**
+```cpp
+UENUM() enum class EOJJOccupantType : uint8 { None, Machine, Conveyor };
+
+USTRUCT() struct FOJJ_MachineSnapshot {
+    FIntPoint Origin;               // 식별 = 좌표
+    TArray<FIntPoint> Cells;        // footprint
+    FIntPoint OutputDir; TArray<FIntPoint> OutputCells;
+    FIntPoint InputDir;  TArray<FIntPoint> InputCells;
+    // 향후: Power/Production 등 — 지금 미구현(YAGNI), 필드만 추후 추가
+};
+USTRUCT() struct FOJJ_ConveyorSnapshot {
+    TArray<FIntPoint> PathCells;
+    TArray<FIntPoint> OccupiedCells;
+    FIntPoint SourceMachineOrigin;  // 좌표 참조(포인터 아님)
+    FIntPoint TargetMachineOrigin;
+    bool bHasValidSource = false;   // (Codex 보강) stale/미등록 시 false
+    bool bHasValidTarget = false;
+};
+USTRUCT() struct FOJJ_GridSnapshot {
+    TArray<FOJJ_MachineSnapshot> Machines;
+    TArray<FOJJ_ConveyorSnapshot> Conveyors;
+};
+```
+- `UFUNCTION(BlueprintCallable) FOJJ_GridSnapshot OJJ_GetGridSnapshot() const;` — 맵 순회하여 머신/컨베이어 각각 채움. 컨베이어의 source/target은 **Origin 좌표로 환산**(포인터 비직렬화 회피).
+- **🚫 sentinel 계약 (Codex 보강):** `ADummyConveyor`는 source/target을 **weak ptr**로 보관(`dummy_converyor.h:75`)이라 stale 가능. 스냅샷 생성 시 endpoint가 유효·등록됨이면 `bHasValidSource/Target=true` + 실제 Origin, **무효/미등록이면 `false`로 두고 `INT_MIN` origin을 무음으로 방출하지 않는다**(소비자가 `bHasValid*`로 분기). 직렬화는 범위 밖이지만 **이 in-memory sentinel 계약은 지금(마지막 범위 Step) 확정**한다.
+- **확장 규칙:** 향후 정보는 USTRUCT에 필드 추가만으로 확장(구조 안정). **지금은 추가 안 함.**
+- **범위 밖 명시:** JSON 직렬화·WS 송신은 다음 단계. 스냅샷은 순수 데이터 반환까지.
+
+**검증:** 스냅샷이 그리드 실제 상태와 일치(머신 N개·컨베이어 M개·연결쌍). **빌드 + adversarial-review.**
+
+---
+
+## 단계 순서 근거
+1→2→3→4→5: 컨테이너 일반화(1) 없이는 컨베이어 등록 불가 → 입력 API(2) 없이는 경로 끝단 판정 불가 → 인지/등록(3) 없이는 연결(4) 없음 → 연결(4) 위에 스냅샷(5). 각 Step은 **이전 Step의 회귀가 통과해야** 진행. (Step 1·2는 1-A 결정과 독립; Step 3 진입 전 1-A 확정 필요.)
+
+## 빠진 선결조건 체크리스트 (Codex 검토용)
+- [ ] 머신 등록 경로가 컨베이어 엔드포인트 가능 타입을 보존/제공하는가(1-A 결정)?
+- [ ] `IsCellOccupied`/`GetMachineAtCell` 의미 분리 회귀 없는가?
+- [ ] 입력/출력 포트 부호 컨벤션(±Front) 일관한가?
+- [ ] 멀티셀·회전에서 입력셀 산출이 `EffectiveSize`와 일관한가?
+- [ ] 컨베이어 제거 시 양방향 맵 누수 없는가?
+- [ ] 스냅샷 source/target Origin 환산이 미등록/stale 머신에서 센티넬 처리되는가?
+
+## 비범위 (이번 통합 아님)
+- 컨베이어 클래스 수정/개명/이식.
+- JSON 직렬화·웹소켓 송수신.
+- 전력·생산량 등 향후 정보 구현(구조만 확장 가능).
+- **빌드모드 드래그 입력 / `OJJ_Player`·`OJJ_BuildController` 플레이어 입력 통합** — 별도 후속 작업.
+- `main` 브랜치 수정.
