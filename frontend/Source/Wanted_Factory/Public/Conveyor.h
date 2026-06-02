@@ -6,7 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "Conveyor.generated.h"
 
-class ADummyMachineBase;
+class AMachineBase;
 class UInstancedStaticMeshComponent;
 class USceneComponent;
 class UTextRenderComponent;
@@ -72,10 +72,10 @@ protected:
 	float DebugTextWorldSize = 24.0f;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Conveyor|Items")
-	TWeakObjectPtr<ADummyMachineBase> SourceMachine;
+	TWeakObjectPtr<AMachineBase> SourceMachine;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Conveyor|Items")
-	TWeakObjectPtr<ADummyMachineBase> TargetMachine;
+	TWeakObjectPtr<AMachineBase> TargetMachine;
 
 	FTimerHandle ItemMoveTimerHandle;
 
@@ -86,8 +86,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
 	void ConfigureTransport(
 		const TArray<FIntPoint>& NewOccupiedGridCells,
-		ADummyMachineBase* NewSourceMachine,
-		ADummyMachineBase* NewTargetMachine);
+		AMachineBase* NewSourceMachine,
+		AMachineBase* NewTargetMachine);
 
 	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
 	void ClearPath();
