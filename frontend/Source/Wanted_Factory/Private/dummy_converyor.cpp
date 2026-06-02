@@ -5,8 +5,8 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/TextRenderComponent.h"
-#include "Dummy_MachineBase.h"
 #include "Engine/StaticMesh.h"
+#include "MachineBase.h"
 #include "Materials/MaterialInterface.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
@@ -141,8 +141,8 @@ void ADummyConveyor::SetPath(const TArray<FIntPoint>& NewPathCells, float NewCel
 
 void ADummyConveyor::ConfigureTransport(
 	const TArray<FIntPoint>& NewOccupiedGridCells,
-	ADummyMachineBase* NewSourceMachine,
-	ADummyMachineBase* NewTargetMachine)
+	AMachineBase* NewSourceMachine,
+	AMachineBase* NewTargetMachine)
 {
 	OccupiedGridCells.Reset(NewOccupiedGridCells.Num());
 	for (const FIntPoint& Cell : NewOccupiedGridCells)
