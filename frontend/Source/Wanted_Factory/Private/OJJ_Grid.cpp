@@ -6,6 +6,7 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Conveyor.h"
 #include "Engine/StaticMesh.h"
 #include "MachineBase.h"
 #include "Materials/MaterialInterface.h"
@@ -305,6 +306,122 @@ TArray<AMachineBase*> AOJJ_Grid::GetMachineOutputTargets(AMachineBase* Machine) 
 		}
 	}
 	return Targets;
+}
+
+// === Conveyor 인지 (Step 3-a — 셀 등록/조회만, 경로·포트 유효성은 3-c) ===
+
+AConveyor* AOJJ_Grid::OJJ_GetConveyorAtCell(FIntPoint Cell) const
+{
+	if (const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell))
+	{
+		// weak Get()은 stale이면 nullptr. Cast로 컨베이어만 좁힘 → 머신/비컨베이어 셀은 nullptr.
+		return Cast<AConveyor>(Found->Get());
+	}
+	return nullptr;
+}
+
+bool AOJJ_Grid::OJJ_RegisterActorCells(AActor* Actor, const TArray<FIntPoint>& Cells)
+{
+	if (!HasAuthority())
+	{
+		ensureMsgf(false, TEXT("OJJ_RegisterActorCells called on non-authority"));
+		return false;
+	}
+
+	SweepStaleEntries();
+
+	if (!IsValid(Actor) || Cells.Num() == 0)
+	{
+		return false;
+	}
+
+	// 머신은 이 경로 금지 — 머신은 RegisterMachineInternal(footprint/bounds/origin 불변식) 경로로만 등록한다.
+	// 이 API는 컨베이어 등 비머신 actor 전용. 머신을 넣으면 머신 불변식을 우회하므로 거부(Codex #3).
+	if (Cast<AMachineBase>(Actor))
+	{
+		return false;
+	}
+
+	if (OJJ_ActorToCells.Contains(Actor))
+	{
+		// 이미 등록된 actor — 중복 등록 금지(이동/갱신은 별도 경로).
+		return false;
+	}
+
+	// 중복 셀 제거(set 의미 보장) — 충돌 검사·등록 모두 dedup된 목록으로 수행(Codex #2).
+	TArray<FIntPoint> UniqueCells;
+	UniqueCells.Reserve(Cells.Num());
+	for (const FIntPoint& Cell : Cells)
+	{
+		UniqueCells.AddUnique(Cell);
+	}
+
+	// 데이터 무결성 가드: 다른 유효 actor가 이미 점유한 셀이면 거부(양방향 맵 corruption 방지).
+	// ※ 경로 연속성·포트 정합 등 placement 유효성은 3-c. 여기선 점유 충돌만 검사.
+	for (const FIntPoint& Cell : UniqueCells)
+	{
+		const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell);
+		if (Found && Found->IsValid() && Found->Get() != Actor)
+		{
+			return false;
+		}
+	}
+
+	// origin = 등록 셀의 lower-left(min corner). 머신과 동일 컨벤션으로 OJJ_ActorToOrigin 동기 유지.
+	FIntPoint Origin = UniqueCells[0];
+	for (const FIntPoint& Cell : UniqueCells)
+	{
+		Origin.X = FMath::Min(Origin.X, Cell.X);
+		Origin.Y = FMath::Min(Origin.Y, Cell.Y);
+		OccupiedCells.Add(Cell, Actor);
+	}
+	OJJ_ActorToOrigin.Add(Actor, Origin);
+	OJJ_ActorToCells.Add(Actor, MoveTemp(UniqueCells));
+	return true;
+}
+
+bool AOJJ_Grid::OJJ_RemoveActorAt(FIntPoint Cell)
+{
+	if (!HasAuthority())
+	{
+		ensureMsgf(false, TEXT("OJJ_RemoveActorAt called on non-authority"));
+		return false;
+	}
+
+	const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell);
+	if (!Found || !Found->IsValid())
+	{
+		return false;
+	}
+
+	AActor* Actor = Found->Get();
+	const TArray<FIntPoint>* ActorCells = OJJ_ActorToCells.Find(Actor);
+	if (!ActorCells)
+	{
+		// 불변식 위반: OccupiedCells엔 있는데 역맵(OJJ_ActorToCells)엔 없음.
+		// 어중간한 부분 제거 대신 — 그 actor가 점유한 모든 OccupiedCells를 스캔 제거 + origin 제거(완전 정리).
+		// 불변식 깨짐을 로그로 가시화(Codex #1/#5).
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Grid] OJJ_RemoveActorAt: OccupiedCells/OJJ_ActorToCells 불일치 — actor '%s'를 전체 스캔으로 정리."),
+			*Actor->GetName());
+		for (auto It = OccupiedCells.CreateIterator(); It; ++It)
+		{
+			if (It.Value().Get() == Actor)
+			{
+				It.RemoveCurrent();
+			}
+		}
+		OJJ_ActorToOrigin.Remove(Actor);
+		return false;
+	}
+
+	for (const FIntPoint& C : *ActorCells)
+	{
+		OccupiedCells.Remove(C);
+	}
+	OJJ_ActorToCells.Remove(Actor);
+	OJJ_ActorToOrigin.Remove(Actor);
+	return true;
 }
 
 TArray<FIntPoint> AOJJ_Grid::CalculateFootprint(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps) const

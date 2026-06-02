@@ -7,6 +7,7 @@
 #include "OJJ_Grid.generated.h"
 
 class AMachineBase;
+class AConveyor;
 class UStaticMeshComponent;
 class UInstancedStaticMeshComponent;
 
@@ -194,6 +195,25 @@ public:
 	// 무효/미등록이면 빈 배열. 입력 셀은 off-grid/미점유일 수 있음(호출자 판단).
 	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
 	TArray<FIntPoint> OJJ_GetMachineInputCells(AMachineBase* Machine) const;
+
+	// === Conveyor 인지 (Step 3-a — 셀 등록/조회만, 경로·포트 유효성은 3-c) ===
+
+	// 셀에 등록된 컨베이어 반환. 비컨베이어(머신)/비점유/GC 셀이면 nullptr.
+	// GetMachineAtCell의 컨베이어판 — 같은 OccupiedCells를 Cast<AConveyor>로 좁힘.
+	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
+	AConveyor* OJJ_GetConveyorAtCell(FIntPoint Cell) const;
+
+	// 임의 actor(컨베이어)를 명시 셀 목록으로 등록 — OccupiedCells + OJJ_ActorToCells + OJJ_ActorToOrigin 동기.
+	// 머신 등록(RegisterMachineInternal/footprint) 경로와 독립한 컨베이어 전용 등록.
+	// 가드: 서버 권위, 유효 actor, 비어있지 않은 셀, 중복 등록 금지, 다른 actor 점유 셀 충돌 거부(데이터 무결성).
+	// ※ 경로 연속성/포트 정합 등 placement 유효성은 3-c. 여기선 점유 충돌만.
+	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
+	bool OJJ_RegisterActorCells(AActor* Actor, const TArray<FIntPoint>& Cells);
+
+	// 셀을 점유한 actor(컨베이어 포함)를 양방향 맵에서 제거. 머신이면 머신도 제거됨(범용).
+	// 서버 권위 전용. 비점유/GC 셀이면 false.
+	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
+	bool OJJ_RemoveActorAt(FIntPoint Cell);
 
 	// Origin부터 머신 풋프린트만큼의 셀이 모두 비어있는지 검사. RotationSteps로 회전 footprint 검사(기본 0).
 	UFUNCTION(BlueprintPure, Category = "Grid|Placement")
