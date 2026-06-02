@@ -30,8 +30,8 @@ struct FResourceData : public FTableRowBase
 
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	FName name;
-
+	FName substance;
+	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	EResourceType type = EResourceType::None;
 
