@@ -9,6 +9,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "MachineBase.h"
 #include "OJJ_Grid.h"
+#include "Conveyor.h"
 
 AOJJ_BuildController::AOJJ_BuildController()
 {
@@ -16,6 +17,9 @@ AOJJ_BuildController::AOJJ_BuildController()
 	// Enter/ExitBuildMode에서 SetActorTickEnabled로 on/off → 빌드모드 밖 0비용.
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
+
+	// 컨베이어 모드 기본 클래스(BP 미지정 시). Dummy와 동일 패턴.
+	ConveyorClass = AConveyor::StaticClass();
 }
 
 void AOJJ_BuildController::Tick(float DeltaSeconds)
@@ -42,9 +46,15 @@ void AOJJ_BuildController::EnterBuildMode()
 		return;
 	}
 
-	if (!MachineClass)
+	// 모드별 클래스 미설정 가드 — 머신 모드는 MachineClass, 컨베이어 모드는 ConveyorClass 필요.
+	if (PlacementMode == EOJJ_BuildPlacementMode::Machine && !MachineClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] MachineClass 미설정 — EnterBuildMode 중단"));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor && !ConveyorClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] ConveyorClass 미설정 — EnterBuildMode 중단"));
 		return;
 	}
 
@@ -54,6 +64,10 @@ void AOJJ_BuildController::EnterBuildMode()
 
 	// 빌드 세션은 항상 회전 0(미회전)으로 시작 — 예측 가능한 기본 방향.
 	HoverRotationSteps = 0;
+
+	// 컨베이어 드래그 상태 초기화(이전 세션 잔여 방지).
+	bIsDraggingConveyor = false;
+	ConveyorDragCells.Reset();
 
 	// 빌드모드 동안에만 호버 Tick 가동
 	SetActorTickEnabled(true);
@@ -83,6 +97,10 @@ void AOJJ_BuildController::ExitBuildMode()
 	}
 
 	bIsBuildMode = false;
+
+	// 컨베이어 드래그 상태 정리.
+	bIsDraggingConveyor = false;
+	ConveyorDragCells.Reset();
 
 	// 호버 Tick 정지 (빌드모드 밖 0비용)
 	SetActorTickEnabled(false);
@@ -114,7 +132,8 @@ void AOJJ_BuildController::ToggleBuildMode()
 void AOJJ_BuildController::RotateHoverClockwise()
 {
 	// R은 IMC_Build 전용이라 빌드모드에서만 발동하지만, 방어적으로 가드.
-	if (!bIsBuildMode)
+	// 회전은 머신 호버 전용 — 컨베이어 모드에서는 무시(Dummy parity).
+	if (!bIsBuildMode || PlacementMode != EOJJ_BuildPlacementMode::Machine)
 	{
 		return;
 	}
@@ -150,7 +169,7 @@ void AOJJ_BuildController::UpdateMouseHover()
 		return;
 	}
 
-	if (!TargetGrid || !MachineClass)
+	if (!TargetGrid)
 	{
 		return;
 	}
@@ -175,6 +194,21 @@ void AOJJ_BuildController::UpdateMouseHover()
 		return;
 	}
 
+	const FIntPoint CursorCell = TargetGrid->WorldToGrid(Hit.Location);
+
+	// Conveyor 모드: 드래그/단일 셀 미리보기로 분기 (머신 경로와 독립).
+	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor)
+	{
+		UpdateConveyorHover(CursorCell);
+		return;
+	}
+
+	// === Machine 모드 (기존 동작 무변경) ===
+	if (!MachineClass)
+	{
+		return;
+	}
+
 	// floor 또는 이미 배치된 머신 위에서 hover를 유지.
 	// 머신 Cube mesh가 Visibility 채널을 Block해서 trace를 가로채도, 머신 위 XY는
 	// 점유된 셀에 정확히 매핑되므로 CanPlaceMachine 검증을 거치게 그대로 통과시킨다
@@ -191,9 +225,7 @@ void AOJJ_BuildController::UpdateMouseHover()
 		return;
 	}
 
-	const FIntPoint CursorCell = TargetGrid->WorldToGrid(Hit.Location);
-
-	// Tick마다 호출되는 경로라 동일 셀이면 ISM 리빌드 스킵
+	// Tick마다 호출되는 경로라 동일 셀이면 ISM 리빌드 스킵 (CursorCell은 위에서 계산됨)
 	if (CursorCell == CurrentHoverCell)
 	{
 		return;
@@ -234,6 +266,18 @@ void AOJJ_BuildController::OnLeftClickPressed()
 		return;
 	}
 
+	// Conveyor 모드: 좌클릭 누름 = 드래그 시작. (커밋은 OnLeftClickReleased.)
+	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor)
+	{
+		FIntPoint CursorCell;
+		if (GetCursorCell(CursorCell))
+		{
+			BeginConveyorDrag(CursorCell);
+		}
+		return;
+	}
+
+	// === Machine 모드 (기존 동작 무변경) ===
 	if (!TargetGrid || !MachineClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] TargetGrid 또는 MachineClass 미설정"));
@@ -309,4 +353,228 @@ void AOJJ_BuildController::OnLeftClickPressed()
 
 	// 직전 origin이 이제 점유됨 → 다음 UpdateMouseHover에서 빨강으로 강제 재표시
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+}
+
+// === Conveyor 입력 (Step 6 — Dummy ADummyBuildController 이식, parity) ===
+
+void AOJJ_BuildController::OnLeftClickReleased()
+{
+	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor)
+	{
+		CommitConveyorDrag();
+	}
+}
+
+void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
+{
+	if (PlacementMode == NewMode)
+	{
+		return;
+	}
+
+	// 모드 전환 시 진행 중 드래그는 취소(잔여 상태 방지).
+	CancelConveyorDrag();
+	PlacementMode = NewMode;
+	const TCHAR* ModeName = PlacementMode == EOJJ_BuildPlacementMode::Machine
+		? TEXT("Machine")
+		: TEXT("Conveyor");
+	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
+
+	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+	UpdateMouseHover();
+}
+
+bool AOJJ_BuildController::GetCursorCell(FIntPoint& OutCell) const
+{
+	if (!TargetGrid)
+	{
+		return false;
+	}
+
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!PC)
+	{
+		return false;
+	}
+
+	FHitResult Hit;
+	const bool bHit = PC->GetHitResultUnderCursorByChannel(
+		UEngineTypes::ConvertToTraceType(ECC_Visibility),
+		/*bTraceComplex=*/false,
+		Hit);
+
+	if (!bHit)
+	{
+		return false;
+	}
+
+	OutCell = TargetGrid->WorldToGrid(Hit.Location);
+	return true;
+}
+
+void AOJJ_BuildController::BeginConveyorDrag(FIntPoint StartCell)
+{
+	bIsDraggingConveyor = true;
+	ConveyorDragCells.Reset();
+	ConveyorDragCells.Add(StartCell);
+	CurrentHoverCell = StartCell;
+	TargetGrid->OJJ_UpdateConveyorPathHoverPreview(ConveyorDragCells);
+}
+
+void AOJJ_BuildController::UpdateConveyorDrag(FIntPoint CursorCell)
+{
+	AppendConveyorPathTo(CursorCell);
+	TargetGrid->OJJ_UpdateConveyorPathHoverPreview(ConveyorDragCells);
+	CurrentHoverCell = CursorCell;
+}
+
+void AOJJ_BuildController::CancelConveyorDrag()
+{
+	if (!bIsDraggingConveyor)
+	{
+		return;
+	}
+
+	bIsDraggingConveyor = false;
+	ConveyorDragCells.Reset();
+	if (TargetGrid)
+	{
+		TargetGrid->ClearHoverPreview();
+	}
+	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+}
+
+void AOJJ_BuildController::CommitConveyorDrag()
+{
+	if (!bIsDraggingConveyor)
+	{
+		return;
+	}
+
+	bIsDraggingConveyor = false;
+
+	if (!HasAuthority())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] Conveyor placement called on non-authority"));
+		ConveyorDragCells.Reset();
+		return;
+	}
+
+	if (!TargetGrid || !ConveyorClass || ConveyorDragCells.Num() == 0)
+	{
+		ConveyorDragCells.Reset();
+		return;
+	}
+
+	TArray<FIntPoint> PlacementCells;
+	FString OutReason;
+	if (!TargetGrid->OJJ_BuildConveyorPlacementPath(ConveyorDragCells, PlacementCells, OutReason))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] Conveyor path cannot be placed: %s"), *OutReason);
+		ConveyorDragCells.Reset();
+		TargetGrid->ClearHoverPreview();
+		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		ConveyorDragCells.Reset();
+		TargetGrid->ClearHoverPreview();
+		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+		return;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParams.Owner = this;
+
+	AConveyor* Conveyor = World->SpawnActor<AConveyor>(
+		ConveyorClass,
+		TargetGrid->GetActorLocation(),
+		FRotator::ZeroRotator,
+		SpawnParams);
+
+	if (!Conveyor)
+	{
+		ConveyorDragCells.Reset();
+		TargetGrid->ClearHoverPreview();
+		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+		return;
+	}
+
+	if (!TargetGrid->OJJ_TryPlaceConveyor(Conveyor, PlacementCells, OutReason))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] OJJ_TryPlaceConveyor failed: %s"), *OutReason);
+		Conveyor->Destroy();
+		ConveyorDragCells.Reset();
+		TargetGrid->ClearHoverPreview();
+		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+		return;
+	}
+
+	ConveyorDragCells.Reset();
+	TargetGrid->ClearHoverPreview();
+	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+}
+
+void AOJJ_BuildController::AppendConveyorPathTo(FIntPoint TargetCell)
+{
+	if (ConveyorDragCells.Num() == 0)
+	{
+		ConveyorDragCells.Add(TargetCell);
+		return;
+	}
+
+	FIntPoint LastCell = ConveyorDragCells.Last();
+	if (LastCell == TargetCell)
+	{
+		return;
+	}
+
+	const int32 StepX = TargetCell.X > LastCell.X ? 1 : -1;
+	while (LastCell.X != TargetCell.X)
+	{
+		LastCell.X += StepX;
+		AddConveyorPathCell(LastCell);
+	}
+
+	const int32 StepY = TargetCell.Y > LastCell.Y ? 1 : -1;
+	while (LastCell.Y != TargetCell.Y)
+	{
+		LastCell.Y += StepY;
+		AddConveyorPathCell(LastCell);
+	}
+}
+
+void AOJJ_BuildController::AddConveyorPathCell(FIntPoint Cell)
+{
+	int32 ExistingIndex = INDEX_NONE;
+	if (ConveyorDragCells.Find(Cell, ExistingIndex))
+	{
+		ConveyorDragCells.SetNum(ExistingIndex + 1);
+		return;
+	}
+
+	ConveyorDragCells.Add(Cell);
+}
+
+void AOJJ_BuildController::UpdateConveyorHover(FIntPoint CursorCell)
+{
+	if (bIsDraggingConveyor)
+	{
+		UpdateConveyorDrag(CursorCell);
+		return;
+	}
+
+	if (CursorCell == CurrentHoverCell)
+	{
+		return;
+	}
+
+	TArray<FIntPoint> PreviewCells;
+	PreviewCells.Add(CursorCell);
+	TargetGrid->OJJ_UpdateConveyorPathHoverPreview(PreviewCells);
+	CurrentHoverCell = CursorCell;
 }

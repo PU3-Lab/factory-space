@@ -233,6 +233,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
 	bool OJJ_TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint>& PathCells, FString& OutReason);
 
+	// 컨베이어 드래그 경로 호버 미리보기 — 경로 보정 성공이면 ValidHoverISM(녹색), 실패면 InvalidHoverISM(빨강)에
+	// 셀별 인스턴스 표시. 호출 시 기존 미리보기 클리어. (Step 6 입력 드래그 UX용.)
+	UFUNCTION(BlueprintCallable, Category = "Grid|Hover")
+	void OJJ_UpdateConveyorPathHoverPreview(const TArray<FIntPoint>& PathCells);
+
 	// Origin부터 머신 풋프린트만큼의 셀이 모두 비어있는지 검사. RotationSteps로 회전 footprint 검사(기본 0).
 	UFUNCTION(BlueprintPure, Category = "Grid|Placement")
 	bool CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;

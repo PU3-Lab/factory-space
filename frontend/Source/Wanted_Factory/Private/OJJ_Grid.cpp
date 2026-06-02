@@ -863,6 +863,39 @@ bool AOJJ_Grid::OJJ_TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint
 	return true;
 }
 
+void AOJJ_Grid::OJJ_UpdateConveyorPathHoverPreview(const TArray<FIntPoint>& PathCells)
+{
+	ClearHoverPreview();
+
+	if (PathCells.Num() == 0)
+	{
+		return;
+	}
+
+	TArray<FIntPoint> PreviewCells;
+	FString OutReason;
+	const bool bCanPlace = OJJ_BuildConveyorPlacementPath(PathCells, PreviewCells, OutReason);
+	if (!bCanPlace)
+	{
+		PreviewCells = PathCells;
+	}
+
+	UInstancedStaticMeshComponent* TargetISM = bCanPlace ? ValidHoverISM.Get() : InvalidHoverISM.Get();
+	if (!TargetISM)
+	{
+		return;
+	}
+
+	for (const FIntPoint& Cell : PreviewCells)
+	{
+		const FVector CellCenter = GridToWorld(Cell);
+		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, CellCenter.Z + 2.0f);
+		const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
+		const FTransform InstanceTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale);
+		TargetISM->AddInstance(InstanceTransform, /*bWorldSpace=*/true);
+	}
+}
+
 TArray<FIntPoint> AOJJ_Grid::CalculateFootprint(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps) const
 {
 	TArray<FIntPoint> Cells;
