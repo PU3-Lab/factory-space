@@ -3,6 +3,8 @@
 
 #include "ResourceBase.h"
 
+#include "Wanted_Factory.h"
+
 
 // Sets default values
 AResourceBase::AResourceBase()
@@ -67,6 +69,17 @@ bool AResourceBase::GetResourceData(FResourceData& OutResourceData) const
 {
 	if (!ResourceData.DataTable)
 	{
+		LOG_SSR_W(TEXT("GetResourceData failed: DataTable is null. Resource=%s"), *GetName());
+		return false;
+	}
+
+	if (ResourceData.RowName.IsNone())
+	{
+		LOG_SSR_W(
+			TEXT("GetResourceData failed: RowName is None. Resource=%s DataTable=%s"),
+			*GetName(),
+			*ResourceData.DataTable->GetName()
+		);
 		return false;
 	}
 	
@@ -75,11 +88,22 @@ bool AResourceBase::GetResourceData(FResourceData& OutResourceData) const
 	
 	if (!FoundData)
 	{
+		LOG_SSR_W(
+			TEXT("GetResourceData failed: Row not found. Resource=%s DataTable=%s RowName=%s"),
+			*GetName(),
+			*ResourceData.DataTable->GetName(),
+			*ResourceData.RowName.ToString()
+		);
 		return false;
 	}
 	
 	OutResourceData = *FoundData;
 	return true;
+}
+
+FName AResourceBase::GetResourceRowName() const
+{
+	return ResourceData.RowName;
 }
 
 

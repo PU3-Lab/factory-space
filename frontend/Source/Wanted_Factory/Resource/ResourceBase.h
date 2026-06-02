@@ -55,5 +55,8 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category="Resource")
 	bool GetResourceData(FResourceData& OutResourceData) const;
+	
+	UFUNCTION(BlueprintCallable)
+	FName GetResourceRowName() const;
 
 };
