@@ -8,13 +8,13 @@
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "MachineBase.h"
-#include "dummy_converyor.h"
+#include "Conveyor.h"
 
 ADummyBuildController::ADummyBuildController()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
-	ConveyorClass = ADummyConveyor::StaticClass();
+	ConveyorClass = AConveyor::StaticClass();
 }
 
 void ADummyBuildController::Tick(float DeltaSeconds)
@@ -346,7 +346,7 @@ void ADummyBuildController::CommitConveyorDrag()
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	SpawnParams.Owner = this;
 
-	ADummyConveyor* Conveyor = World->SpawnActor<ADummyConveyor>(
+	AConveyor* Conveyor = World->SpawnActor<AConveyor>(
 		ConveyorClass,
 		TargetGrid->GetActorLocation(),
 		FRotator::ZeroRotator,

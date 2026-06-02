@@ -6,7 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "Dummy_Grid.generated.h"
 
-class ADummyConveyor;
+class AConveyor;
 class AMachineBase;
 class UInstancedStaticMeshComponent;
 class UStaticMeshComponent;
@@ -92,7 +92,7 @@ public:
 	bool TryPlaceMachine(AMachineBase* Machine, FIntPoint Origin, FString& OutReason, int32 RotationSteps = 0);
 
 	UFUNCTION(BlueprintCallable, Category = "Grid|Placement")
-	bool TryPlaceConveyor(ADummyConveyor* Conveyor, const TArray<FIntPoint>& PathCells, FString& OutReason);
+	bool TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint>& PathCells, FString& OutReason);
 
 	UFUNCTION(BlueprintCallable, Category = "Grid|Placement")
 	bool RemoveMachine(AMachineBase* Machine);

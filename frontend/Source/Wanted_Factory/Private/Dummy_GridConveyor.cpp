@@ -5,7 +5,7 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Dummy_MachineBase.h"
 #include "MachineBase.h"
-#include "dummy_converyor.h"
+#include "Conveyor.h"
 
 namespace
 {
@@ -392,7 +392,7 @@ bool ADummyGrid::CanPlaceConveyorPath(const TArray<FIntPoint>& PathCells) const
 	return CollectConveyorReservedCells(this, OccupiedCells, ActorToCells, PathCells, ReservedCells, OutReason);
 }
 
-bool ADummyGrid::TryPlaceConveyor(ADummyConveyor* Conveyor, const TArray<FIntPoint>& PathCells, FString& OutReason)
+bool ADummyGrid::TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint>& PathCells, FString& OutReason)
 {
 	TArray<FIntPoint> PlacementCells;
 	if (!BuildConveyorPlacementPath(PathCells, PlacementCells, OutReason))

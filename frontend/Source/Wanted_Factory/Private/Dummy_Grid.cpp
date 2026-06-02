@@ -5,7 +5,7 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "dummy_converyor.h"
+#include "Conveyor.h"
 #include "Engine/StaticMesh.h"
 #include "MachineBase.h"
 #include "Materials/MaterialInterface.h"

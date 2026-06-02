@@ -6,7 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "Dummy_BuildController.generated.h"
 
-class ADummyConveyor;
+class AConveyor;
 class ADummyGrid;
 class AMachineBase;
 
@@ -35,7 +35,7 @@ protected:
 	TSubclassOf<AMachineBase> MachineClass;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
-	TSubclassOf<ADummyConveyor> ConveyorClass;
+	TSubclassOf<AConveyor> ConveyorClass;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
 	EDummyBuildPlacementMode PlacementMode = EDummyBuildPlacementMode::Machine;
