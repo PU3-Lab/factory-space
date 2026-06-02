@@ -215,6 +215,24 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
 	bool OJJ_RemoveActorAt(FIntPoint Cell);
 
+	// === Conveyor 경로/배치 (Step 3-b — Dummy 모델 A 이식, parity) ===
+
+	// 드래그 셀 목록을 정규 컨베이어 경로로 보정 — 시작이 머신 출력 셀 위/인접인지 검사해 출력셀 포함 경로 생성.
+	// 실패 시 OutReason에 사유. (포트 판정/연속성/충돌은 내부 OJJ_CollectConveyorReservedCells로 검증.) C++ 전용.
+	bool OJJ_BuildConveyorPlacementPath(
+		const TArray<FIntPoint>& DragCells,
+		TArray<FIntPoint>& OutPathCells,
+		FString& OutReason) const;
+
+	// 주어진 경로가 배치 가능한지만 판정(예약셀 산출 없이 OJJ_CollectConveyorReservedCells 래핑). C++ 전용.
+	bool OJJ_CanPlaceConveyorPath(const TArray<FIntPoint>& PathCells) const;
+
+	// 컨베이어 배치 종합 — 경로 보정→예약셀/source/target 산출→OJJ_RegisterActorCells 등록→
+	// Conveyor의 SetActorLocation/SetPath/ConfigureTransport(AMachineBase* 엔드포인트) 호출.
+	// 실패 시 OutReason 기록 + false(등록 전 실패는 부작용 없음). 서버 권위 전용.
+	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
+	bool OJJ_TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint>& PathCells, FString& OutReason);
+
 	// Origin부터 머신 풋프린트만큼의 셀이 모두 비어있는지 검사. RotationSteps로 회전 footprint 검사(기본 0).
 	UFUNCTION(BlueprintPure, Category = "Grid|Placement")
 	bool CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
