@@ -143,6 +143,8 @@
 
 **선결:** Step 1~3(그리드) 완료 후 진입. 매니저는 완성된 그리드 조회 API에 의존.
 
+**통지 방식 — ✅ 2번(이벤트에 데이터 실어 증분 갱신)으로 팀 합의.** 상세 이벤트 명세(종류/페이로드/식별키/재동기화 안전장치)는 Step 4에서 설계. Step 1~3(그리드 공간 작업)과는 독립.
+
 **설계 결정 — 파생 vs 저장:** 기본은 **파생(derive-on-query)**. 연결은 컨베이어의 `OccupiedGridCells` 양끝 + source/target에서 계산 가능 → 매니저가 별도 상태 중복 저장 안 함(불변식 깨질 여지 최소화, YAGNI). 성능 이슈 시에만 매니저 측 캐시.
 - 그리드 측 조회 헬퍼: `OJJ_GetConveyorAtCell(FIntPoint) : ADummyConveyor*` (공간 정보 — 그리드 소속).
 - 매니저가 그리드(들)를 순회하여 연결쌍(SourceOrigin→TargetOrigin) 집계 → Step 5 스냅샷으로 노출.
