@@ -6,10 +6,8 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "chromadb>=1.5.9",
-    "fastapi>=0.115.0,<1.0",
-    "google-generativeai>=0.8.6",
-    "langchain>=1.3.2",
-    "langchain-google-genai>=4.2.3",
+    "fastapi>=0.136.3,<0.137.0",
+    "google-genai>=1.33.0",
     "langgraph>=1.2.2",
     "pydantic>=2.0,<3.0",
     "uvicorn[standard]>=0.30.0,<1.0",
@@ -45,4 +43,3 @@ exclude = [
 [tool.ruff.lint]
 select = ["E", "F", "I", "ANN", "UP", "N"]
 ignore = ["E501"]
-

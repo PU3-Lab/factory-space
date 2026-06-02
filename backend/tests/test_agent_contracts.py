@@ -1,84 +1,155 @@
 from __future__ import annotations
 
-import asyncio
+from typing import Any
 
-import pytest
-
-from factory_space.core.actions.schemas import Action
-from factory_space.core.agents.orchestrator import AgentOrchestrator
-from factory_space.core.agents.registry import AgentRegistry, UnknownAgentError
-from factory_space.core.state.context import AgentContext
-from factory_space.messages.protocol import (
-    AgentRequest,
-    AgentResponse,
-    AgentResponsePayload,
-    agent_response_to_envelope,
+from agents.agent_catalog import (
+    AgentCatalogTool,
+    RoutingToolResult,
+    get_top_level_agent_capabilities,
 )
+from agents.base import AgentContext
+from agents.operator_guide.agent import OperatorGuideAgent
+from agents.orchestrator import TOP_LEVEL_AGENT_IDS, OrchestratorAgent
+from agents.pipeline.graph_edges import TOP_LEVEL_AGENT_BRANCHES
+from agents.quest_generator.agent import QuestGeneratorAgent
+from agents.router import create_default_agent_router
 
 
-class DummyAgent:
-    agent_id = "dummy"
+class FakeRoutingSupportTool:
+    name = "fake.routing_tool"
 
-    async def process(
+    def invoke(
         self,
-        request: AgentRequest,
+        payload: dict[str, Any],
         context: AgentContext,
-    ) -> AgentResponse:
-        return AgentResponse(
-            session_id=context.session_id,
-            request_id=context.request_id,
-            client_id=context.client_id,
-            agent=request.agent,
-            payload=AgentResponsePayload(
-                text="ok",
-                actions=[Action(name="show_ui_message", args={"text": "ok"})],
-            ),
+    ) -> RoutingToolResult:
+        return RoutingToolResult(
+            name=self.name,
+            section="FAKE_ROUTING_SECTION",
+            content=f"request={context.request_id}; keys={sorted(payload)}",
         )
 
 
-def test_orchestrator_dispatches_registered_agent() -> None:
-    registry = AgentRegistry()
-    registry.register(DummyAgent())
-    orchestrator = AgentOrchestrator(registry)
+def test_default_agent_router_contains_leaf_agents() -> None:
+    router = create_default_agent_router()
 
-    response = asyncio.run(
-        orchestrator.process(
-            AgentRequest(
-                session_id="session-1",
-                request_id="request-1",
-                client_id="client-1",
-                agent="dummy",
-                payload={"message": "hello"},
-            )
-        )
+    assert router.list_agent_ids() == [
+        "new_material_generator",
+        "operator_guide.machine_help",
+        "operator_guide.recipe_explainer",
+        "operator_guide.troubleshooter",
+        "process_optimizer",
+        "quest_generator.economy_quest",
+        "quest_generator.exploration_quest",
+        "quest_generator.production_quest",
+        "quest_generator.tutorial_quest",
+    ]
+
+
+def test_agents_expose_tools_tuple() -> None:
+    router = create_default_agent_router()
+    agents = [
+        *(router.get(agent_id) for agent_id in router.list_agent_ids()),
+        OrchestratorAgent(),
+        OperatorGuideAgent(),
+        QuestGeneratorAgent(),
+    ]
+
+    for agent in agents:
+        assert isinstance(agent.tools, tuple)
+
+
+def test_top_level_agent_catalog_covers_orchestrator_choices() -> None:
+    capabilities = get_top_level_agent_capabilities()
+
+    assert tuple(capability.agent_id for capability in capabilities) == TOP_LEVEL_AGENT_IDS
+    assert set(TOP_LEVEL_AGENT_IDS) == set(TOP_LEVEL_AGENT_BRANCHES)
+    for capability in capabilities:
+        assert capability.summary
+        assert capability.when_to_use
+
+
+def test_agent_catalog_tool_returns_routing_prompt_section() -> None:
+    context = AgentContext(request_id="request-catalog-tool")
+
+    result = AgentCatalogTool().invoke({}, context)
+
+    assert result.name == "agent_catalog.get_capabilities"
+    assert result.section == "AGENT_CAPABILITIES"
+    for agent_id in TOP_LEVEL_AGENT_IDS:
+        assert f"- {agent_id}:" in result.content
+
+
+def test_orchestrator_routing_prompt_includes_agent_capabilities() -> None:
+    orchestrator = OrchestratorAgent()
+    context = AgentContext(
+        request_id="request-orchestrator-contract",
+        metadata={"screen": "factory-floor"},
     )
 
-    assert response.agent == "dummy"
-    assert response.session_id == "session-1"
-    assert response.payload.text == "ok"
-    assert response.payload.actions[0].name == "show_ui_message"
-
-
-def test_registry_raises_for_unknown_agent() -> None:
-    registry = AgentRegistry()
-
-    with pytest.raises(UnknownAgentError):
-        registry.get("missing")
-
-
-def test_agent_response_converts_to_message_envelope() -> None:
-    response = AgentResponse(
-        session_id="session-1",
-        request_id="request-1",
-        agent="dummy",
-        payload=AgentResponsePayload(
-            text="hello",
-            actions=[Action(name="highlight_object", args={"object_id": "a"})],
-        ),
+    prompt = orchestrator.build_routing_prompt(
+        {"question": "설비 병목을 줄이고 싶어"},
+        context,
+        requested_agent="process_optimizer",
     )
 
-    envelope = agent_response_to_envelope(response)
+    assert "[AGENT_CAPABILITIES]" in prompt
+    for agent_id in TOP_LEVEL_AGENT_IDS:
+        assert f"- {agent_id}:" in prompt
 
-    assert envelope.type == "agent_response"
-    assert envelope.payload["text"] == "hello"
-    assert envelope.payload["actions"][0]["name"] == "highlight_object"
+
+def test_orchestrator_calls_routing_support_tools() -> None:
+    orchestrator = OrchestratorAgent(tools=(FakeRoutingSupportTool(),))
+    context = AgentContext(request_id="request-fake-tool")
+
+    prompt = orchestrator.build_routing_prompt({"question": "route me"}, context)
+
+    assert "[FAKE_ROUTING_SECTION]" in prompt
+    assert "request=request-fake-tool; keys=['question']" in prompt
+    assert "[AGENT_CAPABILITIES]" not in prompt
+
+
+def test_orchestrator_accepts_empty_tools_override() -> None:
+    orchestrator = OrchestratorAgent(tools=())
+    context = AgentContext(request_id="request-empty-tools")
+
+    prompt = orchestrator.build_routing_prompt({"question": "route me"}, context)
+
+    assert "[AGENT_CAPABILITIES]" not in prompt
+    assert orchestrator.tools == ()
+
+
+def test_sub_orchestrators_use_structured_prompt_id_contract() -> None:
+    operator_guide = OperatorGuideAgent()
+    quest = QuestGeneratorAgent()
+    context = AgentContext(
+        request_id="request-contract",
+        metadata={"screen": "factory-floor"},
+    )
+
+    operator_guide_prompt = operator_guide.build_routing_prompt(
+        {"question": "How do I use this machine?"},
+        context,
+    )
+    quest_prompt = quest.build_routing_prompt(
+        {"message": "create a production quest"},
+        context,
+    )
+
+    for prompt in (operator_guide_prompt, quest_prompt):
+        assert "[ROLE]" in prompt
+        assert "[TASK]" in prompt
+        assert "[ALLOWED_LEAF_AGENT_IDS]" in prompt
+        assert "[REQUEST_CONTEXT]" in prompt
+        assert "[REQUEST_PAYLOAD]" in prompt
+        assert "[OUTPUT_CONTRACT]" in prompt
+        assert "compact JSON" not in prompt
+        assert '{"sub_agent"' not in prompt
+
+    assert "operator_guide.machine_help" in operator_guide_prompt
+    assert "operator_guide.recipe_explainer" in operator_guide_prompt
+    assert "operator_guide.troubleshooter" in operator_guide_prompt
+    assert "quest_generator.production_quest" in quest_prompt
+    assert "quest_generator.tutorial_quest" in quest_prompt
+    assert "quest_generator.exploration_quest" in quest_prompt
+    assert "quest_generator.economy_quest" in quest_prompt

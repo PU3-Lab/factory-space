@@ -1,0 +1,1 @@
+"""Material visual profile builder."""

@@ -3,6 +3,7 @@
 
 #include "RecipeManagerSubsystem.h"
 #include "Wanted_Factory.h"
+#include "Algo/Count.h"
 
 AMachineBase::AMachineBase()
 {
@@ -67,19 +68,41 @@ bool AMachineBase::CanPlace()
 	return true;
 }
 
-void AMachineBase::AddItem(FName ItemID, int32 Count)
+bool AMachineBase::AddItem(FName ItemID, int32 Count)
 {
 	if (ItemID.IsNone() || Count <= 0)
 	{
-		return;
+		return false;
+	}
+	
+	if (!CanAddInputItem(ItemID, Count))
+	{
+		LOG_SSR_W(TEXT("Input Inventory Full : %s %d / %d"),
+			*ItemID.ToString(),
+			InputInventory.FindRef(ItemID),
+			MaxInputPerItem
+		);
+
+		return false;
 	}
 
-	CurrentInputItem = ItemID;
-	CurrentInputCount = Count;
+	int32& ItemCount = InputInventory.FindOrAdd(ItemID);
+	ItemCount += Count;
 
-	LOG_SSR_W(TEXT("Input Item : %s x %d"), *ItemID.ToString(), CurrentInputCount);
+	LOG_SSR_W(TEXT("Input Inventory Added : %s x %d / %d"),
+		*ItemID.ToString(),
+		ItemCount,
+		MaxInputPerItem
+	);
+	
+	if (MachineState == EMachineState::Blocked)
+	{
+		MachineState = EMachineState::Idle;
+	}
 
 	TryStartProcess();
+	
+	return true;
 }
 
 void AMachineBase::TryStartProcess()
@@ -88,6 +111,7 @@ void AMachineBase::TryStartProcess()
 	{
 		return;
 	}
+
 	if (MachineState == EMachineState::Disabled ||
 		MachineState == EMachineState::NoPower ||
 		MachineState == EMachineState::Blocked)
@@ -95,12 +119,13 @@ void AMachineBase::TryStartProcess()
 		return;
 	}
 
-	if (CurrentInputItem.IsNone() || CurrentInputCount <= 0)
+	if (InputInventory.Num() <= 0)
 	{
 		return;
 	}
 
-	URecipeManagerSubsystem* RecipeManager = GetGameInstance()->GetSubsystem<URecipeManagerSubsystem>();
+	URecipeManagerSubsystem* RecipeManager =
+		GetGameInstance()->GetSubsystem<URecipeManagerSubsystem>();
 
 	if (!RecipeManager)
 	{
@@ -108,40 +133,47 @@ void AMachineBase::TryStartProcess()
 		return;
 	}
 
-	FRecipeTable FoundRecipe;
-
-	const bool bFoundRecipe = RecipeManager->FindRecipeByInputItem(CurrentInputItem, FoundRecipe);
-
-	if (!bFoundRecipe)
+	for (const TPair<FName, int32>& InputPair : InputInventory)
 	{
-		LOG_SSR_W(TEXT("No recipe found for input item: %s"), *CurrentInputItem.ToString());
-		return;
+		TArray<FRecipeTable> FoundRecipes;
+
+		const bool bFoundRecipes =
+			RecipeManager->FindRecipesByInputItem(InputPair.Key, FoundRecipes);
+
+		if (!bFoundRecipes)
+		{
+			continue;
+		}
+
+		for (const FRecipeTable& Recipe : FoundRecipes)
+		{
+			if (Recipe.MachineType != MachineType)
+			{
+				continue;
+			}
+
+			if (!HasEnoughIngredients(Recipe))
+			{
+				continue;
+			}
+			
+			if (!CanAddToOutputBuffer(Recipe))
+			{
+				MachineState = EMachineState::Blocked;
+
+				LOG_SSR_W(TEXT("Cannot start process. Output Buffer Blocked."));
+				return;
+			}
+
+			CurrentRecipe = Recipe;
+			ProcessTime = CurrentRecipe.CraftingTime;
+
+			StartProcess();
+			return;
+		}
 	}
 
-	if (FoundRecipe.MachineType != MachineType)
-	{
-		LOG_SSR_W(
-			TEXT("Recipe machine type mismatch. Machine: %s / Recipe: %s"),
-			*MachineType.ToString(),
-			*FoundRecipe.MachineType.ToString()
-		);
-		return;
-	}
-
-	if (CurrentInputCount < FoundRecipe.InputQty)
-	{
-		LOG_SSR_W(
-			TEXT("Not enough input. Need %d / Has %d"),
-			FoundRecipe.InputQty,
-			CurrentInputCount
-		);
-		return;
-	}
-
-	CurrentRecipe = FoundRecipe;
-	ProcessTime = CurrentRecipe.CraftingTime;
-
-	StartProcess();
+	LOG_SSR_W(TEXT("No craftable recipe found."));
 }
 
 void AMachineBase::StartProcess()
@@ -154,8 +186,8 @@ void AMachineBase::StartProcess()
 	MachineState = EMachineState::Working;
 
 	LOG_SSR_W(TEXT("Process Started: %s -> %s"),
-		*CurrentRecipe.InputItem.ToString(),
-		*CurrentRecipe.OutputItem.ToString()
+		*CurrentRecipe.InputItem1.ToString(),
+		*CurrentRecipe.OutputItem1.ToString()
 	);
 
 	GetWorld()->GetTimerManager().SetTimer(
@@ -179,29 +211,23 @@ void AMachineBase::FinishProcess()
 
 void AMachineBase::ProcessItem_Implementation()
 {
-	CurrentInputCount -= CurrentRecipe.InputQty;
+	ConsumeIngredients(CurrentRecipe);
 
-	if (CurrentInputCount <= 0)
-	{
-		CurrentInputCount = 0;
-		CurrentInputItem = NAME_None;
-	}
-
-	int32& OutputCount = OutputInventory.FindOrAdd(CurrentRecipe.OutputItem);
-	OutputCount += CurrentRecipe.OutputQty;
+	AddOutputItem(CurrentRecipe.OutputItem1, CurrentRecipe.OutputQty1);
+	AddOutputItem(CurrentRecipe.OutputItem2, CurrentRecipe.OutputQty2);
 
 	LOG_SSR_W(
-		TEXT("Machine Processed: %s x%d -> %s x%d"),
-		*CurrentRecipe.InputItem.ToString(),
-		CurrentRecipe.InputQty,
-		*CurrentRecipe.OutputItem.ToString(),
-		CurrentRecipe.OutputQty
-	);
-
-	LOG_SSR_W(
-		TEXT("Output Inventory: %s x%d"),
-		*CurrentRecipe.OutputItem.ToString(),
-		OutputInventory[CurrentRecipe.OutputItem]
+		TEXT("Machine Processed: %s x%d, %s x%d, %s x%d -> %s x%d, %s x%d"),
+		*CurrentRecipe.InputItem1.ToString(),
+		CurrentRecipe.InputQty1,
+		*CurrentRecipe.InputItem2.ToString(),
+		CurrentRecipe.InputQty2,
+		*CurrentRecipe.InputItem3.ToString(),
+		CurrentRecipe.InputQty3,
+		*CurrentRecipe.OutputItem1.ToString(),
+		CurrentRecipe.OutputQty1,
+		*CurrentRecipe.OutputItem2.ToString(),
+		CurrentRecipe.OutputQty2
 	);
 }
 
@@ -210,4 +236,361 @@ void AMachineBase::StopProcess()
 	GetWorld()->GetTimerManager().ClearTimer(ProcessTimer);
 
 	MachineState = EMachineState::Idle;
+}
+
+bool AMachineBase::CanAddInputItem(FName ItemID, int32 Count) const
+{
+	if (ItemID.IsNone() || Count <= 0)
+	{
+		return false;
+	}
+	
+	const int32 CurrentCount = InputInventory.FindRef(ItemID);
+	
+	return CurrentCount + Count <= MaxInputPerItem;
+}
+
+bool AMachineBase::HasEnoughIngredients(const FRecipeTable& Recipe) const
+{
+	auto CheckIngredient = [this](FName ItemID, int32 Qty) -> bool
+	{
+		if (ItemID.IsNone() || Qty <= 0)
+		{
+			return true;
+		}
+
+		const int32* FoundCount = InputInventory.Find(ItemID);
+
+		if (!FoundCount)
+		{
+			return false;
+		}
+
+		return *FoundCount >= Qty;
+	};
+
+	return
+		CheckIngredient(Recipe.InputItem1, Recipe.InputQty1) &&
+		CheckIngredient(Recipe.InputItem2, Recipe.InputQty2) &&
+		CheckIngredient(Recipe.InputItem3, Recipe.InputQty3);
+}
+
+void AMachineBase::ConsumeIngredients(const FRecipeTable& Recipe)
+{
+	auto Consume = [this](FName ItemID, int32 Qty)
+	{
+		if (ItemID.IsNone() || Qty <= 0)
+		{
+			return;
+		}
+
+		int32* FoundCount = InputInventory.Find(ItemID);
+
+		if (!FoundCount)
+		{
+			return;
+		}
+
+		*FoundCount -= Qty;
+
+		if (*FoundCount <= 0)
+		{
+			InputInventory.Remove(ItemID);
+		}
+	};
+
+	Consume(Recipe.InputItem1, Recipe.InputQty1);
+	Consume(Recipe.InputItem2, Recipe.InputQty2);
+	Consume(Recipe.InputItem3, Recipe.InputQty3);
+}
+
+void AMachineBase::AddOutputItem(FName ItemID, int32 Count)
+{
+	if (ItemID.IsNone() || Count <= 0)
+	{
+		return;
+	}
+	
+	int32 CurrentCount = OutputBuffer.FindRef(ItemID);
+	
+	if (CurrentCount + Count > MaxBufferPerItem)
+	{
+		MachineState = EMachineState::Blocked;
+		
+		LOG_SSR_W(TEXT("Output Buffer Full : %s %d / %d"),
+			*ItemID.ToString(),
+			CurrentCount,
+			MaxBufferPerItem
+		);
+		
+		return;
+	}
+
+	int32& BufferCount = OutputBuffer.FindOrAdd(ItemID);
+	BufferCount += Count;
+
+	LOG_SSR_W(TEXT("Output Buffer Added : %s x %d / %d"),
+		*ItemID.ToString(),
+		BufferCount,
+		MaxBufferPerItem
+	);
+}
+
+bool AMachineBase::CanAddToOutputBuffer(const FRecipeTable& Recipe) const
+{
+	auto CheckOutputSpace = [this](FName ItemID, int32 Qty) -> bool
+	{
+		if (ItemID.IsNone() || Qty <= 0)
+		{
+			return true;
+		}
+		
+		const int32 CurrentCount = OutputBuffer.FindRef(ItemID);
+		
+		return CurrentCount + Qty <= MaxBufferPerItem;
+	};
+	
+	return
+		CheckOutputSpace(Recipe.OutputItem1, Recipe.OutputQty1) &&
+			CheckOutputSpace(Recipe.OutputItem2, Recipe.OutputQty2);
+}
+
+bool AMachineBase::TakeOutputItem(FName ItemID, int32 Count)
+{
+	if (ItemID.IsNone() || Count <= 0)
+	{
+		return false;
+	}
+	
+	int32* FoundCount = OutputBuffer.Find(ItemID);
+	
+	if (!FoundCount || *FoundCount < Count)
+	{
+		LOG_SSR_W(TEXT("TakeOutputItem Failed : %s"), *ItemID.ToString());
+		return false;
+	}
+	
+	*FoundCount -= Count;
+	
+	LOG_SSR_W(TEXT("TakeOutputItem Success : %s x %d, Remain %d / %d"),
+		*ItemID.ToString(),
+		Count,
+		*FoundCount,
+		MaxBufferPerItem
+	);
+
+	if (*FoundCount <= 0)
+	{
+		OutputBuffer.Remove(ItemID);
+	}
+
+	if (MachineState == EMachineState::Blocked)
+	{
+		MachineState = EMachineState::Idle;
+		TryStartProcess();
+	}
+
+	return true;
+}
+
+bool AMachineBase::TransferOutputToMachine(AMachineBase* TargetMachine, FName ItemID, int32 Count)
+{
+	// 전송 할 머신이 없으면?
+	if (!TargetMachine)
+	{
+		LOG_SSR_W(TEXT("TransferOutputToMachine Failed : TargetMachine is NULL"));
+		return false;
+	}
+	
+	// 전송 할 머신이 본인이라면?
+	if (TargetMachine == this)
+	{
+		LOG_SSR_W(TEXT("TransferOutputToMachine Failed : Cannot transfer to self"));
+		return false;
+	}
+	
+	// 이상한 입력 아이템 방지
+	if (ItemID.IsNone() || Count <= 0)
+	{
+		return false;
+	}
+	
+	// 내 출력 버퍼에 아이템이 있는지 체크
+	int32* FoundCount = OutputBuffer.Find(ItemID);
+	
+	if (!FoundCount || *FoundCount < Count)
+	{
+		LOG_SSR_W(TEXT("TransferOutputToMachine Failed : Not enough item %s"),
+			*ItemID.ToString()
+		);
+		return false;
+	}
+	
+	// 아이템이 입력 버퍼에 들어갈수 있는지 체크
+	if (!TargetMachine->CanAddInputItem(ItemID, Count))
+	{
+		LOG_SSR_W(TEXT("TransferOutputToMachine Failed : Target Input Full %s %d / %d"),
+			*ItemID.ToString(),
+			TargetMachine->InputInventory.FindRef(ItemID),
+			TargetMachine->MaxInputPerItem
+		);
+
+		return false;
+	}
+	
+	// 1. 내 버퍼에서 먼저 꺼내자
+	const bool bTakeSuccess = TakeOutputItem(ItemID, Count);
+	
+	if (!bTakeSuccess)
+	{
+		return false;
+	}
+	
+	// // 2. 전송 할 기계에 InputInventory에 넣음
+	const bool bAddSuccess = TargetMachine->AddItem(ItemID, Count);
+	
+	if (!bAddSuccess)
+	{
+		LOG_SSR_W(TEXT("TransferOutputToMachine Failed : AddItem Failed"));
+		return false;
+	}
+	
+	LOG_SSR_W(TEXT("Transfer Success : %s x %d -> %s"),
+		*ItemID.ToString(),
+		Count,
+		*TargetMachine->GetName()
+	);
+
+	return true;
+}
+
+void AMachineBase::DebugInventory()
+{
+	LOG_SSR_W(TEXT("========== Input Inventory =========="));
+
+	for (const TPair<FName, int32>& Input : InputInventory)
+	{
+		LOG_SSR_W(
+			TEXT("%s x %d"),
+			*Input.Key.ToString(),
+			Input.Value
+		);
+	}
+
+	LOG_SSR_W(TEXT("========== Output Buffer =========="));
+
+	for (const TPair<FName, int32>& Buffer : OutputBuffer)
+	{
+		LOG_SSR_W(TEXT("%s x %d / %d"),
+			*Buffer.Key.ToString(),
+			Buffer.Value,
+			MaxBufferPerItem
+		);
+	}
+	
+	
+	
+	LOG_SSR_W(TEXT("========== Output Inventory =========="));
+
+	for (const TPair<FName, int32>& Output : OutputInventory)
+	{
+		LOG_SSR_W(
+			TEXT("%s x %d"),
+			*Output.Key.ToString(),
+			Output.Value
+		);
+	}
+}
+
+bool AMachineBase::ConnectOutputToMachine(int32 OutputPortIndex, AMachineBase* TargetMachine, int32 TargetInputPortIndex)
+{
+	// 대상 기계가 없으면 연결 실패
+	if (!TargetMachine)
+	{
+		LOG_SSR_W(TEXT("Connect Failed : TargetMachine is NULL"));
+		return false;
+	}
+
+	// 자기 자신에게 연결 방지
+	if (TargetMachine == this)
+	{
+		LOG_SSR_W(TEXT("Connect Failed : Cannot connect to self"));
+		return false;
+	}
+
+	// 내 출력 포트 번호가 유효한지 체크
+	if (!OutputPorts.IsValidIndex(OutputPortIndex))
+	{
+		LOG_SSR_W(TEXT("Connect Failed : Invalid OutputPortIndex %d"), OutputPortIndex);
+		return false;
+	}
+
+	// 상대 입력 포트 번호가 유효한지 체크
+	if (!TargetMachine->InputPorts.IsValidIndex(TargetInputPortIndex))
+	{
+		LOG_SSR_W(TEXT("Connect Failed : Invalid TargetInputPortIndex %d"), TargetInputPortIndex);
+		return false;
+	}
+
+	// 연결 정보 생성
+	FMachinePortConnection NewConnection;
+	NewConnection.FromOutputPortIndex = OutputPortIndex;
+	NewConnection.TargetMachine = TargetMachine;
+	NewConnection.TargetInputPortIndex = TargetInputPortIndex;
+
+	// 기존 같은 출력 포트 연결 제거
+	OutputConnections.RemoveAll(
+		[OutputPortIndex](const FMachinePortConnection& Connection)
+		{
+			return Connection.FromOutputPortIndex == OutputPortIndex;
+		}
+	);
+
+	// 새 연결 등록
+	OutputConnections.Add(NewConnection);
+
+	// 포트 연결 상태 표시
+	OutputPorts[OutputPortIndex].bIsConnected = true;
+	TargetMachine->InputPorts[TargetInputPortIndex].bIsConnected = true;
+
+	LOG_SSR_W(TEXT("Connect Success : %s OutputPort %d -> %s InputPort %d"),
+		*GetName(),
+		OutputPortIndex,
+		*TargetMachine->GetName(),
+		TargetInputPortIndex
+	);
+
+	return true;
+}
+
+bool AMachineBase::TransferOutputByPort(int32 OutputPortIndex, FName ItemID, int32 Count)
+{
+	// 내 출력 포트 번호가 유효한지 체크
+	if (!OutputPorts.IsValidIndex(OutputPortIndex))
+	{
+		LOG_SSR_W(TEXT("TransferOutputByPort Failed : Invalid OutputPortIndex %d"), OutputPortIndex);
+		return false;
+	}
+
+	// 연결 정보 찾기
+	const FMachinePortConnection* FoundConnection = OutputConnections.FindByPredicate(
+		[OutputPortIndex](const FMachinePortConnection& Connection)
+		{
+			return Connection.FromOutputPortIndex == OutputPortIndex;
+		}
+	);
+
+	// 연결된 대상이 없으면 실패
+	if (!FoundConnection || !FoundConnection->TargetMachine)
+	{
+		LOG_SSR_W(TEXT("TransferOutputByPort Failed : No Connection OutputPort %d"), OutputPortIndex);
+		return false;
+	}
+
+	// 기존 전송 함수 재사용
+	return TransferOutputToMachine(
+		FoundConnection->TargetMachine,
+		ItemID,
+		Count
+	);
 }

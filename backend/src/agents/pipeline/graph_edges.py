@@ -1,0 +1,150 @@
+"""LangGraph edge wiring and routing predicates."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from langgraph.graph import END, START, StateGraph
+
+from agents.operator_guide.agent import OPERATOR_GUIDE_LEAF_AGENT_IDS
+from agents.orchestrator import TOP_LEVEL_AGENT_IDS
+from agents.pipeline.state import AgentGraphState, TopRoute
+from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS
+
+SINGLE_LEAF_AGENT_IDS = {
+    "new_material_generator": ("new_material_generator",),
+    "process_optimizer": ("process_optimizer",),
+}
+
+TOP_LEVEL_AGENT_BRANCHES = {
+    "process_optimizer": "validate_process_payload",
+    "operator_guide": "operator_guide.route_sub_agent",
+    "quest_generator": "quest_generator.route_sub_agent",
+    "new_material_generator": "validate_material_payload",
+}
+
+
+def wire_agent_graph(graph: StateGraph) -> None:
+    graph.add_edge(START, "build_context")
+    graph.add_edge("build_context", "validate_envelope")
+    graph.add_edge("validate_envelope", "route_top_agent")
+    graph.add_conditional_edges(
+        "route_top_agent",
+        route_selected_agent,
+        {
+            **TOP_LEVEL_AGENT_BRANCHES,
+            "error": "build_agent_error",
+        },
+    )
+    for node in (
+        "validate_process_payload",
+        "operator_guide.route_sub_agent",
+        "quest_generator.route_sub_agent",
+        "validate_material_payload",
+    ):
+        graph.add_conditional_edges(
+            node,
+            route_selected_leaf_agent,
+            {
+                "valid": "cache_lookup",
+                "error": "build_agent_error",
+            },
+        )
+    graph.add_conditional_edges(
+        "cache_lookup",
+        route_cache_result,
+        {
+            "hit": "build_cached_response",
+            "miss": "agent.middleware.before",
+        },
+    )
+    graph.add_edge("build_cached_response", "build_agent_response")
+    graph.add_edge("agent.middleware.before", "build_prompt")
+    graph.add_edge("build_prompt", "call_llm.default")
+    graph.add_conditional_edges(
+        "call_llm.default",
+        route_llm_result,
+        {
+            "valid": "parse_llm_response",
+            "fallback": "call_llm.fallback1",
+            "error": "build_agent_error",
+        },
+    )
+    graph.add_conditional_edges(
+        "call_llm.fallback1",
+        route_llm_result,
+        {
+            "valid": "parse_llm_response",
+            "fallback": "call_llm.fallback2",
+            "error": "build_agent_error",
+        },
+    )
+    graph.add_conditional_edges(
+        "call_llm.fallback2",
+        route_llm_result,
+        {
+            "valid": "parse_llm_response",
+            "fallback": "agent.middleware.fallback",
+            "error": "build_agent_error",
+        },
+    )
+    graph.add_conditional_edges(
+        "parse_llm_response",
+        route_response_validation,
+        {
+            "valid": "validate_response_schema",
+            "error": "build_agent_error",
+        },
+    )
+    graph.add_edge("agent.middleware.fallback", "validate_response_schema")
+    graph.add_conditional_edges(
+        "validate_response_schema",
+        route_response_validation,
+        {
+            "valid": "cache_write",
+            "error": "build_agent_error",
+        },
+    )
+    graph.add_edge("cache_write", "agent.middleware.after")
+    graph.add_edge("agent.middleware.after", "build_agent_response")
+    graph.add_edge("build_agent_response", END)
+    graph.add_edge("build_agent_error", END)
+
+
+def route_selected_agent(state: AgentGraphState) -> TopRoute:
+    if state.get("error"):
+        return "error"
+    selected_agent = state.get("selectedAgent")
+    if selected_agent in TOP_LEVEL_AGENT_IDS:
+        return selected_agent  # type: ignore[return-value]
+    return "error"
+
+
+def route_cache_result(state: AgentGraphState) -> Literal["hit", "miss"]:
+    return "hit" if state.get("cachedPayload") is not None else "miss"
+
+
+def route_selected_leaf_agent(state: AgentGraphState) -> Literal["valid", "error"]:
+    if state.get("error"):
+        return "error"
+
+    selected_agent = state.get("selectedAgent")
+    selected_leaf_agent = state.get("selectedLeafAgent")
+    allowed_leaf_agent_ids = {
+        **SINGLE_LEAF_AGENT_IDS,
+        "operator_guide": OPERATOR_GUIDE_LEAF_AGENT_IDS,
+        "quest_generator": QUEST_SUB_AGENT_IDS,
+    }.get(selected_agent, ())
+    if selected_leaf_agent in allowed_leaf_agent_ids:
+        return "valid"
+    return "error"
+
+
+def route_llm_result(state: AgentGraphState) -> Literal["valid", "fallback", "error"]:
+    if state.get("error"):
+        return "error"
+    return "valid" if state.get("llmRaw") else "fallback"
+
+
+def route_response_validation(state: AgentGraphState) -> Literal["valid", "error"]:
+    return "error" if state.get("error") else "valid"

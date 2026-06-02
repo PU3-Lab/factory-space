@@ -1,0 +1,55 @@
+name: Unreal Engine Build Check
+
+on:
+  push:
+    branches: [ main, dev ]
+    paths:
+      - 'frontend/**'
+  pull_request:
+    branches: [ main, dev ]
+    paths:
+      - 'frontend/**'
+  workflow_dispatch:
+
+env:
+  # Default path to Unreal Engine 5.7. Modify this if your runner has UE installed elsewhere.
+  UNREAL_ENGINE_PATH: 'C:\Program Files\Epic Games\UE_5.7'
+  PROJECT_PATH: 'frontend/Wanted_Factory.uproject'
+  PROJECT_NAME: 'Wanted_Factory'
+
+jobs:
+  build:
+    name: Build Unreal Project
+    runs-on: [self-hosted, windows]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Checkout LFS Objects
+        run: git lfs pull
+
+      - name: Generate Project Files
+        shell: pwsh
+        run: |
+          $enginePath = "${{ env.UNREAL_ENGINE_PATH }}"
+          $projectPath = "${{ github.workspace }}\${{ env.PROJECT_PATH }}"
+          
+          if (-not (Test-Path "$enginePath")) {
+            Write-Error "Unreal Engine not found at: $enginePath. Please verify the installation path on the runner."
+            exit 1
+          }
+          
+          Write-Host "Generating project files..."
+          & "$enginePath\Engine\Build\BatchFiles\GenerateProjectFiles.bat" -project="$projectPath" -game -engine -CurrentPlatform
+
+      - name: Build Editor (Development Configuration)
+        shell: pwsh
+        run: |
+          $enginePath = "${{ env.UNREAL_ENGINE_PATH }}"
+          $projectPath = "${{ github.workspace }}\${{ env.PROJECT_PATH }}"
+          
+          Write-Host "Building Editor target..."
+          & "$enginePath\Engine\Build\BatchFiles\Build.bat" "${{ env.PROJECT_NAME }}Editor" Win64 Development "$projectPath" -waitmutex

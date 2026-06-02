@@ -1,57 +1,80 @@
 from __future__ import annotations
 
-import asyncio
-import json
+from fastapi.testclient import TestClient
 
-from factory_space.messages.protocol import ErrorMessage, MessageEnvelope
-from factory_space.websocket.endpoint import handle_raw_message
+from app import create_app
 
 
-def test_handle_raw_message_returns_pong() -> None:
-    response = asyncio.run(
-        handle_raw_message(
-            json.dumps(
+def test_health_endpoint_returns_ok() -> None:
+    with TestClient(create_app()) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_agent_websocket_requires_top_level_routing_model_for_agent_request() -> None:
+    with TestClient(create_app()) as client:
+        with client.websocket_connect("/ws/agent") as websocket:
+            websocket.send_json(
                 {
-                    "type": "ping",
-                    "version": "1.0",
-                    "session_id": "session-1",
-                    "payload": {"timestamp": "now"},
+                    "type": "agent.request",
+                    "request_id": "request-ws",
+                    "agent": "process_optimizer",
+                    "payload": {"machines": [{"id": "m-1"}]},
                 }
-            ),
-            client_id="client-1",
-        )
-    )
+            )
+            response = websocket.receive_json()
 
-    assert isinstance(response, MessageEnvelope)
-    assert response.type == "pong"
-    assert response.client_id == "client-1"
+    assert response["type"] == "agent.error"
+    assert response["agent"] == "process_optimizer"
+    assert response["error"]["code"] == "ROUTING_UNAVAILABLE"
 
 
-def test_handle_raw_message_dispatches_agent_request() -> None:
-    response = asyncio.run(
-        handle_raw_message(
-            json.dumps(
+def test_agent_websocket_returns_error_for_malformed_envelope() -> None:
+    with TestClient(create_app()) as client:
+        with client.websocket_connect("/ws/agent") as websocket:
+            websocket.send_json(
                 {
-                    "type": "agent_request",
-                    "version": "1.0",
-                    "session_id": "session-1",
-                    "agent": "qa_chatbot",
-                    "payload": {"question": "hello"},
+                    "type": "wrong.type",
+                    "request_id": "request-invalid-ws-envelope",
+                    "payload": {},
                 }
-            ),
-            client_id="client-1",
-        )
-    )
+            )
+            response = websocket.receive_json()
 
-    assert isinstance(response, MessageEnvelope)
-    assert response.type == "agent_response"
-    assert response.agent == "qa_chatbot"
-    assert response.payload["metadata"]["status"] == "stub"
+    assert response["type"] == "agent.error"
+    assert response["error"]["code"] == "INVALID_ENVELOPE"
 
 
-def test_handle_raw_message_returns_error_for_invalid_json() -> None:
-    response = asyncio.run(handle_raw_message("{", client_id="client-1"))
+def test_agent_websocket_returns_error_for_invalid_json() -> None:
+    with TestClient(create_app()) as client:
+        with client.websocket_connect("/ws/agent") as websocket:
+            websocket.send_text("{not-json")
+            response = websocket.receive_json()
 
-    assert isinstance(response, ErrorMessage)
-    assert response.type == "error"
-    assert response.payload.code == "INVALID_JSON"
+    assert response["type"] == "agent.error"
+    assert response["error"]["code"] == "INVALID_JSON"
+
+
+def test_agent_websocket_preserves_unreal_correlation_fields_on_error() -> None:
+    with TestClient(create_app()) as client:
+        with client.websocket_connect("/ws/agent") as websocket:
+            websocket.send_json(
+                {
+                    "type": "agent.request",
+                    "request_id": "unreal-smoke-1",
+                    "session_id": "dev-session",
+                    "client_id": "unreal-client",
+                    "agent": "process_optimizer",
+                    "payload": {"machines": [{"id": "assembler-1"}]},
+                }
+            )
+            response = websocket.receive_json()
+
+    assert response["type"] == "agent.error"
+    assert response["request_id"] == "unreal-smoke-1"
+    assert response["session_id"] == "dev-session"
+    assert response["client_id"] == "unreal-client"
+    assert response["agent"] == "process_optimizer"
+    assert response["error"]["code"] == "ROUTING_UNAVAILABLE"

@@ -4,7 +4,9 @@
 
 Factory Space는 Unreal Engine과 WebSocket으로 통신하는 Python 백엔드 프로젝트입니다. 백엔드는 Unreal에서 들어오는 요청을 받아 목적별 AI agent로 라우팅하고, agent의 응답과 action을 다시 Unreal로 전달합니다.
 
-각 agent는 공통 입력/출력 계약을 지켜야 합니다. 내부 구현은 agent 담당자가 선택할 수 있으며, 룰베이스, LLM, RAG, 시뮬레이션, DB 기반 추론, 하이브리드 추론 등으로 자유롭게 확장할 수 있습니다. 중요한 것은 Unreal과 통신하는 외부 프로토콜과 agent 응답 구조를 안정적으로 유지하는 것입니다.
+현재 runtime source root는 `backend/src`입니다. 새 구현은 `backend/src/factory_space`가 아니라 `backend/src` 아래 역할별 패키지에 둡니다.
+
+각 agent는 공통 입력/출력 계약을 지켜야 합니다. 내부 구현은 agent 담당자가 선택할 수 있지만, agent 또는 sub-agent routing은 keyword/if-else 코드 추론이 아니라 prompt 기반 LLM 결정으로 처리합니다. 중요한 것은 Unreal과 통신하는 외부 프로토콜과 agent 응답 구조를 안정적으로 유지하는 것입니다.
 
 초기 agent 후보:
 
@@ -18,7 +20,7 @@ Factory Space는 Unreal Engine과 WebSocket으로 통신하는 Python 백엔드 
 ## 핵심 원칙
 
 - 각 agent는 담당자가 독립적으로 개발하기 쉬운 구조를 유지합니다.
-- agent 내부 구현 방식은 담당자가 선택합니다.
+- agent 내부 생성 방식은 담당자가 선택하되, agent 선택과 sub-agent 선택은 prompt 기반 routing 원칙을 지킵니다.
 - 룰베이스, LLM, RAG, 시뮬레이션, 하이브리드 추론 등은 같은 agent 입출력 계약 뒤에 둡니다.
 - WebSocket 메시지 프로토콜은 안정적으로 유지하고, 변경 시 버전을 고려합니다.
 - 공통 코드는 작고 명확하게 유지합니다.
@@ -30,7 +32,7 @@ Factory Space는 Unreal Engine과 WebSocket으로 통신하는 Python 백엔드 
 대부분의 기능 작업은 각 agent 폴더 안에서 이루어져야 합니다.
 
 ```text
-src/factory_space/agents/{agent_name}/
+src/agents/{agent_name}/
 ```
 
 각 agent는 자신의 구현 세부사항을 최대한 직접 소유합니다.
@@ -38,59 +40,67 @@ src/factory_space/agents/{agent_name}/
 ```text
 agent.py        # agent 진입점
 schemas.py      # agent 전용 요청/응답 모델
-rules.py        # 룰베이스 POC 로직
 service.py      # agent 도메인 로직
 repository.py   # agent 전용 DB 접근
 models.py       # agent가 소유하는 DB 모델
-prompts.py      # 향후 LLM prompt
+prompts.py      # LLM prompt
 tests/          # agent 테스트
 scenarios/      # agent 시나리오
 ```
 
-`core/`는 모든 agent가 따라야 하는 공통 계약에만 사용합니다. `shared/`는 둘 이상의 agent가 실제로 같은 구현을 공유해야 할 때만 사용합니다.
+`protocol/`, `agents/base.py`, `agents/router.py`, `agents/pipeline/`는 모든 agent가 따라야 하는 공통 계약과 실행 흐름에만 사용합니다. 별도 shared 영역은 둘 이상의 agent가 실제로 같은 구현을 공유해야 할 때만 추가합니다.
 
 ## 공통 영역
 
 ```text
-src/factory_space/core/
+src/protocol/
+src/agents/
+src/llm/
+src/cache/
+src/websocket_gateway/
 ```
 
 모든 agent가 공유하는 계약과 런타임 기본 요소를 둡니다.
 
-- Base agent 인터페이스
-- Agent orchestrator
-- Agent registry
-- Reasoning engine 인터페이스
-- Action schema
-- Runtime context/state 계약
-
-`core/` 변경은 모든 agent에 영향을 줄 수 있으므로 신중하게 진행합니다.
-
-```text
-src/factory_space/shared/
-```
-
-여러 agent가 재사용하는 구현을 둡니다.
-
-- 공통 repository
-- 공통 service
-- Vector store adapter
-- 공통 schema
-- cross-agent memory 유틸리티
-
-언젠가 재사용될 것 같다는 이유만으로 `shared/`에 올리지 않습니다. 실제로 둘 이상의 agent가 필요로 할 때 공통화합니다.
+- `protocol/`: WebSocket으로 들어오고 나가는 message envelope와 error payload
+- `agents/base.py`: Agent 공통 interface와 context/result 계약
+- `agents/orchestrator.py`: 최상위 Agent를 선택하는 prompt 기반 orchestrator
+- `agents/pipeline/`: LangGraph 기반 실행 파이프라인 패키지
+- `agents/router.py`: agent id를 구현체로 매핑하는 registry
+- `llm/`: LLM adapter와 prompt 관련 코드
+- `cache/`: response cache
+- `websocket_gateway/`: WebSocket transport
 
 ## Agent 계약
 
 모든 agent는 개념적으로 다음 형태의 안정적인 진입점을 가져야 합니다.
 
 ```python
+from typing import Any
+
+from agents.base import AgentContext, AgentRunResult
+
+
 class SomeAgent:
     agent_id = "some_agent"
+    tools = ()
 
-    async def process(self, request, context):
+    def build_prompt(
+        self,
+        payload: dict[str, Any],
+        context: AgentContext,
+    ) -> str:
+        ...
+
+    def fallback(
+        self,
+        payload: dict[str, Any],
+        context: AgentContext,
+    ) -> AgentRunResult:
         ...
 ```
+
+tool이 없는 agent는 `tools = ()`를 둡니다. tool이 필요한 agent는 `agents.base.AgentTool` 계약을 따르는 read-only tool tuple을 연결합니다.
 
 agent는 Unreal로 직렬화해서 보낼 수 있는 구조화된 응답을 반환해야 합니다.
 
@@ -113,13 +123,13 @@ QuestAgent + HybridEngine
 룰베이스를 사용하는 agent는 다음 위치에 규칙 로직을 둘 수 있습니다.
 
 ```text
-src/factory_space/agents/{agent_name}/rules.py
+src/agents/{agent_name}/rules.py
 ```
 
 LLM을 사용하는 agent는 다음 위치에 prompt를 둘 수 있습니다.
 
 ```text
-src/factory_space/agents/{agent_name}/prompts.py
+src/agents/{agent_name}/prompts.py
 ```
 
 ## DB 접근
@@ -179,13 +189,15 @@ Unreal이 예측 가능하게 실행할 수 있도록 backend의 action schema�
 - 한 agent 작업 중 관련 없는 다른 agent를 리팩터링하지 않습니다.
 - agent 동작이 바뀌면 테스트나 시나리오도 함께 추가/수정합니다.
 - schema는 Pydantic model로 명시적으로 정의합니다.
+- import는 항상 파일 상단에 둡니다. 함수나 메서드 내부 import는 금지합니다.
+- 일반 source 파일은 500줄을 넘기지 않습니다. 넘기면 역할 기준으로 파일을 분리합니다.
 - 모듈은 작고 책임이 분명하게 유지합니다.
 - 임시 데이터나 생성물은 의도된 fixture가 아니라면 source control에 넣지 않습니다.
 - 새로운 message type, action type, shared contract를 추가하면 문서화합니다.
 
 ## 새 Agent 추가 절차
 
-1. `src/factory_space/agents/{agent_name}/` 폴더를 만듭니다.
+1. `src/agents/{agent_name}/` 폴더를 만듭니다.
 2. `agent.py`, `schemas.py`, `rules.py`, `service.py`, `repository.py`, `tests/`를 추가합니다.
 3. 공통 agent 계약을 구현합니다.
 4. 중앙 registry에 agent를 등록합니다.

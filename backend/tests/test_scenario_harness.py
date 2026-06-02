@@ -2,93 +2,42 @@ from __future__ import annotations
 
 import pytest
 
-from factory_space.messages.protocol import ErrorMessage, MessageEnvelope
-from tests.harness import (
-    AgentScenario,
-    assert_agent_response_contract,
-    assert_error_contract,
-    run_agent_scenario,
-    run_ping_scenario,
-)
+from agents.pipeline import AgentPipeline
+from tests.harness import StubLLM, top_agent_decision
 
 
 @pytest.mark.parametrize(
-    "scenario",
+    ("agent", "sub_agent", "expected_type"),
     [
-        AgentScenario(
-            name="factory optimization smoke",
-            agent="factory_optimization",
-            payload={
-                "question": "Where is the bottleneck?",
-                "factory_state": {
-                    "machines": [
-                        {
-                            "id": "packaging_01",
-                            "input_rate": 100,
-                            "output_rate": 62,
-                            "status": "running",
-                        }
-                    ]
-                },
-            },
-        ),
-        AgentScenario(
-            name="material generation smoke",
-            agent="material_generation",
-            payload={
-                "goal": "light and heat resistant material",
-                "constraints": {
-                    "max_weight": "low",
-                    "heat_resistance": "high",
-                    "cost": "medium",
-                },
-            },
-        ),
-        AgentScenario(
-            name="qa chatbot smoke",
-            agent="qa_chatbot",
-            payload={
-                "question": "How do I inspect this machine?",
-                "context": {"selected_object_id": "machine_01"},
-            },
-        ),
-        AgentScenario(
-            name="quest smoke",
-            agent="quest",
-            payload={
-                "event": "player_interacted",
-                "object_id": "control_panel_01",
-                "quest_id": "quest-001",
-            },
-        ),
+        ("operator_guide", "operator_guide.machine_help", "machine"),
+        ("operator_guide", "operator_guide.recipe_explainer", "recipe"),
+        ("operator_guide", "operator_guide.troubleshooter", "troubleshooting"),
+        ("quest_generator", "quest_generator.tutorial_quest", "tutorial"),
+        ("quest_generator", "quest_generator.production_quest", "production"),
+        ("quest_generator", "quest_generator.exploration_quest", "exploration"),
+        ("quest_generator", "quest_generator.economy_quest", "economy"),
     ],
-    ids=lambda scenario: scenario.name,
 )
-def test_agent_smoke_scenarios_return_contract_response(
-    scenario: AgentScenario,
+def test_explicit_sub_agent_scenarios(
+    agent: str,
+    sub_agent: str,
+    expected_type: str,
 ) -> None:
-    response = run_agent_scenario(scenario)
+    pipeline = AgentPipeline(llm=StubLLM([top_agent_decision(agent), None]))
 
-    assert isinstance(response, MessageEnvelope)
-    assert_agent_response_contract(response, expected_agent=scenario.agent)
-
-
-def test_ping_smoke_scenario_returns_pong() -> None:
-    response = run_ping_scenario(payload={"timestamp": "now"})
-
-    assert isinstance(response, MessageEnvelope)
-    assert response.type == "pong"
-    assert response.payload == {"timestamp": "now"}
-
-
-def test_unknown_agent_scenario_returns_error_contract() -> None:
-    response = run_agent_scenario(
-        AgentScenario(
-            name="unknown agent",
-            agent="missing",
-            payload={},
-        )
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": f"request-{expected_type}",
+            "agent": agent,
+            "payload": {
+                "sub_agent": sub_agent,
+                "question": "What should I do?",
+            },
+        }
     )
 
-    assert isinstance(response, ErrorMessage)
-    assert_error_contract(response, expected_code="UNKNOWN_AGENT")
+    assert response["type"] == "agent.response"
+    assert response["agent"] == agent
+    assert response["payload"]["metadata"]["selectedLeafAgent"] == sub_agent
+    assert "selectedSubAgent" not in response["payload"]["metadata"]

@@ -11,7 +11,10 @@ class AMachineBase;
 
 /**
  * 건설 모드 컨트롤러. 호버 갱신, 미리보기, 클릭 배치 라우팅을 담당.
- * PlayerController가 Tick/Input에서 UpdateMouseHover/OnLeftClickPressed로 위임 호출.
+ * 빌드모드 진입/종료 토글과 클릭 배치는 외부(플레이어 Pawn)가 입력에서
+ * ToggleBuildMode/OnLeftClickPressed로 위임 호출한다.
+ * 호버 갱신(UpdateMouseHover)은 이 액터가 자체 Tick으로 구동한다 — Tick은
+ * 기본 비활성, EnterBuildMode에서 켜지고 ExitBuildMode에서 꺼진다(빌드모드 밖 0비용).
  *
  * 풋프린트 조회는 MachineClass의 CDO(GetDefaultObject)에서 GetMachineSize만 읽음.
  * 미리보기 전용으로 머신 액터를 spawn하지 않으므로 부작용(BeginPlay/tick/collision/
@@ -41,6 +44,9 @@ class WANTED_FACTORY_API AOJJ_BuildController : public AActor
 public:
 	AOJJ_BuildController();
 
+	// 빌드모드 동안만 활성화되는 자체 Tick — UpdateMouseHover 구동.
+	virtual void Tick(float DeltaSeconds) override;
+
 protected:
 	UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "BuildController")
 	TObjectPtr<AOJJ_Grid> TargetGrid;
@@ -56,6 +62,11 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
 	FIntPoint CurrentHoverCell = FIntPoint::ZeroValue;
 
+	// 호버 머신의 90° 회전 step(0~3, 시계방향). 호버/배치 footprint·메시에 반영(단계 3·4).
+	// CDO에 못 담으므로 회전 상태는 이 컨트롤러가 소유. EnterBuildMode에서 0으로 초기화.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
+	int32 HoverRotationSteps = 0;
+
 public:
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void EnterBuildMode();
@@ -65,6 +76,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	bool IsInBuildMode() const { return bIsBuildMode; }
+
+	// 연동된 그리드 접근자 (빌드 카메라 자동 센터링 등 외부에서 그리드 중심을 얻기 위함).
+	UFUNCTION(BlueprintPure, Category = "BuildController")
+	AOJJ_Grid* GetTargetGrid() const { return TargetGrid; }
 
 	// PlayerController가 Tick에서 호출. 마우스 위치 → 그리드 셀 → 호버 미리보기 갱신.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
@@ -78,6 +93,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void ToggleBuildMode();
 
+	// 호버 머신을 시계방향 90° 회전(step +1, mod 4). 빌드모드에서만 동작. 플레이어 R키가 위임.
+	UFUNCTION(BlueprintCallable, Category = "BuildController")
+	void RotateHoverClockwise();
+
 private:
 	// cursor cell → lower-left origin 변환. 마우스 = 풋프린트 중심 정책.
 	// (Size-1)/2 정수 나눗셈 → lower-left bias:
@@ -88,5 +107,5 @@ private:
 	// ⚠️ 입력 방향(cursor → origin). 시각 보정인 AOJJ_Grid::GetMachinePlacementLocation
 	// (origin → footprint center 액터 위치)과 반대 방향이지만 같은 size 정수화 규칙
 	// (CeilToInt + Max(1))을 따라야 호버/배치와 occupancy/시각이 어긋나지 않는다.
-	FIntPoint ComputeOriginFromCursorCell(FIntPoint CursorCell, AMachineBase* Machine) const;
+	FIntPoint ComputeOriginFromCursorCell(FIntPoint CursorCell, AMachineBase* Machine, int32 RotationSteps = 0) const;
 };

@@ -9,10 +9,11 @@ def main() -> None:
     """Run the local development server."""
 
     uvicorn.run(
-        "factory_space.app:app",
+        "app:create_app",
         host="127.0.0.1",
-        port=8000,
+        port=18000,
         reload=True,
+        factory=True,
     )
 
 
