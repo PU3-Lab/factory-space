@@ -32,12 +32,34 @@ def test_pipeline_uses_prompt_based_top_level_routing() -> None:
         agent="quest_generator",
         sub_agent="quest_generator.production_quest",
     )
-    assert response["payload"]["quest"]["type"] == "production"
+    assert len(response["payload"]["quests"]) == 5
+    assert response["payload"]["quests"][0]["type"] == "production"
     assert "서버 전체 오케스트레이터" in llm.prompts[0]
     assert "[OUTPUT_CONTRACT]" in llm.prompts[0]
     assert "퀘스트 생성 도메인 오케스트레이터" in llm.prompts[1]
     assert "[ALLOWED_LEAF_AGENT_IDS]" in llm.prompts[1]
     assert "[OUTPUT_CONTRACT]" in llm.prompts[1]
+
+
+def test_pipeline_routes_empty_quest_request_without_llm() -> None:
+    llm = StubLLM([])
+    pipeline = AgentPipeline(llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-empty-quest",
+            "agent": "quest_generator",
+        }
+    )
+
+    assert_agent_response(
+        response,
+        agent="quest_generator",
+        sub_agent="quest_generator.production_quest",
+    )
+    assert len(response["payload"]["quests"]) == 5
+    assert llm.prompts == []
 
 
 def test_pipeline_uses_prompt_based_operator_guide_sub_agent_routing() -> None:

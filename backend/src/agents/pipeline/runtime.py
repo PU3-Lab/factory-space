@@ -139,6 +139,9 @@ class AgentPipeline:
             envelope = state["envelope"]
             context = state["context"]
             payload = state["typedPayload"]
+            if envelope.agent == "quest_generator" and not payload:
+                return {"selectedAgent": "quest_generator"}
+
             routing_prompt = orchestrator.build_routing_prompt(
                 payload,
                 context,
@@ -207,6 +210,12 @@ class AgentPipeline:
 
         def route_quest_sub_agent(state: AgentGraphState) -> AgentGraphState:
             explicit_sub_agent = state["typedPayload"].get("sub_agent")
+            if explicit_sub_agent is None and not state["typedPayload"]:
+                return {
+                    "selectedLeafAgent": "quest_generator.production_quest",
+                    "skipLlm": True,
+                }
+
             if explicit_sub_agent is not None:
                 if (
                     isinstance(explicit_sub_agent, str)
@@ -355,6 +364,9 @@ class AgentPipeline:
             return {}
 
         def cache_write(state: AgentGraphState) -> AgentGraphState:
+            if not state.get("cacheKey"):
+                return {}
+
             response_cache.set(
                 state["cacheKey"],
                 state["responsePayload"],

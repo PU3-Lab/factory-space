@@ -22,12 +22,8 @@ class ProductionQuestAgent:
         payload: dict[str, Any],
         context: AgentContext,
     ) -> AgentRunResult:
-        game_state = payload.get("game_state")
-        if not isinstance(game_state, dict):
-            game_state = payload
-
         return AgentRunResult(
             agent="quest_generator",
-            payload=QuestAgentService().generate_quest_json(game_state),
+            payload=QuestAgentService().generate_quest_json(),
             metadata={"fallback": True, "sub_agent": self.agent_id},
         )
