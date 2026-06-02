@@ -6,10 +6,20 @@
 > 컨베이어 클래스는 팀 합의로 `ADummyConveyor` → **`AConveyor`로 rename 완료**(커밋 `1b22341`, `Conveyor.h/.cpp`). 그 외 Dummy 파일은 불가침.
 > 그리드가 *기존* `AConveyor`를 **인지·등록**하고, 매니저가 그리드를 조회해 **연결을 집계**하는 것이 핵심.
 
+## 진행 현황 (2026-06-02)
+| Step | 상태 | 비고 |
+|---|---|---|
+| Step 1 — 저장 타입 일반화 | ✅ 완료·커밋 | `4e369bd` |
+| Step 2 — 입력 포트 API | ✅ 완료·커밋 | `08701fd` |
+| Step 3-a — 컨베이어 셀 등록/조회 | ✅ 완료·커밋 | `549e771` |
+| Step 3-b — 경로/포트 인지 이식 | ⏳ 대기 | **I/O 이식 PR 후** |
+| Step 3-c — 엔드포인트 연결 | ⏳ 블록 | **담당자 `AMachineBase` I/O 이식 PR 머지+풀 선행 필요** |
+| Step 4·5 (매니저), 6 (입력) | ⏳ 대기 | 그리드 Step 3 완료 후 |
+
 ## 0-Z. 범위 원칙 (2026-06-02 재확정)
 - **Dummy_* 파일 = 불가침(읽기 전용).** 통합은 **`OJJ_` 영역에만** 신설/작업한다. Dummy를 수정·폐기하는 단계는 **없다**(참고·이식 소스로만 읽음).
 - **컨베이어는 예외 — 이미 처리됨.** 팀 합의로 `ADummyConveyor` → `AConveyor` rename 완료(`Conveyor.h/.cpp`, 커밋 `1b22341`, BP 보호 CoreRedirect 포함). 이후 단계는 `AConveyor`를 **그대로 사용**(추가 개명·폐기 없음).
-- **`ADummyMachineBase` = 범위 제외(읽기만).** 머신베이스 담당자 영역 — 본 계획서는 참조만 하고 수정하지 않는다.
+- **`ADummyMachineBase` = 범위 제외(읽기만).** 머신베이스 담당자 영역 — 본 계획서는 참조만 하고 수정하지 않는다. 담당자가 아이템 I/O(4종)를 **`AMachineBase`로 이식하는 별도 PR**을 진행(3-c 선행). 이는 I/O를 베이스로 **올리는 것**이지 **Dummy 폐기가 아님** — `ADummyMachineBase`/`ADummyGrid` 등 Dummy는 **유지**된다.
 - **폐기(deprecation) 단계 없음.** `ADummyGrid` 등 프로토타입 제거는 본 통합 범위 밖.
 
 ## 0-A. 아키텍처 — 책임 분리 (2026-06-02 회의 반영)
@@ -52,13 +62,14 @@
 
 **→ Step 3 직격 의존성:** 이식할 컨베이어 로직(`CollectConveyorReservedCells`)은 source/target이 `ADummyMachineBase`여야 통과한다. 현재 프로덕션 머신(Miner/Grinder)은 순수 `AMachineBase`라 **그대로는 컨베이어 연결이 무조건 실패**한다.
 
-**Step 3 선결 결정 — ✅ 확정: (c) UInterface `IOJJ_ConveyorEndpoint` (변형 c-1):**
-- ~~(a) 아이템 I/O API(4종)를 `AMachineBase`로 승격~~ — 모든 머신을 강제 엔드포인트화. 기각.
-- ~~(b) `AMinerMachine`/`AGrinder`를 `ADummyMachineBase` 하위로 reparent~~ — Dummy 상속을 프로덕션에 전파(역방향). 기각.
-- **(c) ✅ 채택 — `UInterface IOJJ_ConveyorEndpoint`** 도입, 엔드포인트 머신이 구현(느슨한 결합, 경계 최선).
-  - 참고: `AMachineBase`에 이미 `CanAddInputItem`/`TakeOutputItem` 존재(`MachineBase.h:216`) → 인터페이스가 이를 위임/표준화.
-  - **(c-1) `AConveyor::ConfigureTransport`의 `ADummyMachineBase*` 인자를 `IOJJ_ConveyorEndpoint`(또는 `AActor*`)로 완화** — 한 줄 시그니처 수정 + 내부 weak ptr 저장 타입을 interface-capable(`TWeakObjectPtr<AActor>`/`TScriptInterface`)로 변경. **클래스명·액터(`AConveyor`)는 그대로 유지** (개명·폐기 없음).
-> Step 1·2는 이 결정과 독립적으로 진행 가능. Step 3 진입 시 (c-1) 적용.
+**Step 3 선결 결정 — 🔄 방향 변경(회의): 아이템 I/O를 `AMachineBase`로 이식 → 인터페이스 불필요(c-1 철회 검토):**
+- **신 방침 (채택 후보):** 담당자가 `ADummyMachineBase`의 아이템 I/O(4종)를 **`AMachineBase`로 이식**하면, 모든 프로덕션 머신이 엔드포인트가 되어 **컨베이어 엔드포인트 = `AMachineBase*` 직접 사용**. → `IOJJ_ConveyorEndpoint` 인터페이스 **불필요**, **(c-1) 철회 검토**(`ConfigureTransport` 인자도 `AMachineBase*`로 단순화 가능).
+  - 이는 이전에 기각했던 (a)에 가까우나, **담당자 영역의 I/O 이식 PR로 진행**되는 점이 다름(본 계획서가 머신베이스를 직접 수정하지 않음). Dummy는 **삭제 아님** — `ADummyMachineBase`의 I/O를 `AMachineBase`로 **올리는(이식)** 것이며 Dummy 클래스는 유지.
+- ~~(c) UInterface `IOJJ_ConveyorEndpoint` / (c-1) 시그니처 완화~~ — I/O가 `AMachineBase`로 올라오면 경계용 인터페이스의 존재 이유가 사라짐. **보류/철회 검토**. (I/O 이식이 무산되면 (c)로 복귀.)
+- ~~(b) reparent~~ — 기각 유지.
+
+**⛓️ Step 3-c 선행 의존성 (외부 PR):** 컨베이어 엔드포인트 연결(Step 3-c)은 **담당자의 `AMachineBase` 아이템 I/O 이식 PR이 머지 + 풀(pull)된 뒤** 착수한다. 그 전까지 3-c는 블록.
+> Step 1·2·3-a는 이 결정과 독립(이미 완료). Step 3-b/3-c는 I/O 이식 PR 선행.
 
 ---
 
@@ -112,9 +123,11 @@
 ## Step 3 — 그리드가 기존 `AConveyor`를 인지·등록 (클래스 무변경)
 **왜:** 컨베이어 경로 유효성 판정 + 셀 점유 등록을 `AOJJ_Grid`로 가져온다. **`AConveyor`는 그대로**, 그리드가 그 actor에 대해 `SetPath`/`ConfigureTransport`만 호출.
 
-**선결:** 1-A 엔드포인트 = ✅ (c-1) 확정. 진입 시 적용:
-- `UInterface IOJJ_ConveyorEndpoint` 신설 + 엔드포인트 머신이 구현(`CanAddInputItem`/`TakeOutputItem` 위임).
-- **(c-1)** `AConveyor::ConfigureTransport(ADummyMachineBase*, ADummyMachineBase*)` → `(...IOJJ_ConveyorEndpoint... / AActor*)`로 한 줄 완화. 내부 `SourceMachine`/`TargetMachine` weak ptr 저장 타입도 interface-capable로. **`AConveyor` 클래스명·액터 유지.**
+**하위 분할:** **3-a ✅(완료·커밋)** 그리드 셀 등록/조회(`OJJ_GetConveyorAtCell`/`OJJ_RegisterActorCells`/`OJJ_RemoveActorAt`) · **3-b** 경로/포트 인지 로직 이식 · **3-c** 엔드포인트 연결(아이템 transport).
+
+**선결 (3-b/3-c):** 🔄 1-A 방향 변경 — 아이템 I/O가 `AMachineBase`로 이식되면 **엔드포인트 = `AMachineBase*` 직접 사용**, `IOJJ_ConveyorEndpoint`/(c-1) **불필요(철회 검토)**.
+- `AConveyor::ConfigureTransport`의 source/target 인자는 `AMachineBase*`로 단순화 가능(I/O가 베이스에 있으므로).
+- **⛓️ 3-c는 담당자의 `AMachineBase` 아이템 I/O 이식 PR 머지+풀 선행 필요**(그 전까지 블록).
 
 **추가 (Dummy_GridConveyor.cpp 로직을 OJJ_ 메서드로 가져옴, 컨베이어/머신 클래스 미변경):**
 - 익명 네임스페이스 헬퍼 이식: `OJJ_*` — `GetMachineBackStep/FrontStep`, `IsMachineBackOutputPair`, `IsMachineFrontInputPair`, `FindInputMachineAtPathEnd`, `CollectConveyorReservedCells`.
