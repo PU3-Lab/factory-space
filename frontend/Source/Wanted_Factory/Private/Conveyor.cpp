@@ -1,6 +1,6 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "dummy_converyor.h"
+#include "Conveyor.h"
 
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
@@ -68,7 +68,7 @@ float CornerToYaw(FIntPoint PreviousDirection, FIntPoint NextDirection)
 }
 }
 
-ADummyConveyor::ADummyConveyor()
+AConveyor::AConveyor()
 {
 	PrimaryActorTick.bCanEverTick = false;
 
@@ -107,7 +107,7 @@ ADummyConveyor::ADummyConveyor()
 	}
 }
 
-void ADummyConveyor::OnConstruction(const FTransform& Transform)
+void AConveyor::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 
@@ -115,14 +115,14 @@ void ADummyConveyor::OnConstruction(const FTransform& Transform)
 	UpdateDebugStateText();
 }
 
-void ADummyConveyor::BeginPlay()
+void AConveyor::BeginPlay()
 {
 	Super::BeginPlay();
 
 	RestartItemMoveTimer();
 }
 
-void ADummyConveyor::SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize)
+void AConveyor::SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize)
 {
 	CellSize = FMath::Max(1.0f, NewCellSize);
 	PathCells.Reset(NewPathCells.Num());
@@ -139,7 +139,7 @@ void ADummyConveyor::SetPath(const TArray<FIntPoint>& NewPathCells, float NewCel
 	UpdateDebugStateText();
 }
 
-void ADummyConveyor::ConfigureTransport(
+void AConveyor::ConfigureTransport(
 	const TArray<FIntPoint>& NewOccupiedGridCells,
 	AMachineBase* NewSourceMachine,
 	AMachineBase* NewTargetMachine)
@@ -159,12 +159,12 @@ void ADummyConveyor::ConfigureTransport(
 	UE_LOG(
 		LogTemp,
 		Log,
-		TEXT("[DummyConveyor] Occupied grid count: %d, travel time: %.2f sec"),
+		TEXT("[Conveyor] Occupied grid count: %d, travel time: %.2f sec"),
 		GetOccupiedGridCount(),
 		GetTravelTimePerItem());
 }
 
-void ADummyConveyor::ClearPath()
+void AConveyor::ClearPath()
 {
 	PathCells.Reset();
 	OccupiedGridCells.Reset();
@@ -176,7 +176,7 @@ void ADummyConveyor::ClearPath()
 	UpdateDebugStateText();
 }
 
-bool ADummyConveyor::IsOutputBlocked() const
+bool AConveyor::IsOutputBlocked() const
 {
 	if (ItemSlots.Num() == 0)
 	{
@@ -188,7 +188,7 @@ bool ADummyConveyor::IsOutputBlocked() const
 		&& (!TargetMachine.IsValid() || !TargetMachine->CanReceiveConveyorItem(LastItem, 1));
 }
 
-void ADummyConveyor::UpdateDebugStateText()
+void AConveyor::UpdateDebugStateText()
 {
 	if (!DebugStateText)
 	{
@@ -229,7 +229,7 @@ void ADummyConveyor::UpdateDebugStateText()
 	DebugStateText->SetText(FText::FromString(DebugText));
 }
 
-void ADummyConveyor::RebuildVisuals()
+void AConveyor::RebuildVisuals()
 {
 	if (StraightSegmentInstances)
 	{
@@ -284,7 +284,7 @@ void ADummyConveyor::RebuildVisuals()
 	}
 }
 
-void ADummyConveyor::ResetItemSlots()
+void AConveyor::ResetItemSlots()
 {
 	ItemSlots.SetNum(OccupiedGridCells.Num());
 	for (FName& ItemSlot : ItemSlots)
@@ -293,7 +293,7 @@ void ADummyConveyor::ResetItemSlots()
 	}
 }
 
-void ADummyConveyor::RestartItemMoveTimer()
+void AConveyor::RestartItemMoveTimer()
 {
 	StopItemMoveTimer();
 
@@ -311,12 +311,12 @@ void ADummyConveyor::RestartItemMoveTimer()
 	World->GetTimerManager().SetTimer(
 		ItemMoveTimerHandle,
 		this,
-		&ADummyConveyor::MoveItemsOneGrid,
+		&AConveyor::MoveItemsOneGrid,
 		FMath::Max(0.01f, SecondsPerGrid),
 		true);
 }
 
-void ADummyConveyor::StopItemMoveTimer()
+void AConveyor::StopItemMoveTimer()
 {
 	if (UWorld* World = GetWorld())
 	{
@@ -324,7 +324,7 @@ void ADummyConveyor::StopItemMoveTimer()
 	}
 }
 
-void ADummyConveyor::MoveItemsOneGrid()
+void AConveyor::MoveItemsOneGrid()
 {
 	if (ItemSlots.Num() == 0 || !SourceMachine.IsValid() || !TargetMachine.IsValid())
 	{
@@ -364,7 +364,7 @@ void ADummyConveyor::MoveItemsOneGrid()
 	UpdateDebugStateText();
 }
 
-FVector ADummyConveyor::GetDebugTextLocalLocation() const
+FVector AConveyor::GetDebugTextLocalLocation() const
 {
 	if (PathCells.Num() == 0)
 	{
@@ -382,7 +382,7 @@ FVector ADummyConveyor::GetDebugTextLocalLocation() const
 	return Center + DebugTextOffset;
 }
 
-FString ADummyConveyor::BuildMovingItemSummary() const
+FString AConveyor::BuildMovingItemSummary() const
 {
 	TMap<FName, int32> MovingItems;
 	for (const FName& Item : ItemSlots)
