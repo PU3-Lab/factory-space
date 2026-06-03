@@ -206,7 +206,8 @@ void AOJJ_Player::Look(const FInputActionValue& Value)
 	const FVector2D Axis = Value.Get<FVector2D>();
 	// 마우스 raw 델타가 그대로 회전량이 되지 않도록 감도 배율을 곱해 완화
 	AddControllerYawInput(Axis.X * LookYawSensitivity);
-	AddControllerPitchInput(Axis.Y * LookPitchSensitivity);
+	const float PitchSign = bInvertLookPitch ? -1.0f : 1.0f;
+	AddControllerPitchInput(Axis.Y * LookPitchSensitivity * PitchSign);
 }
 
 void AOJJ_Player::Zoom(const FInputActionValue& Value)
