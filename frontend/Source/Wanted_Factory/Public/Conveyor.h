@@ -113,6 +113,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Conveyor|Grid")
 	float GetCellSize() const { return CellSize; }
 
+	// PathCells 셀 중심들의 X·Y 평균(로컬, 그리드원점 기준). Z=0. PathCells 비면 ZeroVector.
+	UFUNCTION(BlueprintPure, Category = "Conveyor|Path")
+	FVector GetPathCentroidLocal() const;
+
 private:
 	void RebuildVisuals();
 	void ResetItemSlots();

@@ -250,6 +250,9 @@ void AConveyor::RebuildVisuals()
 	const FVector StraightScaleY(Width / 100.0f, CellSize / 100.0f, SegmentHeight / 100.0f);
 	const FVector CornerScale(Width / 100.0f, Width / 100.0f, SegmentHeight / 100.0f);
 
+	// 피벗을 belt centroid로 이동 → 셀 로컬좌표에서 centroid를 차감해 Root 기준으로 재배치.
+	const FVector Centroid = GetPathCentroidLocal();
+
 	for (int32 Index = 0; Index < PathCells.Num(); ++Index)
 	{
 		const FIntPoint CurrentCell = PathCells[Index];
@@ -266,8 +269,8 @@ void AConveyor::RebuildVisuals()
 		const FIntPoint VisualDirection = bHasNext ? NextDirection : PreviousDirection;
 
 		const FVector LocalLocation(
-			(CurrentCell.X * CellSize) + (CellSize * 0.5f),
-			(CurrentCell.Y * CellSize) + (CellSize * 0.5f),
+			(CurrentCell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
+			(CurrentCell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
 			ZOffset);
 
 		if (bIsCorner)
@@ -364,11 +367,11 @@ void AConveyor::MoveItemsOneGrid()
 	UpdateDebugStateText();
 }
 
-FVector AConveyor::GetDebugTextLocalLocation() const
+FVector AConveyor::GetPathCentroidLocal() const
 {
 	if (PathCells.Num() == 0)
 	{
-		return DebugTextOffset;
+		return FVector::ZeroVector;
 	}
 
 	FVector Center = FVector::ZeroVector;
@@ -379,7 +382,14 @@ FVector AConveyor::GetDebugTextLocalLocation() const
 	}
 
 	Center /= static_cast<float>(PathCells.Num());
-	return Center + DebugTextOffset;
+	Center.Z = 0.0f;
+	return Center;
+}
+
+FVector AConveyor::GetDebugTextLocalLocation() const
+{
+	// 비주얼이 centroid 기준(RebuildVisuals)으로 그려지므로, 디버그텍스트도 centroid 기준 오프셋만 사용.
+	return DebugTextOffset;
 }
 
 FString AConveyor::BuildMovingItemSummary() const
