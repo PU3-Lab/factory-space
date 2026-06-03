@@ -47,6 +47,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
 	float ZOffset = 6.0f;
 
+	// 코너 ㄱ메시 캐논 방향 정렬 오프셋(0/90/180/270 중 PIE/BP에서 튜닝). ㄱ메시 기준 자세가 180° 돌아가 있어 기본 180.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Corner")
+	float CornerBaseYaw = 180.0f;
+
+	// 코너 ㄱ메시 균일 스케일 배율(메시 네이티브 크기 보정용, 1.0 기준).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Corner", meta = (ClampMin = "0.01"))
+	float CornerScaleMultiplier = 1.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Conveyor|Path")
 	TArray<FIntPoint> PathCells;
 

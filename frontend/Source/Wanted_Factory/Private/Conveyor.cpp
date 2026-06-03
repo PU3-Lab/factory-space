@@ -53,18 +53,26 @@ float DirectionToYaw(FIntPoint Direction)
 	return 0.0f;
 }
 
-float CornerToYaw(FIntPoint PreviousDirection, FIntPoint NextDirection)
+float CornerToYaw90(FIntPoint PreviousDirection, FIntPoint NextDirection)
 {
-	const FVector2D CornerDirection(
-		static_cast<float>(PreviousDirection.X + NextDirection.X),
-		static_cast<float>(PreviousDirection.Y + NextDirection.Y));
+	// 진입(-Prev)+진출(Next) 합 = Next-Prev → 4사분면으로 코너 4종을 구별, 90° 단위 격자 정렬.
+	// (CornerBaseYaw 오프셋은 멤버라 호출부에서 더함.)
+	const int32 SX = NextDirection.X - PreviousDirection.X;
+	const int32 SY = NextDirection.Y - PreviousDirection.Y;
 
-	if (CornerDirection.IsNearlyZero())
+	if (SX > 0 && SY > 0)
 	{
-		return DirectionToYaw(NextDirection);
+		return 0.0f;
 	}
-
-	return FMath::RadiansToDegrees(FMath::Atan2(CornerDirection.Y, CornerDirection.X));
+	if (SX < 0 && SY > 0)
+	{
+		return 90.0f;
+	}
+	if (SX < 0 && SY < 0)
+	{
+		return 180.0f;
+	}
+	return 270.0f;   // SX > 0 && SY < 0
 }
 }
 
@@ -248,7 +256,6 @@ void AConveyor::RebuildVisuals()
 	const float Width = CellSize * FMath::Clamp(SegmentWidthRatio, 0.0f, 1.0f);
 	const FVector StraightScaleX(CellSize / 100.0f, Width / 100.0f, SegmentHeight / 100.0f);
 	const FVector StraightScaleY(Width / 100.0f, CellSize / 100.0f, SegmentHeight / 100.0f);
-	const FVector CornerScale(Width / 100.0f, Width / 100.0f, SegmentHeight / 100.0f);
 
 	// 피벗을 belt centroid로 이동 → 셀 로컬좌표에서 centroid를 차감해 Root 기준으로 재배치.
 	const FVector Centroid = GetPathCentroidLocal();
@@ -265,7 +272,10 @@ void AConveyor::RebuildVisuals()
 
 		const bool bHasPrevious = PreviousDirection != FIntPoint::ZeroValue;
 		const bool bHasNext = NextDirection != FIntPoint::ZeroValue;
-		const bool bIsCorner = bHasPrevious && bHasNext && PreviousDirection != NextDirection;
+		// 직각만 코너로 인정: prev==next는 직선, prev+next==0은 U턴(반대방향) → 코너 아님(직선 흐름 처리).
+		const bool bIsRightAngle = PreviousDirection != NextDirection
+			&& (PreviousDirection + NextDirection) != FIntPoint::ZeroValue;
+		const bool bIsCorner = bHasPrevious && bHasNext && bIsRightAngle;
 		const FIntPoint VisualDirection = bHasNext ? NextDirection : PreviousDirection;
 
 		const FVector LocalLocation(
@@ -275,8 +285,16 @@ void AConveyor::RebuildVisuals()
 
 		if (bIsCorner)
 		{
-			const FRotator Rotation(0.0f, CornerToYaw(PreviousDirection, NextDirection), 0.0f);
-			CornerSegmentInstances->AddInstance(FTransform(Rotation, LocalLocation, CornerScale));
+			// ㄱ자 코너 메시: XZ평면 수직 벽 → Roll 90(X축)로 XY바닥에 눕히고 진행면을 위로.
+			// 합성 YawQuat * RollQuat → Roll(눕히기) 먼저, Yaw(격자 코너 방향) 나중.
+			const FQuat YawQuat(FRotator(0.0f, CornerToYaw90(PreviousDirection, NextDirection) + CornerBaseYaw, 0.0f));
+			const FQuat RollQuat(FRotator(0.0f, 0.0f, 90.0f));   // XZ벽 → XY바닥
+			const FQuat CornerQuat = YawQuat * RollQuat;
+			// 메시가 셀 한 칸에 맞게 제작됨 → 원본 크기 그대로(보정 불필요). 균일 스케일이라 회전 왜곡 0.
+			// ClampMin은 에디터 전용 → 런타임에서도 0/음수 방지(BP/직렬화 대비).
+			const float CornerUniform = FMath::Max(0.01f, CornerScaleMultiplier);
+			const FVector CornerScale(CornerUniform, CornerUniform, CornerUniform);
+			CornerSegmentInstances->AddInstance(FTransform(CornerQuat, LocalLocation, CornerScale));
 			continue;
 		}
 
