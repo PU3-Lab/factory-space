@@ -14,6 +14,7 @@
 #include "Conveyor.h"
 #include "Machines/PowerGridNode.h"
 #include "Machines/PowerLine.h"
+#include "Machines/PowerPlant.h"
 #include "OJJ_ProtectionTower.h"
 
 AOJJ_BuildController::AOJJ_BuildController()
@@ -28,6 +29,7 @@ AOJJ_BuildController::AOJJ_BuildController()
 	PowerLineClass = APowerLine::StaticClass();
 	PowerGridNodeClass = APowerGridNode::StaticClass();
 	ShieldClass = AOJJ_ProtectionTower::StaticClass();
+	PowerPlantClass = APowerPlant::StaticClass();
 }
 
 void AOJJ_BuildController::Tick(float DeltaSeconds)
@@ -68,6 +70,11 @@ void AOJJ_BuildController::EnterBuildMode()
 	if (PlacementMode == EOJJ_BuildPlacementMode::Shield && !ShieldClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] ShieldClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::PowerPlant && !PowerPlantClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] PowerPlantClass missing. EnterBuildMode stopped."));
 		return;
 	}
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor && !ConveyorClass)
@@ -171,7 +178,8 @@ void AOJJ_BuildController::RotateHoverClockwise()
 	if (!bIsBuildMode
 		|| (PlacementMode != EOJJ_BuildPlacementMode::Machine
 			&& PlacementMode != EOJJ_BuildPlacementMode::PowerNode
-			&& PlacementMode != EOJJ_BuildPlacementMode::Shield))
+			&& PlacementMode != EOJJ_BuildPlacementMode::Shield
+			&& PlacementMode != EOJJ_BuildPlacementMode::PowerPlant))
 	{
 		return;
 	}
@@ -210,6 +218,11 @@ TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
 	if (PlacementMode == EOJJ_BuildPlacementMode::Shield)
 	{
 		return ShieldClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::PowerPlant)
+	{
+		return PowerPlantClass;
 	}
 
 	return MachineClass;
@@ -491,6 +504,7 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::PowerNode: ModeName = TEXT("PowerNode"); break;
 	case EOJJ_BuildPlacementMode::PowerLine: ModeName = TEXT("PowerLine"); break;
 	case EOJJ_BuildPlacementMode::Shield:    ModeName = TEXT("Shield");    break;
+	case EOJJ_BuildPlacementMode::PowerPlant: ModeName = TEXT("PowerPlant"); break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 
