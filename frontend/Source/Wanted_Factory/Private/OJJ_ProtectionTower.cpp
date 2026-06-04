@@ -2,14 +2,9 @@
 
 #include "OJJ_ProtectionTower.h"
 
-#include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "Engine/World.h"
-#include "OJJ_ProtectionSubsystem.h"
+#include "DrawDebugHelpers.h"
 #include "Wanted_Factory.h"
-
-// 보호 대상 판별용(읽기 전용 include — SSR 머신 코드는 수정하지 않음).
-#include "MachineBase.h"
 
 AOJJ_ProtectionTower::AOJJ_ProtectionTower()
 {
@@ -18,115 +13,45 @@ AOJJ_ProtectionTower::AOJJ_ProtectionTower()
 	// 루트 = StaticMesh(비주얼). 메시 에셋은 BP에서 지정.
 	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
 	SetRootComponent(MeshComponent);
-
-	// 보호 범위 구체. QueryOnly + 머신 오버랩만, 나머지 Ignore.
-	// 머신은 WorldStatic(설치형)일 수도, WorldDynamic(Dummy/이동형)일 수도 있어 둘 다 Overlap.
-	ProtectionRange = CreateDefaultSubobject<USphereComponent>(TEXT("ProtectionRange"));
-	ProtectionRange->SetupAttachment(MeshComponent);
-	ProtectionRange->SetSphereRadius(ProtectionRadius);
-	ProtectionRange->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	ProtectionRange->SetCollisionObjectType(ECC_WorldDynamic);
-	ProtectionRange->SetCollisionResponseToAllChannels(ECR_Ignore);
-	ProtectionRange->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Overlap);
-	ProtectionRange->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
-	ProtectionRange->SetGenerateOverlapEvents(true);
 }
 
 void AOJJ_ProtectionTower::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// EditAnywhere로 조정된 반경을 런타임에 반영.
-	ProtectionRange->SetSphereRadius(ProtectionRadius);
+	RegisterToEventManager();
 
-	ProtectionRange->OnComponentBeginOverlap.AddDynamic(this, &AOJJ_ProtectionTower::OnRangeBeginOverlap);
-	ProtectionRange->OnComponentEndOverlap.AddDynamic(this, &AOJJ_ProtectionTower::OnRangeEndOverlap);
-
-	// BeginOverlap은 "신규 진입"만 발생하므로, 스폰 시점에 이미 범위 안에 있던 머신을 직접 보호.
-	TArray<AActor*> OverlappingActors;
-	ProtectionRange->GetOverlappingActors(OverlappingActors);
-
-	UOJJ_ProtectionSubsystem* Subsystem = GetProtectionSubsystem();
-	if (!Subsystem)
+	// PIE 디버그 반경 표시(에디터 상시 기즈모는 컴포넌트가 필요해 최소화 — 보고 참조).
+	if (bShowDebugRadius)
 	{
-		LOG_OJJ_W(TEXT("ProtectionSubsystem unavailable in BeginPlay"));
-		return;
-	}
-
-	for (AActor* OtherActor : OverlappingActors)
-	{
-		if (IsProtectableMachine(OtherActor) && !ProtectedMachines.Contains(OtherActor))
+		if (UWorld* World = GetWorld())
 		{
-			Subsystem->AddProtection(OtherActor);
-			ProtectedMachines.Add(OtherActor);
+			DrawDebugSphere(World, GetActorLocation(), ShieldRadius, 24, FColor::Cyan,
+				/*bPersistentLines*/ true, /*LifeTime*/ -1.0f);
 		}
 	}
 }
 
 void AOJJ_ProtectionTower::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	// 철거/레벨 종료 시 이 타워가 건 보호를 전부 반납.
-	if (UOJJ_ProtectionSubsystem* Subsystem = GetProtectionSubsystem())
-	{
-		for (const TWeakObjectPtr<AActor>& WeakMachine : ProtectedMachines)
-		{
-			if (AActor* Machine = WeakMachine.Get())
-			{
-				Subsystem->RemoveProtection(Machine);
-			}
-		}
-	}
-	ProtectedMachines.Empty();
-
+	UnregisterFromEventManager();
 	Super::EndPlay(EndPlayReason);
 }
 
-void AOJJ_ProtectionTower::OnRangeBeginOverlap(UPrimitiveComponent* /*OverlappedComponent*/, AActor* OtherActor,
-	UPrimitiveComponent* /*OtherComp*/, int32 /*OtherBodyIndex*/, bool /*bFromSweep*/, const FHitResult& /*SweepResult*/)
+void AOJJ_ProtectionTower::RegisterToEventManager()
 {
-	if (!IsProtectableMachine(OtherActor) || ProtectedMachines.Contains(OtherActor))
-	{
-		return;
-	}
-
-	if (UOJJ_ProtectionSubsystem* Subsystem = GetProtectionSubsystem())
-	{
-		Subsystem->AddProtection(OtherActor);
-		ProtectedMachines.Add(OtherActor);
-	}
+	// TODO(이찬 API 연동): PlanetEventManagerSubsystem에 차폐장 등록.
+	// 이찬이 RegisterShieldGenerator(AOJJ_ProtectionTower*) 구현 시 아래 한 줄로 교체:
+	//   if (UWorld* W = GetWorld()) if (auto* S = W->GetSubsystem<UPlanetEventManagerSubsystem>()) S->RegisterShieldGenerator(this);
+	// (그때 #include "PlanetEventManagerSubsystem.h" 추가)
+	LOG_OJJ(TEXT("ShieldGenerator BeginPlay (radius=%.0f, active=%d) — 이벤트 매니저 등록 대기(이찬 API 미구현)"),
+		ShieldRadius, bIsShieldActive ? 1 : 0);
 }
 
-void AOJJ_ProtectionTower::OnRangeEndOverlap(UPrimitiveComponent* /*OverlappedComponent*/, AActor* OtherActor,
-	UPrimitiveComponent* /*OtherComp*/, int32 /*OtherBodyIndex*/)
+void AOJJ_ProtectionTower::UnregisterFromEventManager()
 {
-	if (!OtherActor || !ProtectedMachines.Contains(OtherActor))
-	{
-		return;
-	}
-
-	if (UOJJ_ProtectionSubsystem* Subsystem = GetProtectionSubsystem())
-	{
-		Subsystem->RemoveProtection(OtherActor);
-	}
-	ProtectedMachines.Remove(OtherActor);
-}
-
-UOJJ_ProtectionSubsystem* AOJJ_ProtectionTower::GetProtectionSubsystem() const
-{
-	if (const UWorld* World = GetWorld())
-	{
-		return World->GetSubsystem<UOJJ_ProtectionSubsystem>();
-	}
-	return nullptr;
-}
-
-bool AOJJ_ProtectionTower::IsProtectableMachine(AActor* OtherActor) const
-{
-	if (!IsValid(OtherActor) || OtherActor == this)
-	{
-		return false;
-	}
-
-	// Dummy 제거(SSR 이식) 후 보호 대상은 정식 AMachineBase로 일원화.
-	return OtherActor->IsA(AMachineBase::StaticClass());
+	// TODO(이찬 API 연동): PlanetEventManagerSubsystem에서 차폐장 등록 해제.
+	// 이찬이 UnregisterShieldGenerator(AOJJ_ProtectionTower*) 구현 시 아래 한 줄로 교체:
+	//   if (UWorld* W = GetWorld()) if (auto* S = W->GetSubsystem<UPlanetEventManagerSubsystem>()) S->UnregisterShieldGenerator(this);
+	LOG_OJJ(TEXT("ShieldGenerator EndPlay — 이벤트 매니저 등록 해제 대기(이찬 API 미구현)"));
 }

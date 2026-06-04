@@ -6,23 +6,22 @@
 #include "GameFramework/Actor.h"
 #include "OJJ_ProtectionTower.generated.h"
 
-class USphereComponent;
 class UStaticMeshComponent;
-class UOJJ_ProtectionSubsystem;
 
 /**
- * 자기폭풍(MagneticStorm) 전용 보호 건물 (OJJ 소유).
+ * 자기폭풍(MagneticStorm) 전용 차폐장(Shield Generator) (OJJ 소유).
  *
- * USphereComponent(ProtectionRange) 범위 안에 들어온 머신(AMachineBase)을
- * UOJJ_ProtectionSubsystem에 등록하여 "MagneticProtected" 태그가 부여되도록 한다.
+ * 본 액터는 "차폐장"으로서 자신의 위치/반경/활성 상태만 소유한다. 실제 보호 판정
+ * (어떤 머신이 어느 차폐장 반경 안에 있는가)은 PlanetEventManagerSubsystem이 거리 기반
+ * (IsMachineShieldedFromMagneticStorm 등)으로 수행한다 — 이찬과 합의된 구조.
  *
- * ⚠️ 자기폭풍(MagneticStorm)의 생산효율 저하 전용이다. SandStorm 등 다른 이벤트(내구도
- *    데미지 등)는 막지 않는다 — 태그 가드는 이찬 이벤트 적용부의 MagneticStorm 분기에서만
- *    소비될 예정이기 때문.
+ * 따라서 오버랩/콜리전/태그 관리는 하지 않는다. BeginPlay에서 이벤트 매니저에 자신을
+ * 차폐장으로 등록(Register)하고, EndPlay에서 등록 해제(Unregister)할 뿐이다.
  *
- * 상속 판단: BuildController는 TSubclassOf<AMachineBase>를 스폰하지만, 본 타워는 레시피/포트/
- * 인벤토리/상태머신/그리드 점유 등 머신 도메인 로직이 전혀 필요 없고 오히려 충돌하므로
- * AActor 직속으로 둔다(상세 근거는 작업 보고 참조). 배치는 에디터/별도 빌드 경로로 처리.
+ * ⚠️ 자기폭풍의 생산효율 저하 전용이다. SandStorm 등 다른 이벤트(내구도 데미지 등)는
+ *    막지 않는다 — 판정 측에서 MagneticStorm 분기에만 차폐를 적용하기 때문.
+ *
+ * 상속 판단: AActor 직속(머신 도메인 로직 불필요, 상세 근거는 이전 작업 보고 참조).
  */
 UCLASS()
 class WANTED_FACTORY_API AOJJ_ProtectionTower : public AActor
@@ -32,37 +31,37 @@ class WANTED_FACTORY_API AOJJ_ProtectionTower : public AActor
 public:
 	AOJJ_ProtectionTower();
 
+	// 차폐 반경(언리얼 단위). 기본 500 = 셀 5칸. 거리 판정은 이벤트 매니저가 이 값을 조회.
+	UFUNCTION(BlueprintPure, Category = "Shield")
+	float GetShieldRadius() const { return ShieldRadius; }
+
+	// 차폐장 활성 여부. 비활성이면 판정 측에서 무시해야 한다.
+	UFUNCTION(BlueprintPure, Category = "Shield")
+	bool IsShieldActive() const { return bIsShieldActive; }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// 루트 겸 비주얼. 메시는 BP에서 지정(임시 큐브 가능).
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Protection")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Shield")
 	TObjectPtr<UStaticMeshComponent> MeshComponent;
 
-	// 보호 범위 오버랩 감지용 구체.
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Protection")
-	TObjectPtr<USphereComponent> ProtectionRange;
+	// 차폐 반경(언리얼 단위). 기본 500 = 셀 5칸.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shield", meta = (ClampMin = "0.0"))
+	float ShieldRadius = 500.0f;
 
-	// 보호 반경(언리얼 단위). 기본 500 = 셀 5칸.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Protection", meta = (ClampMin = "0.0"))
-	float ProtectionRadius = 500.0f;
+	// 차폐장 활성 상태.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shield")
+	bool bIsShieldActive = true;
 
-	UFUNCTION()
-	void OnRangeBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
-		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
-
-	UFUNCTION()
-	void OnRangeEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
-		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+	// PIE에서 차폐 반경을 디버그 구체로 표시(에디터 비주얼은 최소화 — 보고 참조).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shield|Debug")
+	bool bShowDebugRadius = false;
 
 private:
-	// 이 타워가 현재 보호 중인 머신 추적(EndPlay/철거 시 일괄 해제용).
-	// 약참조라 파괴된 머신은 자동 무효화된다. GC 도달성 불필요 → UPROPERTY 미사용.
-	TSet<TWeakObjectPtr<AActor>> ProtectedMachines;
-
-	UOJJ_ProtectionSubsystem* GetProtectionSubsystem() const;
-
-	// OtherActor가 보호 대상 머신인지 판별(AMachineBase, 자기 자신 제외).
-	bool IsProtectableMachine(AActor* OtherActor) const;
+	// 이벤트 매니저에 차폐장 등록/해제. 이찬 API가 아직 없어 내부는 TODO + 로그.
+	// (이찬 함수 생기면 본문 한 줄만 교체 — 헤더 결합 없이 컴파일 유지.)
+	void RegisterToEventManager();
+	void UnregisterFromEventManager();
 };
