@@ -456,7 +456,28 @@ FVector AOJJ_Grid::GetMachinePlacementLocation(AMachineBase* Machine, FIntPoint 
 	const FVector LowerLeftCenter = GridToWorld(Origin);
 	const float OffsetX = (Size.X - 1) * CellSize * 0.5f;
 	const float OffsetY = (Size.Y - 1) * CellSize * 0.5f;
-	return FVector(LowerLeftCenter.X + OffsetX, LowerLeftCenter.Y + OffsetY, LowerLeftCenter.Z);
+
+	// Z: 피벗 무관 "바닥 안착". 메시 AABB의 최저점이 그리드 평면(LowerLeftCenter.Z)에 닿도록
+	// 액터 Z를 보정한다. 메시 로컬 AABB를 "MeshComponent→Actor" 상대 트랜스폼으로 변환해 액터
+	// 기준 최저점(ActorSpaceBox.Min.Z)을 구하므로, 컴포넌트의 상대 위치·회전·스케일(음수 포함)을
+	// 모두 반영한다(TransformBy가 변환 후 AABB를 재산출). ZOffset = -ActorSpaceBox.Min.Z.
+	//   · 바닥 피벗 메시(상대 transform 항등, Min.Z≈0): 보정 0 → 기존 동작과 동일(회귀 없음).
+	//   · 중앙 피벗(Min.Z<0)은 위로, 상단 피벗(Min.Z>0)은 아래로 옮겨 AABB 바닥을 평면에 안착.
+	// 메시 미지정/널이면 보정 0(현행 유지). GetMachinePlacementLocation은 항상 스폰된 실제
+	// 인스턴스로만 호출되므로(호버는 평면 ISM 타일이라 이 함수 미사용) 인스턴스 MeshComponent 기준.
+	float ZOffset = 0.0f;
+	if (const UStaticMeshComponent* Mesh = Machine->GetMeshComponent())
+	{
+		if (const UStaticMesh* MeshAsset = Mesh->GetStaticMesh())
+		{
+			const FTransform CompToActor =
+				Mesh->GetComponentTransform().GetRelativeTransform(Machine->GetActorTransform());
+			const FBox ActorSpaceBox = MeshAsset->GetBoundingBox().TransformBy(CompToActor);
+			ZOffset = -ActorSpaceBox.Min.Z;
+		}
+	}
+
+	return FVector(LowerLeftCenter.X + OffsetX, LowerLeftCenter.Y + OffsetY, LowerLeftCenter.Z + ZOffset);
 }
 
 bool AOJJ_Grid::IsValidGridCell(FIntPoint Cell) const

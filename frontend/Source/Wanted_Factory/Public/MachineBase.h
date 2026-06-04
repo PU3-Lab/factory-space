@@ -242,6 +242,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Machine Settings")
 	int32 GetOutputPortCount() const { return OutputPortCount; }
 
+	// 배치 Z(바닥 안착) 계산 등에서 메시 로컬 바운즈/월드스케일을 읽기 위한 접근자.
+	UStaticMeshComponent* GetMeshComponent() const { return MeshComponent; }
+
 	// 설치 가능 여부
 	UFUNCTION(BlueprintCallable)
 	virtual bool CanPlace();
