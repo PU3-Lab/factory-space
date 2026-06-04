@@ -60,8 +60,7 @@ protected:
 	bool bShowDebugRadius = false;
 
 private:
-	// 이벤트 매니저에 차폐장 등록/해제. 이찬 API가 아직 없어 내부는 TODO + 로그.
-	// (이찬 함수 생기면 본문 한 줄만 교체 — 헤더 결합 없이 컴파일 유지.)
+	// PlanetEventManagerSubsystem에 차폐장 등록/해제(BeginPlay/EndPlay에서 호출).
 	void RegisterToEventManager();
 	void UnregisterFromEventManager();
 };

@@ -4,6 +4,8 @@
 
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
+#include "Engine/World.h"
+#include "PlanetEventManagerSubsystem.h"
 #include "Wanted_Factory.h"
 
 AOJJ_ProtectionTower::AOJJ_ProtectionTower()
@@ -22,6 +24,7 @@ void AOJJ_ProtectionTower::BeginPlay()
 	RegisterToEventManager();
 
 	// PIE 디버그 반경 표시(에디터 상시 기즈모는 컴포넌트가 필요해 최소화 — 보고 참조).
+	// 한계: persistent 스피어라 같은 월드 내 타워 이동/파괴 시 잔상이 남을 수 있음(dev 시각화 전용).
 	if (bShowDebugRadius)
 	{
 		if (UWorld* World = GetWorld())
@@ -40,18 +43,22 @@ void AOJJ_ProtectionTower::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void AOJJ_ProtectionTower::RegisterToEventManager()
 {
-	// TODO(이찬 API 연동): PlanetEventManagerSubsystem에 차폐장 등록.
-	// 이찬이 RegisterShieldGenerator(AOJJ_ProtectionTower*) 구현 시 아래 한 줄로 교체:
-	//   if (UWorld* W = GetWorld()) if (auto* S = W->GetSubsystem<UPlanetEventManagerSubsystem>()) S->RegisterShieldGenerator(this);
-	// (그때 #include "PlanetEventManagerSubsystem.h" 추가)
-	LOG_OJJ(TEXT("ShieldGenerator BeginPlay (radius=%.0f, active=%d) — 이벤트 매니저 등록 대기(이찬 API 미구현)"),
-		ShieldRadius, bIsShieldActive ? 1 : 0);
+	if (UWorld* World = GetWorld())
+	{
+		if (UPlanetEventManagerSubsystem* Manager = World->GetSubsystem<UPlanetEventManagerSubsystem>())
+		{
+			Manager->RegisterShieldGenerator(this);
+		}
+	}
 }
 
 void AOJJ_ProtectionTower::UnregisterFromEventManager()
 {
-	// TODO(이찬 API 연동): PlanetEventManagerSubsystem에서 차폐장 등록 해제.
-	// 이찬이 UnregisterShieldGenerator(AOJJ_ProtectionTower*) 구현 시 아래 한 줄로 교체:
-	//   if (UWorld* W = GetWorld()) if (auto* S = W->GetSubsystem<UPlanetEventManagerSubsystem>()) S->UnregisterShieldGenerator(this);
-	LOG_OJJ(TEXT("ShieldGenerator EndPlay — 이벤트 매니저 등록 해제 대기(이찬 API 미구현)"));
+	if (UWorld* World = GetWorld())
+	{
+		if (UPlanetEventManagerSubsystem* Manager = World->GetSubsystem<UPlanetEventManagerSubsystem>())
+		{
+			Manager->UnregisterShieldGenerator(this);
+		}
+	}
 }
