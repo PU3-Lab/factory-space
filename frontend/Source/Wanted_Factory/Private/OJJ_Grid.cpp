@@ -321,6 +321,7 @@ bool OJJ_CollectConveyorReservedCells(
 AOJJ_Grid::AOJJ_Grid()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	// ★ AMachineBase::MeshFitCellWorld(=100)와 반드시 동기화 ★ — 머신 메시 바운즈 정규화가 이 값을 가정.
 	CellSize = 100.0f;
 	VisualizationRange = 20;
 

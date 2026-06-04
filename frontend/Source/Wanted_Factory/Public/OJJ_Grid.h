@@ -47,7 +47,9 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
-	// 그리드 한 칸의 월드 크기 (uu)
+	// 그리드 한 칸의 월드 크기 (uu).
+	// ★ 100에서 바꾸면 머신 메시 자동 스케일이 어긋난다 — AMachineBase::MeshFitCellWorld(=100)가
+	//   이 값을 가정해 메시 바운즈를 footprint에 정규화하기 때문. 변경 시 양쪽을 함께 동기화할 것.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid Settings", meta = (ClampMin = "1.0"))
 	float CellSize;
 

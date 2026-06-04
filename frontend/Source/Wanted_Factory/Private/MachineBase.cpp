@@ -1,7 +1,9 @@
 
 #include "MachineBase.h"
 
+#include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "Engine/StaticMesh.h"
 #include "FactoryManagerSubsystem.h"
 #include "PlanetEventManagerSubsystem.h"
 #include "RecipeManagerSubsystem.h"
@@ -151,9 +153,25 @@ void AMachineBase::OnConstruction(const FTransform& Transform)
 	Super::OnConstruction(Transform);
 	if (MeshComponent)
 	{
-		float ScaleX = GridSize.X;
-		float ScaleY = GridSize.Y;
-		MeshComponent->SetWorldScale3D(FVector(ScaleX, ScaleY, 1.0f));
+		// 메시 네이티브 바운즈를 footprint(GridSize × MeshFitCellWorld)에 정규화 → 셀 자동 정합.
+		// 폴백: 메시 널/바운즈 0이면 기존 식(GridSize 그대로).
+		// 기본 큐브(100uu) + CellWorld 100이면 SX/SY = GridSize라 기존과 수치 동일(무회귀).
+		FVector Scale(GridSize.X, GridSize.Y, 1.0f);
+		if (const UStaticMesh* StaticMeshAsset = MeshComponent->GetStaticMesh())
+		{
+			const FVector MeshSize = StaticMeshAsset->GetBoundingBox().GetSize();
+			if (MeshSize.X > KINDA_SMALL_NUMBER && MeshSize.Y > KINDA_SMALL_NUMBER)
+			{
+				const float SX = (GridSize.X * MeshFitCellWorld) / MeshSize.X;
+				const float SY = (GridSize.Y * MeshFitCellWorld) / MeshSize.Y;
+				// 높이(Z)는 XY 중 작은 스케일을 따름. XY는 셀에 맞춰 축별로 늘어나 메시 전체 종횡비가
+				// 보존되진 않지만, Z가 과도하게 늘어나 키 큰 메시(송전탑 등)가 왜곡되는 것을 막는다.
+				Scale = FVector(SX, SY, FMath::Min(SX, SY));
+			}
+		}
+		// 머신별 미세조정 배율(기본 1,1,1 → 정규화 결과 그대로).
+		Scale *= MeshScaleMultiplier;
+		MeshComponent->SetWorldScale3D(Scale);
 	}
 
 	CurrentDurability = FMath::Clamp(CurrentDurability, 0.f, MaxDurability);
