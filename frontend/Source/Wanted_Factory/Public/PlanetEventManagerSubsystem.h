@@ -6,7 +6,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "PlanetEventManagerSubsystem.generated.h"
 
-class ADummyMachineBase;
+class AMachineBase;
 
 UENUM(BlueprintType)
 enum class EPlanetDayPhase : uint8
@@ -143,10 +143,10 @@ public:
 	FOnPlanetEventEnded OnPlanetEventEnded;
 
 	UFUNCTION(BlueprintCallable, Category = "Planet Event|Machines")
-	void RegisterMachine(ADummyMachineBase* Machine);
+	void RegisterMachine(AMachineBase* Machine);
 
 	UFUNCTION(BlueprintCallable, Category = "Planet Event|Machines")
-	void UnregisterMachine(ADummyMachineBase* Machine);
+	void UnregisterMachine(AMachineBase* Machine);
 
 	UFUNCTION(BlueprintPure, Category = "Planet Event|Time")
 	FPlanetTimeState GetTimeState() const { return TimeState; }
@@ -187,7 +187,7 @@ private:
 	FTimerHandle EventRollTimerHandle;
 
 	float WeatherBlendElapsedSeconds = 0.0f;
-	TArray<TWeakObjectPtr<ADummyMachineBase>> RegisteredMachines;
+	TArray<TWeakObjectPtr<AMachineBase>> RegisteredMachines;
 
 	void StartSimulation(UWorld& InWorld);
 	void StopSimulation();
@@ -195,10 +195,10 @@ private:
 	void AdvanceTime(float DeltaSeconds);
 	void AdvanceWeather(float DeltaSeconds);
 	void RollEvent();
-	void ApplyActiveEventToMachine(ADummyMachineBase* Machine) const;
+	void ApplyActiveEventToMachine(AMachineBase* Machine) const;
 	void ApplyActiveEventToMachines() const;
 	void RestoreMachineEfficiencies() const;
-	void ForEachRegisteredMachine(TFunctionRef<void(ADummyMachineBase&)> Callback) const;
+	void ForEachRegisteredMachine(TFunctionRef<void(AMachineBase&)> Callback) const;
 
 	float GetFullDaySeconds() const;
 	float GetMagneticStormEfficiency() const;
