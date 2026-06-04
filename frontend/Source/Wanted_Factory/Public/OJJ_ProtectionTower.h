@@ -3,10 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
+#include "MachineBase.h"
 #include "OJJ_ProtectionTower.generated.h"
-
-class UStaticMeshComponent;
 
 /**
  * 자기폭풍(MagneticStorm) 전용 차폐장(Shield Generator) (OJJ 소유).
@@ -21,35 +19,40 @@ class UStaticMeshComponent;
  * ⚠️ 자기폭풍의 생산효율 저하 전용이다. SandStorm 등 다른 이벤트(내구도 데미지 등)는
  *    막지 않는다 — 판정 측에서 MagneticStorm 분기에만 차폐를 적용하기 때문.
  *
- * 상속 판단: AActor 직속(머신 도메인 로직 불필요, 상세 근거는 이전 작업 보고 참조).
+ * 상속: AMachineBase 파생 — 빌드 그리드 배치 시스템(OJJ_BuildController/OJJ_Grid)에
+ *   머신으로 올리기 위함(APowerGridNode 패턴). 단 입출력 포트 0·전력 불필요·아이템 수신
+ *   불가로 "비-생산 머신"이다(컨베이어 endpoint 제외는 GetInput/OutputPortCount==0 가드로 처리).
+ *   루트/메시는 AMachineBase가 생성한 Root + MeshComponent를 그대로 사용한다(자체 생성 금지).
  */
 UCLASS()
-class WANTED_FACTORY_API AOJJ_ProtectionTower : public AActor
+class WANTED_FACTORY_API AOJJ_ProtectionTower : public AMachineBase
 {
 	GENERATED_BODY()
 
 public:
 	AOJJ_ProtectionTower();
 
-	// 차폐 반경(언리얼 단위). 기본 500 = 셀 5칸. 거리 판정은 이벤트 매니저가 이 값을 조회.
+	// 비-생산 머신: 아이템을 받지 않는다(컨베이어/직접 투입 모두 거부) — APowerGridNode 패턴.
+	virtual bool AddItem(FName ItemID, int32 Count) override;
+	virtual bool CanReceiveConveyorItem(FName ItemID, int32 Count = 1) const override;
+
+	// 차폐 반경(언리얼 단위). 기본 700 = 셀 7칸. 거리 판정은 이벤트 매니저가 이 값을 조회.
 	UFUNCTION(BlueprintPure, Category = "Shield")
 	float GetShieldRadius() const { return ShieldRadius; }
 
-	// 차폐장 활성 여부. 비활성이면 판정 측에서 무시해야 한다.
+	// 차폐장 활성 여부. 수동 비활성(bIsShieldActive=false)이거나 파손(내구도 0, bDisableWhenBroken)
+	// 이면 비활성 → 판정 측(PlanetEventManager)이 무시. 머신 전환으로 내구도가 생겼으므로(SandStorm
+	// 데미지 등) 파손 시 차폐 중단 — APowerGridNode::IsPowerGridActive와 동일 패턴.
 	UFUNCTION(BlueprintPure, Category = "Shield")
-	bool IsShieldActive() const { return bIsShieldActive; }
+	bool IsShieldActive() const { return bIsShieldActive && !(isBroken() && bDisableWhenBroken); }
 
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-	// 루트 겸 비주얼. 메시는 BP에서 지정(임시 큐브 가능).
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Shield")
-	TObjectPtr<UStaticMeshComponent> MeshComponent;
-
-	// 차폐 반경(언리얼 단위). 기본 500 = 셀 5칸.
+	// 차폐 반경(언리얼 단위). 기본 700 = 셀 7칸.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shield", meta = (ClampMin = "0.0"))
-	float ShieldRadius = 500.0f;
+	float ShieldRadius = 700.0f;
 
 	// 차폐장 활성 상태.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shield")
