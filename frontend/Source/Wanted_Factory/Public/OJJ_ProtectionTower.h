@@ -13,7 +13,7 @@ class UOJJ_ProtectionSubsystem;
 /**
  * 자기폭풍(MagneticStorm) 전용 보호 건물 (OJJ 소유).
  *
- * USphereComponent(ProtectionRange) 범위 안에 들어온 머신(AMachineBase / ADummyMachineBase)을
+ * USphereComponent(ProtectionRange) 범위 안에 들어온 머신(AMachineBase)을
  * UOJJ_ProtectionSubsystem에 등록하여 "MagneticProtected" 태그가 부여되도록 한다.
  *
  * ⚠️ 자기폭풍(MagneticStorm)의 생산효율 저하 전용이다. SandStorm 등 다른 이벤트(내구도
@@ -63,6 +63,6 @@ private:
 
 	UOJJ_ProtectionSubsystem* GetProtectionSubsystem() const;
 
-	// OtherActor가 보호 대상 머신인지 판별(AMachineBase 또는 ADummyMachineBase, 자기 자신 제외).
+	// OtherActor가 보호 대상 머신인지 판별(AMachineBase, 자기 자신 제외).
 	bool IsProtectableMachine(AActor* OtherActor) const;
 };

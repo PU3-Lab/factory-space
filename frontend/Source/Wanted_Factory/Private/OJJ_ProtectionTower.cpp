@@ -10,7 +10,6 @@
 
 // 보호 대상 판별용(읽기 전용 include — SSR 머신 코드는 수정하지 않음).
 #include "MachineBase.h"
-#include "DummyMachineBase.h"
 
 AOJJ_ProtectionTower::AOJJ_ProtectionTower()
 {
@@ -128,8 +127,6 @@ bool AOJJ_ProtectionTower::IsProtectableMachine(AActor* OtherActor) const
 		return false;
 	}
 
-	// 둘 중 하나라도 성공하면 보호 대상. (통합 전: 이벤트는 Dummy에만 적용되지만,
-	// 정식 AMachineBase도 미리 잡아두어 통합 후 즉시 동작하도록 한다.)
-	return OtherActor->IsA(AMachineBase::StaticClass())
-		|| OtherActor->IsA(ADummyMachineBase::StaticClass());
+	// Dummy 제거(SSR 이식) 후 보호 대상은 정식 AMachineBase로 일원화.
+	return OtherActor->IsA(AMachineBase::StaticClass());
 }
