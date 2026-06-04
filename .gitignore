@@ -173,6 +173,10 @@ frontend/Content/MeshyImports/
 # Meshy 임포트 플러그인 (로컬 도구 — 런타임 의존성 아님, 각자 설치)
 frontend/Plugins/meshy-unreal-plugin-*/
 
+# UECommandForge automation plugin/install metadata (local tool, install per developer)
+frontend/Plugins/UECommandForge/
+frontend/UECommandForge/
+
 # Local git worktrees / scratch checkouts
 worktree/
 

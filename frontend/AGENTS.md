@@ -1,5 +1,10 @@
 ## Unreal 자동화 작업 규칙
 
+- UECommandForge 사용 원칙
+  - Unreal Editor/에셋/Blueprint/C++ reflection/DataTable/Config 자동화 작업 전에는 Codex skill `uecommandforge`를 사용한다.
+  - 설치된 `~/.codex/UECommandForge/uecommandforge-installed.json`, `uecommandforge.env`, 대상 프로젝트의 `UECommandForge/uecommandforge-project.json`로 대상 프로젝트와 wrapper 위치를 확인한다.
+  - Windows Command Prompt 또는 PowerShell에서는 `~/.codex/UECommandForge/tools/ue/*.bat`, Git Bash/macOS/Linux에서는 `~/.codex/UECommandForge/tools/ue/*.sh`를 우선 사용한다.
+  - wrapper 실행 후에는 `<Project>/Saved/CodexReports`의 최신 Result JSON을 확인하고, 실패 시 Unreal 로그와 크래시 리포트를 먼저 수집한다.
 - **임시 Unreal Python 스크립트(`import unreal`)로 Blueprint, Asset, C++ 반영 작업을 우회하지 않는다.**
   - 사용자가 요청하더라도 `.py` 파일을 새로 만들어 `unreal.EditorAssetLibrary`, `unreal.AssetToolsHelpers`, `unreal.BlueprintFactory`, `unreal.KismetEditorUtilities`로 에셋을 직접 생성·컴파일하지 않는다.
   - 사용자가 Unreal Python 우회 실행을 요청하면 그대로 수행하지 말고, 크래시 위험과 commandlet 우선 원칙을 짧게 설명한 뒤 기존 commandlet/wrapper 기반 대안을 실행한다.
