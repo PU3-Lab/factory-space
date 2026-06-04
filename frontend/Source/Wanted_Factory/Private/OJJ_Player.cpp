@@ -185,6 +185,14 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	{
 		EnhancedInput->BindAction(IA_SetPowerNodeMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerNodeMode);
 	}
+	if (IA_SetShieldMode)
+	{
+		EnhancedInput->BindAction(IA_SetShieldMode, ETriggerEvent::Started, this, &AOJJ_Player::SetShieldMode);
+	}
+	if (IA_SetPowerLineMode)
+	{
+		EnhancedInput->BindAction(IA_SetPowerLineMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerLineMode);
+	}
 	if (IA_BuildPan)
 	{
 		// 매 프레임 입력(연속 이동) → Triggered
@@ -383,6 +391,25 @@ void AOJJ_Player::SetPowerNodeMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerNode);
+}
+
+void AOJJ_Player::SetShieldMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Shield);
+}
+
+// 전선 드래그 모드 진입만 추가 — 드래그 로직(BeginPowerLineDrag/CommitPowerLineDrag)은 팀원 구현 무수정.
+void AOJJ_Player::SetPowerLineMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerLine);
 }
 
 void AOJJ_Player::BuildPan(const FInputActionValue& Value)

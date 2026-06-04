@@ -13,6 +13,7 @@
 #include "Conveyor.h"
 #include "Machines/PowerGridNode.h"
 #include "Machines/PowerLine.h"
+#include "OJJ_ProtectionTower.h"
 
 AOJJ_BuildController::AOJJ_BuildController()
 {
@@ -25,6 +26,7 @@ AOJJ_BuildController::AOJJ_BuildController()
 	ConveyorClass = AConveyor::StaticClass();
 	PowerLineClass = APowerLine::StaticClass();
 	PowerGridNodeClass = APowerGridNode::StaticClass();
+	ShieldClass = AOJJ_ProtectionTower::StaticClass();
 }
 
 void AOJJ_BuildController::Tick(float DeltaSeconds)
@@ -60,6 +62,11 @@ void AOJJ_BuildController::EnterBuildMode()
 	if (PlacementMode == EOJJ_BuildPlacementMode::PowerNode && !PowerGridNodeClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] PowerGridNodeClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::Shield && !ShieldClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] ShieldClass missing. EnterBuildMode stopped."));
 		return;
 	}
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor && !ConveyorClass)
@@ -160,7 +167,10 @@ void AOJJ_BuildController::RotateHoverClockwise()
 {
 	// R은 IMC_Build 전용이라 빌드모드에서만 발동하지만, 방어적으로 가드.
 	// 회전은 머신 호버 전용 — 컨베이어 모드에서는 무시(Dummy parity).
-	if (!bIsBuildMode || (PlacementMode != EOJJ_BuildPlacementMode::Machine && PlacementMode != EOJJ_BuildPlacementMode::PowerNode))
+	if (!bIsBuildMode
+		|| (PlacementMode != EOJJ_BuildPlacementMode::Machine
+			&& PlacementMode != EOJJ_BuildPlacementMode::PowerNode
+			&& PlacementMode != EOJJ_BuildPlacementMode::Shield))
 	{
 		return;
 	}
@@ -194,6 +204,11 @@ TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
 	if (PlacementMode == EOJJ_BuildPlacementMode::PowerNode)
 	{
 		return PowerGridNodeClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::Shield)
+	{
+		return ShieldClass;
 	}
 
 	return MachineClass;
@@ -432,11 +447,15 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	CancelConveyorDrag();
 	CancelPowerLineDrag();
 	PlacementMode = NewMode;
-	const TCHAR* ModeName = PlacementMode == EOJJ_BuildPlacementMode::Machine
-		? TEXT("Machine")
-		: (PlacementMode == EOJJ_BuildPlacementMode::Conveyor
-			? TEXT("Conveyor")
-			: (PlacementMode == EOJJ_BuildPlacementMode::PowerNode ? TEXT("PowerNode") : TEXT("PowerLine")));
+	const TCHAR* ModeName = TEXT("Unknown");
+	switch (PlacementMode)
+	{
+	case EOJJ_BuildPlacementMode::Machine:   ModeName = TEXT("Machine");   break;
+	case EOJJ_BuildPlacementMode::Conveyor:  ModeName = TEXT("Conveyor");  break;
+	case EOJJ_BuildPlacementMode::PowerNode: ModeName = TEXT("PowerNode"); break;
+	case EOJJ_BuildPlacementMode::PowerLine: ModeName = TEXT("PowerLine"); break;
+	case EOJJ_BuildPlacementMode::Shield:    ModeName = TEXT("Shield");    break;
+	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
