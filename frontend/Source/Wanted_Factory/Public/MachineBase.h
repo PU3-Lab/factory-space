@@ -181,6 +181,23 @@ protected:
 	// 출력 포트별 연결 정보
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Ports")
 	TArray<FMachinePortConnection> OutputConnections;
+	
+	// 내구도
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Durability", meta=(ClampMin = "1"))
+	float MaxDurability = 1000.0f;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine | Durability")
+	float CurrentDurability = 1000.f;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Durability")
+	bool bDisableWhenBroken = true;
+	
+	// 전력
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Power")
+	float PowerConsumption = 10.f;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Machine | Power")
+	float CurrentProvidedPower = 0.f;
 
 public:
 	// 기능들
@@ -273,6 +290,25 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "Machine | Debug")
 	void DebugInventory();
+	
+	// 내구도 함수
+	UFUNCTION(BlueprintPure, Category = "Machine | Durability")
+	bool isBroken() const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Machine | Durability")
+	void DamageDurability(float DamageAmount);
+	
+	UFUNCTION(BlueprintCallable, Category = "Machine | Durability")
+	void RepairDurability(float RepairAmount);
+	
+	UFUNCTION(BlueprintCallable, Category = "Machine | Power")
+	void SetProvidedPower(float NewPower);
+	
+	UFUNCTION(BlueprintPure, Category = "Machine | Power")
+	bool HasEnoughPower() const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Machine | State")
+	void RefreshMachineState();
 	
 	
 };

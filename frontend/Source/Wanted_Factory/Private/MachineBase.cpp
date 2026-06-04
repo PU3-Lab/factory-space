@@ -105,6 +105,8 @@ void AMachineBase::BeginPlay()
 {
 	Super::BeginPlay();
 
+	CurrentDurability = MaxDurability;
+	RefreshMachineState();
 }
 
 void AMachineBase::OnConstruction(const FTransform& Transform)
@@ -175,6 +177,8 @@ bool AMachineBase::AddItem(FName ItemID, int32 Count)
 
 void AMachineBase::TryStartProcess()
 {
+	RefreshMachineState();
+	
 	if (MachineState == EMachineState::Working)
 	{
 		return;
@@ -729,4 +733,81 @@ bool AMachineBase::TransferOutputByPort(int32 OutputPortIndex, FName ItemID, int
 		ItemID,
 		Count
 	);
+}
+
+bool AMachineBase::isBroken() const
+{
+	return CurrentDurability <= 0.f;
+}
+
+void AMachineBase::DamageDurability(float DamageAmount)
+{
+	if (DamageAmount <= 0.f)
+	{
+		return; 
+	}
+	
+	CurrentDurability = FMath::Clamp(CurrentDurability - DamageAmount, 0.f, MaxDurability);
+	
+	LOG_SSR_W(TEXT("Durability Damaged : %.1f / %.1f"),
+		CurrentDurability,
+		MaxDurability
+		);
+	
+	RefreshMachineState();
+}
+
+void AMachineBase::RepairDurability(float RepairAmount)
+{
+	if (RepairAmount <= 0.f)
+	{
+		return;
+	}
+		
+	CurrentDurability = FMath::Clamp(CurrentDurability + RepairAmount, 0.f, MaxDurability);
+	
+	LOG_SSR_W(TEXT("Durability Repaired : %.1f / %.1f"),
+		CurrentDurability,
+		MaxDurability
+	);
+	
+	RefreshMachineState();
+}
+
+void AMachineBase::SetProvidedPower(float NewPower)
+{
+	CurrentProvidedPower = FMath::Max(0.f, NewPower);
+	
+	LOG_SSR_W(TEXT("Power Updated : %.1f / %.1f"),
+		CurrentProvidedPower,
+		PowerConsumption
+	);
+	
+	RefreshMachineState();
+}
+
+bool AMachineBase::HasEnoughPower() const
+{
+	if (!bNeedPower)
+	{
+		return true;
+	}
+	
+	return CurrentProvidedPower >= PowerConsumption;
+}
+
+void AMachineBase::RefreshMachineState()
+{
+	if (isBroken() && bDisableWhenBroken)
+	{
+		MachineState = EMachineState::NoPower;
+		StopProcess();
+		return;
+	}
+	
+	if (MachineState == EMachineState::NoPower || MachineState == EMachineState::Disabled)
+	{
+		MachineState = EMachineState::Idle;
+		TryStartProcess();
+	}
 }
