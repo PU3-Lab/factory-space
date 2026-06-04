@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from agents.base import AgentContext, AgentRunResult
+from agents.operator_guide.service import build_manual_qa_agent_result
 
 
 class MachineHelpAgent:
@@ -21,13 +22,9 @@ class MachineHelpAgent:
         payload: dict[str, Any],
         context: AgentContext,
     ) -> AgentRunResult:
-        question = str(payload.get("question") or payload.get("message") or "")
-        return AgentRunResult(
-            agent="operator_guide",
-            payload={
-                "answer": "선택한 설비의 상태값, 입력/출력 연결, 사용 가능한 레시피를 확인하세요.",
-                "question": question,
-                "topic": "machine",
-            },
-            metadata={"fallback": True, "sub_agent": self.agent_id},
+        return build_manual_qa_agent_result(
+            payload,
+            context,
+            topic="machine",
+            sub_agent=self.agent_id,
         )

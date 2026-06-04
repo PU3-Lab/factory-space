@@ -45,10 +45,11 @@ class ManualQAResponseBuilder:
             return self._build_unknown_answer(question, intent)
 
         answer = (
-            f"{equipment.name}는 {equipment.role}입니다. "
-            f"입력 자원은 {self._names(equipment.input_resources)}이고, "
-            f"출력 자원은 {self._names(equipment.output_resources)}입니다. "
-            f"필요 전력은 {equipment.power_required}입니다."
+            f"좋아요. {equipment.name}는 {equipment.role}입니다. "
+            f"{self._equipment_input_phrase(equipment.input_resources)} "
+            f"{self._equipment_output_phrase(equipment.output_resources)} "
+            f"사용할 때는 전력 요구량 {equipment.power_required}과 "
+            "컨베이어 연결 상태를 먼저 확인해보세요."
         )
         return ManualQAResult(
             question=question,
@@ -80,9 +81,11 @@ class ManualQAResponseBuilder:
             sources.append(self._recipe_source(recipe))
 
         answer = (
-            f"{resource.name}는 {resource.acquisition_method}. "
-            f"생산 장비는 {equipment.name if equipment else resource.produced_by}이고, "
-            f"사용처는 {resource.used_for}입니다."
+            f"좋아요. {resource.name}는 "
+            f"{self._formal_statement(resource.acquisition_method)}. "
+            f"보통 {self._usage_phrase(resource.used_for)} "
+            f"생산 흐름은 {equipment.name if equipment else resource.produced_by}에서 "
+            "먼저 확인해보면 됩니다."
         )
         if recipe is not None:
             answer += f" 관련 공정은 {recipe.name}입니다."
@@ -120,11 +123,13 @@ class ManualQAResponseBuilder:
             if (resource := self._repository.get_resource(resource_id)) is not None
         )
 
+        output_name = output_resource.name if output_resource else recipe.name
         answer = (
-            f"{output_resource.name if output_resource else recipe.name} 제작에는 "
-            f"{self._names(recipe.input_resources)}이 필요합니다. "
-            f"필요 장비는 {equipment.name if equipment else recipe.required_equipment}이고, "
-            f"공정 순서는 {recipe.production_steps}입니다."
+            f"좋아요. {self._object_phrase(output_name)} 만들려면 "
+            f"{self._resource_amounts(recipe.input_resources)} 필요합니다. "
+            f"{equipment.name if equipment else recipe.required_equipment}에서 제작하고, "
+            f"흐름은 {recipe.production_steps} 순서로 보면 됩니다. "
+            "먼저 필요한 재료가 장비까지 들어오는지 확인해볼까요?"
         )
 
         return ManualQAResult(
@@ -156,9 +161,23 @@ class ManualQAResponseBuilder:
             sources.append(self._equipment_source(equipment))
 
         target_name = equipment.name if equipment is not None else "장비"
+        input_hint = (
+            self._resource_hint(equipment.input_resources, "입력 자원")
+            if equipment
+            else "입력 자원"
+        )
+        output_hint = (
+            self._resource_hint(equipment.output_resources, "출력 자원")
+            if equipment
+            else "출력 자원"
+        )
         answer = (
-            f"{target_name}가 멈췄다면 {rule.resolution}. "
-            f"확인 순서는 {', '.join(rule.check_order)}입니다."
+            f"{target_name}가 멈췄군요. 보통 전력, 입력 자원, 출력 이동 중 "
+            "하나가 막히면 생산이 멈춥니다. "
+            f"먼저 전력이 제대로 들어오는지 확인해보세요. "
+            f"전력이 괜찮다면 {input_hint}이 {target_name} 안으로 들어오고 있는지 살펴보고, "
+            f"만들어진 {output_hint}이 컨베이어나 저장고로 빠져나갈 수 있는지도 확인하면 됩니다. "
+            f"마지막으로 {target_name}에 올바른 레시피가 선택되어 있는지 확인하세요."
         )
 
         return ManualQAResult(
@@ -184,8 +203,10 @@ class ManualQAResponseBuilder:
             question=question,
             question_type="unknown_question",
             answer=(
-                "현재 매뉴얼 데이터에서 확인할 수 없습니다. "
-                "프로토는 장비, 자원, 레시피, 문제 해결 CSV에 있는 내용만 답변합니다."
+                "그 질문은 현재 매뉴얼 데이터에서 확인할 수 없습니다. "
+                "저는 장비, 자원, 레시피, 생산 문제 해결을 도와드릴 수 있어요. "
+                "예를 들면 '제련기가 왜 안 돌아가?', "
+                "'기어 만들려면 뭐가 필요해?'처럼 물어보면 안내해드릴 수 있습니다."
             ),
             sources=[],
             recommended_actions=self._recommended_actions(
@@ -239,7 +260,7 @@ class ManualQAResponseBuilder:
         return RecommendedAction(
             action_id=policy.action_id,
             label=policy.label,
-            description=policy.description,
+            description=self._formal_statement(policy.description),
             priority=priority,
         )
 
@@ -275,8 +296,66 @@ class ManualQAResponseBuilder:
         names = []
         for raw_id in ids:
             item_id = raw_id.split(":", 1)[0]
+            if item_id == "none":
+                names.append("별도 입력 자원 없음")
+                continue
+            if item_id == "any":
+                names.append("여러 자원")
+                continue
             resource = self._repository.get_resource(item_id)
             equipment = self._repository.get_equipment(item_id)
-            names.append((resource and resource.name) or (equipment and equipment.name) or raw_id)
+            names.append(
+                (resource and resource.name) or (equipment and equipment.name) or raw_id
+            )
         return ", ".join(names) if names else "없음"
+
+    def _equipment_input_phrase(self, ids: list[str]) -> str:
+        if ids == ["none"]:
+            return "입력 자원은 따로 필요하지 않습니다."
+        if ids == ["any"]:
+            return "입력 쪽에서는 여러 자원을 받을 수 있습니다."
+        return f"입력 자원은 {self._names(ids)}입니다."
+
+    def _equipment_output_phrase(self, ids: list[str]) -> str:
+        if ids == ["none"]:
+            return "출력 자원은 따로 없습니다."
+        if ids == ["any"]:
+            return "출력 쪽에서는 여러 자원을 내보낼 수 있습니다."
+        return f"출력 결과는 {self._names(ids)}입니다."
+
+    def _resource_amounts(self, ids: list[str]) -> str:
+        amounts = []
+        for raw_id in ids:
+            item_id, _, quantity = raw_id.partition(":")
+            resource = self._repository.get_resource(item_id)
+            name = (resource and resource.name) or item_id
+            amounts.append(f"{name} {quantity}개가" if quantity else f"{name}이")
+        return ", ".join(amounts) if amounts else "없음이"
+
+    def _resource_hint(self, ids: list[str], fallback: str) -> str:
+        names = self._names(ids)
+        if names == "없음":
+            return fallback
+        return f"{names} 같은 {fallback}"
+
+    def _formal_statement(self, text: str) -> str:
+        if text.endswith("한다"):
+            return f"{text[:-2]}합니다"
+        return text
+
+    def _object_phrase(self, text: str) -> str:
+        return f"{text}{'을' if self._has_final_consonant(text) else '를'}"
+
+    def _has_final_consonant(self, text: str) -> bool:
+        if not text:
+            return False
+        code = ord(text[-1])
+        if code < 0xAC00 or code > 0xD7A3:
+            return False
+        return (code - 0xAC00) % 28 != 0
+
+    def _usage_phrase(self, text: str) -> str:
+        if text.endswith("에 사용"):
+            return f"{text}됩니다."
+        return f"{text}입니다."
 

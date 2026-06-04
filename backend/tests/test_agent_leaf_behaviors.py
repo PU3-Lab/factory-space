@@ -110,7 +110,17 @@ def test_operator_guide_leaf_agents_return_normalized_fallbacks(
     assert result.agent == "operator_guide"
     assert result.payload["question"] == "How does this work?"
     assert result.payload["topic"] == expected_topic
-    assert result.metadata == {"fallback": True, "sub_agent": agent.agent_id}
+    assert result.payload["actions"] == []
+    assert result.payload["final_answer"]
+    assert "answer" not in result.payload
+    assert "text" not in result.payload
+    assert result.metadata["fallback"] is True
+    assert result.metadata["sub_agent"] == agent.agent_id
+    assert result.metadata["question_type"] == "unknown_question"
+    assert result.metadata["sources"] == []
+    assert result.metadata["recommended_actions"][0]["action_id"] == (
+        "action_answer_unknown_without_guessing"
+    )
 
 
 @pytest.mark.parametrize(
