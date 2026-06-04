@@ -3,7 +3,7 @@ ENVIRONMENT=development
 
 # Local LLM slot configuration
 FACTORY_LLM_DEFAULT_PROVIDER=local
-FACTORY_LLM_DEFAULT_MODEL=gemma4
+FACTORY_LLM_DEFAULT_MODEL=gemma4:latest
 FACTORY_LLM_DEFAULT_BASE_URL=http://localhost:11434/v1
 
 # Optional fallback slots
