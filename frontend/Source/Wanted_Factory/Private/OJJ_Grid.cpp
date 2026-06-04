@@ -172,7 +172,9 @@ bool OJJ_FindInputMachineAtPathEnd(
 	{
 		AMachineBase* EndMachine = Cast<AMachineBase>(EndOccupant->Get());
 		const TArray<FIntPoint>* EndMachineCells = EndMachine ? ActorToCells.Find(EndMachine) : nullptr;
+		// 포트 없는 머신(송전탑/발전소/차폐장 등)은 컨베이어 endpoint 불가 — 입력 포트 0이면 수신 불가.
 		if (!EndMachine || EndMachine == StartMachine || !EndMachineCells
+			|| EndMachine->GetInputPortCount() <= 0
 			|| !OJJ_IsMachineFrontInputPair(Grid, EndMachine, EndCell, PreviousCell, *EndMachineCells))
 		{
 			OutReason = TEXT("Conveyor must end at another machine input port.");
@@ -196,7 +198,8 @@ bool OJJ_FindInputMachineAtPathEnd(
 	{
 		const FIntPoint MachineCell = EndCell - Step;
 		AMachineBase* AdjacentMachine = OJJ_GetMachineAtCell(OccupiedCells, MachineCell);
-		if (!AdjacentMachine || AdjacentMachine == StartMachine)
+		// 포트 없는 머신(송전탑/발전소/차폐장 등)은 컨베이어 endpoint 불가 — 입력 포트 0이면 후보 제외.
+		if (!AdjacentMachine || AdjacentMachine == StartMachine || AdjacentMachine->GetInputPortCount() <= 0)
 		{
 			continue;
 		}
@@ -244,7 +247,9 @@ bool OJJ_CollectConveyorReservedCells(
 
 	AMachineBase* StartMachine = OJJ_GetMachineAtCell(OccupiedCells, PathCells[0]);
 	const TArray<FIntPoint>* StartMachineCells = StartMachine ? ActorToCells.Find(StartMachine) : nullptr;
+	// 포트 없는 머신(송전탑/발전소/차폐장 등)은 컨베이어 endpoint 불가 — 출력 포트 0이면 송신 불가.
 	if (!StartMachine || !StartMachineCells
+		|| StartMachine->GetOutputPortCount() <= 0
 		|| !OJJ_IsMachineBackOutputPair(Grid, StartMachine, PathCells[0], PathCells[1], *StartMachineCells))
 	{
 		OutReason = TEXT("Conveyor must start from a machine output port.");
