@@ -277,9 +277,7 @@ void AOJJ_BuildController::UpdateMouseHover()
 					const FVector StartLoc = StartNode->GetActorLocation() + FVector(0.0f, 0.0f, PreviewHeightOffset);
 					const FVector CursorLoc = Hit.Location + FVector(0.0f, 0.0f, PreviewHeightOffset);
 
-					// 시작 노드 강조(매 프레임 비영속).
-					DrawDebugSphere(World, StartLoc, 60.0f, 12, FColor::Yellow, /*bPersistent=*/ false, /*LifeTime=*/ -1.0f, 0, 2.0f);
-
+					// 시작 노드(StartLoc) → 커서(CursorLoc)로 미리보기 선(매 프레임 비영속).
 					// 커서 아래 노드가 연결 가능하면 초록, 아니면 빨강. HoverNode가 non-null일 때만
 					// CanConnect 평가(단락 평가) → 노드 위가 아니면 매 프레임 그래프 순회 비용 없음.
 					APowerGridNode* HoverNode = Cast<APowerGridNode>(Hit.GetActor());
