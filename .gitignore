@@ -181,6 +181,10 @@ frontend/Plugins/meshy-*/
 # 주의: 이미 추적 중인 파일이라 별도로 `git rm --cached`를 해야 실제 제외됨 (팀 합의 후)
 frontend/Config/DefaultEditor.ini
 
+# UECommandForge automation plugin/install metadata (local tool, install per developer)
+frontend/Plugins/UECommandForge/
+frontend/UECommandForge/
+
 # Local git worktrees / scratch checkouts
 worktree/
 
