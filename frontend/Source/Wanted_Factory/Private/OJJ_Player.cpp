@@ -4,6 +4,7 @@
 #include "OJJ_Player.h"
 
 #include "Camera/CameraComponent.h"
+#include "FactoryAgentClientSubsystem.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
@@ -11,7 +12,9 @@
 #include "Camera/PlayerCameraManager.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
+#include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 #include "InputAction.h"
 #include "InputActionValue.h"
@@ -100,6 +103,21 @@ void AOJJ_Player::BeginPlay()
 		UE_LOG(LogTemp, Warning,
 			TEXT("[OJJ_Player] AOJJ_BuildCamera spawn 실패 — 빌드모드 탑다운 전환 비활성."));
 	}
+	ConnectFactoryAgentClient();
+}
+
+void AOJJ_Player::ConnectFactoryAgentClient()
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>())
+		{
+			if (AgentClient->GetConnectionState() == EFactoryAgentConnectionState::Disconnected)
+			{
+				AgentClient->Connect("ws://127.0.0.1:18000/ws/agent");
+			}
+		}
+	}
 }
 
 void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -182,6 +200,8 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 		UE_LOG(LogTemp, Warning,
 			TEXT("[OJJ_Player] IA_MachineRotate 미할당 — 호버 머신 회전(R) 비활성. IMC_Build/BP_OJJ_Player에 IA_MachineRotate 할당 필요."));
 	}
+
+	PlayerInputComponent->BindKey(EKeys::M, IE_Pressed, this, &AOJJ_Player::SendOperatorGuideRequest);
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -374,5 +394,43 @@ void AOJJ_Player::BuildRotateMachine(const FInputActionValue& Value)
 	if (BuildController)
 	{
 		BuildController->RotateHoverClockwise();
+	}
+}
+
+void AOJJ_Player::SendOperatorGuideRequest()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UFactoryAgentClientSubsystem* AgentClient = GameInstance
+		? GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>()
+		: nullptr;
+	if (!AgentClient)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] FactoryAgentClientSubsystem not found."));
+		return;
+	}
+
+	if (!AgentClient->IsConnected())
+	{
+		if (AgentClient->GetConnectionState() == EFactoryAgentConnectionState::Disconnected)
+		{
+			AgentClient->ConnectToDefaultServer();
+		}
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] Factory agent WebSocket is not connected yet."));
+		return;
+	}
+
+	const FString RequestJson =
+		TEXT("{")
+		TEXT("\"type\":\"agent.request\",")
+		TEXT("\"request_id\":\"req-manual-qa-001\",")
+		TEXT("\"session_id\":\"session-001\",")
+		TEXT("\"client_id\":\"unreal-ui-001\",")
+		TEXT("\"agent\":\"operator_guide\",")
+		TEXT("\"payload\":{\"question\":\"\\uAE30\\uC5B4 \\uB9CC\\uB4E4\\uB824\\uBA74 \\uBB50\\uAC00 \\uD544\\uC694\\uD574?\"}")
+		TEXT("}");
+
+	if (AgentClient->SendJsonMessage(RequestJson))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] Sent operator guide request."));
 	}
 }

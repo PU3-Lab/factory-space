@@ -22,5 +22,9 @@ protected:
 public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
-	virtual void ProcessItem_Implementation() override;
+
+	virtual bool AddItem(FName ItemID, int32 Count) override;
+	virtual void AddOutputItem(FName ItemID, int32 Count) override;
+	virtual bool CanAddToOutputBuffer(const FRecipeTable& Recipe) const override;
+	virtual bool CanReceiveConveyorItem(FName ItemID, int32 Count = 1) const override;
 };

@@ -1,6 +1,6 @@
 #include "PlanetEventManagerSubsystem.h"
 
-#include "DummyMachineBase.h"
+#include "MachineBase.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "Wanted_Factory.h"
@@ -24,7 +24,7 @@ void UPlanetEventManagerSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
-void UPlanetEventManagerSubsystem::RegisterMachine(ADummyMachineBase* Machine)
+void UPlanetEventManagerSubsystem::RegisterMachine(AMachineBase* Machine)
 {
 	if (!Machine)
 	{
@@ -32,7 +32,7 @@ void UPlanetEventManagerSubsystem::RegisterMachine(ADummyMachineBase* Machine)
 	}
 
 	RegisteredMachines.RemoveAllSwap(
-		[Machine](const TWeakObjectPtr<ADummyMachineBase>& RegisteredMachine)
+		[Machine](const TWeakObjectPtr<AMachineBase>& RegisteredMachine)
 		{
 			return !RegisteredMachine.IsValid() || RegisteredMachine.Get() == Machine;
 		});
@@ -44,7 +44,7 @@ void UPlanetEventManagerSubsystem::RegisterMachine(ADummyMachineBase* Machine)
 	}
 }
 
-void UPlanetEventManagerSubsystem::UnregisterMachine(ADummyMachineBase* Machine)
+void UPlanetEventManagerSubsystem::UnregisterMachine(AMachineBase* Machine)
 {
 	if (!Machine)
 	{
@@ -52,7 +52,7 @@ void UPlanetEventManagerSubsystem::UnregisterMachine(ADummyMachineBase* Machine)
 	}
 
 	RegisteredMachines.RemoveAllSwap(
-		[Machine](const TWeakObjectPtr<ADummyMachineBase>& RegisteredMachine)
+		[Machine](const TWeakObjectPtr<AMachineBase>& RegisteredMachine)
 		{
 			return !RegisteredMachine.IsValid() || RegisteredMachine.Get() == Machine;
 		});
@@ -260,7 +260,7 @@ void UPlanetEventManagerSubsystem::RollEvent()
 	}
 }
 
-void UPlanetEventManagerSubsystem::ApplyActiveEventToMachine(ADummyMachineBase* Machine) const
+void UPlanetEventManagerSubsystem::ApplyActiveEventToMachine(AMachineBase* Machine) const
 {
 	if (!Machine)
 	{
@@ -282,7 +282,7 @@ void UPlanetEventManagerSubsystem::ApplyActiveEventToMachine(ADummyMachineBase* 
 void UPlanetEventManagerSubsystem::ApplyActiveEventToMachines() const
 {
 	ForEachRegisteredMachine(
-		[this](ADummyMachineBase& Machine)
+		[this](AMachineBase& Machine)
 		{
 			ApplyActiveEventToMachine(&Machine);
 		});
@@ -291,18 +291,18 @@ void UPlanetEventManagerSubsystem::ApplyActiveEventToMachines() const
 void UPlanetEventManagerSubsystem::RestoreMachineEfficiencies() const
 {
 	ForEachRegisteredMachine(
-		[](ADummyMachineBase& Machine)
+		[](AMachineBase& Machine)
 		{
 			Machine.SetPlanetProductionEfficiency(1.0f);
 		});
 }
 
 void UPlanetEventManagerSubsystem::ForEachRegisteredMachine(
-	TFunctionRef<void(ADummyMachineBase&)> Callback) const
+	TFunctionRef<void(AMachineBase&)> Callback) const
 {
-	for (const TWeakObjectPtr<ADummyMachineBase>& RegisteredMachine : RegisteredMachines)
+	for (const TWeakObjectPtr<AMachineBase>& RegisteredMachine : RegisteredMachines)
 	{
-		if (ADummyMachineBase* Machine = RegisteredMachine.Get())
+		if (AMachineBase* Machine = RegisteredMachine.Get())
 		{
 			Callback(*Machine);
 		}

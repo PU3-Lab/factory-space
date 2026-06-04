@@ -1,18 +1,18 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "Smelter.h"
+#include "Grinder.h"
 
 #include "RecipeManagerSubsystem.h"
 #include "Wanted_Factory.h"
 
 // Sets default values
-ASmelter::ASmelter()
+AGrinder::AGrinder()
 {
 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = false;
 
-	MachineType = TEXT("Smelter");
+	MachineType = TEXT("Grinder");
 	InputPortCount = 1;
 	OutputPortCount = 1;
 	bNeedPower = true;
@@ -35,30 +35,30 @@ ASmelter::ASmelter()
 }
 
 // Called when the game starts or when spawned
-void ASmelter::BeginPlay()
+void AGrinder::BeginPlay()
 {
 	Super::BeginPlay();
 	
 }
 
 // Called every frame
-void ASmelter::Tick(float DeltaTime)
+void AGrinder::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 }
 
-bool ASmelter::AddItem(FName ItemID, int32 Count)
+bool AGrinder::AddItem(FName ItemID, int32 Count)
 {
 	if (!CanReceiveConveyorItem(ItemID, Count))
 	{
-		LOG_SSR_W(TEXT("Smelter rejected input item: %s"), *ItemID.ToString());
+		LOG_SSR_W(TEXT("Grinder rejected input item: %s"), *ItemID.ToString());
 		return false;
 	}
 
 	return Super::AddItem(ItemID, Count);
 }
 
-void ASmelter::AddOutputItem(FName ItemID, int32 Count)
+void AGrinder::AddOutputItem(FName ItemID, int32 Count)
 {
 	for (const TPair<FName, int32>& Output : OutputBuffer)
 	{
@@ -67,7 +67,7 @@ void ASmelter::AddOutputItem(FName ItemID, int32 Count)
 			MachineState = EMachineState::Blocked;
 
 			LOG_SSR_W(
-				TEXT("Smelter output buffer already contains another item: %s"),
+				TEXT("Grinder output buffer already contains another item: %s"),
 				*Output.Key.ToString()
 			);
 			return;
@@ -77,7 +77,7 @@ void ASmelter::AddOutputItem(FName ItemID, int32 Count)
 	Super::AddOutputItem(ItemID, Count);
 }
 
-bool ASmelter::CanAddToOutputBuffer(const FRecipeTable& Recipe) const
+bool AGrinder::CanAddToOutputBuffer(const FRecipeTable& Recipe) const
 {
 	int32 OutputItemCount = 0;
 	FName RecipeOutputItem = NAME_None;
@@ -112,7 +112,7 @@ bool ASmelter::CanAddToOutputBuffer(const FRecipeTable& Recipe) const
 	return Super::CanAddToOutputBuffer(Recipe);
 }
 
-bool ASmelter::CanReceiveConveyorItem(FName ItemID, int32 Count) const
+bool AGrinder::CanReceiveConveyorItem(FName ItemID, int32 Count) const
 {
 	if (!Super::CanReceiveConveyorItem(ItemID, Count))
 	{
@@ -133,17 +133,17 @@ bool ASmelter::CanReceiveConveyorItem(FName ItemID, int32 Count) const
 		return false;
 	}
 
-	bool bHasSmelterRecipe = false;
+	bool bHasGrinderRecipe = false;
 	for (const FRecipeTable& Recipe : FoundRecipes)
 	{
 		if (Recipe.MachineType == MachineType)
 		{
-			bHasSmelterRecipe = true;
+			bHasGrinderRecipe = true;
 			break;
 		}
 	}
 
-	if (!bHasSmelterRecipe)
+	if (!bHasGrinderRecipe)
 	{
 		return false;
 	}

@@ -81,7 +81,7 @@ void AMinerMachine::StartMining()
 
 	if (!CanMine())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Cannot start mining."));
+		LOG_SSR_W(TEXT("Cannot start mining."))
 		return;
 	}
 
@@ -93,6 +93,7 @@ void AMinerMachine::StartMining()
 		true
 	);
 
+	LOG_SSR_W(TEXT("Mining started."));
 	UE_LOG(LogTemp, Warning, TEXT("Mining started."));
 }
 
@@ -145,10 +146,9 @@ void AMinerMachine::MineResource()
 	
 	AddOutputItem(ResourceID, MineAmount);
 
-	UE_LOG(LogTemp, Warning, TEXT("Mined Resource: %s x %d"),
+	LOG_SSR_W(TEXT("Mined Resource: %s x %d"),
 		*ResourceID.ToString(),
 		MineAmount);
-	
 }
 
 

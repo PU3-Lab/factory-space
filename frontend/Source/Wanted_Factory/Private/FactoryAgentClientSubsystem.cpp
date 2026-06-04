@@ -155,6 +155,18 @@ FString UFactoryAgentClientSubsystem::SendAgentRequestWithContext(
 	return SendAgentRequestInternal(Agent, PayloadJson, ContextJson, SessionId, ClientId);
 }
 
+bool UFactoryAgentClientSubsystem::SendJsonMessage(const FString& JsonMessage)
+{
+	TSharedPtr<FJsonObject> MessageObject;
+	if (!ParseJsonObject(JsonMessage, MessageObject))
+	{
+		LOG_LC_W(TEXT("Factory agent message must be a JSON object."));
+		return false;
+	}
+
+	return SendRawMessage(WriteJsonObject(MessageObject));
+}
+
 bool UFactoryAgentClientSubsystem::SendRawMessage(const FString& RawMessage)
 {
 	if (!IsConnected())
@@ -251,6 +263,7 @@ void UFactoryAgentClientSubsystem::HandleSocketClosed(int32 StatusCode, const FS
 
 void UFactoryAgentClientSubsystem::HandleSocketMessage(const FString& Message)
 {
+	LOG_LC(TEXT("Factory agent WebSocket received: %s"), *Message);
 	OnRawMessageReceived.Broadcast(Message);
 
 	TSharedPtr<FJsonObject> RootObject;
