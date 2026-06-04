@@ -152,6 +152,8 @@ protected:
 	void BuildPan(const FInputActionValue& Value);
 	void BuildRotate(const FInputActionValue& Value);
 	void BuildRotateMachine(const FInputActionValue& Value);
+	void ConnectFactoryAgentClient();
+	void SendOperatorGuideRequest();
 
 	// 좌클릭 뗌/취소 — 컨베이어 드래그 커밋/취소를 BuildController로 위임.
 	void BuildPlaceReleased(const FInputActionValue& Value);
