@@ -64,6 +64,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Look", meta = (ClampMin = "0.0"))
 	float LookPitchSensitivity = 0.5f;
 
+	// 마우스 상하(pitch) 반전. true면 마우스 올림→시점 내려감(invert Y). 기본 반전 ON.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Look")
+	bool bInvertLookPitch = true;
+
 	// 카메라 상하 회전 제한(deg). 뒤집힘 방지. BeginPlay에서 PlayerCameraManager에 적용.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Look", meta = (ClampMin = "-89.9", ClampMax = "0.0"))
 	float CameraPitchMin = -80.f;
