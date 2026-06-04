@@ -857,8 +857,11 @@ bool AOJJ_Grid::OJJ_TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint
 		return false;
 	}
 
-	Conveyor->SetActorLocation(GetActorLocation());
+	// SetPath로 PathCells를 먼저 채운 뒤 centroid를 계산해야 하므로 순서 주의(SetPath → SetActorLocation).
+	// 피벗을 belt centroid로 옮겨도 belt 월드위치는 불변(로컬에서 centroid를 차감하므로 상쇄).
+	// centroid는 액터 로컬 오프셋이므로 액터 회전을 적용해 월드 방향으로 변환(무회전에선 항등, 미래 회전 대비).
 	Conveyor->SetPath(PlacementCells, CellSize);
+	Conveyor->SetActorLocation(GetActorLocation() + Conveyor->GetActorRotation().RotateVector(Conveyor->GetPathCentroidLocal()));
 	Conveyor->ConfigureTransport(ReservedCells, SourceMachine, TargetMachine);
 	return true;
 }
