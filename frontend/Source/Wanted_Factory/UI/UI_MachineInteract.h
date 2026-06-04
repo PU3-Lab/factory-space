@@ -34,6 +34,9 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "Factory UI")
 	void UpdateMachineName(FString MachineName);
+	
+	UFUNCTION(BlueprintCallable, Category = "Factory UI")
+	void UpdateDurabilityUI(float CurrentDurability, float MaxDurability);
 
 protected:
 	// --- 입력(Input) 위젯 ---
@@ -55,6 +58,13 @@ protected:
 	
 	UPROPERTY(meta = (BindWidget))
 	class UButton* BTN_Close;
+	
+	// --- 내구도 관련 위젯 ---
+	UPROPERTY(meta = (BindWidget))
+	class UTextBlock* TXT_DurabilityPercent;
+
+	UPROPERTY(meta = (BindWidget))
+	class UProgressBar* PB_Durability;
 
 private:
 	// 테스트하기 위한 임시 변수

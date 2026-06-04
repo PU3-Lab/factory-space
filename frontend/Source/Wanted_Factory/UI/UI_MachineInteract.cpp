@@ -27,8 +27,19 @@ void UUI_MachineInteract::NativeTick(const FGeometry& MyGeometry, float InDeltaT
 {
     Super::NativeTick(MyGeometry, InDeltaTime);
     
+    if (!TargetMachine)
+    {
+        DummyProgress += InDeltaTime * 0.5f;
+        if (DummyProgress > 1.0f) DummyProgress = 0.0f; 
+        UpdateCraftingProgress(DummyProgress);
+        
+        float DummyDurability = 100.f - (DummyProgress * 100.f); 
+        UpdateDurabilityUI(DummyDurability, 100.f);
+        
+        return;
+    }
+    
     if (!TargetMachine) return;
-
     // 기계가 현재 돌리고 있는 레시피 정보 가져오기
     FRecipeTable Recipe = TargetMachine->GetCurrentRecipe();
 
@@ -121,7 +132,10 @@ void UUI_MachineInteract::UpdateCraftingProgress(float Percent)
         PB_CraftingProgress->SetPercent(Percent);
         
         int32 PercentInt = FMath::RoundToInt(Percent * 100.0f);
-        TXT_ProgressPercent->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), PercentInt)));
+        
+        FString ProgressStr = FString::Printf(TEXT("진행도: %d%%"), PercentInt);
+        
+        TXT_ProgressPercent->SetText(FText::FromString(ProgressStr));
     }
 }
 void UUI_MachineInteract::UpdateMachineName(FString MachineName)
@@ -135,4 +149,23 @@ void UUI_MachineInteract::UpdateMachineName(FString MachineName)
 void UUI_MachineInteract::OnCloseClicked()
 {
     RemoveFromParent();
+}
+
+void UUI_MachineInteract::UpdateDurabilityUI(float CurrentDurability, float MaxDurability)
+{
+    if (TXT_DurabilityPercent && PB_Durability)
+    {
+        float SafeMax = (MaxDurability > 0.f) ? MaxDurability : 100.f;
+        float Percent = FMath::Clamp(CurrentDurability / SafeMax, 0.0f, 1.0f);
+        
+        PB_Durability->SetPercent(Percent);
+
+        // 2. 하나의 텍스트에 "내구도 현재값 / 최대값 (퍼센트)" 형태로 조립하기
+        int32 CurrentInt = FMath::RoundToInt(CurrentDurability);
+        int32 MaxInt = FMath::RoundToInt(SafeMax);
+        
+        FString DurabilityStr = FString::Printf(TEXT("내구도: %d / %d%%"), CurrentInt, MaxInt);
+
+        TXT_DurabilityPercent->SetText(FText::FromString(DurabilityStr));
+    }
 }
