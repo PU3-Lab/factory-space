@@ -49,7 +49,7 @@ AOJJ_Player::AOJJ_Player()
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
 	Movement->bOrientRotationToMovement = true;          // 이동 방향으로 본체 회전
 	Movement->RotationRate = FRotator(0.f, 540.f, 0.f);
-	Movement->MaxWalkSpeed = 600.f;
+	Movement->MaxWalkSpeed = WalkSpeed;                  // 기존 하드코딩 600 → 걷기 속도(단일 출처). BeginPlay에서 재확정.
 	Movement->JumpZVelocity = 500.f;
 	Movement->AirControl = 0.35f;
 }
@@ -57,6 +57,12 @@ AOJJ_Player::AOJJ_Player()
 void AOJJ_Player::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 걷기 속도를 권위 있게 적용(BP CharacterMovement의 MaxWalkSpeed 기본값을 덮음 — 단일 출처).
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->MaxWalkSpeed = WalkSpeed;
+	}
 
 	// 로컬 플레이어 컨트롤러의 EnhancedInput 서브시스템에 매핑 컨텍스트 등록
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -135,6 +141,13 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	if (IA_Move)
 	{
 		EnhancedInput->BindAction(IA_Move, ETriggerEvent::Triggered, this, &AOJJ_Player::Move);
+	}
+	if (IA_Sprint)
+	{
+		EnhancedInput->BindAction(IA_Sprint, ETriggerEvent::Started, this, &AOJJ_Player::StartSprint);
+		EnhancedInput->BindAction(IA_Sprint, ETriggerEvent::Completed, this, &AOJJ_Player::StopSprint);
+		// Hold/Chord 트리거가 붙어 뗌이 Completed 대신 Canceled로 와도 질주가 안 남도록 함께 바인딩.
+		EnhancedInput->BindAction(IA_Sprint, ETriggerEvent::Canceled, this, &AOJJ_Player::StopSprint);
 	}
 	if (IA_Look)
 	{
@@ -299,6 +312,14 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 		// 뷰타겟이 빌드캠이라 시각적 의미만 있지만, 탑다운에서 플레이어가 안 보이도록 숨김
 		SetActorHiddenInGame(true);
 
+		// 안전장치: 빌드모드 진입 시 아래에서 IMC_Player가 제거되면, Shift를 누른 채였을 경우
+		// IA_Sprint의 Completed가 오지 않아 MaxWalkSpeed가 SprintSpeed에 고착된다(영구 질주).
+		// 진입 시 걷기 속도로 강제 복귀해 복귀 후 질주 잔존을 방지.
+		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			Movement->MaxWalkSpeed = WalkSpeed;
+		}
+
 		// 입력: TPS IMC 제거 + 빌드 IMC 추가. 빌드 IMC엔 IA_Look이 없어 마우스 카메라 회전이 차단됨.
 		// ⚠️ IMC_Build 미할당 시엔 절대 IMC_Player를 제거하지 않음 — 제거하면 입력이 전부 잠겨
 		//    B키로 빌드모드를 빠져나올 수조차 없게 됨. 이 경우 IMC_Player 유지 + 경고만.
@@ -423,6 +444,22 @@ void AOJJ_Player::SetPowerPlantMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerPlant);
+}
+
+void AOJJ_Player::StartSprint(const FInputActionValue& Value)
+{
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->MaxWalkSpeed = SprintSpeed;
+	}
+}
+
+void AOJJ_Player::StopSprint(const FInputActionValue& Value)
+{
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->MaxWalkSpeed = WalkSpeed;
+	}
 }
 
 void AOJJ_Player::BuildPan(const FInputActionValue& Value)
