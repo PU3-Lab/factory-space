@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import json
 
 from websockets.asyncio.client import connect
@@ -11,14 +11,14 @@ async def main() -> None:
         await websocket.send(
             json.dumps(
                 {
-                    "type": "agent_request",
+                    "type": "agent.request",
                     "version": "1.0",
-                    "request_id": "req-qa-001",
+                    "request_id": "req-operator-guide-001",
                     "session_id": "test-session",
                     "client_id": "test-client",
-                    "agent": "qa_chatbot",
+                    "agent": "operator_guide",
                     "payload": {
-                        "query": "제품 사용법을 알려줘.",
+                        "question": "How do I use this machine?",
                     },
                 }
             )
@@ -29,3 +29,4 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
+

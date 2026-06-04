@@ -144,12 +144,24 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	}
 	if (IA_BuildPlace)
 	{
+		// 누름(Started)=배치/드래그시작, 뗌(Completed)=드래그커밋, 취소(Canceled)=드래그취소.
+		// 머신 모드에선 Completed/Canceled가 no-op(BuildController 내부 모드 가드).
 		EnhancedInput->BindAction(IA_BuildPlace, ETriggerEvent::Started, this, &AOJJ_Player::BuildPlace);
+		EnhancedInput->BindAction(IA_BuildPlace, ETriggerEvent::Completed, this, &AOJJ_Player::BuildPlaceReleased);
+		EnhancedInput->BindAction(IA_BuildPlace, ETriggerEvent::Canceled, this, &AOJJ_Player::BuildPlaceCanceled);
 	}
 	else
 	{
 		UE_LOG(LogTemp, Warning,
 			TEXT("[OJJ_Player] IA_BuildPlace 미할당 — 배치(좌클릭) 비활성. BP_OJJ_Player에 IA_BuildPlace 에셋 할당 필요."));
+	}
+	if (IA_SetMachineMode)
+	{
+		EnhancedInput->BindAction(IA_SetMachineMode, ETriggerEvent::Started, this, &AOJJ_Player::SetMachineMode);
+	}
+	if (IA_SetConveyorMode)
+	{
+		EnhancedInput->BindAction(IA_SetConveyorMode, ETriggerEvent::Started, this, &AOJJ_Player::SetConveyorMode);
 	}
 	if (IA_BuildPan)
 	{
@@ -298,6 +310,44 @@ void AOJJ_Player::BuildPlace(const FInputActionValue& Value)
 	}
 	// 빌드모드 밖이면 OnLeftClickPressed 내부 가드(bIsBuildMode)로 no-op
 	BuildController->OnLeftClickPressed();
+}
+
+void AOJJ_Player::BuildPlaceReleased(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	// 좌클릭 뗌 — 컨베이어 모드면 드래그 커밋, 머신 모드면 내부 가드로 no-op.
+	BuildController->OnLeftClickReleased();
+}
+
+void AOJJ_Player::BuildPlaceCanceled(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	// 좌클릭 입력 취소 — 진행 중 컨베이어 드래그 취소(머신 모드는 드래그 없어 no-op).
+	BuildController->CancelConveyorDrag();
+}
+
+void AOJJ_Player::SetMachineMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Machine);
+}
+
+void AOJJ_Player::SetConveyorMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Conveyor);
 }
 
 void AOJJ_Player::BuildPan(const FInputActionValue& Value)
