@@ -47,6 +47,26 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
 	float ZOffset = 6.0f;
 
+	// 코너 ㄱ메시 캐논 방향 정렬 오프셋(0/90/180/270 중 PIE/BP에서 튜닝). ㄱ메시 기준 자세가 180° 돌아가 있어 기본 180.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Corner")
+	float CornerBaseYaw = 180.0f;
+
+	// 코너 ㄱ메시 균일 스케일 배율(메시 네이티브 크기 보정용, 1.0 기준).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Corner", meta = (ClampMin = "0.01"))
+	float CornerScaleMultiplier = 1.0f;
+
+	// 직선 메시 균일 스케일 배율(메시 네이티브 크기 보정용, 1.0 기준).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Straight", meta = (ClampMin = "0.01"))
+	float StraightScaleMultiplier = 1.0f;
+
+	// 직선 메시 캐논 방향 정렬 오프셋(0/90/180/270 중 PIE/BP에서 튜닝). PIE 확정 90°.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Straight")
+	float StraightBaseYaw = 90.0f;
+
+	// 세워진 직선 메시 눕히기(XZ벽 → XY바닥). PIE에서 조정 가능하게 노출.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Straight")
+	float StraightRoll = 90.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Conveyor|Path")
 	TArray<FIntPoint> PathCells;
 
@@ -112,6 +132,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Conveyor|Grid")
 	float GetCellSize() const { return CellSize; }
+
+	// PathCells 셀 중심들의 X·Y 평균(로컬, 그리드원점 기준). Z=0. PathCells 비면 ZeroVector.
+	UFUNCTION(BlueprintPure, Category = "Conveyor|Path")
+	FVector GetPathCentroidLocal() const;
 
 private:
 	void RebuildVisuals();

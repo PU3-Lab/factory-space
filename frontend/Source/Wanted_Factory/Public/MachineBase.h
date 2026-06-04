@@ -76,6 +76,16 @@ class WANTED_FACTORY_API AMachineBase : public AActor
 
 public:
 	AMachineBase();
+	// --- UI 연동용 Getter 함수 ---
+	EMachineState GetMachineState() const { return MachineState; }
+	const TMap<FName, int32>& GetInputInventory() const { return InputInventory; }
+	const TMap<FName, int32>& GetOutputBuffer() const { return OutputBuffer; }
+	const FRecipeTable& GetCurrentRecipe() const { return CurrentRecipe; }
+	int32 GetMaxInput() const { return MaxInputPerItem; }
+	int32 GetMaxOutput() const { return MaxBufferPerItem; }
+	FTimerHandle GetProcessTimer() const { return ProcessTimer; }
+	float GetProcessTime() const { return ProcessTime; }
+	FName GetMachineType() const { return MachineType; }
 
 protected:
 	virtual void BeginPlay() override;
