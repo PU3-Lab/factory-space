@@ -21,6 +21,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void OnConstruction(const FTransform& Transform) override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Components")
@@ -136,6 +137,12 @@ public:
 	// PathCells 셀 중심들의 X·Y 평균(로컬, 그리드원점 기준). Z=0. PathCells 비면 ZeroVector.
 	UFUNCTION(BlueprintPure, Category = "Conveyor|Path")
 	FVector GetPathCentroidLocal() const;
+
+	UFUNCTION(BlueprintPure, Category = "Conveyor|Items")
+	AMachineBase* GetSourceMachine() const { return SourceMachine.Get(); }
+
+	UFUNCTION(BlueprintPure, Category = "Conveyor|Items")
+	AMachineBase* GetTargetMachine() const { return TargetMachine.Get(); }
 
 private:
 	void RebuildVisuals();

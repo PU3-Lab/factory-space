@@ -5,11 +5,14 @@
 
 #include "Engine/HitResult.h"
 #include "Engine/World.h"
+#include "FactoryManagerSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "MachineBase.h"
 #include "OJJ_Grid.h"
 #include "Conveyor.h"
+#include "Machines/PowerGridNode.h"
+#include "Machines/PowerLine.h"
 
 AOJJ_BuildController::AOJJ_BuildController()
 {
@@ -20,6 +23,8 @@ AOJJ_BuildController::AOJJ_BuildController()
 
 	// 컨베이어 모드 기본 클래스(BP 미지정 시). Dummy와 동일 패턴.
 	ConveyorClass = AConveyor::StaticClass();
+	PowerLineClass = APowerLine::StaticClass();
+	PowerGridNodeClass = APowerGridNode::StaticClass();
 }
 
 void AOJJ_BuildController::Tick(float DeltaSeconds)
@@ -52,9 +57,19 @@ void AOJJ_BuildController::EnterBuildMode()
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] MachineClass 미설정 — EnterBuildMode 중단"));
 		return;
 	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::PowerNode && !PowerGridNodeClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] PowerGridNodeClass missing. EnterBuildMode stopped."));
+		return;
+	}
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor && !ConveyorClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] ConveyorClass 미설정 — EnterBuildMode 중단"));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::PowerLine && !PowerLineClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] PowerLineClass missing. EnterBuildMode stopped."));
 		return;
 	}
 
@@ -68,6 +83,8 @@ void AOJJ_BuildController::EnterBuildMode()
 	// 컨베이어 드래그 상태 초기화(이전 세션 잔여 방지).
 	bIsDraggingConveyor = false;
 	ConveyorDragCells.Reset();
+	bIsDraggingPowerLine = false;
+	PowerLineStartNode.Reset();
 
 	// 빌드모드 동안에만 호버 Tick 가동
 	SetActorTickEnabled(true);
@@ -101,6 +118,8 @@ void AOJJ_BuildController::ExitBuildMode()
 	// 컨베이어 드래그 상태 정리.
 	bIsDraggingConveyor = false;
 	ConveyorDragCells.Reset();
+	bIsDraggingPowerLine = false;
+	PowerLineStartNode.Reset();
 
 	// 호버 Tick 정지 (빌드모드 밖 0비용)
 	SetActorTickEnabled(false);
@@ -115,6 +134,14 @@ void AOJJ_BuildController::ExitBuildMode()
 
 	// 회전 상태도 리셋 — 다음 진입은 미회전(0)으로 시작(EnterBuildMode 초기화와 일관).
 	HoverRotationSteps = 0;
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
+		{
+			FactoryManager->UpdatePowerGrid();
+		}
+	}
 }
 
 void AOJJ_BuildController::ToggleBuildMode()
@@ -133,7 +160,7 @@ void AOJJ_BuildController::RotateHoverClockwise()
 {
 	// R은 IMC_Build 전용이라 빌드모드에서만 발동하지만, 방어적으로 가드.
 	// 회전은 머신 호버 전용 — 컨베이어 모드에서는 무시(Dummy parity).
-	if (!bIsBuildMode || PlacementMode != EOJJ_BuildPlacementMode::Machine)
+	if (!bIsBuildMode || (PlacementMode != EOJJ_BuildPlacementMode::Machine && PlacementMode != EOJJ_BuildPlacementMode::PowerNode))
 	{
 		return;
 	}
@@ -160,6 +187,16 @@ FIntPoint AOJJ_BuildController::ComputeOriginFromCursorCell(FIntPoint CursorCell
 
 	// (Size-1)/2 정수 나눗셈 → lower-left bias. 1x1 offset 0 (회귀 없음).
 	return FIntPoint(CursorCell.X - (Size.X - 1) / 2, CursorCell.Y - (Size.Y - 1) / 2);
+}
+
+TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
+{
+	if (PlacementMode == EOJJ_BuildPlacementMode::PowerNode)
+	{
+		return PowerGridNodeClass;
+	}
+
+	return MachineClass;
 }
 
 void AOJJ_BuildController::UpdateMouseHover()
@@ -203,8 +240,16 @@ void AOJJ_BuildController::UpdateMouseHover()
 		return;
 	}
 
+	if (PlacementMode == EOJJ_BuildPlacementMode::PowerLine)
+	{
+		TargetGrid->ClearHoverPreview();
+		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+		return;
+	}
+
 	// === Machine 모드 (기존 동작 무변경) ===
-	if (!MachineClass)
+	TSubclassOf<AMachineBase> ActiveMachineClass = GetActiveMachineClass();
+	if (!ActiveMachineClass)
 	{
 		return;
 	}
@@ -231,7 +276,7 @@ void AOJJ_BuildController::UpdateMouseHover()
 		return;
 	}
 
-	AMachineBase* DefaultMachine = MachineClass.GetDefaultObject();
+	AMachineBase* DefaultMachine = ActiveMachineClass.GetDefaultObject();
 	if (!DefaultMachine)
 	{
 		return;
@@ -277,8 +322,15 @@ void AOJJ_BuildController::OnLeftClickPressed()
 		return;
 	}
 
+	if (PlacementMode == EOJJ_BuildPlacementMode::PowerLine)
+	{
+		BeginPowerLineDrag(GetPowerGridNodeUnderCursor());
+		return;
+	}
+
 	// === Machine 모드 (기존 동작 무변경) ===
-	if (!TargetGrid || !MachineClass)
+	TSubclassOf<AMachineBase> ActiveMachineClass = GetActiveMachineClass();
+	if (!TargetGrid || !ActiveMachineClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] TargetGrid 또는 MachineClass 미설정"));
 		return;
@@ -290,7 +342,7 @@ void AOJJ_BuildController::OnLeftClickPressed()
 		return;
 	}
 
-	AMachineBase* DefaultMachine = MachineClass.GetDefaultObject();
+	AMachineBase* DefaultMachine = ActiveMachineClass.GetDefaultObject();
 	if (!DefaultMachine)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] MachineClass CDO 없음"));
@@ -324,7 +376,7 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	SpawnParams.Owner = this;
 
 	AMachineBase* NewMachine = World->SpawnActor<AMachineBase>(
-		MachineClass,
+		ActiveMachineClass,
 		FVector::ZeroVector,
 		FRotator::ZeroRotator,
 		SpawnParams);
@@ -363,6 +415,10 @@ void AOJJ_BuildController::OnLeftClickReleased()
 	{
 		CommitConveyorDrag();
 	}
+	else if (PlacementMode == EOJJ_BuildPlacementMode::PowerLine)
+	{
+		CommitPowerLineDrag();
+	}
 }
 
 void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
@@ -374,10 +430,13 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 
 	// 모드 전환 시 진행 중 드래그는 취소(잔여 상태 방지).
 	CancelConveyorDrag();
+	CancelPowerLineDrag();
 	PlacementMode = NewMode;
 	const TCHAR* ModeName = PlacementMode == EOJJ_BuildPlacementMode::Machine
 		? TEXT("Machine")
-		: TEXT("Conveyor");
+		: (PlacementMode == EOJJ_BuildPlacementMode::Conveyor
+			? TEXT("Conveyor")
+			: (PlacementMode == EOJJ_BuildPlacementMode::PowerNode ? TEXT("PowerNode") : TEXT("PowerLine")));
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
@@ -517,6 +576,103 @@ void AOJJ_BuildController::CommitConveyorDrag()
 	ConveyorDragCells.Reset();
 	TargetGrid->ClearHoverPreview();
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+}
+
+void AOJJ_BuildController::CancelPowerLineDrag()
+{
+	if (!bIsDraggingPowerLine)
+	{
+		return;
+	}
+
+	bIsDraggingPowerLine = false;
+	PowerLineStartNode.Reset();
+}
+
+APowerGridNode* AOJJ_BuildController::GetPowerGridNodeUnderCursor() const
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!PC)
+	{
+		return nullptr;
+	}
+
+	FHitResult Hit;
+	const bool bHit = PC->GetHitResultUnderCursorByChannel(
+		UEngineTypes::ConvertToTraceType(ECC_Visibility),
+		/*bTraceComplex=*/false,
+		Hit);
+
+	if (!bHit)
+	{
+		return nullptr;
+	}
+
+	return Cast<APowerGridNode>(Hit.GetActor());
+}
+
+void AOJJ_BuildController::BeginPowerLineDrag(APowerGridNode* StartNode)
+{
+	if (!StartNode)
+	{
+		return;
+	}
+
+	bIsDraggingPowerLine = true;
+	PowerLineStartNode = StartNode;
+}
+
+void AOJJ_BuildController::CommitPowerLineDrag()
+{
+	if (!bIsDraggingPowerLine)
+	{
+		return;
+	}
+
+	APowerGridNode* SourceNode = PowerLineStartNode.Get();
+	APowerGridNode* TargetNode = GetPowerGridNodeUnderCursor();
+	CancelPowerLineDrag();
+
+	if (!SourceNode || !TargetNode || SourceNode == TargetNode || !PowerLineClass)
+	{
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	UFactoryManagerSubsystem* FactoryManager = GameInstance
+		? GameInstance->GetSubsystem<UFactoryManagerSubsystem>()
+		: nullptr;
+	if (!FactoryManager || !FactoryManager->CanConnectPowerGridNodes(SourceNode, TargetNode))
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParams.Owner = this;
+
+	APowerLine* PowerLine = World->SpawnActor<APowerLine>(
+		PowerLineClass,
+		SourceNode->GetActorLocation(),
+		FRotator::ZeroRotator,
+		SpawnParams);
+
+	if (!PowerLine)
+	{
+		return;
+	}
+
+	PowerLine->ConfigurePowerLine(SourceNode, TargetNode);
+	if (!FactoryManager->AddPowerConnection(SourceNode, TargetNode, PowerLine))
+	{
+		PowerLine->Destroy();
+	}
 }
 
 void AOJJ_BuildController::AppendConveyorPathTo(FIntPoint TargetCell)
