@@ -2,6 +2,7 @@
 #include "MachineBase.h"
 
 #include "Components/TextRenderComponent.h"
+#include "FactoryManagerSubsystem.h"
 #include "PlanetEventManagerSubsystem.h"
 #include "RecipeManagerSubsystem.h"
 #include "Wanted_Factory.h"
@@ -113,6 +114,13 @@ void AMachineBase::BeginPlay()
 		{
 			PlanetEventManager->RegisterMachine(this);
 		}
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
+			{
+				FactoryManager->RegisterMachine(this);
+			}
+		}
 	}
 
 	RefreshMachineState();
@@ -125,6 +133,13 @@ void AMachineBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		if (UPlanetEventManagerSubsystem* PlanetEventManager = World->GetSubsystem<UPlanetEventManagerSubsystem>())
 		{
 			PlanetEventManager->UnregisterMachine(this);
+		}
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
+			{
+				FactoryManager->UnregisterMachine(this);
+			}
 		}
 	}
 

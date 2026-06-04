@@ -8,6 +8,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Conveyor.h"
 #include "Engine/StaticMesh.h"
+#include "FactoryManagerSubsystem.h"
 #include "MachineBase.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
@@ -701,6 +702,17 @@ bool AOJJ_Grid::OJJ_RemoveActorAt(FIntPoint Cell)
 	}
 
 	AActor* Actor = Found->Get();
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
+		{
+			if (AConveyor* Conveyor = Cast<AConveyor>(Actor))
+			{
+				FactoryManager->UnregisterConveyor(Conveyor);
+			}
+		}
+	}
+
 	const TArray<FIntPoint>* ActorCells = OJJ_ActorToCells.Find(Actor);
 	if (!ActorCells)
 	{
@@ -1026,6 +1038,14 @@ bool AOJJ_Grid::TryPlaceMachine(AMachineBase* Machine, FIntPoint Origin, FString
 		return false;
 	}
 
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
+		{
+			FactoryManager->NotifyMachineChanged(Machine);
+		}
+	}
+
 	return true;
 }
 
@@ -1155,6 +1175,13 @@ bool AOJJ_Grid::RemoveMachine(AMachineBase* Machine)
 	}
 	OJJ_ActorToCells.Remove(Machine);
 	OJJ_ActorToOrigin.Remove(Machine);
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
+		{
+			FactoryManager->UnregisterMachine(Machine);
+		}
+	}
 	return true;
 }
 

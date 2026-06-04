@@ -9,13 +9,17 @@
 class AOJJ_Grid;
 class AMachineBase;
 class AConveyor;
+class APowerGridNode;
+class APowerLine;
 
 // 빌드 배치 모드 — 머신(기본) / 컨베이어 드래그.
 UENUM(BlueprintType)
 enum class EOJJ_BuildPlacementMode : uint8
 {
 	Machine,
-	Conveyor
+	Conveyor,
+	PowerNode,
+	PowerLine
 };
 
 /**
@@ -67,6 +71,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
 	TSubclassOf<AConveyor> ConveyorClass;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<APowerLine> PowerLineClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<APowerGridNode> PowerGridNodeClass;
+
 	// 현재 배치 모드. Machine(기본)/Conveyor. 플레이어가 SetPlacementMode로 전환.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
 	EOJJ_BuildPlacementMode PlacementMode = EOJJ_BuildPlacementMode::Machine;
@@ -78,6 +88,12 @@ protected:
 	// 드래그 중 누적된 경로 셀(연속/되돌림 처리). 커밋 시 그리드 검증 경로의 입력.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController|Conveyor")
 	TArray<FIntPoint> ConveyorDragCells;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController|Power")
+	bool bIsDraggingPowerLine = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController|Power")
+	TWeakObjectPtr<APowerGridNode> PowerLineStartNode;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
 	bool bIsBuildMode = false;
@@ -129,6 +145,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void CancelConveyorDrag();
 
+	UFUNCTION(BlueprintCallable, Category = "BuildController")
+	void CancelPowerLineDrag();
+
 	// 빌드 모드 상태 토글. Enter/Exit의 자체 가드(이미 같은 상태면 no-op) 덕분에 안전.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void ToggleBuildMode();
@@ -148,6 +167,7 @@ private:
 	// (origin → footprint center 액터 위치)과 반대 방향이지만 같은 size 정수화 규칙
 	// (CeilToInt + Max(1))을 따라야 호버/배치와 occupancy/시각이 어긋나지 않는다.
 	FIntPoint ComputeOriginFromCursorCell(FIntPoint CursorCell, AMachineBase* Machine, int32 RotationSteps = 0) const;
+	TSubclassOf<AMachineBase> GetActiveMachineClass() const;
 
 	// 마우스 커서 아래 그리드 셀 조회(라인 트레이스 → WorldToGrid). 실패 시 false.
 	bool GetCursorCell(FIntPoint& OutCell) const;
@@ -161,4 +181,7 @@ private:
 
 	// 컨베이어 호버 갱신(드래그 중이면 drag, 아니면 단일 셀 미리보기).
 	void UpdateConveyorHover(FIntPoint CursorCell);
+	APowerGridNode* GetPowerGridNodeUnderCursor() const;
+	void BeginPowerLineDrag(APowerGridNode* StartNode);
+	void CommitPowerLineDrag();
 };

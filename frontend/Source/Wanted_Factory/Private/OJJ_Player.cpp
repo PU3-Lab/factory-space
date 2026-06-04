@@ -181,6 +181,10 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	{
 		EnhancedInput->BindAction(IA_SetConveyorMode, ETriggerEvent::Started, this, &AOJJ_Player::SetConveyorMode);
 	}
+	if (IA_SetPowerNodeMode)
+	{
+		EnhancedInput->BindAction(IA_SetPowerNodeMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerNodeMode);
+	}
 	if (IA_BuildPan)
 	{
 		// 매 프레임 입력(연속 이동) → Triggered
@@ -351,6 +355,7 @@ void AOJJ_Player::BuildPlaceCanceled(const FInputActionValue& Value)
 	}
 	// 좌클릭 입력 취소 — 진행 중 컨베이어 드래그 취소(머신 모드는 드래그 없어 no-op).
 	BuildController->CancelConveyorDrag();
+	BuildController->CancelPowerLineDrag();
 }
 
 void AOJJ_Player::SetMachineMode(const FInputActionValue& Value)
@@ -369,6 +374,15 @@ void AOJJ_Player::SetConveyorMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Conveyor);
+}
+
+void AOJJ_Player::SetPowerNodeMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerNode);
 }
 
 void AOJJ_Player::BuildPan(const FInputActionValue& Value)

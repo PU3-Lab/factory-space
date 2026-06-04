@@ -345,6 +345,15 @@ public:
 	
 	UFUNCTION(BlueprintPure, Category = "Machine | Power")
 	bool HasEnoughPower() const;
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Power")
+	bool NeedsPower() const { return bNeedPower; }
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Power")
+	float GetPowerConsumption() const { return PowerConsumption; }
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Power")
+	float GetCurrentProvidedPower() const { return CurrentProvidedPower; }
 	
 	UFUNCTION(BlueprintCallable, Category = "Machine | State")
 	void RefreshMachineState();
