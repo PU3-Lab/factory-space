@@ -79,6 +79,9 @@ public:
 		const FString& ClientId);
 
 	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Messages")
+	bool SendJsonMessage(const FString& JsonMessage);
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Messages")
 	bool SendRawMessage(const FString& RawMessage);
 
 private:
