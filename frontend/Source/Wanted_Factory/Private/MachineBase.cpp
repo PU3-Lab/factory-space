@@ -883,12 +883,49 @@ void AMachineBase::RefreshMachineState()
 	}
 }
 
+namespace EfficiencyKeys
+{
+	const FName MagneticStorm(TEXT("MagneticStorm"));
+	const FName Power(TEXT("Power"));
+}
+
+void AMachineBase::SetEfficiencyModifier(FName Key, float Value)
+{
+	if (Key.IsNone())
+	{
+		return; // 빈 키 거부 (F2: 의도치 않은 공유/덮어쓰기 방지)
+	}
+	if (!FMath::IsFinite(Value))
+	{
+		return; // NaN/Inf 거부 (F1: 곱 합성 오염 방지)
+	}
+	// 0 곱(효율 소멸)·무한대 누적 양쪽을 막기 위해 0.01~100.0으로 클램프.
+	EfficiencyModifiers.Add(Key, FMath::Clamp(Value, 0.01f, 100.0f));
+}
+
+void AMachineBase::ClearEfficiencyModifier(FName Key)
+{
+	EfficiencyModifiers.Remove(Key);
+}
+
+float AMachineBase::GetFinalEfficiency() const
+{
+	float Final = 1.0f;
+	for (const TPair<FName, float>& Modifier : EfficiencyModifiers)
+	{
+		Final *= Modifier.Value;
+	}
+	return FMath::Max(0.01f, Final);
+}
+
 void AMachineBase::SetPlanetProductionEfficiency(float NewEfficiency)
 {
-	PlanetProductionEfficiency = FMath::Max(0.01f, NewEfficiency);
+	// [DEPRECATED] 효율 modifier 시스템의 MagneticStorm 키로 위임 (멤버 미러 폐기 — F3 스테일 제거).
+	SetEfficiencyModifier(EfficiencyKeys::MagneticStorm, NewEfficiency);
 }
 
 float AMachineBase::GetEffectiveProcessTime(float BaseProcessTime) const
 {
-	return FMath::Max(0.01f, BaseProcessTime) / FMath::Max(0.01f, PlanetProductionEfficiency);
+	// 효율 반영 공식(Base/Efficiency) 유지 — 효율원만 단일값에서 modifier 곱으로 전환.
+	return FMath::Max(0.01f, BaseProcessTime) / GetFinalEfficiency();
 }

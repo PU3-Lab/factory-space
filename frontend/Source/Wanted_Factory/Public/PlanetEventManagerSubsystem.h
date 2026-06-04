@@ -7,6 +7,7 @@
 #include "PlanetEventManagerSubsystem.generated.h"
 
 class AMachineBase;
+class AOJJ_ProtectionTower; // 차폐장. 헤더 include는 .cpp에서만(순환 참조 방지).
 
 UENUM(BlueprintType)
 enum class EPlanetDayPhase : uint8
@@ -148,6 +149,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Planet Event|Machines")
 	void UnregisterMachine(AMachineBase* Machine);
 
+	// 차폐장(Shield Generator) 등록/해제. 활성 자기폭풍이 있으면 즉시 전 머신 재평가.
+	UFUNCTION(BlueprintCallable, Category = "Planet Event|Shield")
+	void RegisterShieldGenerator(AOJJ_ProtectionTower* Shield);
+
+	UFUNCTION(BlueprintCallable, Category = "Planet Event|Shield")
+	void UnregisterShieldGenerator(AOJJ_ProtectionTower* Shield);
+
+	// 머신이 활성 차폐장 반경 안에 있는지(자기폭풍 효율 저하 면제 여부).
+	UFUNCTION(BlueprintPure, Category = "Planet Event|Shield")
+	bool IsMachineShieldedFromMagneticStorm(const AMachineBase* Machine) const;
+
 	UFUNCTION(BlueprintPure, Category = "Planet Event|Time")
 	FPlanetTimeState GetTimeState() const { return TimeState; }
 
@@ -188,6 +200,7 @@ private:
 
 	float WeatherBlendElapsedSeconds = 0.0f;
 	TArray<TWeakObjectPtr<AMachineBase>> RegisteredMachines;
+	TArray<TWeakObjectPtr<AOJJ_ProtectionTower>> RegisteredShields;
 
 	void StartSimulation(UWorld& InWorld);
 	void StopSimulation();

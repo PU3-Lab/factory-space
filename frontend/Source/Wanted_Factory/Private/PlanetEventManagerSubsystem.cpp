@@ -1,6 +1,7 @@
 #include "PlanetEventManagerSubsystem.h"
 
 #include "MachineBase.h"
+#include "OJJ_ProtectionTower.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "Wanted_Factory.h"
@@ -40,7 +41,14 @@ void UPlanetEventManagerSubsystem::RegisterMachine(AMachineBase* Machine)
 
 	if (EventState.Type == EPlanetEventType::MagneticStorm)
 	{
-		Machine->SetPlanetProductionEfficiency(GetMagneticStormEfficiency());
+		if (IsMachineShieldedFromMagneticStorm(Machine))
+		{
+			Machine->ClearEfficiencyModifier(EfficiencyKeys::MagneticStorm);
+		}
+		else
+		{
+			Machine->SetEfficiencyModifier(EfficiencyKeys::MagneticStorm, GetMagneticStormEfficiency());
+		}
 	}
 }
 
@@ -51,11 +59,78 @@ void UPlanetEventManagerSubsystem::UnregisterMachine(AMachineBase* Machine)
 		return;
 	}
 
+	// [M4] 해제 전 자기폭풍 modifier 제거 — 복구 순회(RestoreMachineEfficiencies)는 등록된 머신만
+	// 돌므로, 폭풍 중 해제된 머신이 영구 저하로 남는 것을 방지.
+	Machine->ClearEfficiencyModifier(EfficiencyKeys::MagneticStorm);
+
 	RegisteredMachines.RemoveAllSwap(
 		[Machine](const TWeakObjectPtr<AMachineBase>& RegisteredMachine)
 		{
 			return !RegisteredMachine.IsValid() || RegisteredMachine.Get() == Machine;
 		});
+}
+
+void UPlanetEventManagerSubsystem::RegisterShieldGenerator(AOJJ_ProtectionTower* Shield)
+{
+	if (!Shield)
+	{
+		return;
+	}
+
+	RegisteredShields.RemoveAllSwap(
+		[Shield](const TWeakObjectPtr<AOJJ_ProtectionTower>& Registered)
+		{
+			return !Registered.IsValid() || Registered.Get() == Shield;
+		});
+	RegisteredShields.Add(Shield);
+
+	// 활성 자기폭풍 중 차폐장 생성/등록 → 전 머신 재평가(차폐 안에 든 머신 효율 복구).
+	if (EventState.Type == EPlanetEventType::MagneticStorm)
+	{
+		ApplyActiveEventToMachines();
+	}
+}
+
+void UPlanetEventManagerSubsystem::UnregisterShieldGenerator(AOJJ_ProtectionTower* Shield)
+{
+	RegisteredShields.RemoveAllSwap(
+		[Shield](const TWeakObjectPtr<AOJJ_ProtectionTower>& Registered)
+		{
+			return !Registered.IsValid() || Registered.Get() == Shield;
+		});
+
+	// 활성 자기폭풍 중 차폐장 제거 → 전 머신 재평가(차폐 풀린 머신 효율 재하향).
+	if (EventState.Type == EPlanetEventType::MagneticStorm)
+	{
+		ApplyActiveEventToMachines();
+	}
+}
+
+bool UPlanetEventManagerSubsystem::IsMachineShieldedFromMagneticStorm(const AMachineBase* Machine) const
+{
+	if (!Machine)
+	{
+		return false;
+	}
+
+	// [L5/L6] 무효 weak 항목은 스킵만 하고 purge하지 않으며, 재평가는 O(머신×차폐장).
+	// 현 규모(단일플레이·소수 차폐장)에선 충분 — 차폐장 다수화 시 purge/공간분할 최적화 검토.
+	const FVector MachineLocation = Machine->GetActorLocation();
+	for (const TWeakObjectPtr<AOJJ_ProtectionTower>& WeakShield : RegisteredShields)
+	{
+		const AOJJ_ProtectionTower* Shield = WeakShield.Get();
+		if (!Shield || !Shield->IsShieldActive())
+		{
+			continue; // 무효(파괴)·비활성 차폐장은 스킵.
+		}
+
+		const float Radius = Shield->GetShieldRadius();
+		if (FVector::DistSquared(MachineLocation, Shield->GetActorLocation()) <= FMath::Square(Radius))
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 float UPlanetEventManagerSubsystem::GetDayProgress01() const
@@ -195,6 +270,13 @@ void UPlanetEventManagerSubsystem::AdvanceSimulation()
 			EndActiveEvent();
 		}
 	}
+
+	// [H2/H3] 활성 자기폭풍 동안 매 틱 재평가 — 차폐장/머신 이동·활성토글·배치후이동으로
+	// 인한 stale 차폐 상태를 교정. EndActiveEvent 후엔 Type==None이 되어 재적용되지 않음(복구 보존).
+	if (EventState.Type == EPlanetEventType::MagneticStorm)
+	{
+		ApplyActiveEventToMachines();
+	}
 }
 
 void UPlanetEventManagerSubsystem::AdvanceTime(float DeltaSeconds)
@@ -269,7 +351,14 @@ void UPlanetEventManagerSubsystem::ApplyActiveEventToMachine(AMachineBase* Machi
 
 	if (EventState.Type == EPlanetEventType::MagneticStorm)
 	{
-		Machine->SetPlanetProductionEfficiency(GetMagneticStormEfficiency());
+		if (IsMachineShieldedFromMagneticStorm(Machine))
+		{
+			Machine->ClearEfficiencyModifier(EfficiencyKeys::MagneticStorm);
+		}
+		else
+		{
+			Machine->SetEfficiencyModifier(EfficiencyKeys::MagneticStorm, GetMagneticStormEfficiency());
+		}
 		return;
 	}
 
@@ -293,7 +382,7 @@ void UPlanetEventManagerSubsystem::RestoreMachineEfficiencies() const
 	ForEachRegisteredMachine(
 		[](AMachineBase& Machine)
 		{
-			Machine.SetPlanetProductionEfficiency(1.0f);
+			Machine.ClearEfficiencyModifier(EfficiencyKeys::MagneticStorm);
 		});
 }
 
