@@ -4,7 +4,7 @@
 #include "Components/PanelWidget.h"
 #include "FactorySpaceTypes.h"
 #include "Engine/Engine.h"
-#include "Dummy_BuildController.h" 
+#include "OJJ_BuildController.h" 
 #include "Kismet/GameplayStatics.h"
 
 void UUI_BuildModeMain::NativeConstruct()
@@ -68,8 +68,8 @@ void UUI_BuildModeMain::HandleQuickslotClicked(int32 SlotIndex)
 	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green, UIDebugMsg);
 	
 	// 나중에 더미말고 재준이형꺼로 바꾸기
-	ADummyBuildController* BuildController = Cast<ADummyBuildController>(
-	   UGameplayStatics::GetActorOfClass(GetWorld(), ADummyBuildController::StaticClass()));
+	AOJJ_BuildController* BuildController = Cast<AOJJ_BuildController>(
+	   UGameplayStatics::GetActorOfClass(GetWorld(), AOJJ_BuildController::StaticClass()));
 	
 	if (!BuildController) 
 	{
@@ -80,11 +80,11 @@ void UUI_BuildModeMain::HandleQuickslotClicked(int32 SlotIndex)
 	// 기능 연동 로직
 	if (SelectedData.FactoryID == "Conveyor") 
 	{
-		BuildController->SetPlacementMode(EDummyBuildPlacementMode::Conveyor);
+		BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Conveyor);
 	}
 	else 
 	{
-		BuildController->SetPlacementMode(EDummyBuildPlacementMode::Machine);
+		BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Machine);
 	}
 }
 
