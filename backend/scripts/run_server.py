@@ -4,10 +4,64 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
+import subprocess
 import sys
+import time
+import urllib.request
 from pathlib import Path
 
 import uvicorn
+
+
+def check_ollama_running(url: str) -> bool:
+    """Check if Ollama is running at the given base URL."""
+    try:
+        if "/v1" in url:
+            root_url = url.split("/v1")[0]
+        else:
+            root_url = url
+        req = urllib.request.Request(root_url, method="GET")
+        with urllib.request.urlopen(req, timeout=1.0) as response:
+            return response.status == 200
+    except Exception:
+        return False
+
+
+def ensure_ollama_running(url: str) -> None:
+    """Ensure Ollama server is running. If not, try to start it."""
+    if check_ollama_running(url):
+        print("[Ollama] Ollama server is already running.")
+        return
+
+    if not shutil.which("ollama"):
+        print("[Ollama] Warning: 'ollama' command not found in PATH. Please install Ollama or start it manually.")
+        return
+
+    print("[Ollama] Ollama server is not running. Attempting to start 'ollama serve' in the background...")
+    try:
+        creationflags = 0
+        if sys.platform == "win32":
+            creationflags = 0x08000000  # CREATE_NO_WINDOW
+
+        subprocess.Popen(
+            ["ollama", "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
+            close_fds=True,
+        )
+        print("[Ollama] Started 'ollama serve' process.")
+
+        for _ in range(10):
+            time.sleep(0.5)
+            if check_ollama_running(url):
+                print("[Ollama] Ollama server successfully started and is now running.")
+                return
+
+        print("[Ollama] Warning: Ollama server started but is not responding yet. It might still be initializing.")
+    except Exception as e:
+        print(f"[Ollama] Warning: Failed to start Ollama server: {e}")
 
 
 def load_env_file(env_file: Path) -> None:
@@ -64,6 +118,24 @@ def main() -> None:
     prepare_environment(backend_root)
 
     args = parse_args()
+
+    providers = [
+        os.getenv("FACTORY_LLM_DEFAULT_PROVIDER"),
+        os.getenv("FACTORY_LLM_FALLBACK1_PROVIDER"),
+        os.getenv("FACTORY_LLM_FALLBACK2_PROVIDER"),
+    ]
+    if "local" in providers:
+        base_urls = [
+            os.getenv("FACTORY_LLM_DEFAULT_BASE_URL"),
+            os.getenv("FACTORY_LLM_FALLBACK1_BASE_URL"),
+            os.getenv("FACTORY_LLM_FALLBACK2_BASE_URL"),
+        ]
+        for provider, base_url in zip(providers, base_urls):
+            if provider == "local":
+                target_url = base_url or "http://localhost:11434/v1"
+                ensure_ollama_running(target_url)
+                break
+
     uvicorn.run(
         args.app,
         host=args.host,
