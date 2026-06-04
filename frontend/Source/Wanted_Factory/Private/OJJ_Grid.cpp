@@ -172,7 +172,9 @@ bool OJJ_FindInputMachineAtPathEnd(
 	{
 		AMachineBase* EndMachine = Cast<AMachineBase>(EndOccupant->Get());
 		const TArray<FIntPoint>* EndMachineCells = EndMachine ? ActorToCells.Find(EndMachine) : nullptr;
+		// 포트 없는 머신(송전탑/발전소/차폐장 등)은 컨베이어 endpoint 불가 — 입력 포트 0이면 수신 불가.
 		if (!EndMachine || EndMachine == StartMachine || !EndMachineCells
+			|| EndMachine->GetInputPortCount() <= 0
 			|| !OJJ_IsMachineFrontInputPair(Grid, EndMachine, EndCell, PreviousCell, *EndMachineCells))
 		{
 			OutReason = TEXT("Conveyor must end at another machine input port.");
@@ -196,7 +198,8 @@ bool OJJ_FindInputMachineAtPathEnd(
 	{
 		const FIntPoint MachineCell = EndCell - Step;
 		AMachineBase* AdjacentMachine = OJJ_GetMachineAtCell(OccupiedCells, MachineCell);
-		if (!AdjacentMachine || AdjacentMachine == StartMachine)
+		// 포트 없는 머신(송전탑/발전소/차폐장 등)은 컨베이어 endpoint 불가 — 입력 포트 0이면 후보 제외.
+		if (!AdjacentMachine || AdjacentMachine == StartMachine || AdjacentMachine->GetInputPortCount() <= 0)
 		{
 			continue;
 		}
@@ -244,7 +247,9 @@ bool OJJ_CollectConveyorReservedCells(
 
 	AMachineBase* StartMachine = OJJ_GetMachineAtCell(OccupiedCells, PathCells[0]);
 	const TArray<FIntPoint>* StartMachineCells = StartMachine ? ActorToCells.Find(StartMachine) : nullptr;
+	// 포트 없는 머신(송전탑/발전소/차폐장 등)은 컨베이어 endpoint 불가 — 출력 포트 0이면 송신 불가.
 	if (!StartMachine || !StartMachineCells
+		|| StartMachine->GetOutputPortCount() <= 0
 		|| !OJJ_IsMachineBackOutputPair(Grid, StartMachine, PathCells[0], PathCells[1], *StartMachineCells))
 	{
 		OutReason = TEXT("Conveyor must start from a machine output port.");
@@ -316,6 +321,7 @@ bool OJJ_CollectConveyorReservedCells(
 AOJJ_Grid::AOJJ_Grid()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	// ★ AMachineBase::MeshFitCellWorld(=100)와 반드시 동기화 ★ — 머신 메시 바운즈 정규화가 이 값을 가정.
 	CellSize = 100.0f;
 	VisualizationRange = 20;
 
@@ -451,7 +457,28 @@ FVector AOJJ_Grid::GetMachinePlacementLocation(AMachineBase* Machine, FIntPoint 
 	const FVector LowerLeftCenter = GridToWorld(Origin);
 	const float OffsetX = (Size.X - 1) * CellSize * 0.5f;
 	const float OffsetY = (Size.Y - 1) * CellSize * 0.5f;
-	return FVector(LowerLeftCenter.X + OffsetX, LowerLeftCenter.Y + OffsetY, LowerLeftCenter.Z);
+
+	// Z: 피벗 무관 "바닥 안착". 메시 AABB의 최저점이 그리드 평면(LowerLeftCenter.Z)에 닿도록
+	// 액터 Z를 보정한다. 메시 로컬 AABB를 "MeshComponent→Actor" 상대 트랜스폼으로 변환해 액터
+	// 기준 최저점(ActorSpaceBox.Min.Z)을 구하므로, 컴포넌트의 상대 위치·회전·스케일(음수 포함)을
+	// 모두 반영한다(TransformBy가 변환 후 AABB를 재산출). ZOffset = -ActorSpaceBox.Min.Z.
+	//   · 바닥 피벗 메시(상대 transform 항등, Min.Z≈0): 보정 0 → 기존 동작과 동일(회귀 없음).
+	//   · 중앙 피벗(Min.Z<0)은 위로, 상단 피벗(Min.Z>0)은 아래로 옮겨 AABB 바닥을 평면에 안착.
+	// 메시 미지정/널이면 보정 0(현행 유지). GetMachinePlacementLocation은 항상 스폰된 실제
+	// 인스턴스로만 호출되므로(호버는 평면 ISM 타일이라 이 함수 미사용) 인스턴스 MeshComponent 기준.
+	float ZOffset = 0.0f;
+	if (const UStaticMeshComponent* Mesh = Machine->GetMeshComponent())
+	{
+		if (const UStaticMesh* MeshAsset = Mesh->GetStaticMesh())
+		{
+			const FTransform CompToActor =
+				Mesh->GetComponentTransform().GetRelativeTransform(Machine->GetActorTransform());
+			const FBox ActorSpaceBox = MeshAsset->GetBoundingBox().TransformBy(CompToActor);
+			ZOffset = -ActorSpaceBox.Min.Z;
+		}
+	}
+
+	return FVector(LowerLeftCenter.X + OffsetX, LowerLeftCenter.Y + OffsetY, LowerLeftCenter.Z + ZOffset);
 }
 
 bool AOJJ_Grid::IsValidGridCell(FIntPoint Cell) const

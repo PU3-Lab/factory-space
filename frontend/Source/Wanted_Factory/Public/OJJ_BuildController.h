@@ -19,7 +19,9 @@ enum class EOJJ_BuildPlacementMode : uint8
 	Machine,
 	Conveyor,
 	PowerNode,
-	PowerLine
+	PowerLine,
+	Shield,
+	PowerPlant
 };
 
 /**
@@ -76,6 +78,14 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
 	TSubclassOf<APowerGridNode> PowerGridNodeClass;
+
+	// 차폐장(Shield) 모드에서 배치할 머신 클래스(AOJJ_ProtectionTower 등). 머신 배치 경로 재사용 — PowerNode와 동일.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AMachineBase> ShieldClass;
+
+	// 발전소(PowerPlant) 모드에서 배치할 머신 클래스(APowerPlant 등). 머신 배치 경로 재사용 — Shield와 동일.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AMachineBase> PowerPlantClass;
 
 	// 현재 배치 모드. Machine(기본)/Conveyor. 플레이어가 SetPlacementMode로 전환.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")

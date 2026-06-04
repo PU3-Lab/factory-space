@@ -3,6 +3,7 @@
 
 #include "OJJ_BuildController.h"
 
+#include "DrawDebugHelpers.h"
 #include "Engine/HitResult.h"
 #include "Engine/World.h"
 #include "FactoryManagerSubsystem.h"
@@ -13,6 +14,8 @@
 #include "Conveyor.h"
 #include "Machines/PowerGridNode.h"
 #include "Machines/PowerLine.h"
+#include "Machines/PowerPlant.h"
+#include "OJJ_ProtectionTower.h"
 
 AOJJ_BuildController::AOJJ_BuildController()
 {
@@ -25,6 +28,8 @@ AOJJ_BuildController::AOJJ_BuildController()
 	ConveyorClass = AConveyor::StaticClass();
 	PowerLineClass = APowerLine::StaticClass();
 	PowerGridNodeClass = APowerGridNode::StaticClass();
+	ShieldClass = AOJJ_ProtectionTower::StaticClass();
+	PowerPlantClass = APowerPlant::StaticClass();
 }
 
 void AOJJ_BuildController::Tick(float DeltaSeconds)
@@ -60,6 +65,16 @@ void AOJJ_BuildController::EnterBuildMode()
 	if (PlacementMode == EOJJ_BuildPlacementMode::PowerNode && !PowerGridNodeClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] PowerGridNodeClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::Shield && !ShieldClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] ShieldClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::PowerPlant && !PowerPlantClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] PowerPlantClass missing. EnterBuildMode stopped."));
 		return;
 	}
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor && !ConveyorClass)
@@ -160,7 +175,11 @@ void AOJJ_BuildController::RotateHoverClockwise()
 {
 	// R은 IMC_Build 전용이라 빌드모드에서만 발동하지만, 방어적으로 가드.
 	// 회전은 머신 호버 전용 — 컨베이어 모드에서는 무시(Dummy parity).
-	if (!bIsBuildMode || (PlacementMode != EOJJ_BuildPlacementMode::Machine && PlacementMode != EOJJ_BuildPlacementMode::PowerNode))
+	if (!bIsBuildMode
+		|| (PlacementMode != EOJJ_BuildPlacementMode::Machine
+			&& PlacementMode != EOJJ_BuildPlacementMode::PowerNode
+			&& PlacementMode != EOJJ_BuildPlacementMode::Shield
+			&& PlacementMode != EOJJ_BuildPlacementMode::PowerPlant))
 	{
 		return;
 	}
@@ -194,6 +213,16 @@ TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
 	if (PlacementMode == EOJJ_BuildPlacementMode::PowerNode)
 	{
 		return PowerGridNodeClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::Shield)
+	{
+		return ShieldClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::PowerPlant)
+	{
+		return PowerPlantClass;
 	}
 
 	return MachineClass;
@@ -244,6 +273,41 @@ void AOJJ_BuildController::UpdateMouseHover()
 	{
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+
+#if ENABLE_DRAW_DEBUG
+		// 전선 드래그 미리보기 — 읽기 전용 시각화(팀원 연결 로직 비침범, 호버는 BuildController 영역).
+		// Shipping 등 ENABLE_DRAW_DEBUG=0 빌드에선 블록 전체가 컴파일 아웃 → 런타임 비용 0.
+		// 여기 도달 시점엔 위 (!bHit) 가드를 이미 통과한 상태이므로 Hit / Hit.Location 유효.
+		if (bIsDraggingPowerLine)
+		{
+			if (UWorld* World = GetWorld())
+			{
+				if (APowerGridNode* StartNode = PowerLineStartNode.Get())
+				{
+					// 완성선(APowerLine::LineHeightOffset 기본값 350)과 높이를 맞춤. LineHeightOffset이
+					// protected·게터 없음 → 상수 사용. 팀원이 그 기본값을 바꾸면 여기도 동기화 필요.
+					constexpr float PreviewHeightOffset = 350.0f;
+					const FVector StartLoc = StartNode->GetActorLocation() + FVector(0.0f, 0.0f, PreviewHeightOffset);
+					const FVector CursorLoc = Hit.Location + FVector(0.0f, 0.0f, PreviewHeightOffset);
+
+					// 시작 노드(StartLoc) → 커서(CursorLoc)로 미리보기 선(매 프레임 비영속).
+					// 커서 아래 노드가 연결 가능하면 초록, 아니면 빨강. HoverNode가 non-null일 때만
+					// CanConnect 평가(단락 평가) → 노드 위가 아니면 매 프레임 그래프 순회 비용 없음.
+					APowerGridNode* HoverNode = Cast<APowerGridNode>(Hit.GetActor());
+					UGameInstance* GameInstance = GetGameInstance();
+					UFactoryManagerSubsystem* FactoryManager = GameInstance
+						? GameInstance->GetSubsystem<UFactoryManagerSubsystem>()
+						: nullptr;
+					const bool bCanConnect = HoverNode && FactoryManager
+						&& FactoryManager->CanConnectPowerGridNodes(StartNode, HoverNode);
+					DrawDebugLine(World, StartLoc, CursorLoc,
+						bCanConnect ? FColor::Green : FColor::Red, /*bPersistent=*/ false, /*LifeTime=*/ -1.0f, 0, 4.0f);
+				}
+			}
+		}
+		// [옵션·미구현] 비드래그 상태에서 커서 아래 노드를 스피어로 강조하면 "선택 가능" 힌트가 되지만,
+		// 요청 범위(드래그 중 피드백)를 넘어 생략. 필요 시 위 if 바깥에 HoverNode 강조를 추가.
+#endif
 		return;
 	}
 
@@ -432,11 +496,16 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	CancelConveyorDrag();
 	CancelPowerLineDrag();
 	PlacementMode = NewMode;
-	const TCHAR* ModeName = PlacementMode == EOJJ_BuildPlacementMode::Machine
-		? TEXT("Machine")
-		: (PlacementMode == EOJJ_BuildPlacementMode::Conveyor
-			? TEXT("Conveyor")
-			: (PlacementMode == EOJJ_BuildPlacementMode::PowerNode ? TEXT("PowerNode") : TEXT("PowerLine")));
+	const TCHAR* ModeName = TEXT("Unknown");
+	switch (PlacementMode)
+	{
+	case EOJJ_BuildPlacementMode::Machine:   ModeName = TEXT("Machine");   break;
+	case EOJJ_BuildPlacementMode::Conveyor:  ModeName = TEXT("Conveyor");  break;
+	case EOJJ_BuildPlacementMode::PowerNode: ModeName = TEXT("PowerNode"); break;
+	case EOJJ_BuildPlacementMode::PowerLine: ModeName = TEXT("PowerLine"); break;
+	case EOJJ_BuildPlacementMode::Shield:    ModeName = TEXT("Shield");    break;
+	case EOJJ_BuildPlacementMode::PowerPlant: ModeName = TEXT("PowerPlant"); break;
+	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
