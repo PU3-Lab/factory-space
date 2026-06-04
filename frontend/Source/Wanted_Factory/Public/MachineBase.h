@@ -329,6 +329,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Machine | Durability")
 	float GetCurrentDurability() const { return CurrentDurability; }
 	
+	// 파워 (전력)
 	UFUNCTION(BlueprintCallable, Category = "Machine | Power")
 	void SetProvidedPower(float NewPower);
 	

@@ -30,6 +30,9 @@ struct FResourceData : public FTableRowBase
 
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FName form;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FName substance;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
