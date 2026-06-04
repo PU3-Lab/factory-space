@@ -30,13 +30,7 @@ public class Wanted_Factory : ModuleRules
 		});
 
 		PublicIncludePaths.AddRange(new string[] {
-			"Wanted_Factory",
-			"Wanted_Factory/Variant_Strategy",
-			"Wanted_Factory/Variant_Strategy/UI",
-			"Wanted_Factory/Variant_TwinStick",
-			"Wanted_Factory/Variant_TwinStick/AI",
-			"Wanted_Factory/Variant_TwinStick/Gameplay",
-			"Wanted_Factory/Variant_TwinStick/UI"
+			"Wanted_Factory"
 		});
 
 		// Uncomment if you are using Slate UI
