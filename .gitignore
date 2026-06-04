@@ -170,6 +170,9 @@ frontend/**/*.xcuserdata/
 # Meshy raw import sources (FBX/텍스처) — UE는 cooked .uasset만 필요하므로 원본은 추적 제외
 frontend/Content/MeshyImports/
 
+# Claude Code 로컬 작업 파일
+frontend/.claude/
+
 # Meshy 머신 텍스처 원본 png — .uasset에 임포트 완료, 소스 png는 커밋 제외 (재임포트용 원본은 로컬/Saved에 보존)
 frontend/Content/OJJ/MeshyMachines/Textures/**/*.png
 
