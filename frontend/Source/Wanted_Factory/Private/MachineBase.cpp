@@ -2,6 +2,7 @@
 #include "MachineBase.h"
 
 #include "Components/TextRenderComponent.h"
+#include "PlanetEventManagerSubsystem.h"
 #include "RecipeManagerSubsystem.h"
 #include "Wanted_Factory.h"
 #include "Algo/Count.h"
@@ -106,7 +107,28 @@ void AMachineBase::BeginPlay()
 	Super::BeginPlay();
 
 	CurrentDurability = MaxDurability;
+	if (UWorld* World = GetWorld())
+	{
+		if (UPlanetEventManagerSubsystem* PlanetEventManager = World->GetSubsystem<UPlanetEventManagerSubsystem>())
+		{
+			PlanetEventManager->RegisterMachine(this);
+		}
+	}
+
 	RefreshMachineState();
+}
+
+void AMachineBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UPlanetEventManagerSubsystem* PlanetEventManager = World->GetSubsystem<UPlanetEventManagerSubsystem>())
+		{
+			PlanetEventManager->UnregisterMachine(this);
+		}
+	}
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void AMachineBase::OnConstruction(const FTransform& Transform)
@@ -119,6 +141,7 @@ void AMachineBase::OnConstruction(const FTransform& Transform)
 		MeshComponent->SetWorldScale3D(FVector(ScaleX, ScaleY, 1.0f));
 	}
 
+	CurrentDurability = FMath::Clamp(CurrentDurability, 0.f, MaxDurability);
 	UpdateDebugBufferText();
 }
 
@@ -139,6 +162,11 @@ bool AMachineBase::CanPlace()
 
 bool AMachineBase::AddItem(FName ItemID, int32 Count)
 {
+	if (isBroken() && bDisableWhenBroken)
+	{
+		return false;
+	}
+
 	if (ItemID.IsNone() || Count <= 0)
 	{
 		return false;
@@ -197,7 +225,7 @@ void AMachineBase::TryStartProcess()
 	}
 
 	URecipeManagerSubsystem* RecipeManager =
-		GetGameInstance()->GetSubsystem<URecipeManagerSubsystem>();
+		GetGameInstance() ? GetGameInstance()->GetSubsystem<URecipeManagerSubsystem>() : nullptr;
 
 	if (!RecipeManager)
 	{
@@ -258,7 +286,12 @@ void AMachineBase::TryStartProcess()
 
 void AMachineBase::StartProcess()
 {
-	if (MachineState == EMachineState::Working)
+	RefreshMachineState();
+
+	if (MachineState == EMachineState::Working ||
+		MachineState == EMachineState::Disabled ||
+		MachineState == EMachineState::NoPower ||
+		MachineState == EMachineState::Blocked)
 	{
 		return;
 	}
@@ -274,13 +307,20 @@ void AMachineBase::StartProcess()
 		ProcessTimer,
 		this,
 		&AMachineBase::FinishProcess,
-		ProcessTime,
+		GetEffectiveProcessTime(ProcessTime),
 		false
 	);
 }
 
 void AMachineBase::FinishProcess()
 {
+	if ((isBroken() && bDisableWhenBroken) ||
+		MachineState == EMachineState::Disabled ||
+		MachineState == EMachineState::NoPower)
+	{
+		return;
+	}
+
 	ProcessItem();
 
 	MachineState = EMachineState::Idle;
@@ -313,9 +353,15 @@ void AMachineBase::ProcessItem_Implementation()
 
 void AMachineBase::StopProcess()
 {
-	GetWorld()->GetTimerManager().ClearTimer(ProcessTimer);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ProcessTimer);
+	}
 
-	MachineState = EMachineState::Idle;
+	if (MachineState == EMachineState::Working)
+	{
+		MachineState = EMachineState::Idle;
+	}
 }
 
 bool AMachineBase::CanAddInputItem(FName ItemID, int32 Count) const
@@ -567,9 +613,9 @@ bool AMachineBase::TransferOutputToMachine(AMachineBase* TargetMachine, FName It
 	}
 	
 	// 아이템이 입력 버퍼에 들어갈수 있는지 체크
-	if (!TargetMachine->CanAddInputItem(ItemID, Count))
+	if (!TargetMachine->CanReceiveConveyorItem(ItemID, Count))
 	{
-		LOG_SSR_W(TEXT("TransferOutputToMachine Failed : Target Input Full %s %d / %d"),
+		LOG_SSR_W(TEXT("TransferOutputToMachine Failed : Target cannot receive %s %d / %d"),
 			*ItemID.ToString(),
 			TargetMachine->InputInventory.FindRef(ItemID),
 			TargetMachine->MaxInputPerItem
@@ -592,6 +638,8 @@ bool AMachineBase::TransferOutputToMachine(AMachineBase* TargetMachine, FName It
 	if (!bAddSuccess)
 	{
 		LOG_SSR_W(TEXT("TransferOutputToMachine Failed : AddItem Failed"));
+		OutputBuffer.FindOrAdd(ItemID) += Count;
+		UpdateDebugBufferText();
 		return false;
 	}
 	
@@ -679,6 +727,16 @@ bool AMachineBase::ConnectOutputToMachine(int32 OutputPortIndex, AMachineBase* T
 	NewConnection.TargetInputPortIndex = TargetInputPortIndex;
 
 	// 기존 같은 출력 포트 연결 제거
+	for (const FMachinePortConnection& ExistingConnection : OutputConnections)
+	{
+		if (ExistingConnection.FromOutputPortIndex == OutputPortIndex &&
+			ExistingConnection.TargetMachine &&
+			ExistingConnection.TargetMachine->InputPorts.IsValidIndex(ExistingConnection.TargetInputPortIndex))
+		{
+			ExistingConnection.TargetMachine->InputPorts[ExistingConnection.TargetInputPortIndex].bIsConnected = false;
+		}
+	}
+
 	OutputConnections.RemoveAll(
 		[OutputPortIndex](const FMachinePortConnection& Connection)
 		{
@@ -754,6 +812,7 @@ void AMachineBase::DamageDurability(float DamageAmount)
 		MaxDurability
 		);
 	
+	OnDurabilityChanged.Broadcast(CurrentDurability, MaxDurability);
 	RefreshMachineState();
 }
 
@@ -771,7 +830,13 @@ void AMachineBase::RepairDurability(float RepairAmount)
 		MaxDurability
 	);
 	
+	OnDurabilityChanged.Broadcast(CurrentDurability, MaxDurability);
 	RefreshMachineState();
+}
+
+void AMachineBase::ApplyDurabilityDamage(float DamageAmount)
+{
+	DamageDurability(DamageAmount);
 }
 
 void AMachineBase::SetProvidedPower(float NewPower)
@@ -800,6 +865,13 @@ void AMachineBase::RefreshMachineState()
 {
 	if (isBroken() && bDisableWhenBroken)
 	{
+		MachineState = EMachineState::Disabled;
+		StopProcess();
+		return;
+	}
+
+	if (!HasEnoughPower())
+	{
 		MachineState = EMachineState::NoPower;
 		StopProcess();
 		return;
@@ -808,6 +880,15 @@ void AMachineBase::RefreshMachineState()
 	if (MachineState == EMachineState::NoPower || MachineState == EMachineState::Disabled)
 	{
 		MachineState = EMachineState::Idle;
-		TryStartProcess();
 	}
+}
+
+void AMachineBase::SetPlanetProductionEfficiency(float NewEfficiency)
+{
+	PlanetProductionEfficiency = FMath::Max(0.01f, NewEfficiency);
+}
+
+float AMachineBase::GetEffectiveProcessTime(float BaseProcessTime) const
+{
+	return FMath::Max(0.01f, BaseProcessTime) / FMath::Max(0.01f, PlanetProductionEfficiency);
 }

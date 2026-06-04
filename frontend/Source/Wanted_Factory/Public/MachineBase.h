@@ -9,6 +9,8 @@
 
 class UTextRenderComponent;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnMachineDurabilityChanged, float, CurrentDurability, float, MaxDurability);
+
 UENUM(BlueprintType)
 enum class EMachineState : uint8
 {
@@ -89,6 +91,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void OnConstruction(const FTransform& Transform) override;
 
 	// 그리드 세팅
@@ -209,8 +212,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Machine | Power")
 	float CurrentProvidedPower = 0.f;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Planet Event")
+	float PlanetProductionEfficiency = 1.0f;
+
 public:
 	// 기능들
+	UPROPERTY(BlueprintAssignable, Category = "Machine | Durability")
+	FOnMachineDurabilityChanged OnDurabilityChanged;
+
 	virtual void Tick(float DeltaTime) override;
 
 	UFUNCTION(BlueprintPure, Category = "Machine Settings")
@@ -310,6 +319,15 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "Machine | Durability")
 	void RepairDurability(float RepairAmount);
+
+	UFUNCTION(BlueprintCallable, Category = "Machine | Durability")
+	void ApplyDurabilityDamage(float DamageAmount);
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Durability")
+	float GetMaxDurability() const { return MaxDurability; }
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Durability")
+	float GetCurrentDurability() const { return CurrentDurability; }
 	
 	UFUNCTION(BlueprintCallable, Category = "Machine | Power")
 	void SetProvidedPower(float NewPower);
@@ -319,6 +337,15 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "Machine | State")
 	void RefreshMachineState();
+
+	UFUNCTION(BlueprintCallable, Category = "Machine | Planet Event")
+	void SetPlanetProductionEfficiency(float NewEfficiency);
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Planet Event")
+	float GetPlanetProductionEfficiency() const { return PlanetProductionEfficiency; }
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Planet Event")
+	float GetEffectiveProcessTime(float BaseProcessTime) const;
 	
 	
 };

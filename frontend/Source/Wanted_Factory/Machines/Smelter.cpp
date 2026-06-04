@@ -15,6 +15,11 @@ ASmelter::ASmelter()
 	MachineType = TEXT("Smelter");
 	InputPortCount = 1;
 	OutputPortCount = 1;
+	bNeedPower = true;
+	PowerConsumption = 10.f;
+	MaxDurability = 1000.f;
+	CurrentDurability = MaxDurability;
+	bDisableWhenBroken = true;
 
 	InputPorts.Reset();
 	FMachinePortData InputPort;
