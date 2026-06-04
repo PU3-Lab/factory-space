@@ -35,6 +35,7 @@ class RoutingSupportTool(AgentTool, Protocol):
         self,
         payload: dict[str, Any],
         context: AgentContext,
+        args: dict[str, Any] | None = None,
     ) -> RoutingToolResult:
         """Return one prompt section for routing support."""
 
@@ -72,6 +73,7 @@ class AgentCatalogTool:
         self,
         payload: dict[str, Any],
         context: AgentContext,
+        args: dict[str, Any] | None = None,
     ) -> RoutingToolResult:
         return RoutingToolResult(
             name=self.name,

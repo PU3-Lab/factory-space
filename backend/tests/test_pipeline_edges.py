@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import pytest
 
@@ -19,6 +20,7 @@ from tests.harness import (
 
 class BrokenFallbackAgent:
     agent_id = "process_optimizer"
+    tools = ()
 
     def build_prompt(self, payload: dict[str, object], context: AgentContext) -> str:
         return "broken fallback prompt"
@@ -29,6 +31,131 @@ class BrokenFallbackAgent:
         context: AgentContext,
     ) -> AgentRunResult:
         return AgentRunResult(agent=self.agent_id, payload=[])  # type: ignore[arg-type]
+
+
+class EchoContextTool:
+    name = "factory_context.echo"
+
+    def invoke(
+        self,
+        payload: dict[str, Any],
+        context: AgentContext,
+        args: dict[str, Any] | None = None,
+    ) -> object:
+        return {
+            "request_id": context.request_id,
+            "machine_count": len(payload.get("machines", [])),
+        }
+
+
+class MachineLookupTool:
+    name = "factory_context.machine_lookup"
+
+    def invoke(
+        self,
+        payload: dict[str, Any],
+        context: AgentContext,
+        args: dict[str, Any] | None = None,
+    ) -> object:
+        machine_id = (args or {}).get("machine_id")
+        machines = [
+            machine
+            for machine in payload.get("machines", [])
+            if machine.get("id") == machine_id
+        ]
+        return {"machine_id": machine_id, "matches": machines}
+
+
+class OtherAgentSecretTool:
+    name = "factory_context.secret"
+
+    def invoke(
+        self,
+        payload: dict[str, Any],
+        context: AgentContext,
+        args: dict[str, Any] | None = None,
+    ) -> object:
+        return {"secret": "must-not-run"}
+
+
+class LargeContextTool:
+    name = "factory_context.large"
+
+    def invoke(
+        self,
+        payload: dict[str, Any],
+        context: AgentContext,
+        args: dict[str, Any] | None = None,
+    ) -> object:
+        return {"large": "x" * 6000}
+
+
+class LargeContentBlockTool:
+    name = "factory_context.large_blocks"
+
+    def invoke(
+        self,
+        payload: dict[str, Any],
+        context: AgentContext,
+        args: dict[str, Any] | None = None,
+    ) -> object:
+        return [{"type": "text", "text": "y" * 6000}]
+
+
+class RaisingContextTool:
+    name = "factory_context.raises"
+
+    def invoke(
+        self,
+        payload: dict[str, Any],
+        context: AgentContext,
+        args: dict[str, Any] | None = None,
+    ) -> object:
+        raise RuntimeError("sensitive internal failure details")
+
+
+class ToolBackedProcessAgent:
+    agent_id = "process_optimizer"
+    tools = (
+        EchoContextTool(),
+        MachineLookupTool(),
+        LargeContextTool(),
+        LargeContentBlockTool(),
+        RaisingContextTool(),
+    )
+
+    def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
+        return "tool backed process prompt"
+
+    def fallback(
+        self,
+        payload: dict[str, Any],
+        context: AgentContext,
+    ) -> AgentRunResult:
+        return AgentRunResult(
+            agent=self.agent_id,
+            payload={"summary": "deterministic fallback"},
+            metadata={"fallback": True},
+        )
+
+
+class ToolBackedMaterialAgent:
+    agent_id = "new_material_generator"
+    tools = (OtherAgentSecretTool(),)
+
+    def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
+        return "tool backed material prompt"
+
+    def fallback(
+        self,
+        payload: dict[str, Any],
+        context: AgentContext,
+    ) -> AgentRunResult:
+        return AgentRunResult(
+            agent=self.agent_id,
+            payload={"summary": "material fallback"},
+            metadata={"fallback": True},
+        )
 
 
 def test_pipeline_default_settings_without_api_returns_routing_unavailable() -> None:
@@ -292,6 +419,317 @@ def test_pipeline_attaches_log_and_fallback_middleware_as_langgraph_nodes() -> N
     assert "agent.middleware.after" in graph.nodes
 
 
+def test_pipeline_attaches_tool_node_for_agent_tools() -> None:
+    graph = AgentPipeline(llm=StubLLM([])).graph.get_graph()
+
+    assert "agent.tool_node" in graph.nodes
+
+
+def test_pipeline_executes_generation_tool_request_with_tool_node() -> None:
+    llm = StubLLM(
+        [
+            top_agent_decision("process_optimizer"),
+            '{"tool_call":{"name":"factory_context.echo","args":{}}}',
+            '{"summary":"tool result used"}',
+        ]
+    )
+    router = AgentRouter()
+    router.register(ToolBackedProcessAgent())
+    pipeline = AgentPipeline(router=router, llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-tool-node",
+            "agent": "process_optimizer",
+            "payload": {"machines": [{"id": "miner-1"}]},
+        }
+    )
+
+    assert_agent_response(response, agent="process_optimizer")
+    metadata = response["payload"]["metadata"]
+    assert response["payload"]["summary"] == "tool result used"
+    assert metadata["toolCalls"] == [
+        {"name": "factory_context.echo", "ok": True},
+    ]
+    assert len(llm.prompts) == 3
+    assert "machine_count" in llm.prompts[-1]
+    assert "request-tool-node" in llm.prompts[-1]
+
+
+def test_pipeline_passes_tool_call_args_to_agent_tool() -> None:
+    llm = StubLLM(
+        [
+            top_agent_decision("process_optimizer"),
+            '{"tool_call":{"name":"factory_context.machine_lookup","args":{"machine_id":"miner-1"}}}',
+            '{"summary":"tool args used"}',
+        ]
+    )
+    router = AgentRouter()
+    router.register(ToolBackedProcessAgent())
+    pipeline = AgentPipeline(router=router, llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-tool-args",
+            "agent": "process_optimizer",
+            "payload": {
+                "machines": [
+                    {"id": "miner-1", "status": "blocked"},
+                    {"id": "smelter-1", "status": "idle"},
+                ]
+            },
+        }
+    )
+
+    assert_agent_response(response, agent="process_optimizer")
+    assert response["payload"]["summary"] == "tool args used"
+    assert '"machine_id": "miner-1"' in llm.prompts[-1]
+    assert '"status": "blocked"' in llm.prompts[-1]
+    assert '"status": "idle"' not in llm.prompts[-1]
+
+
+def test_pipeline_blocks_tool_not_owned_by_selected_leaf_agent() -> None:
+    llm = StubLLM(
+        [
+            top_agent_decision("process_optimizer"),
+            '{"tool_call":{"name":"factory_context.secret","args":{}}}',
+            '{"summary":"tool denied"}',
+        ]
+    )
+    router = AgentRouter()
+    router.register(ToolBackedProcessAgent())
+    router.register(ToolBackedMaterialAgent())
+    pipeline = AgentPipeline(router=router, llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-tool-denied",
+            "agent": "process_optimizer",
+            "payload": {"machines": []},
+        }
+    )
+
+    assert_agent_response(response, agent="process_optimizer")
+    assert response["payload"]["summary"] == "tool denied"
+    assert response["payload"]["metadata"]["toolCalls"] == [
+        {"name": "factory_context.secret", "ok": False},
+    ]
+    assert "TOOL_NOT_ALLOWED" in llm.prompts[-1]
+    assert "must-not-run" not in llm.prompts[-1]
+
+
+def test_pipeline_blocks_unknown_tool_without_exposing_global_tool_names() -> None:
+    llm = StubLLM(
+        [
+            top_agent_decision("process_optimizer"),
+            '{"tool_call":{"name":"factory_context.unknown","args":{}}}',
+            '{"summary":"unknown tool denied"}',
+        ]
+    )
+    router = AgentRouter()
+    router.register(ToolBackedProcessAgent())
+    router.register(ToolBackedMaterialAgent())
+    pipeline = AgentPipeline(router=router, llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-unknown-tool-denied",
+            "agent": "process_optimizer",
+            "payload": {"machines": []},
+        }
+    )
+
+    assert_agent_response(response, agent="process_optimizer")
+    assert response["payload"]["summary"] == "unknown tool denied"
+    assert response["payload"]["metadata"]["toolCalls"] == [
+        {"name": "factory_context.unknown", "ok": False},
+    ]
+    assert "TOOL_NOT_ALLOWED" in llm.prompts[-1]
+    assert "factory_context.secret" not in llm.prompts[-1]
+
+
+def test_pipeline_treats_mixed_tool_call_output_as_invalid_tool_request() -> None:
+    llm = StubLLM(
+        [
+            top_agent_decision("process_optimizer"),
+            '{"tool_call":{"name":"factory_context.echo","args":{}},"summary":"mixed"}',
+            '{"summary":"mixed recovered"}',
+        ]
+    )
+    router = AgentRouter()
+    router.register(ToolBackedProcessAgent())
+    pipeline = AgentPipeline(router=router, llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-mixed-tool-call",
+            "agent": "process_optimizer",
+            "payload": {"machines": []},
+        }
+    )
+
+    assert_agent_response(response, agent="process_optimizer")
+    assert response["payload"]["summary"] == "mixed recovered"
+    assert response["payload"]["metadata"]["toolCalls"] == [
+        {"name": "_invalid_tool_call", "ok": False},
+    ]
+    assert "INVALID_TOOL_CALL" in llm.prompts[-1]
+
+
+def test_pipeline_truncates_large_tool_result_in_followup_prompt() -> None:
+    llm = StubLLM(
+        [
+            top_agent_decision("process_optimizer"),
+            '{"tool_call":{"name":"factory_context.large","args":{}}}',
+            '{"summary":"large tool result used"}',
+        ]
+    )
+    router = AgentRouter()
+    router.register(ToolBackedProcessAgent())
+    pipeline = AgentPipeline(router=router, llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-large-tool-result",
+            "agent": "process_optimizer",
+            "payload": {"machines": []},
+        }
+    )
+
+    assert_agent_response(response, agent="process_optimizer")
+    assert response["payload"]["summary"] == "large tool result used"
+    assert "[truncated]" in llm.prompts[-1]
+    assert "x" * 5000 not in llm.prompts[-1]
+
+
+def test_pipeline_truncates_content_block_tool_result_in_followup_prompt() -> None:
+    llm = StubLLM(
+        [
+            top_agent_decision("process_optimizer"),
+            '{"tool_call":{"name":"factory_context.large_blocks","args":{}}}',
+            '{"summary":"large content block result used"}',
+        ]
+    )
+    router = AgentRouter()
+    router.register(ToolBackedProcessAgent())
+    pipeline = AgentPipeline(router=router, llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-large-block-tool-result",
+            "agent": "process_optimizer",
+            "payload": {"machines": []},
+        }
+    )
+
+    assert_agent_response(response, agent="process_optimizer")
+    assert response["payload"]["summary"] == "large content block result used"
+    assert "[truncated]" in llm.prompts[-1]
+    assert "y" * 5000 not in llm.prompts[-1]
+
+
+def test_pipeline_normalizes_tool_execution_exception(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="agents.pipeline.tool_node")
+    llm = StubLLM(
+        [
+            top_agent_decision("process_optimizer"),
+            '{"tool_call":{"name":"factory_context.raises","args":{}}}',
+            '{"summary":"tool exception handled"}',
+        ]
+    )
+    router = AgentRouter()
+    router.register(ToolBackedProcessAgent())
+    pipeline = AgentPipeline(router=router, llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-tool-exception",
+            "agent": "process_optimizer",
+            "payload": {"machines": []},
+        }
+    )
+
+    assert_agent_response(response, agent="process_optimizer")
+    assert response["payload"]["summary"] == "tool exception handled"
+    assert response["payload"]["metadata"]["toolCalls"] == [
+        {"name": "factory_context.raises", "ok": False},
+    ]
+    assert "TOOL_EXECUTION_FAILED" in llm.prompts[-1]
+    assert "sensitive internal failure details" not in llm.prompts[-1]
+    assert "Agent tool execution failed." in caplog.messages
+    assert "sensitive internal failure details" not in caplog.text
+
+
+def test_pipeline_rejects_oversized_tool_name_before_followup_prompt() -> None:
+    oversized_tool_name = f"factory_context.{'x' * 300}"
+    llm = StubLLM(
+        [
+            top_agent_decision("process_optimizer"),
+            f'{{"tool_call":{{"name":"{oversized_tool_name}","args":{{}}}}}}',
+            '{"summary":"oversized tool name rejected"}',
+        ]
+    )
+    router = AgentRouter()
+    router.register(ToolBackedProcessAgent())
+    pipeline = AgentPipeline(router=router, llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-oversized-tool-name",
+            "agent": "process_optimizer",
+            "payload": {"machines": []},
+        }
+    )
+
+    assert_agent_response(response, agent="process_optimizer")
+    assert response["payload"]["summary"] == "oversized tool name rejected"
+    assert response["payload"]["metadata"]["toolCalls"] == [
+        {"name": "_invalid_tool_call", "ok": False},
+    ]
+    assert "INVALID_TOOL_CALL" in llm.prompts[-1]
+    assert oversized_tool_name not in llm.prompts[-1]
+
+
+def test_pipeline_preserves_tool_metadata_when_tool_followup_falls_back() -> None:
+    llm = StubLLM(
+        [
+            top_agent_decision("process_optimizer"),
+            '{"tool_call":{"name":"factory_context.echo","args":{}}}',
+            None,
+        ]
+    )
+    router = AgentRouter()
+    router.register(ToolBackedProcessAgent())
+    pipeline = AgentPipeline(router=router, llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-tool-followup-fallback",
+            "agent": "process_optimizer",
+            "payload": {"machines": []},
+        }
+    )
+
+    assert_agent_response(response, agent="process_optimizer")
+    assert response["payload"]["summary"] == "deterministic fallback"
+    assert response["payload"]["metadata"]["fallback"] is True
+    assert response["payload"]["metadata"]["toolCalls"] == [
+        {"name": "factory_context.echo", "ok": True},
+    ]
+
+
 def test_pipeline_records_middleware_logs_and_current_model(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -477,7 +915,8 @@ def test_pipeline_routes_production_quest_from_llm_leaf_decision() -> None:
         agent="quest_generator",
         sub_agent="quest_generator.production_quest",
     )
-    assert response["payload"]["quest"]["type"] == "production"
+    assert len(response["payload"]["quests"]) == 5
+    assert response["payload"]["quests"][0]["type"] == "production"
     assert "퀘스트 생성 도메인 오케스트레이터" in llm.prompts[1]
 
 

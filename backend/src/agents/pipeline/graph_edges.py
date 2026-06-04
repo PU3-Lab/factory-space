@@ -9,6 +9,7 @@ from langgraph.graph import END, START, StateGraph
 from agents.operator_guide.agent import OPERATOR_GUIDE_LEAF_AGENT_IDS
 from agents.orchestrator import TOP_LEVEL_AGENT_IDS
 from agents.pipeline.state import AgentGraphState, TopRoute
+from agents.pipeline.tool_node import is_tool_request
 from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS
 
 SINGLE_LEAF_AGENT_IDS = {
@@ -47,6 +48,7 @@ def wire_agent_graph(graph: StateGraph) -> None:
             route_selected_leaf_agent,
             {
                 "valid": "cache_lookup",
+                "direct": "agent.middleware.fallback",
                 "error": "build_agent_error",
             },
         )
@@ -66,6 +68,7 @@ def wire_agent_graph(graph: StateGraph) -> None:
         route_llm_result,
         {
             "valid": "parse_llm_response",
+            "tool": "prepare_tool_call",
             "fallback": "call_llm.fallback1",
             "error": "build_agent_error",
         },
@@ -75,6 +78,7 @@ def wire_agent_graph(graph: StateGraph) -> None:
         route_llm_result,
         {
             "valid": "parse_llm_response",
+            "tool": "prepare_tool_call",
             "fallback": "call_llm.fallback2",
             "error": "build_agent_error",
         },
@@ -82,6 +86,19 @@ def wire_agent_graph(graph: StateGraph) -> None:
     graph.add_conditional_edges(
         "call_llm.fallback2",
         route_llm_result,
+        {
+            "valid": "parse_llm_response",
+            "tool": "prepare_tool_call",
+            "fallback": "agent.middleware.fallback",
+            "error": "build_agent_error",
+        },
+    )
+    graph.add_edge("prepare_tool_call", "agent.tool_node")
+    graph.add_edge("agent.tool_node", "build_tool_followup_prompt")
+    graph.add_edge("build_tool_followup_prompt", "call_llm.tool_followup")
+    graph.add_conditional_edges(
+        "call_llm.tool_followup",
+        route_tool_followup_result,
         {
             "valid": "parse_llm_response",
             "fallback": "agent.middleware.fallback",
@@ -124,7 +141,9 @@ def route_cache_result(state: AgentGraphState) -> Literal["hit", "miss"]:
     return "hit" if state.get("cachedPayload") is not None else "miss"
 
 
-def route_selected_leaf_agent(state: AgentGraphState) -> Literal["valid", "error"]:
+def route_selected_leaf_agent(
+    state: AgentGraphState,
+) -> Literal["valid", "direct", "error"]:
     if state.get("error"):
         return "error"
 
@@ -136,14 +155,30 @@ def route_selected_leaf_agent(state: AgentGraphState) -> Literal["valid", "error
         "quest_generator": QUEST_SUB_AGENT_IDS,
     }.get(selected_agent, ())
     if selected_leaf_agent in allowed_leaf_agent_ids:
+        if state.get("skipLlm"):
+            return "direct"
         return "valid"
     return "error"
 
 
-def route_llm_result(state: AgentGraphState) -> Literal["valid", "fallback", "error"]:
+def route_llm_result(
+    state: AgentGraphState,
+) -> Literal["valid", "tool", "fallback", "error"]:
     if state.get("error"):
         return "error"
+    if is_tool_request(state.get("llmRaw")):
+        return "tool"
     return "valid" if state.get("llmRaw") else "fallback"
+
+
+def route_tool_followup_result(
+    state: AgentGraphState,
+) -> Literal["valid", "fallback", "error"]:
+    if state.get("error"):
+        return "error"
+    if not state.get("llmRaw") or is_tool_request(state.get("llmRaw")):
+        return "fallback"
+    return "valid"
 
 
 def route_response_validation(state: AgentGraphState) -> Literal["valid", "error"]:

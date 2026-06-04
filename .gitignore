@@ -170,8 +170,16 @@ frontend/**/*.xcuserdata/
 # Meshy raw import sources (FBX/텍스처) — UE는 cooked .uasset만 필요하므로 원본은 추적 제외
 frontend/Content/MeshyImports/
 
+# Meshy 머신 텍스처 원본 png — .uasset에 임포트 완료, 소스 png는 커밋 제외 (재임포트용 원본은 로컬/Saved에 보존)
+frontend/Content/OJJ/MeshyMachines/Textures/**/*.png
+
 # Meshy 임포트 플러그인 (로컬 도구 — 런타임 의존성 아님, 각자 설치)
-frontend/Plugins/meshy-unreal-plugin-*/
+# 폴더명 변형(meshy-ue-plugin 등) 모두 커버
+frontend/Plugins/meshy-*/
+
+# 에디터 개인 설정 (프리뷰 씬 프로파일 등 로컬 전용)
+# 주의: 이미 추적 중인 파일이라 별도로 `git rm --cached`를 해야 실제 제외됨 (팀 합의 후)
+frontend/Config/DefaultEditor.ini
 
 # Local git worktrees / scratch checkouts
 worktree/

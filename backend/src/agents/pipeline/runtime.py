@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -19,7 +18,17 @@ from agents.operator_guide.agent import (
 from agents.orchestrator import TOP_LEVEL_AGENT_IDS, OrchestratorAgent
 from agents.pipeline.graph_edges import wire_agent_graph
 from agents.pipeline.llm_fallback import build_llm_call_slots, invoke_llm_call_slot
+from agents.pipeline.middleware import (
+    append_middleware_log,
+    build_current_model_metadata,
+)
 from agents.pipeline.state import AgentGraphState
+from agents.pipeline.tool_node import (
+    append_tool_metadata,
+    build_agent_tool_node,
+    build_tool_followup_prompt,
+    build_tool_node_input,
+)
 from agents.pipeline.utils import (
     build_cache_key,
     build_validation_error,
@@ -36,8 +45,6 @@ from protocol.messages import (
     AgentRequestEnvelope,
     AgentResponseEnvelope,
 )
-
-LOGGER = logging.getLogger(__name__)
 
 
 class AgentPipeline:
@@ -84,6 +91,7 @@ class AgentPipeline:
             settings=self.llm_settings,
             adapter_factory=self.llm_adapter_factory,
         )
+        llm_slots_by_name = {slot.name: slot for slot in llm_slots}
         routing_llm = self.llm or llm_slots[0].adapter
         orchestrator = OrchestratorAgent()
         operator_guide = OperatorGuideAgent()
@@ -139,6 +147,9 @@ class AgentPipeline:
             envelope = state["envelope"]
             context = state["context"]
             payload = state["typedPayload"]
+            if envelope.agent == "quest_generator" and not payload:
+                return {"selectedAgent": "quest_generator"}
+
             routing_prompt = orchestrator.build_routing_prompt(
                 payload,
                 context,
@@ -207,6 +218,12 @@ class AgentPipeline:
 
         def route_quest_sub_agent(state: AgentGraphState) -> AgentGraphState:
             explicit_sub_agent = state["typedPayload"].get("sub_agent")
+            if explicit_sub_agent is None and not state["typedPayload"]:
+                return {
+                    "selectedLeafAgent": "quest_generator.production_quest",
+                    "skipLlm": True,
+                }
+
             if explicit_sub_agent is not None:
                 if (
                     isinstance(explicit_sub_agent, str)
@@ -283,6 +300,14 @@ class AgentPipeline:
                 return {}
             return invoke_llm_call_slot(llm_slots[2], state["prompt"])
 
+        def call_llm_tool_followup(state: AgentGraphState) -> AgentGraphState:
+            if state.get("error"):
+                return {}
+            slot = llm_slots_by_name.get(state.get("llmSlot", ""))
+            if slot is None:
+                return {}
+            return invoke_llm_call_slot(slot, state["toolFollowupPrompt"])
+
         def parse_llm_response(state: AgentGraphState) -> AgentGraphState:
             raw = state.get("llmRaw")
             if not raw:
@@ -316,6 +341,10 @@ class AgentPipeline:
             current_model = build_current_model_metadata(state)
             if current_model is not None:
                 metadata["currentModel"] = current_model
+            metadata = {
+                **metadata,
+                **append_tool_metadata(state),
+            }
             return {"responsePayload": payload, "responseMetadata": metadata}
 
         def build_fallback(state: AgentGraphState) -> AgentGraphState:
@@ -324,6 +353,10 @@ class AgentPipeline:
             current_model = build_current_model_metadata(state)
             if current_model is not None:
                 metadata["currentModel"] = current_model
+            metadata = {
+                **metadata,
+                **append_tool_metadata(state),
+            }
             output: AgentGraphState = {
                 "fallbackReason": "llm_unavailable",
                 "responsePayload": result.payload,
@@ -355,6 +388,9 @@ class AgentPipeline:
             return {}
 
         def cache_write(state: AgentGraphState) -> AgentGraphState:
+            if not state.get("cacheKey"):
+                return {}
+
             response_cache.set(
                 state["cacheKey"],
                 state["responsePayload"],
@@ -429,6 +465,10 @@ class AgentPipeline:
         graph.add_node("call_llm.default", call_llm_default)
         graph.add_node("call_llm.fallback1", call_llm_fallback1)
         graph.add_node("call_llm.fallback2", call_llm_fallback2)
+        graph.add_node("prepare_tool_call", build_tool_node_input(agent_router))
+        graph.add_node("agent.tool_node", build_agent_tool_node(agent_router))
+        graph.add_node("build_tool_followup_prompt", build_tool_followup_prompt)
+        graph.add_node("call_llm.tool_followup", call_llm_tool_followup)
         graph.add_node("parse_llm_response", parse_llm_response)
         graph.add_node("agent.middleware.fallback", build_fallback)
         graph.add_node("validate_response_schema", validate_response_schema)
@@ -448,47 +488,3 @@ def run_agent_pipeline(message: AgentRequestEnvelope | dict[str, Any]) -> dict[s
         return AgentPipeline().run(message)
     except ValidationError as exc:
         return build_validation_error(exc, message)
-
-
-def append_middleware_log(
-    state: AgentGraphState,
-    node: str,
-    event: str,
-    details: dict[str, Any],
-) -> AgentGraphState:
-    """Append one middleware log entry using the graph state."""
-
-    LOGGER.info(
-        "%s %s",
-        node,
-        event,
-        extra={"middleware_node": node, "middleware_event": event},
-    )
-    return {
-        "middlewareLogs": [
-            *state.get("middlewareLogs", []),
-            {
-                "node": node,
-                "event": event,
-                "details": details,
-            },
-        ]
-    }
-
-
-def build_current_model_metadata(state: AgentGraphState) -> dict[str, str] | None:
-    """Build response metadata for the latest LLM slot used by the graph."""
-
-    slot = state.get("llmSlot")
-    provider = state.get("llmProvider")
-    if not slot or not provider:
-        return None
-
-    metadata = {
-        "slot": slot,
-        "provider": provider,
-    }
-    model = state.get("llmModel")
-    if model:
-        metadata["model"] = model
-    return metadata

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, TypedDict
+from typing import Annotated, Any, Literal, TypedDict
+
+from langgraph.graph import add_messages
 
 from agents.base import AgentContext
 from protocol.messages import AgentRequestEnvelope
@@ -19,10 +21,12 @@ TopRoute = Literal[
 class AgentGraphState(TypedDict, total=False):
     """Shared LangGraph state for one agent request."""
 
+    messages: Annotated[list[Any], add_messages]
     envelope: AgentRequestEnvelope
     context: AgentContext
     selectedAgent: str
     selectedLeafAgent: str
+    skipLlm: bool
     typedPayload: dict[str, Any]
     cacheKey: str
     cachedPayload: dict[str, Any]
@@ -34,6 +38,9 @@ class AgentGraphState(TypedDict, total=False):
     llmSlot: str
     llmProvider: str
     llmModel: str
+    toolCallRequest: dict[str, Any]
+    toolFollowupPrompt: str
+    toolCalls: list[dict[str, Any]]
     fallbackReason: str
     middlewareLogs: list[dict[str, Any]]
     responsePayload: dict[str, Any]

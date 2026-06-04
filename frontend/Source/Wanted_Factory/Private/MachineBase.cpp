@@ -1,9 +1,65 @@
 
 #include "MachineBase.h"
 
+#include "Components/TextRenderComponent.h"
 #include "RecipeManagerSubsystem.h"
 #include "Wanted_Factory.h"
 #include "Algo/Count.h"
+
+namespace
+{
+	void AddRecipeItemQuantity(TMap<FName, int32>& ItemQuantities, FName ItemID, int32 Count)
+	{
+		if (ItemID.IsNone() || Count <= 0)
+		{
+			return;
+		}
+
+		ItemQuantities.FindOrAdd(ItemID) += Count;
+	}
+
+	TMap<FName, int32> BuildInputQuantities(const FRecipeTable& Recipe)
+	{
+		TMap<FName, int32> InputQuantities;
+		AddRecipeItemQuantity(InputQuantities, Recipe.InputItem1, Recipe.InputQty1);
+		AddRecipeItemQuantity(InputQuantities, Recipe.InputItem2, Recipe.InputQty2);
+		AddRecipeItemQuantity(InputQuantities, Recipe.InputItem3, Recipe.InputQty3);
+		return InputQuantities;
+	}
+
+	TMap<FName, int32> BuildOutputQuantities(const FRecipeTable& Recipe)
+	{
+		TMap<FName, int32> OutputQuantities;
+		AddRecipeItemQuantity(OutputQuantities, Recipe.OutputItem1, Recipe.OutputQty1);
+		AddRecipeItemQuantity(OutputQuantities, Recipe.OutputItem2, Recipe.OutputQty2);
+		return OutputQuantities;
+	}
+
+	FString FormatItemMap(const TMap<FName, int32>& Items)
+	{
+		if (Items.Num() == 0)
+		{
+			return TEXT("None");
+		}
+
+		FString Result;
+		for (const TPair<FName, int32>& Item : Items)
+		{
+			if (Item.Key.IsNone() || Item.Value <= 0)
+			{
+				continue;
+			}
+
+			if (!Result.IsEmpty())
+			{
+				Result += TEXT("\n");
+			}
+			Result += FString::Printf(TEXT("%s x%d"), *Item.Key.ToString(), Item.Value);
+		}
+
+		return Result.IsEmpty() ? FString(TEXT("None")) : Result;
+	}
+}
 
 AMachineBase::AMachineBase()
 {
@@ -21,6 +77,15 @@ AMachineBase::AMachineBase()
 			TEXT("Mesh"));
 
 	MeshComponent->SetupAttachment(Root);
+
+	DebugBufferText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("DebugBufferText"));
+	DebugBufferText->SetupAttachment(Root);
+	DebugBufferText->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	DebugBufferText->SetHorizontalAlignment(EHTA_Center);
+	DebugBufferText->SetVerticalAlignment(EVRTA_TextCenter);
+	DebugBufferText->SetWorldSize(DebugTextWorldSize);
+	DebugBufferText->SetRelativeLocation(DebugTextOffset);
+	DebugBufferText->SetRelativeRotation(FRotator(60.0f, 0.0f, 0.0f));
 
 	ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Engine/BasicShapes/Cube.Cube"));
 	if (CubeMesh.Succeeded())
@@ -51,6 +116,8 @@ void AMachineBase::OnConstruction(const FTransform& Transform)
 		float ScaleY = GridSize.Y;
 		MeshComponent->SetWorldScale3D(FVector(ScaleX, ScaleY, 1.0f));
 	}
+
+	UpdateDebugBufferText();
 }
 
 // Called every frame
@@ -100,6 +167,7 @@ bool AMachineBase::AddItem(FName ItemID, int32 Count)
 		MachineState = EMachineState::Idle;
 	}
 
+	UpdateDebugBufferText();
 	TryStartProcess();
 	
 	return true;
@@ -133,6 +201,8 @@ void AMachineBase::TryStartProcess()
 		return;
 	}
 
+	bool bHasBlockedCraftableRecipe = false;
+
 	for (const TPair<FName, int32>& InputPair : InputInventory)
 	{
 		TArray<FRecipeTable> FoundRecipes;
@@ -159,10 +229,8 @@ void AMachineBase::TryStartProcess()
 			
 			if (!CanAddToOutputBuffer(Recipe))
 			{
-				MachineState = EMachineState::Blocked;
-
-				LOG_SSR_W(TEXT("Cannot start process. Output Buffer Blocked."));
-				return;
+				bHasBlockedCraftableRecipe = true;
+				continue;
 			}
 
 			CurrentRecipe = Recipe;
@@ -171,6 +239,14 @@ void AMachineBase::TryStartProcess()
 			StartProcess();
 			return;
 		}
+	}
+
+	if (bHasBlockedCraftableRecipe)
+	{
+		MachineState = EMachineState::Blocked;
+
+		LOG_SSR_W(TEXT("Cannot start process. Output Buffer Blocked."));
+		return;
 	}
 
 	LOG_SSR_W(TEXT("No craftable recipe found."));
@@ -252,56 +328,48 @@ bool AMachineBase::CanAddInputItem(FName ItemID, int32 Count) const
 
 bool AMachineBase::HasEnoughIngredients(const FRecipeTable& Recipe) const
 {
-	auto CheckIngredient = [this](FName ItemID, int32 Qty) -> bool
-	{
-		if (ItemID.IsNone() || Qty <= 0)
-		{
-			return true;
-		}
+	const TMap<FName, int32> InputQuantities = BuildInputQuantities(Recipe);
 
-		const int32* FoundCount = InputInventory.Find(ItemID);
+	for (const TPair<FName, int32>& InputQuantity : InputQuantities)
+	{
+		const int32* FoundCount = InputInventory.Find(InputQuantity.Key);
 
 		if (!FoundCount)
 		{
 			return false;
 		}
 
-		return *FoundCount >= Qty;
-	};
+		if (*FoundCount < InputQuantity.Value)
+		{
+			return false;
+		}
+	}
 
-	return
-		CheckIngredient(Recipe.InputItem1, Recipe.InputQty1) &&
-		CheckIngredient(Recipe.InputItem2, Recipe.InputQty2) &&
-		CheckIngredient(Recipe.InputItem3, Recipe.InputQty3);
+	return true;
 }
 
 void AMachineBase::ConsumeIngredients(const FRecipeTable& Recipe)
 {
-	auto Consume = [this](FName ItemID, int32 Qty)
-	{
-		if (ItemID.IsNone() || Qty <= 0)
-		{
-			return;
-		}
+	const TMap<FName, int32> InputQuantities = BuildInputQuantities(Recipe);
 
-		int32* FoundCount = InputInventory.Find(ItemID);
+	for (const TPair<FName, int32>& InputQuantity : InputQuantities)
+	{
+		int32* FoundCount = InputInventory.Find(InputQuantity.Key);
 
 		if (!FoundCount)
 		{
-			return;
+			continue;
 		}
 
-		*FoundCount -= Qty;
+		*FoundCount -= InputQuantity.Value;
 
 		if (*FoundCount <= 0)
 		{
-			InputInventory.Remove(ItemID);
+			InputInventory.Remove(InputQuantity.Key);
 		}
-	};
+	}
 
-	Consume(Recipe.InputItem1, Recipe.InputQty1);
-	Consume(Recipe.InputItem2, Recipe.InputQty2);
-	Consume(Recipe.InputItem3, Recipe.InputQty3);
+	UpdateDebugBufferText();
 }
 
 void AMachineBase::AddOutputItem(FName ItemID, int32 Count)
@@ -334,25 +402,25 @@ void AMachineBase::AddOutputItem(FName ItemID, int32 Count)
 		BufferCount,
 		MaxBufferPerItem
 	);
+
+	UpdateDebugBufferText();
 }
 
 bool AMachineBase::CanAddToOutputBuffer(const FRecipeTable& Recipe) const
 {
-	auto CheckOutputSpace = [this](FName ItemID, int32 Qty) -> bool
+	const TMap<FName, int32> OutputQuantities = BuildOutputQuantities(Recipe);
+
+	for (const TPair<FName, int32>& OutputQuantity : OutputQuantities)
 	{
-		if (ItemID.IsNone() || Qty <= 0)
+		const int32 CurrentCount = OutputBuffer.FindRef(OutputQuantity.Key);
+		
+		if (CurrentCount + OutputQuantity.Value > MaxBufferPerItem)
 		{
-			return true;
+			return false;
 		}
-		
-		const int32 CurrentCount = OutputBuffer.FindRef(ItemID);
-		
-		return CurrentCount + Qty <= MaxBufferPerItem;
-	};
+	}
 	
-	return
-		CheckOutputSpace(Recipe.OutputItem1, Recipe.OutputQty1) &&
-			CheckOutputSpace(Recipe.OutputItem2, Recipe.OutputQty2);
+	return true;
 }
 
 bool AMachineBase::TakeOutputItem(FName ItemID, int32 Count)
@@ -390,7 +458,75 @@ bool AMachineBase::TakeOutputItem(FName ItemID, int32 Count)
 		TryStartProcess();
 	}
 
+	UpdateDebugBufferText();
+
 	return true;
+}
+
+bool AMachineBase::PeekFirstOutputItem(FName& OutItemID) const
+{
+	OutItemID = NAME_None;
+
+	for (const TPair<FName, int32>& Output : OutputBuffer)
+	{
+		if (!Output.Key.IsNone() && Output.Value > 0)
+		{
+			OutItemID = Output.Key;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool AMachineBase::TryTakeFirstOutputItem(FName& OutItemID)
+{
+	if (!PeekFirstOutputItem(OutItemID))
+	{
+		return false;
+	}
+
+	if (!TakeOutputItem(OutItemID, 1))
+	{
+		OutItemID = NAME_None;
+		return false;
+	}
+
+	return true;
+}
+
+bool AMachineBase::CanReceiveConveyorItem(FName ItemID, int32 Count) const
+{
+	return CanAddInputItem(ItemID, Count);
+}
+
+bool AMachineBase::ReceiveConveyorItem(FName ItemID, int32 Count)
+{
+	const bool bAdded = AddItem(ItemID, Count);
+	UpdateDebugBufferText();
+	return bAdded;
+}
+
+void AMachineBase::UpdateDebugBufferText()
+{
+	if (!DebugBufferText)
+	{
+		return;
+	}
+
+	DebugBufferText->SetVisibility(bShowDebugBufferText);
+	DebugBufferText->SetWorldSize(DebugTextWorldSize);
+	DebugBufferText->SetRelativeLocation(DebugTextOffset);
+	if (!bShowDebugBufferText)
+	{
+		return;
+	}
+
+	const FString DebugText = FString::Printf(
+		TEXT("Input\n%s\n\nOutput\n%s"),
+		*FormatItemMap(InputInventory),
+		*FormatItemMap(OutputBuffer));
+	DebugBufferText->SetText(FText::FromString(DebugText));
 }
 
 bool AMachineBase::TransferOutputToMachine(AMachineBase* TargetMachine, FName ItemID, int32 Count)

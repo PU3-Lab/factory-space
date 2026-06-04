@@ -6,10 +6,311 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Conveyor.h"
 #include "Engine/StaticMesh.h"
 #include "MachineBase.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
+
+// === Conveyor 포트 판정 헬퍼 (Step 3-b-1) ===
+// Dummy_GridConveyor.cpp의 검증된 anonymous-namespace 헬퍼를 OJJ_로 이식(parity — 로직 동일, 명칭/타입만 치환).
+// 포트 모델 = Dummy dot-product 방식 그대로(Step 2 입력포트 API와 별개; Step 2는 Step 5 스냅샷용으로 보존).
+// 머신 타입은 머지(PR #55)로 일반화된 AMachineBase*. Grid 좌표변환은 AOJJ_Grid 멤버(GridToWorld/IsValidGridCell).
+namespace
+{
+constexpr float OJJ_PortDotThreshold = 0.01f;
+
+const FIntPoint OJJ_NeighborSteps[] = {
+	FIntPoint(1, 0),
+	FIntPoint(-1, 0),
+	FIntPoint(0, 1),
+	FIntPoint(0, -1)
+};
+
+int32 OJJ_ManhattanDistance(FIntPoint A, FIntPoint B)
+{
+	return FMath::Abs(A.X - B.X) + FMath::Abs(A.Y - B.Y);
+}
+
+AMachineBase* OJJ_GetMachineAtCell(
+	const TMap<FIntPoint, TWeakObjectPtr<AActor>>& OccupiedCells,
+	FIntPoint Cell)
+{
+	const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell);
+	return Found && Found->IsValid() ? Cast<AMachineBase>(Found->Get()) : nullptr;
+}
+
+FIntPoint OJJ_GetMachineBackStep(const AMachineBase* Machine)
+{
+	const FVector Forward = Machine ? Machine->GetActorForwardVector() : FVector::ForwardVector;
+	if (FMath::Abs(Forward.X) >= FMath::Abs(Forward.Y))
+	{
+		return FIntPoint(Forward.X >= 0.f ? -1 : 1, 0);
+	}
+
+	return FIntPoint(0, Forward.Y >= 0.f ? -1 : 1);
+}
+
+FIntPoint OJJ_GetMachineFrontStep(const AMachineBase* Machine)
+{
+	const FIntPoint BackStep = OJJ_GetMachineBackStep(Machine);
+	return FIntPoint(-BackStep.X, -BackStep.Y);
+}
+
+float OJJ_GetMachineForwardDotToCell(const AOJJ_Grid* Grid, const AMachineBase* Machine, FIntPoint Cell)
+{
+	if (!Grid || !Machine)
+	{
+		return 0.f;
+	}
+
+	const FVector Forward3D = Machine->GetActorForwardVector();
+	const FVector2D Forward(Forward3D.X, Forward3D.Y);
+	if (Forward.IsNearlyZero())
+	{
+		return 0.f;
+	}
+
+	const FVector CellWorld = Grid->GridToWorld(Cell);
+	const FVector MachineWorld = Machine->GetActorLocation();
+	const FVector2D ToCell(CellWorld.X - MachineWorld.X, CellWorld.Y - MachineWorld.Y);
+	if (ToCell.IsNearlyZero())
+	{
+		return 0.f;
+	}
+
+	return FVector2D::DotProduct(ToCell.GetSafeNormal(), Forward.GetSafeNormal());
+}
+
+bool OJJ_IsBehindMachine(const AOJJ_Grid* Grid, const AMachineBase* Machine, FIntPoint Cell)
+{
+	return OJJ_GetMachineForwardDotToCell(Grid, Machine, Cell) < -OJJ_PortDotThreshold;
+}
+
+bool OJJ_IsInFrontOfMachine(const AOJJ_Grid* Grid, const AMachineBase* Machine, FIntPoint Cell)
+{
+	return OJJ_GetMachineForwardDotToCell(Grid, Machine, Cell) > OJJ_PortDotThreshold;
+}
+
+bool OJJ_IsMachineBackOutputPair(
+	const AOJJ_Grid* Grid,
+	const AMachineBase* Machine,
+	FIntPoint MachineCell,
+	FIntPoint ConveyorCell,
+	const TArray<FIntPoint>& MachineCells)
+{
+	if (!MachineCells.Contains(MachineCell))
+	{
+		return false;
+	}
+
+	const FIntPoint BackStep = OJJ_GetMachineBackStep(Machine);
+	if (MachineCell + BackStep != ConveyorCell)
+	{
+		return false;
+	}
+
+	if (MachineCells.Contains(ConveyorCell) || !Grid->IsValidGridCell(ConveyorCell))
+	{
+		return false;
+	}
+
+	return OJJ_IsBehindMachine(Grid, Machine, ConveyorCell);
+}
+
+bool OJJ_IsMachineFrontInputPair(
+	const AOJJ_Grid* Grid,
+	const AMachineBase* Machine,
+	FIntPoint MachineCell,
+	FIntPoint ConveyorCell,
+	const TArray<FIntPoint>& MachineCells)
+{
+	if (!MachineCells.Contains(MachineCell))
+	{
+		return false;
+	}
+
+	const FIntPoint FrontStep = OJJ_GetMachineFrontStep(Machine);
+	if (MachineCell + FrontStep != ConveyorCell)
+	{
+		return false;
+	}
+
+	if (MachineCells.Contains(ConveyorCell) || !Grid->IsValidGridCell(ConveyorCell))
+	{
+		return false;
+	}
+
+	return OJJ_IsInFrontOfMachine(Grid, Machine, ConveyorCell);
+}
+
+bool OJJ_FindInputMachineAtPathEnd(
+	const AOJJ_Grid* Grid,
+	const TMap<FIntPoint, TWeakObjectPtr<AActor>>& OccupiedCells,
+	const TMap<TWeakObjectPtr<AActor>, TArray<FIntPoint>>& ActorToCells,
+	const TArray<FIntPoint>& PathCells,
+	AMachineBase* StartMachine,
+	AMachineBase*& OutEndMachine,
+	bool& bOutEndsOnMachine,
+	FString& OutReason)
+{
+	OutEndMachine = nullptr;
+	bOutEndsOnMachine = false;
+
+	if (PathCells.Num() < 2)
+	{
+		OutReason = TEXT("Conveyor path must reach another machine input port.");
+		return false;
+	}
+
+	const FIntPoint EndCell = PathCells.Last();
+	const FIntPoint PreviousCell = PathCells[PathCells.Num() - 2];
+
+	const TWeakObjectPtr<AActor>* EndOccupant = OccupiedCells.Find(EndCell);
+	if (EndOccupant && EndOccupant->IsValid())
+	{
+		AMachineBase* EndMachine = Cast<AMachineBase>(EndOccupant->Get());
+		const TArray<FIntPoint>* EndMachineCells = EndMachine ? ActorToCells.Find(EndMachine) : nullptr;
+		if (!EndMachine || EndMachine == StartMachine || !EndMachineCells
+			|| !OJJ_IsMachineFrontInputPair(Grid, EndMachine, EndCell, PreviousCell, *EndMachineCells))
+		{
+			OutReason = TEXT("Conveyor must end at another machine input port.");
+			return false;
+		}
+
+		const TWeakObjectPtr<AActor>* PreviousOccupant = OccupiedCells.Find(PreviousCell);
+		if (PreviousOccupant && PreviousOccupant->IsValid())
+		{
+			OutReason = TEXT("The cell before a machine input port must be empty.");
+			return false;
+		}
+
+		OutEndMachine = EndMachine;
+		bOutEndsOnMachine = true;
+		return true;
+	}
+
+	bool bSawAdjacentMachine = false;
+	for (const FIntPoint& Step : OJJ_NeighborSteps)
+	{
+		const FIntPoint MachineCell = EndCell - Step;
+		AMachineBase* AdjacentMachine = OJJ_GetMachineAtCell(OccupiedCells, MachineCell);
+		if (!AdjacentMachine || AdjacentMachine == StartMachine)
+		{
+			continue;
+		}
+
+		bSawAdjacentMachine = true;
+		const TArray<FIntPoint>* MachineCells = ActorToCells.Find(AdjacentMachine);
+		if (MachineCells && OJJ_IsMachineFrontInputPair(Grid, AdjacentMachine, MachineCell, EndCell, *MachineCells))
+		{
+			OutEndMachine = AdjacentMachine;
+			return true;
+		}
+	}
+
+	OutReason = bSawAdjacentMachine
+		? TEXT("Conveyor end is near a machine, but not at its input side.")
+		: TEXT("Conveyor must end at or in front of another machine input port.");
+	return false;
+}
+
+bool OJJ_CollectConveyorReservedCells(
+	const AOJJ_Grid* Grid,
+	const TMap<FIntPoint, TWeakObjectPtr<AActor>>& OccupiedCells,
+	const TMap<TWeakObjectPtr<AActor>, TArray<FIntPoint>>& ActorToCells,
+	const TArray<FIntPoint>& PathCells,
+	TArray<FIntPoint>& OutReservedCells,
+	FString& OutReason,
+	AMachineBase** OutSourceMachine = nullptr,
+	AMachineBase** OutTargetMachine = nullptr)
+{
+	OutReservedCells.Reset();
+	if (OutSourceMachine)
+	{
+		*OutSourceMachine = nullptr;
+	}
+	if (OutTargetMachine)
+	{
+		*OutTargetMachine = nullptr;
+	}
+
+	if (PathCells.Num() < 2)
+	{
+		OutReason = TEXT("Conveyor path must include the machine output and at least one outside cell.");
+		return false;
+	}
+
+	AMachineBase* StartMachine = OJJ_GetMachineAtCell(OccupiedCells, PathCells[0]);
+	const TArray<FIntPoint>* StartMachineCells = StartMachine ? ActorToCells.Find(StartMachine) : nullptr;
+	if (!StartMachine || !StartMachineCells
+		|| !OJJ_IsMachineBackOutputPair(Grid, StartMachine, PathCells[0], PathCells[1], *StartMachineCells))
+	{
+		OutReason = TEXT("Conveyor must start from a machine output port.");
+		return false;
+	}
+
+	AMachineBase* EndMachine = nullptr;
+	bool bEndsOnMachine = false;
+	if (!OJJ_FindInputMachineAtPathEnd(
+		Grid,
+		OccupiedCells,
+		ActorToCells,
+		PathCells,
+		StartMachine,
+		EndMachine,
+		bEndsOnMachine,
+		OutReason))
+	{
+		return false;
+	}
+
+	for (int32 Index = 0; Index < PathCells.Num(); ++Index)
+	{
+		const FIntPoint Cell = PathCells[Index];
+		if (!Grid->IsValidGridCell(Cell))
+		{
+			OutReason = TEXT("Conveyor path is outside the grid.");
+			return false;
+		}
+
+		if (Index > 0 && OJJ_ManhattanDistance(PathCells[Index - 1], Cell) != 1)
+		{
+			OutReason = TEXT("Conveyor path must be contiguous.");
+			return false;
+		}
+
+		const TWeakObjectPtr<AActor>* Occupant = OccupiedCells.Find(Cell);
+		if (Occupant && Occupant->IsValid())
+		{
+			const bool bAllowedOutputCell = Index == 0 && Occupant->Get() == StartMachine;
+			const bool bAllowedInputCell = bEndsOnMachine
+				&& Index == PathCells.Num() - 1
+				&& Occupant->Get() == EndMachine;
+			if (!bAllowedOutputCell && !bAllowedInputCell)
+			{
+				OutReason = TEXT("Conveyor path is blocked by an occupied cell.");
+				return false;
+			}
+			continue;
+		}
+
+		OutReservedCells.AddUnique(Cell);
+	}
+
+	if (OutSourceMachine)
+	{
+		*OutSourceMachine = StartMachine;
+	}
+	if (OutTargetMachine)
+	{
+		*OutTargetMachine = EndMachine;
+	}
+
+	OutReason.Reset();
+	return true;
+}
+}  // namespace
 
 AOJJ_Grid::AOJJ_Grid()
 {
@@ -158,6 +459,446 @@ bool AOJJ_Grid::IsValidGridCell(FIntPoint Cell) const
 		&& Cell.Y >= 0 && Cell.Y < GridSize.Y;
 }
 
+// === Grid Query (GridManager/컨베이어용 읽기 전용 조회) — 순수 추가, write 경로 미변경 ===
+
+AMachineBase* AOJJ_Grid::GetMachineAtCell(FIntPoint Cell) const
+{
+	if (const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell))
+	{
+		// Get()은 유효하면 actor ptr, GC됐으면 nullptr. Cast로 머신만 좁힘 →
+		// 비머신(컨베이어 등) 점유 셀은 nullptr 반환 (의도된 동작; 의미 확정은 1-c).
+		return Cast<AMachineBase>(Found->Get());
+	}
+	return nullptr;
+}
+
+bool AOJJ_Grid::IsCellOccupied(FIntPoint Cell) const
+{
+	// AActor 점유 기준 — 유효한 점유 액터가 있으면 true (컨베이어 셀도 true).
+	// GetMachineAtCell(Cast로 머신만 좁힘) 위임을 끊어 의미 분리: "점유 여부" ≠ "머신 존재".
+	//   - IsCellOccupied=true / GetMachineAtCell=null  → 컨베이어 등 비머신 점유 (Step 3)
+	// 파괴된 액터 셀은 weak IsValid()로 비점유 처리 → 기존 stale 일관성 유지.
+	// (현재는 컨베이어 미등록이라 결과는 1-a 이전과 동일 — 머신만 점유.)
+	const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell);
+	return Found && Found->IsValid();
+}
+
+const TArray<FIntPoint>* AOJJ_Grid::GetMachineCells(AMachineBase* Machine) const
+{
+	// IsValid: nullptr + pending-kill/garbage 모두 거부.
+	// GetMachineAtCell이 weak Get()으로 stale을 nullptr 처리하는 것과 일관되게,
+	// 죽은(=곧 GC될) 머신의 footprint/origin 메타데이터가 새지 않도록 차단 (Codex 지적: 양방향 일관성).
+	if (!IsValid(Machine))
+	{
+		return nullptr;
+	}
+	// OJJ_ActorToCells는 weak-key(AActor) 맵 — 머신 raw ptr로 조회 가능(암시적 TWeakObjectPtr<AActor> 변환)
+	return OJJ_ActorToCells.Find(Machine);
+}
+
+FIntPoint AOJJ_Grid::GetMachineOrigin(AMachineBase* Machine) const
+{
+	// min-recompute 폐기 → 등록 시점에 명시 저장한 OJJ_ActorToOrigin 조회.
+	// IsValid 가드로 nullptr/stale 머신 차단 (GetMachineCells와 동일 일관성).
+	if (!IsValid(Machine))
+	{
+		return FIntPoint(INT_MIN, INT_MIN);
+	}
+	if (const FIntPoint* Origin = OJJ_ActorToOrigin.Find(Machine))
+	{
+		return *Origin;
+	}
+	// 미등록 머신 센티넬 (BuildController의 INT_MIN 컨벤션과 일치)
+	return FIntPoint(INT_MIN, INT_MIN);
+}
+
+// === Grid Conveyor (출력포트 자급 판별 — ssr 포트 시스템 미변경) ===
+
+FIntPoint AOJJ_Grid::CardinalFromVector(FVector V)
+{
+	// 비유한/거의 0인 XY 입력 방어 → 방향 없음(ZeroValue). public/BlueprintPure라 직접 오용 대비 (Codex 지적).
+	// (GetMachineOutputDir 경로는 yaw-only 단위 forward라 정상이지만 외부 직접 호출 보호.)
+	const double Mag2 = static_cast<double>(V.X) * V.X + static_cast<double>(V.Y) * V.Y;
+	if (!FMath::IsFinite(Mag2) || Mag2 < UE_KINDA_SMALL_NUMBER)
+	{
+		return FIntPoint::ZeroValue;
+	}
+
+	// 우세 축 스냅: |X| >= |Y| 면 X축, 아니면 Y축. 대각선 방지 (Codex 검증 반영).
+	// tie(|X|==|Y|, 예: 정확히 45°)는 결정적으로 X 선택. 평면 그리드라 Z 무시.
+	if (FMath::Abs(V.X) >= FMath::Abs(V.Y))
+	{
+		return FIntPoint(V.X >= 0.f ? 1 : -1, 0);
+	}
+	return FIntPoint(0, V.Y >= 0.f ? 1 : -1);
+}
+
+FIntPoint AOJJ_Grid::GetMachineOutputDir(AMachineBase* Machine) const
+{
+	if (!IsValid(Machine))
+	{
+		return FIntPoint::ZeroValue;
+	}
+	// 출력 = 머신 뒤(-Front). 액터 yaw가 source of truth → R키 회전/사전배치 모두 반영.
+	const FVector Back = -Machine->GetActorForwardVector();
+	return CardinalFromVector(Back);
+}
+
+TArray<FIntPoint> AOJJ_Grid::OJJ_GetMachinePortCells(AMachineBase* Machine, FIntPoint Dir) const
+{
+	TArray<FIntPoint> Result;
+
+	const TArray<FIntPoint>* Cells = GetMachineCells(Machine);  // 내부 IsValid 가드
+	if (!Cells || Cells->Num() == 0)
+	{
+		return Result;
+	}
+
+	if (Dir == FIntPoint::ZeroValue)
+	{
+		return Result;
+	}
+
+	// footprint 셀 C 중 (C + Dir)이 footprint 밖이면 C는 Dir쪽 모서리 → 그 이웃이 포트 셀.
+	// 모양/회전 무관, 멀티셀이면 모서리 셀마다 포트 셀 생성.
+	const TSet<FIntPoint> Footprint(*Cells);
+	for (const FIntPoint& Cell : *Cells)
+	{
+		const FIntPoint Target = Cell + Dir;
+		if (!Footprint.Contains(Target))
+		{
+			Result.AddUnique(Target);
+		}
+	}
+	return Result;
+}
+
+TArray<FIntPoint> AOJJ_Grid::GetMachineOutputCells(AMachineBase* Machine) const
+{
+	// 출력 = OutputDir(-Front) 방향 포트 셀. 동작은 기존과 동일(로직을 OJJ_GetMachinePortCells로 추출만).
+	return OJJ_GetMachinePortCells(Machine, GetMachineOutputDir(Machine));
+}
+
+FIntPoint AOJJ_Grid::OJJ_GetMachineInputDir(AMachineBase* Machine) const
+{
+	// 입력 = 앞면(+Front) = 출력(-Front)의 부호 반전. 무효 머신은 출력이 (0,0)이라 반전해도 (0,0).
+	const FIntPoint Out = GetMachineOutputDir(Machine);
+	return FIntPoint(-Out.X, -Out.Y);
+}
+
+TArray<FIntPoint> AOJJ_Grid::OJJ_GetMachineInputCells(AMachineBase* Machine) const
+{
+	// 입력 = InputDir(+Front) 방향 포트 셀. 출력 셀과 같은 헬퍼 공유, 방향만 반전.
+	return OJJ_GetMachinePortCells(Machine, OJJ_GetMachineInputDir(Machine));
+}
+
+TArray<AMachineBase*> AOJJ_Grid::GetMachineOutputTargets(AMachineBase* Machine) const
+{
+	TArray<AMachineBase*> Targets;
+	for (const FIntPoint& Cell : GetMachineOutputCells(Machine))
+	{
+		if (AMachineBase* Target = GetMachineAtCell(Cell))  // 유효(weak Get)만 반환
+		{
+			if (Target != Machine)  // self 제외 (이론상 불가하나 방어)
+			{
+				Targets.AddUnique(Target);
+			}
+		}
+	}
+	return Targets;
+}
+
+// === Conveyor 인지 (Step 3-a — 셀 등록/조회만, 경로·포트 유효성은 3-c) ===
+
+AConveyor* AOJJ_Grid::OJJ_GetConveyorAtCell(FIntPoint Cell) const
+{
+	if (const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell))
+	{
+		// weak Get()은 stale이면 nullptr. Cast로 컨베이어만 좁힘 → 머신/비컨베이어 셀은 nullptr.
+		return Cast<AConveyor>(Found->Get());
+	}
+	return nullptr;
+}
+
+bool AOJJ_Grid::OJJ_RegisterActorCells(AActor* Actor, const TArray<FIntPoint>& Cells)
+{
+	if (!HasAuthority())
+	{
+		ensureMsgf(false, TEXT("OJJ_RegisterActorCells called on non-authority"));
+		return false;
+	}
+
+	SweepStaleEntries();
+
+	if (!IsValid(Actor) || Cells.Num() == 0)
+	{
+		return false;
+	}
+
+	// 머신은 이 경로 금지 — 머신은 RegisterMachineInternal(footprint/bounds/origin 불변식) 경로로만 등록한다.
+	// 이 API는 컨베이어 등 비머신 actor 전용. 머신을 넣으면 머신 불변식을 우회하므로 거부(Codex #3).
+	if (Cast<AMachineBase>(Actor))
+	{
+		return false;
+	}
+
+	if (OJJ_ActorToCells.Contains(Actor))
+	{
+		// 이미 등록된 actor — 중복 등록 금지(이동/갱신은 별도 경로).
+		return false;
+	}
+
+	// 중복 셀 제거(set 의미 보장) — 충돌 검사·등록 모두 dedup된 목록으로 수행(Codex #2).
+	TArray<FIntPoint> UniqueCells;
+	UniqueCells.Reserve(Cells.Num());
+	for (const FIntPoint& Cell : Cells)
+	{
+		UniqueCells.AddUnique(Cell);
+	}
+
+	// 데이터 무결성 가드: off-grid 셀 등록 차단 + 다른 유효 actor가 이미 점유한 셀이면 거부(양방향 맵 corruption 방지).
+	// ※ 경로 연속성·포트 정합 등 placement 유효성은 컨베이어 경로 검증(OJJ_CollectConveyorReservedCells) 담당.
+	//    여기선 bounds + 점유 충돌만 — 직접 호출(경로 밖) 시에도 off-grid/겹침 등록을 막는 방어(Codex #4).
+	for (const FIntPoint& Cell : UniqueCells)
+	{
+		if (!IsValidGridCell(Cell))
+		{
+			return false;
+		}
+
+		const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell);
+		if (Found && Found->IsValid() && Found->Get() != Actor)
+		{
+			return false;
+		}
+	}
+
+	// origin = 등록 셀의 lower-left(min corner). 머신과 동일 컨벤션으로 OJJ_ActorToOrigin 동기 유지.
+	FIntPoint Origin = UniqueCells[0];
+	for (const FIntPoint& Cell : UniqueCells)
+	{
+		Origin.X = FMath::Min(Origin.X, Cell.X);
+		Origin.Y = FMath::Min(Origin.Y, Cell.Y);
+		OccupiedCells.Add(Cell, Actor);
+	}
+	OJJ_ActorToOrigin.Add(Actor, Origin);
+	OJJ_ActorToCells.Add(Actor, MoveTemp(UniqueCells));
+	return true;
+}
+
+bool AOJJ_Grid::OJJ_RemoveActorAt(FIntPoint Cell)
+{
+	if (!HasAuthority())
+	{
+		ensureMsgf(false, TEXT("OJJ_RemoveActorAt called on non-authority"));
+		return false;
+	}
+
+	const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell);
+	if (!Found || !Found->IsValid())
+	{
+		return false;
+	}
+
+	AActor* Actor = Found->Get();
+	const TArray<FIntPoint>* ActorCells = OJJ_ActorToCells.Find(Actor);
+	if (!ActorCells)
+	{
+		// 불변식 위반: OccupiedCells엔 있는데 역맵(OJJ_ActorToCells)엔 없음.
+		// 어중간한 부분 제거 대신 — 그 actor가 점유한 모든 OccupiedCells를 스캔 제거 + origin 제거(완전 정리).
+		// 불변식 깨짐을 로그로 가시화(Codex #1/#5).
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Grid] OJJ_RemoveActorAt: OccupiedCells/OJJ_ActorToCells 불일치 — actor '%s'를 전체 스캔으로 정리."),
+			*Actor->GetName());
+		for (auto It = OccupiedCells.CreateIterator(); It; ++It)
+		{
+			if (It.Value().Get() == Actor)
+			{
+				It.RemoveCurrent();
+			}
+		}
+		OJJ_ActorToOrigin.Remove(Actor);
+		return false;
+	}
+
+	for (const FIntPoint& C : *ActorCells)
+	{
+		OccupiedCells.Remove(C);
+	}
+	OJJ_ActorToCells.Remove(Actor);
+	OJJ_ActorToOrigin.Remove(Actor);
+	return true;
+}
+
+bool AOJJ_Grid::OJJ_BuildConveyorPlacementPath(
+	const TArray<FIntPoint>& DragCells,
+	TArray<FIntPoint>& OutPathCells,
+	FString& OutReason) const
+{
+	OutPathCells.Reset();
+	if (DragCells.Num() == 0)
+	{
+		OutReason = TEXT("Conveyor drag path is empty.");
+		return false;
+	}
+
+	const FIntPoint StartCell = DragCells[0];
+	if (!IsValidGridCell(StartCell))
+	{
+		OutReason = TEXT("Conveyor start cell is outside the grid.");
+		return false;
+	}
+
+	if (AMachineBase* StartMachine = OJJ_GetMachineAtCell(OccupiedCells, StartCell))
+	{
+		const TArray<FIntPoint>* MachineCells = OJJ_ActorToCells.Find(StartMachine);
+		const FIntPoint OutsideCell = StartCell + OJJ_GetMachineBackStep(StartMachine);
+		if (!MachineCells || !OJJ_IsMachineBackOutputPair(this, StartMachine, StartCell, OutsideCell, *MachineCells))
+		{
+			OutReason = TEXT("Conveyor on a machine must be placed on the back outer output cell.");
+			return false;
+		}
+
+		OutPathCells = DragCells;
+		if (OutPathCells.Num() == 1)
+		{
+			OutPathCells.Add(OutsideCell);
+		}
+		else if (OutPathCells[1] != OutsideCell)
+		{
+			OutReason = TEXT("Conveyor must leave the machine through its back output cell.");
+			return false;
+		}
+	}
+	else
+	{
+		bool bSawAdjacentMachine = false;
+		for (const FIntPoint& Step : OJJ_NeighborSteps)
+		{
+			const FIntPoint MachineCell = StartCell - Step;
+			AMachineBase* AdjacentMachine = OJJ_GetMachineAtCell(OccupiedCells, MachineCell);
+			if (!AdjacentMachine)
+			{
+				continue;
+			}
+
+			bSawAdjacentMachine = true;
+			const TArray<FIntPoint>* MachineCells = OJJ_ActorToCells.Find(AdjacentMachine);
+			if (MachineCells
+				&& OJJ_IsMachineBackOutputPair(this, AdjacentMachine, MachineCell, StartCell, *MachineCells))
+			{
+				OutPathCells = DragCells;
+				OutPathCells.Insert(MachineCell, 0);
+				break;
+			}
+		}
+
+		if (OutPathCells.Num() == 0)
+		{
+			OutReason = bSawAdjacentMachine
+				? TEXT("Adjacent machine cell is not its back output port.")
+				: TEXT("Conveyor must start on or next to a machine output port.");
+			return false;
+		}
+	}
+
+	TArray<FIntPoint> ReservedCells;
+	return OJJ_CollectConveyorReservedCells(this, OccupiedCells, OJJ_ActorToCells, OutPathCells, ReservedCells, OutReason);
+}
+
+bool AOJJ_Grid::OJJ_CanPlaceConveyorPath(const TArray<FIntPoint>& PathCells) const
+{
+	TArray<FIntPoint> ReservedCells;
+	FString OutReason;
+	return OJJ_CollectConveyorReservedCells(this, OccupiedCells, OJJ_ActorToCells, PathCells, ReservedCells, OutReason);
+}
+
+bool AOJJ_Grid::OJJ_TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint>& PathCells, FString& OutReason)
+{
+	TArray<FIntPoint> PlacementCells;
+	if (!OJJ_BuildConveyorPlacementPath(PathCells, PlacementCells, OutReason))
+	{
+		return false;
+	}
+
+	TArray<FIntPoint> ReservedCells;
+	AMachineBase* SourceMachine = nullptr;
+	AMachineBase* TargetMachine = nullptr;
+	if (!OJJ_CollectConveyorReservedCells(
+		this,
+		OccupiedCells,
+		OJJ_ActorToCells,
+		PlacementCells,
+		ReservedCells,
+		OutReason,
+		&SourceMachine,
+		&TargetMachine))
+	{
+		return false;
+	}
+
+	if (ReservedCells.Num() == 0)
+	{
+		OutReason = TEXT("Conveyor must occupy at least one grid cell.");
+		return false;
+	}
+
+	if (!SourceMachine || !TargetMachine)
+	{
+		OutReason = TEXT("Conveyor item transfer requires valid machine endpoints.");
+		return false;
+	}
+
+	// 등록 실패 시 OJJ_RegisterActorCells가 부작용 없이 false 반환(가드에서 조기 종료) → 별도 롤백 불필요.
+	// 등록 성공 후 Conveyor 호출(SetActorLocation/SetPath/ConfigureTransport)은 void·비실패라 롤백 지점 없음(Dummy parity).
+	if (!OJJ_RegisterActorCells(Conveyor, ReservedCells))
+	{
+		OutReason = TEXT("Failed to register conveyor cells on the grid.");
+		return false;
+	}
+
+	// SetPath로 PathCells를 먼저 채운 뒤 centroid를 계산해야 하므로 순서 주의(SetPath → SetActorLocation).
+	// 피벗을 belt centroid로 옮겨도 belt 월드위치는 불변(로컬에서 centroid를 차감하므로 상쇄).
+	// centroid는 액터 로컬 오프셋이므로 액터 회전을 적용해 월드 방향으로 변환(무회전에선 항등, 미래 회전 대비).
+	Conveyor->SetPath(PlacementCells, CellSize);
+	Conveyor->SetActorLocation(GetActorLocation() + Conveyor->GetActorRotation().RotateVector(Conveyor->GetPathCentroidLocal()));
+	Conveyor->ConfigureTransport(ReservedCells, SourceMachine, TargetMachine);
+	return true;
+}
+
+void AOJJ_Grid::OJJ_UpdateConveyorPathHoverPreview(const TArray<FIntPoint>& PathCells)
+{
+	ClearHoverPreview();
+
+	if (PathCells.Num() == 0)
+	{
+		return;
+	}
+
+	TArray<FIntPoint> PreviewCells;
+	FString OutReason;
+	const bool bCanPlace = OJJ_BuildConveyorPlacementPath(PathCells, PreviewCells, OutReason);
+	if (!bCanPlace)
+	{
+		PreviewCells = PathCells;
+	}
+
+	UInstancedStaticMeshComponent* TargetISM = bCanPlace ? ValidHoverISM.Get() : InvalidHoverISM.Get();
+	if (!TargetISM)
+	{
+		return;
+	}
+
+	for (const FIntPoint& Cell : PreviewCells)
+	{
+		const FVector CellCenter = GridToWorld(Cell);
+		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, CellCenter.Z + 2.0f);
+		const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
+		const FTransform InstanceTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale);
+		TargetISM->AddInstance(InstanceTransform, /*bWorldSpace=*/true);
+	}
+}
+
 TArray<FIntPoint> AOJJ_Grid::CalculateFootprint(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps) const
 {
 	TArray<FIntPoint> Cells;
@@ -196,7 +937,8 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 R
 			return false;
 		}
 
-		const TWeakObjectPtr<AMachineBase>* Found = OccupiedCells.Find(Cell);
+		// AActor 점유 기준 (현재 머신만 담기므로 동작 무변경; 컨베이어 차단 의미 확정은 1-c).
+		const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell);
 		if (Found && Found->IsValid())
 		{
 			return false;
@@ -208,18 +950,20 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 R
 
 void AOJJ_Grid::SweepStaleEntries()
 {
-	for (auto It = MachineToCells.CreateIterator(); It; ++It)
+	for (auto It = OJJ_ActorToCells.CreateIterator(); It; ++It)
 	{
 		if (!It.Key().IsValid())
 		{
 			for (const FIntPoint& Cell : It.Value())
 			{
-				const TWeakObjectPtr<AMachineBase>* Found = OccupiedCells.Find(Cell);
+				const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell);
 				if (Found && !Found->IsValid())
 				{
 					OccupiedCells.Remove(Cell);
 				}
 			}
+			// origin 맵도 동일 키로 정리 (양방향 일관성 — 1-a 신설 맵 누수 방지)
+			OJJ_ActorToOrigin.Remove(It.Key());
 			It.RemoveCurrent();
 		}
 	}
@@ -242,7 +986,7 @@ bool AOJJ_Grid::RegisterMachineInternal(AMachineBase* Machine, FIntPoint Origin,
 		return false;
 	}
 
-	if (MachineToCells.Contains(Machine))
+	if (OJJ_ActorToCells.Contains(Machine))
 	{
 		OutReason = TEXT("Machine already placed. Use TryMoveMachine for repositioning.");
 		return false;
@@ -259,7 +1003,9 @@ bool AOJJ_Grid::RegisterMachineInternal(AMachineBase* Machine, FIntPoint Origin,
 	{
 		OccupiedCells.Add(Cell, Machine);
 	}
-	MachineToCells.Add(Machine, MoveTemp(Footprint));
+	OJJ_ActorToCells.Add(Machine, MoveTemp(Footprint));
+	// origin 명시 저장 (min-recompute 대체) — GetMachineOrigin이 이 값을 조회.
+	OJJ_ActorToOrigin.Add(Machine, Origin);
 
 	OutReason.Reset();
 	return true;
@@ -397,7 +1143,7 @@ bool AOJJ_Grid::RemoveMachine(AMachineBase* Machine)
 		return false;
 	}
 
-	const TArray<FIntPoint>* Cells = MachineToCells.Find(Machine);
+	const TArray<FIntPoint>* Cells = OJJ_ActorToCells.Find(Machine);
 	if (!Cells)
 	{
 		return false;
@@ -407,7 +1153,8 @@ bool AOJJ_Grid::RemoveMachine(AMachineBase* Machine)
 	{
 		OccupiedCells.Remove(Cell);
 	}
-	MachineToCells.Remove(Machine);
+	OJJ_ActorToCells.Remove(Machine);
+	OJJ_ActorToOrigin.Remove(Machine);
 	return true;
 }
 
@@ -419,11 +1166,13 @@ bool AOJJ_Grid::RemoveMachineAt(FIntPoint Coord)
 		return false;
 	}
 
-	const TWeakObjectPtr<AMachineBase>* Found = OccupiedCells.Find(Coord);
+	const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Coord);
 	if (!Found || !Found->IsValid())
 	{
 		return false;
 	}
 
-	return RemoveMachine(Found->Get());
+	// 좌표 점유 액터를 머신으로 좁혀 제거. 비머신(컨베이어)이면 Cast 실패 → RemoveMachine(nullptr)이
+	// false 반환 (컨베이어 제거는 Step 3에서 OJJ_RemoveActorAt로 별도 처리).
+	return RemoveMachine(Cast<AMachineBase>(Found->Get()));
 }

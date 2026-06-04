@@ -3,6 +3,8 @@
 
 #include "ResourceBase.h"
 
+#include "Wanted_Factory.h"
+
 
 // Sets default values
 AResourceBase::AResourceBase()
@@ -33,9 +35,10 @@ bool AResourceBase::ConsumeResource(int32 ConsumeAmount)
 		return false;
 	}
 
+	// 무한 자원이라면 수량을 줄이지 않고 성공 처리
 	if (bIsInfinite)
 	{
-		return false;
+		return true;
 	}
 
 	if (Amount < ConsumeAmount)
@@ -53,7 +56,7 @@ void AResourceBase::AddResource(int32 AddAmount)
 	{
 		return;
 	}
-	Amount += FMath::Clamp(Amount + AddAmount, 0, MaxAmount);
+	Amount = FMath::Clamp(Amount + AddAmount, 0, MaxAmount);
 
 }
 
@@ -61,3 +64,46 @@ bool AResourceBase::IsEmpty() const
 {
 	return !bIsInfinite && Amount == 0;
 }
+
+bool AResourceBase::GetResourceData(FResourceData& OutResourceData) const
+{
+	if (!ResourceData.DataTable)
+	{
+		LOG_SSR_W(TEXT("GetResourceData failed: DataTable is null. Resource=%s"), *GetName());
+		return false;
+	}
+
+	if (ResourceData.RowName.IsNone())
+	{
+		LOG_SSR_W(
+			TEXT("GetResourceData failed: RowName is None. Resource=%s DataTable=%s"),
+			*GetName(),
+			*ResourceData.DataTable->GetName()
+		);
+		return false;
+	}
+	
+	const FResourceData* FoundData = 
+		ResourceData.GetRow<FResourceData>(TEXT("GetResourceData"));
+	
+	if (!FoundData)
+	{
+		LOG_SSR_W(
+			TEXT("GetResourceData failed: Row not found. Resource=%s DataTable=%s RowName=%s"),
+			*GetName(),
+			*ResourceData.DataTable->GetName(),
+			*ResourceData.RowName.ToString()
+		);
+		return false;
+	}
+	
+	OutResourceData = *FoundData;
+	return true;
+}
+
+FName AResourceBase::GetResourceRowName() const
+{
+	return ResourceData.RowName;
+}
+
+

@@ -7,6 +7,7 @@
 #include "OJJ_Grid.generated.h"
 
 class AMachineBase;
+class AConveyor;
 class UStaticMeshComponent;
 class UInstancedStaticMeshComponent;
 
@@ -29,7 +30,7 @@ class UInstancedStaticMeshComponent;
  * Multi-cell machine anchor (resolved): AMachineBase mesh stays center-anchored
  * (agreed with machine team). The grid compensates at placement time by moving
  * the actor to the footprint center via GetMachinePlacementLocation. Occupancy
- * data (OccupiedCells / MachineToCells) is still keyed by lower-left Origin —
+ * data (OccupiedCells / OJJ_ActorToCells) is still keyed by lower-left Origin —
  * only the visual transform is offset. 1x1 case yields zero offset (no regression).
  *
  * To be revisited when team contracts are agreed:
@@ -74,16 +75,26 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Hover")
 	TObjectPtr<UInstancedStaticMeshComponent> InvalidHoverISM;
 
-	// 점유된 셀 → 머신 (좌표로 머신 조회)
+	// 점유된 셀 → 점유 액터 (좌표로 조회). 머신/컨베이어 모두 수용하도록 AActor로 일반화.
+	// 머신 조회는 GetMachineAtCell이 Cast<AMachineBase>로 좁힘.
 	UPROPERTY(Transient)
-	TMap<FIntPoint, TWeakObjectPtr<AMachineBase>> OccupiedCells;
+	TMap<FIntPoint, TWeakObjectPtr<AActor>> OccupiedCells;
 
-	// 머신 → 점유 셀 목록 (이미 배치 여부 판정, 제거 시 일괄 해제)
-	TMap<TWeakObjectPtr<AMachineBase>, TArray<FIntPoint>> MachineToCells;
+	// 액터 → 점유 셀 목록 (이미 배치 여부 판정, 제거 시 일괄 해제). AActor로 일반화(컨베이어 포함).
+	TMap<TWeakObjectPtr<AActor>, TArray<FIntPoint>> OJJ_ActorToCells;
+
+	// 액터 → 등록 시점 origin (lower-left). min-recompute 대신 명시 저장 →
+	// 비직사각형/등록 후 이동·회전에도 origin 식별 안정. GetMachineOrigin이 이 맵을 조회.
+	TMap<TWeakObjectPtr<AActor>, FIntPoint> OJJ_ActorToOrigin;
 
 private:
 	// Origin부터 머신 풋프린트가 차지하는 셀 좌표 목록. RotationSteps로 90° 회전 footprint 지원(기본 0).
 	TArray<FIntPoint> CalculateFootprint(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
+
+	// 포트 셀 공유 헬퍼: footprint 셀 C 중 (C+Dir)이 footprint 밖이면 C는 Dir쪽 모서리 → 그 이웃(C+Dir)이 포트 셀.
+	// 출력(GetMachineOutputCells)·입력(OJJ_GetMachineInputCells)이 방향만 바꿔 공유. Dir==(0,0)/무효 머신이면 빈 배열.
+	// footprint 모양/회전 무관(EffectiveSize가 X/Y만 swap하므로 모서리 판정 동일).
+	TArray<FIntPoint> OJJ_GetMachinePortCells(AMachineBase* Machine, FIntPoint Dir) const;
 
 	// GC/Destroy된 머신 엔트리를 양방향 맵에서 정리. write 경로 진입부에서 호출.
 	void SweepStaleEntries();
@@ -127,6 +138,105 @@ public:
 	// 셀이 그리드 유효 범위 ([0, VisualizationRange) × [0, VisualizationRange)) 내인지 검사
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
 	bool IsValidGridCell(FIntPoint Cell) const;
+
+	// === Grid Query (GridManager/컨베이어용 읽기 전용 조회) ===
+	// OccupiedCells / OJJ_ActorToCells를 노출만 함 — write 경로/데이터는 건드리지 않음.
+
+	// 셀에 등록된 머신 반환. 비점유/GC된 머신이면 nullptr.
+	// const라 SweepStaleEntries는 못 부르지만 weak ptr Get()으로 stale을 nullptr 처리.
+	UFUNCTION(BlueprintPure, Category = "Grid|Query")
+	AMachineBase* GetMachineAtCell(FIntPoint Cell) const;
+
+	// AActor 점유 여부 (머신 존재와 무관 — 컨베이어 등 비머신 점유 셀도 true,
+	// GetMachineAtCell은 그 셀에 null 반환). stale(파괴된) 액터 셀은 weak IsValid()로 false.
+	UFUNCTION(BlueprintPure, Category = "Grid|Query")
+	bool IsCellOccupied(FIntPoint Cell) const;
+
+	// 머신 풋프린트의 lower-left(=등록 시 Origin). 미등록 머신이면 (INT_MIN, INT_MIN) 센티넬.
+	// 풋프린트 셀은 Origin부터 비음수 offset이라 min(X),min(Y) == Origin (회전 무관 — EffectiveSize가 X/Y만 swap).
+	UFUNCTION(BlueprintPure, Category = "Grid|Query")
+	FIntPoint GetMachineOrigin(AMachineBase* Machine) const;
+
+	// 머신 점유 셀 목록(footprint) 포인터. 미등록/무효(IsValid 실패) 머신이면 nullptr. C++ 전용(BP 비호환 반환형).
+	// ⚠️ 수명: 반환 포인터는 OJJ_ActorToCells 내부를 가리킴 — 다음 grid 변경(TryPlace/Remove/stale sweep, rehash)
+	//    시 무효화됨. 즉시(같은 프레임) 읽기 전용으로만 사용하고 절대 캐싱하지 말 것. 보관이 필요하면 값 복사.
+	const TArray<FIntPoint>* GetMachineCells(AMachineBase* Machine) const;
+
+	// === Grid Conveyor (출력포트 자급 판별 — ssr 포트 시스템 미변경) ===
+	// 컨벤션: 출력 = 머신 뒤(-Front). 액터 transform(yaw) 기준이라 메시 art와 무관하게 일관.
+	// 메시 art-front의 +X 시각 정합은 별도(리임포트) 작업 — 로직 정확성과 무관.
+
+	// 벡터(XY)를 가장 우세한 단일 축의 카디널 grid offset((±1,0)/(0,±1))으로 스냅. 대각선 방지.
+	// tie(|X|==|Y|, 예: 정확히 45°)는 결정적으로 X축 선택. 비유한/거의 0인 입력은 (0,0) 반환.
+	// Codex 검증: 90° 배수 정확, 임의 각도도 우세축 스냅으로 대각선 아티팩트 차단.
+	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
+	static FIntPoint CardinalFromVector(FVector V);
+
+	// 머신 출력이 향하는 월드 grid 방향 (= -Front 카디널). 무효 머신이면 (0,0).
+	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
+	FIntPoint GetMachineOutputDir(AMachineBase* Machine) const;
+
+	// 머신이 아이템을 내보내는 타깃 셀 목록 = footprint의 OutputDir쪽 모서리 셀들의 +OutputDir 이웃.
+	// footprint 모양/회전 무관. 무효/미등록이면 빈 배열. 타깃 셀은 off-grid/미점유일 수 있음(호출자 판단).
+	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
+	TArray<FIntPoint> GetMachineOutputCells(AMachineBase* Machine) const;
+
+	// 출력 타깃 셀에 등록된 머신들 (유효만, self 제외, 중복 제거). 다운스트림 연결 후보.
+	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
+	TArray<AMachineBase*> GetMachineOutputTargets(AMachineBase* Machine) const;
+
+	// 머신 입력이 향하는 월드 grid 방향 (= +Front 카디널). 출력(-Front)의 부호 반전.
+	// 무효 머신이면 (0,0) (출력이 (0,0)이면 반전해도 (0,0)). 컨베이어 끝단이 머신 입력 포트에 닿는지 판정에 사용.
+	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
+	FIntPoint OJJ_GetMachineInputDir(AMachineBase* Machine) const;
+
+	// 머신이 아이템을 받는 입력 셀 목록 = footprint의 InputDir쪽 모서리 셀들의 +InputDir 이웃.
+	// GetMachineOutputCells의 입력 대칭(같은 헬퍼 OJJ_GetMachinePortCells 공유). footprint 모양/회전 무관.
+	// 무효/미등록이면 빈 배열. 입력 셀은 off-grid/미점유일 수 있음(호출자 판단).
+	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
+	TArray<FIntPoint> OJJ_GetMachineInputCells(AMachineBase* Machine) const;
+
+	// === Conveyor 인지 (Step 3-a — 셀 등록/조회만, 경로·포트 유효성은 3-c) ===
+
+	// 셀에 등록된 컨베이어 반환. 비컨베이어(머신)/비점유/GC 셀이면 nullptr.
+	// GetMachineAtCell의 컨베이어판 — 같은 OccupiedCells를 Cast<AConveyor>로 좁힘.
+	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
+	AConveyor* OJJ_GetConveyorAtCell(FIntPoint Cell) const;
+
+	// 임의 actor(컨베이어)를 명시 셀 목록으로 등록 — OccupiedCells + OJJ_ActorToCells + OJJ_ActorToOrigin 동기.
+	// 머신 등록(RegisterMachineInternal/footprint) 경로와 독립한 컨베이어 전용 등록.
+	// 가드: 서버 권위, 유효 actor, 비어있지 않은 셀, 중복 등록 금지, 다른 actor 점유 셀 충돌 거부(데이터 무결성).
+	// ※ 경로 연속성/포트 정합 등 placement 유효성은 3-c. 여기선 점유 충돌만.
+	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
+	bool OJJ_RegisterActorCells(AActor* Actor, const TArray<FIntPoint>& Cells);
+
+	// 셀을 점유한 actor(컨베이어 포함)를 양방향 맵에서 제거. 머신이면 머신도 제거됨(범용).
+	// 서버 권위 전용. 비점유/GC 셀이면 false.
+	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
+	bool OJJ_RemoveActorAt(FIntPoint Cell);
+
+	// === Conveyor 경로/배치 (Step 3-b — Dummy 모델 A 이식, parity) ===
+
+	// 드래그 셀 목록을 정규 컨베이어 경로로 보정 — 시작이 머신 출력 셀 위/인접인지 검사해 출력셀 포함 경로 생성.
+	// 실패 시 OutReason에 사유. (포트 판정/연속성/충돌은 내부 OJJ_CollectConveyorReservedCells로 검증.) C++ 전용.
+	bool OJJ_BuildConveyorPlacementPath(
+		const TArray<FIntPoint>& DragCells,
+		TArray<FIntPoint>& OutPathCells,
+		FString& OutReason) const;
+
+	// 주어진 경로가 배치 가능한지만 판정(예약셀 산출 없이 OJJ_CollectConveyorReservedCells 래핑). C++ 전용.
+	bool OJJ_CanPlaceConveyorPath(const TArray<FIntPoint>& PathCells) const;
+
+	// 컨베이어 배치 종합 — 경로 보정→예약셀/source/target 산출→OJJ_RegisterActorCells 등록→
+	// Conveyor의 SetActorLocation/SetPath/ConfigureTransport(AMachineBase* 엔드포인트) 호출.
+	// 실패 시 OutReason 기록 + false(등록 전 실패는 부작용 없음). 서버 권위 전용.
+	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
+	bool OJJ_TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint>& PathCells, FString& OutReason);
+
+	// 컨베이어 드래그 경로 호버 미리보기 — 경로 보정 성공이면 ValidHoverISM(녹색), 실패면 InvalidHoverISM(빨강)에
+	// 셀별 인스턴스 표시. 호출 시 기존 미리보기 클리어. (Step 6 입력 드래그 UX용.)
+	UFUNCTION(BlueprintCallable, Category = "Grid|Hover")
+	void OJJ_UpdateConveyorPathHoverPreview(const TArray<FIntPoint>& PathCells);
 
 	// Origin부터 머신 풋프린트만큼의 셀이 모두 비어있는지 검사. RotationSteps로 회전 footprint 검사(기본 0).
 	UFUNCTION(BlueprintPure, Category = "Grid|Placement")

@@ -13,7 +13,9 @@ class WANTED_FACTORY_API URecipeManagerSubsystem : public UGameInstanceSubsystem
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	URecipeManagerSubsystem();
+
+	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly)
 	UDataTable* RecipeTable;
 
 	// Key : 재료 ID

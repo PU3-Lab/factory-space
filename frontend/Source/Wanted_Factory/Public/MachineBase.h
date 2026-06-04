@@ -7,6 +7,8 @@
 #include "Recipe/RecipeTable.h"
 #include "MachineBase.generated.h"
 
+class UTextRenderComponent;
+
 UENUM(BlueprintType)
 enum class EMachineState : uint8
 {
@@ -126,6 +128,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Components")
 	UStaticMeshComponent* MeshComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Debug")
+	UTextRenderComponent* DebugBufferText;
+
 	// 머신 스테이트(상태)
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | State")
@@ -152,6 +157,15 @@ protected:
 	// 나중에 창고/컨베이어로 빠져나간 최종 출력 저장소로 사용 가능
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
 	TMap<FName, int32> OutputInventory;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Debug")
+	bool bShowDebugBufferText = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Debug")
+	FVector DebugTextOffset = FVector(0.0f, 0.0f, 180.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Debug", meta = (ClampMin = "1.0"))
+	float DebugTextWorldSize = 24.0f;
 
 	// 현재 사용 중인 레시피
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
@@ -230,13 +244,28 @@ public:
 	// 재료 소모하고 결과물 뽑는다
 	void ConsumeIngredients(const FRecipeTable& Recipe);
 	// 결과물 추가합니다
-	void AddOutputItem(FName ItemID, int32 Count);
+	virtual void AddOutputItem(FName ItemID, int32 Count);
 	
 	// 출력 버퍼가 꽉차 있으면 생산 금지
-	bool CanAddToOutputBuffer(const FRecipeTable& Recipe) const;
+	virtual bool CanAddToOutputBuffer(const FRecipeTable& Recipe) const;
 	
 	UFUNCTION(BlueprintCallable, Category = "Machine | Buffer")
 	bool TakeOutputItem(FName ItemID, int32 Count);
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Conveyor")
+	bool PeekFirstOutputItem(FName& OutItemID) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Machine | Conveyor")
+	bool TryTakeFirstOutputItem(FName& OutItemID);
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Conveyor")
+	virtual bool CanReceiveConveyorItem(FName ItemID, int32 Count = 1) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Machine | Conveyor")
+	virtual bool ReceiveConveyorItem(FName ItemID, int32 Count = 1);
+
+	UFUNCTION(BlueprintCallable, Category = "Machine | Debug")
+	void UpdateDebugBufferText();
 	
 	UFUNCTION(BlueprintCallable, Category = "Machine | Transfer")
 	bool TransferOutputToMachine(AMachineBase* TargetMachine, FName ItemID, int32 Count);
