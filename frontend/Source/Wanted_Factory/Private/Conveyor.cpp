@@ -253,10 +253,6 @@ void AConveyor::RebuildVisuals()
 		return;
 	}
 
-	const float Width = CellSize * FMath::Clamp(SegmentWidthRatio, 0.0f, 1.0f);
-	const FVector StraightScaleX(CellSize / 100.0f, Width / 100.0f, SegmentHeight / 100.0f);
-	const FVector StraightScaleY(Width / 100.0f, CellSize / 100.0f, SegmentHeight / 100.0f);
-
 	// 피벗을 belt centroid로 이동 → 셀 로컬좌표에서 centroid를 차감해 Root 기준으로 재배치.
 	const FVector Centroid = GetPathCentroidLocal();
 
@@ -298,10 +294,16 @@ void AConveyor::RebuildVisuals()
 			continue;
 		}
 
-		const bool bHorizontal = VisualDirection.X != 0;
-		const FRotator Rotation(0.0f, DirectionToYaw(VisualDirection), 0.0f);
-		const FVector Scale = bHorizontal ? StraightScaleX : StraightScaleY;
-		StraightSegmentInstances->AddInstance(FTransform(Rotation, LocalLocation, Scale));
+		// 직선 메시: 코너와 동일 구조(균일 스케일 + 자세 보정).
+		// 세워진 메시를 Roll로 XY바닥에 눕히고(StraightRoll), 흐름 방향 Yaw(+오프셋)로 정렬.
+		// 합성 YawQuat * RollQuat → Roll(눕히기) 먼저, Yaw(진행 방향) 나중. 코너와 같은 순서.
+		const FQuat YawQuat(FRotator(0.0f, DirectionToYaw(VisualDirection) + StraightBaseYaw, 0.0f));
+		const FQuat RollQuat(FRotator(0.0f, 0.0f, StraightRoll));
+		const FQuat StraightQuat = YawQuat * RollQuat;
+		// 메시가 셀 한 칸에 맞게 제작됨 → 균일 스케일이라 회전 왜곡 0. ClampMin은 에디터 전용이라 런타임 방어.
+		const float StraightUniform = FMath::Max(0.01f, StraightScaleMultiplier);
+		const FVector StraightScale(StraightUniform, StraightUniform, StraightUniform);
+		StraightSegmentInstances->AddInstance(FTransform(StraightQuat, LocalLocation, StraightScale));
 	}
 }
 
