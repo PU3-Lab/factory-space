@@ -113,6 +113,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_MachineRotate;
 
+	// 빌드모드 배치 모드 전환 — 머신 모드(예: 1키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetMachineMode;
+
+	// 빌드모드 배치 모드 전환 — 컨베이어 모드(예: 2키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetConveyorMode;
+
 	// --- Build mode 연동 ---
 	// 레벨에 배치된 BuildController 인스턴스. BeginPlay에서 GetActorOfClass로 캐시(소유 X, spawn X).
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Build")
@@ -140,6 +148,14 @@ protected:
 	void BuildPan(const FInputActionValue& Value);
 	void BuildRotate(const FInputActionValue& Value);
 	void BuildRotateMachine(const FInputActionValue& Value);
+
+	// 좌클릭 뗌/취소 — 컨베이어 드래그 커밋/취소를 BuildController로 위임.
+	void BuildPlaceReleased(const FInputActionValue& Value);
+	void BuildPlaceCanceled(const FInputActionValue& Value);
+
+	// 배치 모드 전환 — BuildController->SetPlacementMode로 위임.
+	void SetMachineMode(const FInputActionValue& Value);
+	void SetConveyorMode(const FInputActionValue& Value);
 
 	// 빌드모드 상태에 맞춰 카메라 뷰타겟/플레이어 가시성을 전환. BuildController가 단일 진실원이므로
 	// ToggleBuild에서 IsInBuildMode() 결과(bEntering)를 받아 호출한다. (3b에서 IMC 교체 추가 예정)

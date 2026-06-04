@@ -1,0 +1,6 @@
+﻿recipe_id,name,input_resources,output_resource,required_equipment,stage,prerequisite_recipes,production_steps,common_bottlenecks
+recipe_iron_ingot,철괴 제작 공정,resource_iron_ore:1,resource_iron_ingot:1,equipment_smelter,smelting,,철광석 채굴 > 제련기 투입 > 철괴 출력,issue_machine_stopped;issue_production_bottleneck
+recipe_copper_ingot,구리괴 제작 공정,resource_copper_ore:1,resource_copper_ingot:1,equipment_smelter,smelting,,구리광석 채굴 > 제련기 투입 > 구리괴 출력,issue_machine_stopped;issue_production_bottleneck
+recipe_gear,기어 제작 공정,resource_iron_ingot:2,resource_gear:1,equipment_assembler,assembly,recipe_iron_ingot,철광석 채굴 > 철괴 제련 > 조립기에서 기어 제작,issue_production_bottleneck;issue_machine_stopped
+recipe_wire,전선 제작 공정,resource_copper_ingot:1,resource_wire:2,equipment_assembler,assembly,recipe_copper_ingot,구리광석 채굴 > 구리괴 제련 > 조립기에서 전선 제작,issue_production_bottleneck;issue_machine_stopped
+recipe_basic_motor,기본 모터 제작 공정,resource_gear:1;resource_wire:2,resource_basic_motor:1,equipment_assembler,assembly,recipe_gear;recipe_wire,철괴로 기어 제작 > 구리괴로 전선 제작 > 조립기에서 기본 모터 제작,issue_production_bottleneck;issue_machine_stopped;issue_power_shortage

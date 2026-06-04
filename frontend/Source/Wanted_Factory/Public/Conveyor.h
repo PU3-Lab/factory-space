@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "dummy_converyor.generated.h"
+#include "Conveyor.generated.h"
 
 class AMachineBase;
 class UInstancedStaticMeshComponent;
@@ -12,12 +12,12 @@ class USceneComponent;
 class UTextRenderComponent;
 
 UCLASS()
-class WANTED_FACTORY_API ADummyConveyor : public AActor
+class WANTED_FACTORY_API AConveyor : public AActor
 {
 	GENERATED_BODY()
 
 public:
-	ADummyConveyor();
+	AConveyor();
 
 protected:
 	virtual void BeginPlay() override;

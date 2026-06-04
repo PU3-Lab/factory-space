@@ -8,6 +8,15 @@
 
 class AOJJ_Grid;
 class AMachineBase;
+class AConveyor;
+
+// 빌드 배치 모드 — 머신(기본) / 컨베이어 드래그.
+UENUM(BlueprintType)
+enum class EOJJ_BuildPlacementMode : uint8
+{
+	Machine,
+	Conveyor
+};
 
 /**
  * 건설 모드 컨트롤러. 호버 갱신, 미리보기, 클릭 배치 라우팅을 담당.
@@ -54,6 +63,22 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
 	TSubclassOf<AMachineBase> MachineClass;
 
+	// 컨베이어 모드에서 spawn할 클래스(기본 AConveyor, 생성자에서 설정). BP 파생 지정 가능.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AConveyor> ConveyorClass;
+
+	// 현재 배치 모드. Machine(기본)/Conveyor. 플레이어가 SetPlacementMode로 전환.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
+	EOJJ_BuildPlacementMode PlacementMode = EOJJ_BuildPlacementMode::Machine;
+
+	// 컨베이어 드래그 진행 여부(좌클릭 누름~뗌).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController|Conveyor")
+	bool bIsDraggingConveyor = false;
+
+	// 드래그 중 누적된 경로 셀(연속/되돌림 처리). 커밋 시 그리드 검증 경로의 입력.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController|Conveyor")
+	TArray<FIntPoint> ConveyorDragCells;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
 	bool bIsBuildMode = false;
 
@@ -85,9 +110,24 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void UpdateMouseHover();
 
-	// PlayerController가 입력에서 호출. 현재 호버 셀에 머신 배치 시도.
+	// PlayerController가 입력에서 호출. Machine 모드: 머신 배치. Conveyor 모드: 드래그 시작.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void OnLeftClickPressed();
+
+	// PlayerController가 좌클릭 뗌에서 호출. Conveyor 모드: 드래그 커밋(배치). Machine 모드: no-op.
+	UFUNCTION(BlueprintCallable, Category = "BuildController")
+	void OnLeftClickReleased();
+
+	// 배치 모드 전환. 전환 시 진행 중 컨베이어 드래그를 취소하고 호버 갱신.
+	UFUNCTION(BlueprintCallable, Category = "BuildController")
+	void SetPlacementMode(EOJJ_BuildPlacementMode NewMode);
+
+	UFUNCTION(BlueprintPure, Category = "BuildController")
+	EOJJ_BuildPlacementMode GetPlacementMode() const { return PlacementMode; }
+
+	// 진행 중인 컨베이어 드래그 취소(좌클릭 취소 트리거 / 모드 전환 시).
+	UFUNCTION(BlueprintCallable, Category = "BuildController")
+	void CancelConveyorDrag();
 
 	// 빌드 모드 상태 토글. Enter/Exit의 자체 가드(이미 같은 상태면 no-op) 덕분에 안전.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
@@ -108,4 +148,17 @@ private:
 	// (origin → footprint center 액터 위치)과 반대 방향이지만 같은 size 정수화 규칙
 	// (CeilToInt + Max(1))을 따라야 호버/배치와 occupancy/시각이 어긋나지 않는다.
 	FIntPoint ComputeOriginFromCursorCell(FIntPoint CursorCell, AMachineBase* Machine, int32 RotationSteps = 0) const;
+
+	// 마우스 커서 아래 그리드 셀 조회(라인 트레이스 → WorldToGrid). 실패 시 false.
+	bool GetCursorCell(FIntPoint& OutCell) const;
+
+	// 컨베이어 드래그 상태머신(Conveyor 모드 전용).
+	void BeginConveyorDrag(FIntPoint StartCell);
+	void UpdateConveyorDrag(FIntPoint CursorCell);
+	void CommitConveyorDrag();
+	void AppendConveyorPathTo(FIntPoint TargetCell);
+	void AddConveyorPathCell(FIntPoint Cell);
+
+	// 컨베이어 호버 갱신(드래그 중이면 drag, 아니면 단일 셀 미리보기).
+	void UpdateConveyorHover(FIntPoint CursorCell);
 };
