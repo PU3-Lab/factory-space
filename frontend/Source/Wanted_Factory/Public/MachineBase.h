@@ -9,6 +9,14 @@
 
 class UTextRenderComponent;
 
+// 효율 modifier 키 모음 (요인별). 새 효율 요인은 여기에 한 줄 추가 — 머신/이벤트 매니저 등
+// 양쪽 파일의 문자열 중복을 방지하는 단일 정의 지점. 정의는 MachineBase.cpp.
+namespace EfficiencyKeys
+{
+	WANTED_FACTORY_API extern const FName MagneticStorm; // 자기폭풍 (행성 이벤트)
+	WANTED_FACTORY_API extern const FName Power;         // 전력 부족 (전력 시스템 대비, 예약)
+}
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnMachineDurabilityChanged, float, CurrentDurability, float, MaxDurability);
 
 UENUM(BlueprintType)
@@ -212,8 +220,11 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Machine | Power")
 	float CurrentProvidedPower = 0.f;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Planet Event")
-	float PlanetProductionEfficiency = 1.0f;
+	// 요인별(키별) 효율 배율. 최종 효율 = 모든 값의 곱. 런타임 전용(Transient).
+	// 예: MagneticStorm 0.6, Power 0.5 → 최종 0.3. 키는 EfficiencyKeys로 관리하며,
+	// 같은 키를 두 호출자가 쓰면 서로 덮어쓰므로 키 소유를 분리할 것.
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Machine | Planet Event")
+	TMap<FName, float> EfficiencyModifiers;
 
 public:
 	// 기능들
@@ -338,11 +349,25 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Machine | State")
 	void RefreshMachineState();
 
+	// 요인별 효율 배율 설정. Value는 0.01~100.0 클램프, NaN/Inf·빈 키는 무시. 같은 키 재설정 시 덮어씀.
 	UFUNCTION(BlueprintCallable, Category = "Machine | Planet Event")
+	void SetEfficiencyModifier(FName Key, float Value);
+
+	// 요인별 효율 배율 해제(해당 요인 영향 제거).
+	UFUNCTION(BlueprintCallable, Category = "Machine | Planet Event")
+	void ClearEfficiencyModifier(FName Key);
+
+	// 최종 효율 = 모든 modifier의 곱. 비어 있으면 1.0, 하한 0.01.
+	UFUNCTION(BlueprintPure, Category = "Machine | Planet Event")
+	float GetFinalEfficiency() const;
+
+	// [DEPRECATED] 효율 modifier 시스템으로 대체됨. 내부적으로 MagneticStorm 키에 위임한다.
+	UFUNCTION(BlueprintCallable, Category = "Machine | Planet Event", meta = (DeprecatedFunction, DeprecationMessage = "SetEfficiencyModifier(키, 값)을 사용하세요."))
 	void SetPlanetProductionEfficiency(float NewEfficiency);
 
-	UFUNCTION(BlueprintPure, Category = "Machine | Planet Event")
-	float GetPlanetProductionEfficiency() const { return PlanetProductionEfficiency; }
+	// [DEPRECATED] GetFinalEfficiency()를 사용하세요. (스테일 방지 위해 GetFinalEfficiency 위임)
+	UFUNCTION(BlueprintPure, Category = "Machine | Planet Event", meta = (DeprecatedFunction, DeprecationMessage = "GetFinalEfficiency()를 사용하세요."))
+	float GetPlanetProductionEfficiency() const { return GetFinalEfficiency(); }
 
 	UFUNCTION(BlueprintPure, Category = "Machine | Planet Event")
 	float GetEffectiveProcessTime(float BaseProcessTime) const;
