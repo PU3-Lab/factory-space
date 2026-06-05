@@ -9,9 +9,9 @@ namespace
 {
 constexpr TCHAR QuestManagerQuestGeneratorAgentId[] = TEXT("quest_generator");
 constexpr TCHAR ProductionQuestSubAgentId[] = TEXT("quest_generator.production_quest");
-constexpr TCHAR QuestManagerSampleRequestId[] = TEXT("request-quest-sample");
-constexpr TCHAR QuestManagerSampleSessionId[] = TEXT("smoke-session");
-constexpr TCHAR QuestManagerSampleClientId[] = TEXT("smoke-client");
+constexpr TCHAR QuestManagerQuestSampleRequestId[] = TEXT("request-quest-sample");
+constexpr TCHAR QuestManagerQuestSampleSessionId[] = TEXT("smoke-session");
+constexpr TCHAR QuestManagerQuestSampleClientId[] = TEXT("smoke-client");
 
 TSharedPtr<FJsonObject> CreateProductionPayload(const FString& Question)
 {
@@ -206,16 +206,13 @@ FString UQuestManagerSubsystem::RequestSubQuests()
 		return FString();
 	}
 
-	if (!AgentClient->SendQuestGeneratorRequest(
-		QuestManagerSampleRequestId,
-		QuestManagerSampleSessionId,
-		QuestManagerSampleClientId))
+	if (!AgentClient->SendQuestGeneratorRequest(QuestManagerQuestSampleRequestId, QuestManagerQuestSampleSessionId, QuestManagerQuestSampleClientId))
 	{
 		OnSubQuestRequestFailed.Broadcast(FString(), TEXT("Failed to send quest generator request. Check the agent connection."));
 		return FString();
 	}
 
-	const FString RequestId = QuestManagerSampleRequestId;
+	const FString RequestId = QuestManagerQuestSampleRequestId;
 	ClearSubQuests();
 	PendingSubQuestRequestIds.Add(RequestId);
 	OnSubQuestRequestStarted.Broadcast(RequestId, QuestManagerQuestGeneratorAgentId);
