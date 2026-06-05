@@ -10,6 +10,8 @@ class AMachineBase;
 class AConveyor;
 class UStaticMeshComponent;
 class UInstancedStaticMeshComponent;
+class UMaterialInterface;
+class UMaterialInstanceDynamic;
 
 /**
  * AOJJ_Grid is the source of truth for grid occupancy.
@@ -77,6 +79,26 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Hover")
 	TObjectPtr<UInstancedStaticMeshComponent> InvalidHoverISM;
 
+	// === 포트 방향 화살표 (빌드모드 전용 시각화) ===
+	// 입력=파랑 계열 / 출력=주황 계열. 배치 머신용(Placed*)과 호버 프리뷰용(Hover*)을 분리해
+	// 수명주기를 독립시킨다: Placed는 진입~퇴장 상시(커서 무관), Hover는 커서 프리뷰와 동반 생멸.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|PortArrow")
+	TObjectPtr<UInstancedStaticMeshComponent> PlacedInputArrowISM;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|PortArrow")
+	TObjectPtr<UInstancedStaticMeshComponent> PlacedOutputArrowISM;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|PortArrow")
+	TObjectPtr<UInstancedStaticMeshComponent> HoverInputArrowISM;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|PortArrow")
+	TObjectPtr<UInstancedStaticMeshComponent> HoverOutputArrowISM;
+
+	// 화살표 틴트용 베이스/동적 머티리얼 (BeginPlay에서 베이스로부터 MID 생성).
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> ArrowBaseMaterial;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> InputArrowMID;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> OutputArrowMID;
+
 	// 점유된 셀 → 점유 액터 (좌표로 조회). 머신/컨베이어 모두 수용하도록 AActor로 일반화.
 	// 머신 조회는 GetMachineAtCell이 Cast<AMachineBase>로 좁힘.
 	UPROPERTY(Transient)
@@ -97,6 +119,20 @@ private:
 	// 출력(GetMachineOutputCells)·입력(OJJ_GetMachineInputCells)이 방향만 바꿔 공유. Dir==(0,0)/무효 머신이면 빈 배열.
 	// footprint 모양/회전 무관(EffectiveSize가 X/Y만 swap하므로 모서리 판정 동일).
 	TArray<FIntPoint> OJJ_GetMachinePortCells(AMachineBase* Machine, FIntPoint Dir) const;
+
+	// footprint 셀 집합에서 Dir 쪽 모서리 이웃(포트 셀)을 산출 — 등록 머신(OJJ_GetMachinePortCells)과
+	// 호버 프리뷰(DrawHoverMachineArrows)가 공유하는 단일 모서리 워크. 새 진실원 아님(기존 규칙 추출).
+	static TArray<FIntPoint> OJJ_PortCellsFromFootprint(const TArray<FIntPoint>& Cells, FIntPoint Dir);
+
+	// 추출 머신(채굴기/펌프/공압) 판정 — 입력이 자원 노드라 입력 화살표를 생략한다.
+	// TODO(SSR 협의): MachineType 문자열 비교 대신 AMachineBase 가상 predicate로 대체.
+	static bool OJJ_IsExtractionMachine(const AMachineBase* Machine);
+
+	// 입력/출력 포트 셀 목록을 화살표 인스턴스로 ISM에 적재. 입력=−InputDir(머신 향함),
+	// 출력=+OutputDir(나감). 콘 메시 apex(+Z)를 수평 방향에 정렬, 셀 중심에 배치.
+	void OJJ_EmitPortArrows(
+		UInstancedStaticMeshComponent* InputISM, bool bDrawInput, const TArray<FIntPoint>& InputCells, FIntPoint InputDir,
+		UInstancedStaticMeshComponent* OutputISM, bool bDrawOutput, const TArray<FIntPoint>& OutputCells, FIntPoint OutputDir) const;
 
 	// GC/Destroy된 머신 엔트리를 양방향 맵에서 정리. write 경로 진입부에서 호출.
 	void SweepStaleEntries();
@@ -286,7 +322,25 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Grid|Hover")
 	void UpdateHoverPreview(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0);
 
-	// 호버 미리보기 모두 제거 (머신 placement 완료 / 호버 해제 시 호출).
+	// 호버 미리보기 모두 제거 (머신 placement 완료 / 호버 해제 시 호출). 호버 포트 화살표도 함께 제거.
 	UFUNCTION(BlueprintCallable, Category = "Grid|Hover")
 	void ClearHoverPreview();
+
+	// === 포트 방향 화살표 (빌드모드 전용) ===
+
+	// 배치된 모든 머신의 입출력 포트 화살표 갱신(클리어 후 재적재). 빌드모드 진입 / 배치·제거 후 호출.
+	UFUNCTION(BlueprintCallable, Category = "Grid|PortArrow")
+	void RefreshPlacedMachineArrows();
+
+	// 호버 프리뷰 머신(CDO, 미스폰)의 포트 화살표를 Origin/회전 step으로부터 산출해 표시.
+	// 액터가 없으므로 forward는 배치 컨벤션(yaw=90*step)으로 재구성. C++ 전용(BP 비호환 인자).
+	void DrawHoverMachineArrows(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps);
+
+	// 배치 머신 화살표 제거 (빌드모드 퇴장 시).
+	UFUNCTION(BlueprintCallable, Category = "Grid|PortArrow")
+	void ClearPlacedMachineArrows();
+
+	// 호버 프리뷰 화살표 제거 (ClearHoverPreview에서 호출 — 호버 셀 ISM과 동반 생멸).
+	UFUNCTION(BlueprintCallable, Category = "Grid|PortArrow")
+	void ClearHoverMachineArrows();
 };
