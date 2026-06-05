@@ -35,6 +35,7 @@ from agents.pipeline.utils import (
     run_fallback,
 )
 from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS, QuestGeneratorAgent
+from agents.quest_generator.service import QuestAgentService
 from agents.router import AgentRouter, UnknownAgentError, create_default_agent_router
 from cache.response_cache import ResponseCache
 from llm.adapter import LLMAdapter, create_llm_adapter
@@ -147,8 +148,6 @@ class AgentPipeline:
             envelope = state["envelope"]
             context = state["context"]
             payload = state["typedPayload"]
-            if envelope.agent == "quest_generator" and not payload:
-                return {"selectedAgent": "quest_generator"}
 
             routing_prompt = orchestrator.build_routing_prompt(
                 payload,
@@ -218,12 +217,6 @@ class AgentPipeline:
 
         def route_quest_sub_agent(state: AgentGraphState) -> AgentGraphState:
             explicit_sub_agent = state["typedPayload"].get("sub_agent")
-            if explicit_sub_agent is None and not state["typedPayload"]:
-                return {
-                    "selectedLeafAgent": "quest_generator.production_quest",
-                    "skipLlm": True,
-                }
-
             if explicit_sub_agent is not None:
                 if (
                     isinstance(explicit_sub_agent, str)
@@ -330,6 +323,30 @@ class AgentPipeline:
                         "LLM response must be a JSON object.",
                     )
                 }
+
+            if state.get("selectedLeafAgent") == "quest_generator.production_quest":
+                selected_ids = payload.get("selected_quest_ids")
+                if (
+                    not isinstance(selected_ids, list)
+                    or not all(type(quest_id) is int for quest_id in selected_ids)
+                ):
+                    return {
+                        "error": build_error_payload(
+                            "INVALID_LLM_RESPONSE",
+                            "Quest LLM response must select quest ids.",
+                        )
+                    }
+                try:
+                    payload = QuestAgentService().generate_quest_json_from_ids(
+                        selected_ids
+                    )
+                except ValueError as exc:
+                    return {
+                        "error": build_error_payload(
+                            "INVALID_LLM_RESPONSE",
+                            str(exc),
+                        )
+                    }
 
             metadata = {"llm": "used"}
             if state.get("llmSlot"):

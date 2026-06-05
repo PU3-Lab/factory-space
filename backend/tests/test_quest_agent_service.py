@@ -32,6 +32,27 @@ def test_service_quest_objectives_keep_item_id_and_quantity_only() -> None:
     assert "target_item_name" not in objective
 
 
+def test_service_returns_quests_selected_by_ids_from_example_pool() -> None:
+    service = QuestAgentService(rng=random.Random(1))
+
+    result = service.generate_quest_json_from_ids([6, 5, 4, 3, 2])
+
+    QuestResponse.model_validate(result)
+    assert [quest["id"] for quest in result["quests"]] == [6, 5, 4, 3, 2]
+    assert result["quests"][0]["objectives"][0]["target_item_id"] == "gear"
+
+
+def test_service_rejects_invalid_selected_quest_ids() -> None:
+    service = QuestAgentService(rng=random.Random(1))
+
+    try:
+        service.generate_quest_json_from_ids([1, 2, 3, 4, 99])
+    except ValueError as exc:
+        assert "Unknown quest id: 99" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError")
+
+
 def test_quest_response_rejects_invalid_quantity() -> None:
     invalid_response = {
         "quests": [

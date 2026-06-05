@@ -114,8 +114,8 @@ def test_operator_guide_leaf_agents_return_normalized_fallbacks(
 @pytest.mark.parametrize(
     ("agent", "expected_type", "expected_prompt"),
     [
-        (ProductionQuestAgent(), "production", "생산 퀘스트를 생성"),
-        (EconomyQuestAgent(), "economy", "경제 퀘스트를 생성"),
+        (ProductionQuestAgent(), "production", "production quest selector"),
+        (EconomyQuestAgent(), "economy", "economy quest generator"),
     ],
 )
 def test_quest_leaf_agents_return_normalized_fallbacks(

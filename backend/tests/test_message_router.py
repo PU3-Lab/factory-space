@@ -11,6 +11,8 @@ from tests.harness import (
     top_agent_decision,
 )
 
+QUEST_LLM_RESPONSE = '{"selected_quest_ids":[1,2,3,4,5]}'
+
 
 def test_pipeline_uses_prompt_based_top_level_routing() -> None:
     response, llm = run_pipeline_scenario(
@@ -22,7 +24,7 @@ def test_pipeline_uses_prompt_based_top_level_routing() -> None:
             llm_responses=[
                 top_agent_decision("quest_generator"),
                 leaf_agent_decision("quest_generator.production_quest"),
-                None,
+                QUEST_LLM_RESPONSE,
             ],
         )
     )
@@ -34,6 +36,8 @@ def test_pipeline_uses_prompt_based_top_level_routing() -> None:
     )
     assert len(response["payload"]["quests"]) == 5
     assert response["payload"]["quests"][0]["type"] == "production"
+    assert response["payload"]["quests"][0]["id"] == 1
+    assert response["payload"]["metadata"]["llm"] == "used"
     assert "서버 전체 오케스트레이터" in llm.prompts[0]
     assert "[OUTPUT_CONTRACT]" in llm.prompts[0]
     assert "퀘스트 생성 도메인 오케스트레이터" in llm.prompts[1]
@@ -41,8 +45,14 @@ def test_pipeline_uses_prompt_based_top_level_routing() -> None:
     assert "[OUTPUT_CONTRACT]" in llm.prompts[1]
 
 
-def test_pipeline_routes_empty_quest_request_without_llm() -> None:
-    llm = StubLLM([])
+def test_pipeline_routes_empty_quest_request_through_llm() -> None:
+    llm = StubLLM(
+        [
+            top_agent_decision("quest_generator"),
+            leaf_agent_decision("quest_generator.production_quest"),
+            QUEST_LLM_RESPONSE,
+        ]
+    )
     pipeline = AgentPipeline(llm=llm)
 
     response = pipeline.run(
@@ -59,7 +69,35 @@ def test_pipeline_routes_empty_quest_request_without_llm() -> None:
         sub_agent="quest_generator.production_quest",
     )
     assert len(response["payload"]["quests"]) == 5
-    assert llm.prompts == []
+    assert response["payload"]["quests"][0]["id"] == 1
+    assert response["payload"]["metadata"]["llm"] == "used"
+    assert len(llm.prompts) == 3
+    assert "Factory Space production quest selector." in llm.prompts[2]
+    assert '"selected_quest_ids":[1,2,3,4,5]' in llm.prompts[2]
+    assert "[AVAILABLE_QUESTS]" in llm.prompts[2]
+
+
+def test_pipeline_rejects_generated_quest_payload_for_production_quest() -> None:
+    pipeline = AgentPipeline(
+        llm=StubLLM(
+            [
+                top_agent_decision("quest_generator"),
+                leaf_agent_decision("quest_generator.production_quest"),
+                '{"quests":[]}',
+            ]
+        )
+    )
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-generated-quest-payload",
+            "agent": "quest_generator",
+        }
+    )
+
+    assert_agent_error(response, code="INVALID_LLM_RESPONSE")
+    assert response["agent"] == "quest_generator"
 
 
 def test_pipeline_uses_prompt_based_operator_guide_sub_agent_routing() -> None:

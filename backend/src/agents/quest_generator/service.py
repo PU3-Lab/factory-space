@@ -67,3 +67,30 @@ class QuestAgentService:
         selected_quests = self._rng.sample(_EXAMPLE_QUESTS, k=count)
         quests = [Quest.model_validate(quest) for quest in selected_quests]
         return QuestResponse(quests=quests).model_dump(mode="json")
+
+    def available_quest_json(self) -> list[dict[str, Any]]:
+        """Return the current prototype quest option pool."""
+
+        return [
+            Quest.model_validate(quest).model_dump(mode="json")
+            for quest in _EXAMPLE_QUESTS
+        ]
+
+    def generate_quest_json_from_ids(
+        self,
+        quest_ids: list[int],
+        count: int = 5,
+    ) -> dict[str, Any]:
+        """Return validated quests selected from the prototype option pool."""
+
+        if len(quest_ids) != count or len(set(quest_ids)) != count:
+            raise ValueError(f"Exactly {count} unique quest ids are required.")
+
+        quests_by_id = {quest["id"]: quest for quest in _EXAMPLE_QUESTS}
+        try:
+            selected_quests = [quests_by_id[quest_id] for quest_id in quest_ids]
+        except KeyError as exc:
+            raise ValueError(f"Unknown quest id: {exc.args[0]}") from exc
+
+        quests = [Quest.model_validate(quest) for quest in selected_quests]
+        return QuestResponse(quests=quests).model_dump(mode="json")

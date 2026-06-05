@@ -17,6 +17,8 @@ from tests.harness import (
     top_agent_decision,
 )
 
+QUEST_LLM_RESPONSE = '{"selected_quest_ids":[1,2,3,4,5]}'
+
 
 class BrokenFallbackAgent:
     agent_id = "process_optimizer"
@@ -897,7 +899,7 @@ def test_pipeline_routes_production_quest_from_llm_leaf_decision() -> None:
         [
             top_agent_decision("quest_generator"),
             leaf_agent_decision("quest_generator.production_quest"),
-            None,
+            QUEST_LLM_RESPONSE,
         ]
     )
     pipeline = AgentPipeline(llm=llm)
@@ -917,6 +919,10 @@ def test_pipeline_routes_production_quest_from_llm_leaf_decision() -> None:
     )
     assert len(response["payload"]["quests"]) == 5
     assert response["payload"]["quests"][0]["type"] == "production"
+    assert response["payload"]["quests"][0]["id"] == 1
+    assert response["payload"]["metadata"]["llm"] == "used"
+    assert "Factory Space production quest selector." in llm.prompts[2]
+    assert '"selected_quest_ids":[1,2,3,4,5]' in llm.prompts[2]
     assert "퀘스트 생성 도메인 오케스트레이터" in llm.prompts[1]
 
 
