@@ -15,6 +15,12 @@ namespace
 constexpr TCHAR AgentRequestType[] = TEXT("agent.request");
 constexpr TCHAR AgentResponseType[] = TEXT("agent.response");
 constexpr TCHAR AgentErrorType[] = TEXT("agent.error");
+constexpr TCHAR QuestGeneratorAgentId[] = TEXT("quest_generator");
+constexpr TCHAR OperatorGuideAgentId[] = TEXT("operator_guide");
+constexpr TCHAR QuestSampleRequestId[] = TEXT("request-quest-sample");
+constexpr TCHAR QuestSampleSessionId[] = TEXT("smoke-session");
+constexpr TCHAR QuestSampleClientId[] = TEXT("smoke-client");
+constexpr TCHAR OperatorGuideClientId[] = TEXT("unreal-ui-001");
 constexpr TCHAR DefaultSessionId[] = TEXT("dev-session");
 constexpr TCHAR DefaultClientId[] = TEXT("unreal-client");
 
@@ -165,6 +171,42 @@ bool UFactoryAgentClientSubsystem::SendJsonMessage(const FString& JsonMessage)
 	}
 
 	return SendRawMessage(WriteJsonObject(MessageObject));
+}
+
+bool UFactoryAgentClientSubsystem::SendQuestGeneratorRequest(
+	const FString& RequestId,
+	const FString& SessionId,
+	const FString& ClientId)
+{
+	const TSharedPtr<FJsonObject> RequestObject = MakeShared<FJsonObject>();
+	RequestObject->SetStringField(TEXT("type"), AgentRequestType);
+	RequestObject->SetStringField(TEXT("request_id"), RequestId.IsEmpty() ? QuestSampleRequestId : RequestId);
+	RequestObject->SetStringField(TEXT("session_id"), SessionId.IsEmpty() ? QuestSampleSessionId : SessionId);
+	RequestObject->SetStringField(TEXT("client_id"), ClientId.IsEmpty() ? QuestSampleClientId : ClientId);
+	RequestObject->SetStringField(TEXT("agent"), QuestGeneratorAgentId);
+
+	return SendRawMessage(WriteJsonObject(RequestObject));
+}
+
+bool UFactoryAgentClientSubsystem::SendOperatorGuideQuestion(const FString& Question, const FString& ClientId)
+{
+	const FString TrimmedQuestion = Question.TrimStartAndEnd();
+	if (TrimmedQuestion.IsEmpty())
+	{
+		LOG_LC_W(TEXT("Factory agent operator guide question is empty."));
+		return false;
+	}
+
+	const TSharedPtr<FJsonObject> PayloadObject = MakeShared<FJsonObject>();
+	PayloadObject->SetStringField(TEXT("question"), TrimmedQuestion);
+
+	const TSharedPtr<FJsonObject> RequestObject = MakeShared<FJsonObject>();
+	RequestObject->SetStringField(TEXT("type"), AgentRequestType);
+	RequestObject->SetStringField(TEXT("client_id"), ClientId.IsEmpty() ? OperatorGuideClientId : ClientId);
+	RequestObject->SetStringField(TEXT("agent"), OperatorGuideAgentId);
+	RequestObject->SetObjectField(TEXT("payload"), PayloadObject.ToSharedRef());
+
+	return SendRawMessage(WriteJsonObject(RequestObject));
 }
 
 bool UFactoryAgentClientSubsystem::SendRawMessage(const FString& RawMessage)
