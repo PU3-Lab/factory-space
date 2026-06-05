@@ -16,11 +16,20 @@ void UUI_MachineInteract::SetTargetMachine(AMachineBase* InMachine)
 void UUI_MachineInteract::NativeConstruct()
 {
     Super::NativeConstruct();
-    
+
     if (BTN_Close)
     {
         BTN_Close->OnClicked.AddDynamic(this, &UUI_MachineInteract::OnCloseClicked);
     }
+}
+
+void UUI_MachineInteract::NativeDestruct()
+{
+    // 모든 닫힘 경로를 한 곳에서 통지 — BTN_Close(OnCloseClicked→RemoveFromParent)든
+    // 외부 RemoveFromParent든 위젯 파괴 직전 1회 Broadcast. 기존 라인 무수정, 추가만.
+    OnClosed.Broadcast();
+
+    Super::NativeDestruct();
 }
 
 void UUI_MachineInteract::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)

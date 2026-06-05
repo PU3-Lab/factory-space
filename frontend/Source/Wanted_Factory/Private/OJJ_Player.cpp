@@ -653,8 +653,7 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 	// 토글 닫기: 뷰포트에 떠 있는 위젯이 있으면 닫는다.
 	// IsValid()에 더해 IsInViewport()까지 보는 이유 — 위젯이 자체 BTN_Close(RemoveFromParent)로
 	// 닫혀도 객체는 GC 전까지 살아 있어 IsValid()만으론 "열림"으로 오판하기 때문.
-	// ⚠️ 알려진 한계: 위젯 자체 닫기 경로에선 입력모드/커서 복원이 이 다음 F 입력까지 잔존한다
-	//    (위젯은 수정 금지라 닫힘을 플레이어에 통지하지 못함 — LDJ에 닫힘 델리게이트 요청 예정).
+	// (자체 닫기 시 입력모드/커서 즉시 복원은 위젯 OnClosed 델리게이트 → RestoreGameInputMode가 처리.)
 	if (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport())
 	{
 		CloseMachineInteractWidget(PC);
@@ -699,6 +698,8 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 		return;
 	}
 	Widget->AddToViewport();
+	// 위젯의 모든 닫힘 경로(특히 자체 BTN_Close) 통지 구독 — 닫히면 입력모드/커서 즉시 복원.
+	Widget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
 	// 머신 참조 전달 — 위젯의 모든 실데이터(입출력/상태/진행도/내구도) 표시가 이 참조에 의존.
 	Widget->SetTargetMachine(Machine);
 	MachineInteractWidgetInstance = Widget;
@@ -718,6 +719,29 @@ void AOJJ_Player::CloseMachineInteractWidget(APlayerController* PC)
 
 	// 닫을 때: 게임 전용 입력 복원 + 커서 숨김.
 	if (PC)
+	{
+		PC->SetInputMode(FInputModeGameOnly());
+		PC->SetShowMouseCursor(false);
+	}
+}
+
+void AOJJ_Player::RestoreGameInputMode()
+{
+	// 스테일 브로드캐스트 가드 — 우리가 위젯 A를 닫고 새 위젯 B를 연 사이에 A의 지연된
+	// NativeDestruct가 broadcast될 수 있다. 현재 살아있는 위젯이 열려 있으면 그 상태를 건드리지 않는다
+	// (B의 weak 포인터/GameAndUI를 망가뜨리지 않도록).
+	if (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport())
+	{
+		return;
+	}
+
+	// 멱등 — 우리 직접 닫기(CloseMachineInteractWidget)로 이미 복원된 뒤 지연 Destruct 브로드캐스트가
+	// 한 번 더 들어와도 사실상 no-op. weak 인스턴스 정리.
+	MachineInteractWidgetInstance = nullptr;
+
+	// ⚠️ pawn 소멸 중 위젯 Destruct로 재진입할 수 있어 컨트롤러 유효성 체크(무효면 복원 스킵 —
+	//    복원 대상 자체가 없으므로 안전).
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
 		PC->SetInputMode(FInputModeGameOnly());
 		PC->SetShowMouseCursor(false);

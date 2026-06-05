@@ -235,6 +235,12 @@ protected:
 	// 머신 상호작용 위젯을 닫고 입력모드/커서를 게임 전용으로 복원. weak 추적 인스턴스 정리.
 	void CloseMachineInteractWidget(class APlayerController* PC);
 
+	// 위젯 OnClosed 델리게이트 구독 핸들러 — 위젯의 모든 닫힘 경로(특히 자체 BTN_Close)에서
+	// 입력모드/커서를 즉시 복원. 멱등이며, 새 위젯이 이미 열려 있으면(이전 위젯의 지연 Destruct
+	// 브로드캐스트일 수 있어) no-op으로 살아있는 위젯 상태를 보호한다. AddDynamic 대상이라 UFUNCTION 필수.
+	UFUNCTION()
+	void RestoreGameInputMode();
+
 	// 좌클릭 뗌/취소 — 컨베이어 드래그 커밋/취소를 BuildController로 위임.
 	void BuildPlaceReleased(const FInputActionValue& Value);
 	void BuildPlaceCanceled(const FInputActionValue& Value);
