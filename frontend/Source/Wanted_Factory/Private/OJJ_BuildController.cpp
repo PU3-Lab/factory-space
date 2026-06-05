@@ -19,6 +19,7 @@
 #include "Machines/Grinder.h"
 #include "Machines/MinerMachine.h"
 #include "Machines/Pump.h"
+#include "Machines/Smelter.h"
 #include "OJJ_ProtectionTower.h"
 
 AOJJ_BuildController::AOJJ_BuildController()
@@ -37,6 +38,7 @@ AOJJ_BuildController::AOJJ_BuildController()
 	GrinderClass = AGrinder::StaticClass();
 	MinerClass = AMinerMachine::StaticClass();
 	PumpClass = APump::StaticClass();
+	SmelterClass = ASmelter::StaticClass();
 }
 
 void AOJJ_BuildController::Tick(float DeltaSeconds)
@@ -97,6 +99,11 @@ void AOJJ_BuildController::EnterBuildMode()
 	if (PlacementMode == EOJJ_BuildPlacementMode::Pump && !PumpClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] PumpClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::Smelter && !SmelterClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] SmelterClass missing. EnterBuildMode stopped."));
 		return;
 	}
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor && !ConveyorClass)
@@ -204,7 +211,8 @@ void AOJJ_BuildController::RotateHoverClockwise()
 			&& PlacementMode != EOJJ_BuildPlacementMode::PowerPlant
 			&& PlacementMode != EOJJ_BuildPlacementMode::Grinder
 			&& PlacementMode != EOJJ_BuildPlacementMode::Miner
-			&& PlacementMode != EOJJ_BuildPlacementMode::Pump))
+			&& PlacementMode != EOJJ_BuildPlacementMode::Pump
+			&& PlacementMode != EOJJ_BuildPlacementMode::Smelter))
 	{
 		return;
 	}
@@ -263,6 +271,11 @@ TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
 	if (PlacementMode == EOJJ_BuildPlacementMode::Pump)
 	{
 		return PumpClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::Smelter)
+	{
+		return SmelterClass;
 	}
 
 	return MachineClass;
@@ -554,6 +567,7 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::Grinder:   ModeName = TEXT("Grinder");    break;
 	case EOJJ_BuildPlacementMode::Miner:     ModeName = TEXT("Miner");      break;
 	case EOJJ_BuildPlacementMode::Pump:      ModeName = TEXT("Pump");       break;
+	case EOJJ_BuildPlacementMode::Smelter:   ModeName = TEXT("Smelter");    break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 
