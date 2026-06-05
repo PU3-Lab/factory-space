@@ -110,6 +110,16 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Grid")
 	FIntPoint GridPosision;
 
+	// 메시 스케일 미세조정 배율. 바운즈 정규화(footprint 자동 정합) 결과에 곱해진다.
+	// 기본 (1,1,1) = 정규화 그대로. 셀을 살짝 넘치거나 줄이는 머신별 연출 보정용.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Mesh")
+	FVector MeshScaleMultiplier = FVector(1.0f, 1.0f, 1.0f);
+
+	// 셀 한 칸의 월드 크기(uu). ★ AOJJ_Grid::CellSize(=100)와 반드시 동기화 ★ — 메시 바운즈를
+	// footprint(GridSize × 이 값)에 정규화하는 데 사용. core(MachineBase)가 OJJ_Grid 헤더에
+	// 역의존하지 않도록 상수로 둔다(양쪽 주석으로 동기화 명시).
+	static constexpr float MeshFitCellWorld = 100.0f;
+
 	// 입력 포트 개수
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Ports", meta = (ClampMin = "0"))
 	int32 InputPortCount;
@@ -242,6 +252,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Machine Settings")
 	int32 GetOutputPortCount() const { return OutputPortCount; }
 
+	// 배치 Z(바닥 안착) 계산 등에서 메시 로컬 바운즈/월드스케일을 읽기 위한 접근자.
+	UStaticMeshComponent* GetMeshComponent() const { return MeshComponent; }
+
 	// 설치 가능 여부
 	UFUNCTION(BlueprintCallable)
 	virtual bool CanPlace();
@@ -340,11 +353,21 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Machine | Durability")
 	float GetCurrentDurability() const { return CurrentDurability; }
 	
+	// 파워 (전력)
 	UFUNCTION(BlueprintCallable, Category = "Machine | Power")
 	void SetProvidedPower(float NewPower);
 	
 	UFUNCTION(BlueprintPure, Category = "Machine | Power")
 	bool HasEnoughPower() const;
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Power")
+	bool NeedsPower() const { return bNeedPower; }
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Power")
+	float GetPowerConsumption() const { return PowerConsumption; }
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Power")
+	float GetCurrentProvidedPower() const { return CurrentProvidedPower; }
 	
 	UFUNCTION(BlueprintCallable, Category = "Machine | State")
 	void RefreshMachineState();

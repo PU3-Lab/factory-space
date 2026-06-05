@@ -97,6 +97,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_Zoom;
 
+	// 스프린트(Shift). IMC_Player에 매핑 → 일반 이동에서만 동작. 누름=달리기/뗌=걷기.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_Sprint;
+
 	// 빌드모드 토글(B키). 레벨의 BuildController로 위임.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_Build;
@@ -124,6 +128,30 @@ protected:
 	// 빌드모드 배치 모드 전환 — 컨베이어 모드(예: 2키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_SetConveyorMode;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetPowerNodeMode;
+
+	// 빌드모드 배치 모드 전환 — 차폐장(예: 8키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetShieldMode;
+
+	// 빌드모드 배치 모드 전환 — 전선 드래그(예: - 키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetPowerLineMode;
+
+	// 빌드모드 배치 모드 전환 — 발전소(예: 7키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetPowerPlantMode;
+
+	// --- 이동 속도 ---
+	// 평상시 걷기 속도. BeginPlay에서 MaxWalkSpeed의 권위 있는 초기값으로 적용(BP CharacterMovement 기본값 덮음).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (ClampMin = "0.0"))
+	float WalkSpeed = 250.f;
+
+	// 스프린트(Shift) 중 속도.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (ClampMin = "0.0"))
+	float SprintSpeed = 600.f;
 
 	// --- Build mode 연동 ---
 	// 레벨에 배치된 BuildController 인스턴스. BeginPlay에서 GetActorOfClass로 캐시(소유 X, spawn X).
@@ -162,6 +190,14 @@ protected:
 	// 배치 모드 전환 — BuildController->SetPlacementMode로 위임.
 	void SetMachineMode(const FInputActionValue& Value);
 	void SetConveyorMode(const FInputActionValue& Value);
+	void SetPowerNodeMode(const FInputActionValue& Value);
+	void SetShieldMode(const FInputActionValue& Value);
+	void SetPowerLineMode(const FInputActionValue& Value);
+	void SetPowerPlantMode(const FInputActionValue& Value);
+
+	// 스프린트 — Started=달리기 속도, Completed=걷기 속도로 복귀.
+	void StartSprint(const FInputActionValue& Value);
+	void StopSprint(const FInputActionValue& Value);
 
 	// 빌드모드 상태에 맞춰 카메라 뷰타겟/플레이어 가시성을 전환. BuildController가 단일 진실원이므로
 	// ToggleBuild에서 IsInBuildMode() 결과(bEntering)를 받아 호출한다. (3b에서 IMC 교체 추가 예정)

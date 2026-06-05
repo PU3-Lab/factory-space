@@ -6,6 +6,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "Engine/StaticMesh.h"
+#include "FactoryManagerSubsystem.h"
 #include "MachineBase.h"
 #include "Materials/MaterialInterface.h"
 #include "TimerManager.h"
@@ -127,7 +128,28 @@ void AConveyor::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
+		{
+			FactoryManager->RegisterConveyor(this);
+		}
+	}
+
 	RestartItemMoveTimer();
+}
+
+void AConveyor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
+		{
+			FactoryManager->UnregisterConveyor(this);
+		}
+	}
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void AConveyor::SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize)
@@ -163,6 +185,13 @@ void AConveyor::ConfigureTransport(
 	ResetItemSlots();
 	RestartItemMoveTimer();
 	UpdateDebugStateText();
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
+		{
+			FactoryManager->NotifyConveyorChanged(this);
+		}
+	}
 
 	UE_LOG(
 		LogTemp,
@@ -182,6 +211,13 @@ void AConveyor::ClearPath()
 	StopItemMoveTimer();
 	RebuildVisuals();
 	UpdateDebugStateText();
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
+		{
+			FactoryManager->NotifyConveyorChanged(this);
+		}
+	}
 }
 
 bool AConveyor::IsOutputBlocked() const
