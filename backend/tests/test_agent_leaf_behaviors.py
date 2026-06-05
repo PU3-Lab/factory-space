@@ -107,6 +107,9 @@ def test_operator_guide_leaf_agents_return_normalized_fallbacks(
     result = agent.fallback(payload, context)
 
     assert expected_prompt in prompt
+    assert "friendly tutorial NPC" in prompt
+    assert "[CSV_EVIDENCE]" in prompt
+    assert "[OUTPUT_CONTRACT]" in prompt
     assert result.agent == "operator_guide"
     assert result.payload["question"] == "How does this work?"
     assert result.payload["topic"] == expected_topic

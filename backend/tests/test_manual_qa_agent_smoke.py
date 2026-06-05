@@ -131,30 +131,38 @@ def test_manual_qa_agent_unknown_question_does_not_hallucinate() -> None:
     assert response["question_type"] == "unknown_question"
     assert response["sources"] == []
     assert response["confidence"] == "low"
-    assert "현재 매뉴얼 데이터에서 확인할 수 없습니다" in response["answer"]
+    assert "manual data" in response["answer"]
 
 
-def test_manual_qa_troubleshooting_answer_is_player_friendly() -> None:
+def test_manual_qa_troubleshooting_fallback_keeps_csv_metadata() -> None:
     response = answer_manual_qa("제련기가 왜 안 돌아가?")
 
     assert response["question_type"] == "troubleshooting_question"
-    assert "멈췄군요" in response["final_answer"]
-    assert "전력이 제대로 들어오는지" in response["final_answer"]
-    assert "철광석" in response["final_answer"]
-    assert "컨베이어나 저장고" in response["final_answer"]
-    assert "check_power" not in response["final_answer"]
+    assert "LLM answer unavailable" in response["final_answer"]
+    source_ids = {source["doc_id"] for source in response["sources"]}
+    assert {"issue_machine_stopped", "equipment_smelter"} <= source_ids
+    action_ids = {action["action_id"] for action in response["recommended_actions"]}
+    assert {
+        "action_check_power",
+        "action_check_input_resource",
+        "action_check_storage",
+    } <= action_ids
 
 
-def test_manual_qa_answers_use_conversational_guidance() -> None:
+def test_manual_qa_fallback_does_not_build_rule_based_template_answers() -> None:
     equipment_response = answer_manual_qa("제련기는 뭐야?")
     recipe_response = answer_manual_qa("기어 만들려면 뭐가 필요해?")
     unknown_response = answer_manual_qa("우주 엘리베이터는 어떻게 업그레이드해?")
 
-    assert equipment_response["final_answer"].startswith("좋아요.")
-    assert "먼저 확인해보세요" in equipment_response["final_answer"]
-    assert recipe_response["final_answer"].startswith("좋아요.")
-    assert "확인해볼까요" in recipe_response["final_answer"]
-    assert "예를 들면" in unknown_response["final_answer"]
+    assert equipment_response["final_answer"] == (
+        "LLM answer unavailable. Please check the matched manual evidence."
+    )
+    assert recipe_response["final_answer"] == (
+        "LLM answer unavailable. Please check the matched manual evidence."
+    )
+    assert unknown_response["final_answer"] == (
+        "LLM answer unavailable. No matching manual data was found."
+    )
 
 
 def test_manual_qa_answers_use_formal_tone() -> None:
@@ -162,8 +170,6 @@ def test_manual_qa_answers_use_formal_tone() -> None:
         response = answer_manual_qa(case["question"])
 
         assert "한다" not in response["final_answer"]
-        for action in response["recommended_actions"]:
-            assert "한다" not in action["description"]
 
 
 def test_manual_qa_csv_paths_work_outside_project_root(

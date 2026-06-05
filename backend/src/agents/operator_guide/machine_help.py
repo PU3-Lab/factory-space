@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from agents.base import AgentContext, AgentRunResult
-from agents.operator_guide.service import build_manual_qa_agent_result
+from agents.operator_guide.service import (
+    build_manual_qa_agent_result,
+    build_manual_qa_prompt,
+)
 
 
 class MachineHelpAgent:
@@ -15,7 +18,12 @@ class MachineHelpAgent:
     tools = ()
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
-        return f"다음 설비 도움말 질문에 답변하세요: {payload}"
+        question = str(payload.get("question") or payload.get("message") or "")
+        return build_manual_qa_prompt(
+            question,
+            topic="machine",
+            sub_agent=self.agent_id,
+        )
 
     def fallback(
         self,

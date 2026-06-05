@@ -89,17 +89,21 @@ def test_pipeline_uses_prompt_based_operator_guide_sub_agent_routing() -> None:
     assert "[OUTPUT_CONTRACT]" in llm.prompts[1]
 
 
-def test_pipeline_operator_guide_fallback_returns_manual_qa_csv_answer() -> None:
-    response, _llm = run_pipeline_scenario(
+def test_pipeline_operator_guide_uses_llm_prompt_with_manual_csv_evidence() -> None:
+    response, llm = run_pipeline_scenario(
         PipelineScenario(
-            name="operator guide manual qa csv fallback",
+            name="operator guide manual qa llm answer",
             agent="operator_guide",
             payload={"question": "제련기는 뭐야?"},
             request_id="request-operator-guide-manual-qa",
             llm_responses=[
                 top_agent_decision("operator_guide"),
                 leaf_agent_decision("operator_guide.machine_help"),
-                None,
+                (
+                    '{"final_answer":"LLM tutorial answer from CSV evidence.",'
+                    '"actions":[],"question":"제련기는 뭐야?",'
+                    '"topic":"machine"}'
+                ),
             ],
         )
     )
@@ -109,24 +113,15 @@ def test_pipeline_operator_guide_fallback_returns_manual_qa_csv_answer() -> None
         agent="operator_guide",
         sub_agent="operator_guide.machine_help",
     )
-    assert response["payload"]["final_answer"].startswith("좋아요.")
-    assert "제련기는 광석을 금속 자원으로 변환하는 생산 장비입니다" in (
-        response["payload"]["final_answer"]
-    )
-    assert "컨베이어 연결 상태를 먼저 확인해보세요" in (
-        response["payload"]["final_answer"]
-    )
+    assert response["payload"]["final_answer"] == "LLM tutorial answer from CSV evidence."
+    assert response["payload"]["actions"] == []
     assert "answer" not in response["payload"]
     assert "text" not in response["payload"]
-    assert response["payload"]["actions"] == []
-    metadata = response["payload"]["metadata"]
-    assert metadata["question_type"] == "equipment_question"
-    assert metadata["sources"][0]["doc_id"] == "equipment_smelter"
-    assert metadata["recommended_actions"][0]["action_id"] == (
-        "action_explain_equipment_role"
-    )
-    assert metadata["fallback"] is True
-    assert metadata["sub_agent"] == "operator_guide.machine_help"
+    assert "friendly tutorial NPC" in llm.prompts[2]
+    assert "[CSV_EVIDENCE]" in llm.prompts[2]
+    assert "equipment_smelter" in llm.prompts[2]
+    assert "action_explain_equipment_role" in llm.prompts[2]
+    assert "[OUTPUT_CONTRACT]" in llm.prompts[2]
 
 
 def test_pipeline_routes_explicit_agent_through_top_level_prompt() -> None:
