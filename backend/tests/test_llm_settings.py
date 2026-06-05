@@ -45,6 +45,7 @@ def test_llm_settings_uses_google_default_model_and_key_priority() -> None:
     settings = LLMSettings.from_env(
         {
             "FACTORY_LLM_DEFAULT_PROVIDER": "google",
+            "FACTORY_LLM_DEFAULT_MODEL": "gemini-2.5-flash",
             "FACTORY_LLM_DEFAULT_API_KEY": "slot-key",
             "GEMINI_API_KEY": "gemini-key",
             "GOOGLE_API_KEY": "google-key",
@@ -57,12 +58,23 @@ def test_llm_settings_uses_google_default_model_and_key_priority() -> None:
     settings = LLMSettings.from_env(
         {
             "FACTORY_LLM_DEFAULT_PROVIDER": "google",
+            "FACTORY_LLM_DEFAULT_MODEL": "gemini-2.5-flash",
             "GEMINI_API_KEY": "gemini-key",
             "GOOGLE_API_KEY": "google-key",
         }
     )
 
     assert settings.default.api_key == "gemini-key"
+
+
+def test_llm_settings_requires_google_model() -> None:
+    with pytest.raises(ValueError, match="requires FACTORY_LLM_DEFAULT_MODEL"):
+        LLMSettings.from_env(
+            {
+                "FACTORY_LLM_DEFAULT_PROVIDER": "google",
+                "GEMINI_API_KEY": "gemini-key",
+            }
+        )
 
 
 def test_llm_settings_requires_openai_model_and_uses_openai_key() -> None:
