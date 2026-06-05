@@ -83,16 +83,20 @@ backend는 단일 `payload.quest`가 아니라 `payload.quests` 배열을 반환
 
 ## 예제 퀘스트 풀
 
-초기 예제 퀘스트는 6개입니다.
+초기 예제 퀘스트는 CSV item id를 참고한 10개입니다.
 
 - `1`: 철광석 10개 채굴
 - `2`: 구리광석 8개 채굴
-- `3`: 철판 5개 생산
-- `4`: 구리선 12개 생산
-- `5`: 석탄 6개 확보
-- `6`: 기어 4개 제작
+- `3`: 석탄 6개 확보
+- `4`: 목재 8개 확보
+- `5`: 철괴 5개 제련
+- `6`: 구리괴 5개 제련
+- `7`: 철가루 6개 분쇄
+- `8`: 구리가루 6개 분쇄
+- `9`: 목탄 4개 제작
+- `10`: 석탄가루 4개 분쇄
 
-서비스는 이 6개 중 중복 없이 5개를 랜덤으로 선택해 반환합니다.
+서비스는 이 10개 중 중복 없이 5개를 랜덤으로 선택해 반환합니다.
 
 ## 구현 계획
 
@@ -129,7 +133,7 @@ backend는 단일 `payload.quest`가 아니라 `payload.quests` 배열을 반환
 
 - [x] 클라이언트가 보내는 `game_state` 의존을 제거합니다.
 - [x] 서버 내부 예제 퀘스트 풀을 추가합니다.
-- [x] 예제 6개 중 5개를 랜덤 선택합니다.
+- [x] 예제 10개 중 5개를 랜덤 선택합니다.
 - [x] 선택된 퀘스트를 Pydantic으로 검증합니다.
 - [x] `model_dump(mode="json")`으로 JSON 직렬화 가능한 dict를 반환합니다.
 - [x] `ProductionQuestAgent.fallback()`이 변경된 서비스를 호출하도록 연결합니다.
@@ -197,7 +201,7 @@ backend는 단일 `payload.quest`가 아니라 `payload.quests` 배열을 반환
 | quest id는 정수형이어야 함 | 충족 | service 테스트, 직접 WebSocket smoke assertion |
 | objective에서 action 제거 | 충족 | schema, service 테스트 |
 | objective에서 이름 제거, id만 유지 | 충족 | schema, service 테스트 |
-| 예제 퀘스트 풀은 6개 | 충족 | `QuestAgentService` 예제 풀 |
+| 예제 퀘스트 풀은 10개 | 충족 | `QuestAgentService` 예제 풀 |
 | 지원 quest leaf Agent는 production/economy만 노출해야 함 | 충족 | `QUEST_SUB_AGENT_IDS`, manifest, router contract 테스트 |
 | 제거된 tutorial/exploration sub-agent 요청은 거부해야 함 | 충족 | `test_removed_quest_sub_agents_are_rejected` |
 | 기존 라우팅 경로가 깨지지 않아야 함 | 충족 | 전체 backend 테스트 |

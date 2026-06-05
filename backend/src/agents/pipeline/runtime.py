@@ -39,6 +39,7 @@ from agents.pipeline.utils import (
     run_fallback,
 )
 from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS, QuestGeneratorAgent
+from agents.quest_generator.tools import PRODUCTION_QUEST_SELECTION_TOOL_NAME
 from agents.router import AgentRouter, UnknownAgentError, create_default_agent_router
 from cache.response_cache import ResponseCache
 from llm.adapter import LLMAdapter, create_llm_adapter
@@ -175,8 +176,6 @@ class AgentPipeline:
             envelope = state["envelope"]
             context = state["context"]
             payload = state["typedPayload"]
-            if envelope.agent == "quest_generator" and not payload:
-                return {"selectedAgent": "quest_generator"}
 
             routing_prompt = orchestrator.build_routing_prompt(
                 payload,
@@ -246,12 +245,6 @@ class AgentPipeline:
 
         def route_quest_sub_agent(state: AgentGraphState) -> AgentGraphState:
             explicit_sub_agent = state["typedPayload"].get("sub_agent")
-            if explicit_sub_agent is None and not state["typedPayload"]:
-                return {
-                    "selectedLeafAgent": "quest_generator.production_quest",
-                    "skipLlm": True,
-                }
-
             if explicit_sub_agent is not None:
                 if (
                     isinstance(explicit_sub_agent, str)
@@ -364,6 +357,18 @@ class AgentPipeline:
                         "LLM response must be a JSON object.",
                     )
                 }
+
+            if state.get("selectedLeafAgent") == "quest_generator.production_quest":
+                if not _has_successful_tool_call(
+                    state,
+                    PRODUCTION_QUEST_SELECTION_TOOL_NAME,
+                ):
+                    return {
+                        "error": build_error_payload(
+                            "INVALID_LLM_RESPONSE",
+                            "퀘스트 LLM 응답은 production quest 선택 tool을 먼저 호출해야 합니다.",
+                        )
+                    }
 
             metadata = {"llm": "used"}
             if state.get("llmSlot"):
@@ -513,6 +518,13 @@ class AgentPipeline:
 
         wire_agent_graph(graph)
         return graph.compile()
+
+
+def _has_successful_tool_call(state: AgentGraphState, tool_name: str) -> bool:
+    return any(
+        tool_call.get("name") == tool_name and tool_call.get("ok") is True
+        for tool_call in state.get("toolCalls", [])
+    )
 
 
 def run_agent_pipeline(message: AgentRequestEnvelope | dict[str, Any]) -> dict[str, Any]:
