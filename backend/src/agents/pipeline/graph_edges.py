@@ -48,7 +48,6 @@ def wire_agent_graph(graph: StateGraph) -> None:
             route_selected_leaf_agent,
             {
                 "valid": "cache_lookup",
-                "direct": "agent.middleware.fallback",
                 "error": "build_agent_error",
             },
         )
@@ -143,7 +142,7 @@ def route_cache_result(state: AgentGraphState) -> Literal["hit", "miss"]:
 
 def route_selected_leaf_agent(
     state: AgentGraphState,
-) -> Literal["valid", "direct", "error"]:
+) -> Literal["valid", "error"]:
     if state.get("error"):
         return "error"
 
@@ -155,8 +154,6 @@ def route_selected_leaf_agent(
         "quest_generator": QUEST_SUB_AGENT_IDS,
     }.get(selected_agent, ())
     if selected_leaf_agent in allowed_leaf_agent_ids:
-        if state.get("skipLlm"):
-            return "direct"
         return "valid"
     return "error"
 

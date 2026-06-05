@@ -1,4 +1,4 @@
-"""LangGraph ToolNode helpers for provider-neutral tool calls."""
+"""LLM이 요청한 도구 호출을 LangGraph ToolNode가 이해하는 모양으로 바꾸는 파일입니다."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def build_agent_tool_node(router: AgentRouter) -> ToolNode:
-    """Build a ToolNode from all tools exposed by registered agents."""
+    """등록된 에이전트들의 도구 목록을 받아 LangGraph에서 실행할 ToolNode를 만듭니다."""
 
     return ToolNode(
         [
@@ -42,7 +42,7 @@ def build_agent_tool_node(router: AgentRouter) -> ToolNode:
 
 
 def is_tool_request(raw: str | None) -> bool:
-    """Return whether raw model output is a provider-neutral tool call."""
+    """LLM 원문 응답을 받아 tool_call JSON인지 True/False로 알려줍니다."""
 
     if not raw:
         return False
@@ -53,7 +53,7 @@ def is_tool_request(raw: str | None) -> bool:
 def build_tool_node_input(
     router: AgentRouter,
 ) -> Callable[[AgentGraphState], AgentGraphState]:
-    """Convert a provider-neutral tool call into ToolNode message input."""
+    """도구 호출 JSON을 받아 ToolNode에 넘길 메시지와 도구 인자를 만드는 함수를 반환합니다."""
 
     def prepare(state: AgentGraphState) -> AgentGraphState:
         parsed = _parse_json_object(state.get("llmRaw"))
@@ -122,7 +122,7 @@ def build_tool_node_input(
 
 
 def build_tool_followup_prompt(state: AgentGraphState) -> AgentGraphState:
-    """Build the one-shot follow-up prompt after ToolNode execution."""
+    """도구 실행 결과를 받아 LLM이 최종 답변을 만들 수 있는 후속 프롬프트를 만듭니다."""
 
     tool_messages = [
         message
@@ -155,7 +155,7 @@ def build_tool_followup_prompt(state: AgentGraphState) -> AgentGraphState:
 
 
 def append_tool_metadata(state: AgentGraphState) -> dict[str, Any]:
-    """Return response metadata additions for completed tool calls."""
+    """완료된 도구 호출 목록을 응답 metadata에 넣을 dict 형태로 반환합니다."""
 
     tool_calls = state.get("toolCalls")
     if not tool_calls:
@@ -190,7 +190,7 @@ def _wrap_agent_tool(router: AgentRouter, tool_name: str) -> StructuredTool:
         state: Annotated[AgentGraphState, InjectedState],
         tool_args: dict[str, Any] | None = None,
     ) -> object:
-        """Run an agent tool against the current graph state."""
+        """현재 선택된 에이전트와 도구 인자를 받아 실제 에이전트 도구를 실행합니다."""
 
         agent = router.get(state.get("selectedLeafAgent", ""))
         agent_tool = next(
@@ -228,7 +228,7 @@ def _wrap_agent_tool(router: AgentRouter, tool_name: str) -> StructuredTool:
     return StructuredTool.from_function(
         func=invoke_agent_tool,
         name=tool_name,
-        description=f"Read-only context tool: {tool_name}",
+        description=f"에이전트가 참고 자료나 DB 조회처럼 읽기 용도로 사용하는 도구입니다: {tool_name}",
     )
 
 
@@ -237,7 +237,7 @@ def _invalid_tool_call() -> StructuredTool:
         state: Annotated[AgentGraphState, InjectedState],
         tool_args: dict[str, Any] | None = None,
     ) -> object:
-        """Return a normalized invalid tool call result."""
+        """잘못된 도구 호출을 받아 모든 에이전트가 이해할 수 있는 오류 dict로 바꿉니다."""
 
         return {
             "status": "error",
@@ -248,7 +248,7 @@ def _invalid_tool_call() -> StructuredTool:
     return StructuredTool.from_function(
         func=invoke_invalid_tool_call,
         name=_INVALID_TOOL_CALL_NAME,
-        description="Normalize invalid provider-neutral tool calls.",
+        description="잘못된 tool_call 요청을 표준 오류 응답으로 바꿉니다.",
     )
 
 
@@ -257,7 +257,7 @@ def _tool_not_allowed() -> StructuredTool:
         state: Annotated[AgentGraphState, InjectedState],
         tool_args: dict[str, Any] | None = None,
     ) -> object:
-        """Return a normalized denied tool result."""
+        """허용되지 않은 도구 요청을 받아 표준 권한 오류 dict로 바꿉니다."""
 
         return {
             "status": "error",
@@ -271,7 +271,7 @@ def _tool_not_allowed() -> StructuredTool:
     return StructuredTool.from_function(
         func=invoke_tool_not_allowed,
         name=_TOOL_NOT_ALLOWED_NAME,
-        description="Normalize denied provider-neutral tool calls.",
+        description="선택된 에이전트가 사용할 수 없는 도구 요청을 표준 오류 응답으로 바꿉니다.",
     )
 
 
