@@ -222,6 +222,18 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	{
 		EnhancedInput->BindAction(IA_SetPowerPlantMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerPlantMode);
 	}
+	if (IA_SetGrinderMode)
+	{
+		EnhancedInput->BindAction(IA_SetGrinderMode, ETriggerEvent::Started, this, &AOJJ_Player::SetGrinderMode);
+	}
+	if (IA_SetMinerMode)
+	{
+		EnhancedInput->BindAction(IA_SetMinerMode, ETriggerEvent::Started, this, &AOJJ_Player::SetMinerMode);
+	}
+	if (IA_SetPumpMode)
+	{
+		EnhancedInput->BindAction(IA_SetPumpMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPumpMode);
+	}
 	if (IA_BuildPan)
 	{
 		// 매 프레임 입력(연속 이동) → Triggered
@@ -478,6 +490,33 @@ void AOJJ_Player::SetPowerPlantMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerPlant);
+}
+
+void AOJJ_Player::SetGrinderMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Grinder);
+}
+
+void AOJJ_Player::SetMinerMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Miner);
+}
+
+void AOJJ_Player::SetPumpMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pump);
 }
 
 void AOJJ_Player::StartSprint(const FInputActionValue& Value)

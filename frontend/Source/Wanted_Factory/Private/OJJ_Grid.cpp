@@ -500,6 +500,16 @@ AMachineBase* AOJJ_Grid::GetMachineAtCell(FIntPoint Cell) const
 	return nullptr;
 }
 
+AActor* AOJJ_Grid::GetActorAtCell(FIntPoint Cell) const
+{
+	if (const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell))
+	{
+		// Get()은 유효하면 actor ptr, GC됐으면 nullptr. Cast 없이 점유 액터를 그대로 반환.
+		return Found->Get();
+	}
+	return nullptr;
+}
+
 bool AOJJ_Grid::IsCellOccupied(FIntPoint Cell) const
 {
 	// AActor 점유 기준 — 유효한 점유 액터가 있으면 true (컨베이어 셀도 true).
@@ -984,6 +994,13 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 R
 		}
 	}
 
+	// 머신별 추가 제약(인접 광맥/수원 등). 그리드는 머신 종류를 모른 채 위임만 — 머신이 오버라이드.
+	// 호버(UpdateHoverPreview)·배치(RegisterMachineInternal) 모두 이 함수를 거치므로 색 판정과 실제 배치가 일치.
+	if (!Machine->CanPlaceAdditional(this, Origin, RotationSteps))
+	{
+		return false;
+	}
+
 	return true;
 }
 
@@ -1073,6 +1090,9 @@ bool AOJJ_Grid::TryPlaceMachine(AMachineBase* Machine, FIntPoint Origin, FString
 		}
 	}
 
+	// 배치 확정 훅 — 자원 선점 등(채굴기/펌프). SetActorLocation 성공 이후라 머신 위치도 최종 상태.
+	Machine->OnPlacedOnGrid(this, Origin, RotationSteps);
+
 	return true;
 }
 
@@ -1102,7 +1122,15 @@ bool AOJJ_Grid::RegisterExistingMachine(AMachineBase* Machine, FIntPoint Origin,
 		}
 	}
 
-	return RegisterMachineInternal(Machine, Origin, OutReason);
+	if (!RegisterMachineInternal(Machine, Origin, OutReason))
+	{
+		return false;
+	}
+
+	// 사전 배치 머신도 배치 확정 훅을 받아야 자원 선점 등이 일관되게 동작(TryPlaceMachine과 대칭).
+	// 회전 step은 사전 배치 경로에 없으므로 0.
+	Machine->OnPlacedOnGrid(this, Origin, 0);
+	return true;
 }
 
 void AOJJ_Grid::SetVisualizationVisible(bool bVisible)
@@ -1195,6 +1223,9 @@ bool AOJJ_Grid::RemoveMachine(AMachineBase* Machine)
 	{
 		return false;
 	}
+
+	// 제거 직전 훅 — 자원 선점 해제 등. (자원 상태만 건드리고 그리드 맵은 안 건드리므로 Cells 포인터 유효 유지.)
+	Machine->OnRemovedFromGrid();
 
 	for (const FIntPoint& Cell : *Cells)
 	{

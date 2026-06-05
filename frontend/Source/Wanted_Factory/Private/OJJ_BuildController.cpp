@@ -15,6 +15,9 @@
 #include "Machines/PowerGridNode.h"
 #include "Machines/PowerLine.h"
 #include "Machines/PowerPlant.h"
+#include "Machines/Grinder.h"
+#include "Machines/MinerMachine.h"
+#include "Machines/Pump.h"
 #include "OJJ_ProtectionTower.h"
 
 AOJJ_BuildController::AOJJ_BuildController()
@@ -30,6 +33,9 @@ AOJJ_BuildController::AOJJ_BuildController()
 	PowerGridNodeClass = APowerGridNode::StaticClass();
 	ShieldClass = AOJJ_ProtectionTower::StaticClass();
 	PowerPlantClass = APowerPlant::StaticClass();
+	GrinderClass = AGrinder::StaticClass();
+	MinerClass = AMinerMachine::StaticClass();
+	PumpClass = APump::StaticClass();
 }
 
 void AOJJ_BuildController::Tick(float DeltaSeconds)
@@ -75,6 +81,21 @@ void AOJJ_BuildController::EnterBuildMode()
 	if (PlacementMode == EOJJ_BuildPlacementMode::PowerPlant && !PowerPlantClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] PowerPlantClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::Grinder && !GrinderClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] GrinderClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::Miner && !MinerClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] MinerClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::Pump && !PumpClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] PumpClass missing. EnterBuildMode stopped."));
 		return;
 	}
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor && !ConveyorClass)
@@ -179,7 +200,10 @@ void AOJJ_BuildController::RotateHoverClockwise()
 		|| (PlacementMode != EOJJ_BuildPlacementMode::Machine
 			&& PlacementMode != EOJJ_BuildPlacementMode::PowerNode
 			&& PlacementMode != EOJJ_BuildPlacementMode::Shield
-			&& PlacementMode != EOJJ_BuildPlacementMode::PowerPlant))
+			&& PlacementMode != EOJJ_BuildPlacementMode::PowerPlant
+			&& PlacementMode != EOJJ_BuildPlacementMode::Grinder
+			&& PlacementMode != EOJJ_BuildPlacementMode::Miner
+			&& PlacementMode != EOJJ_BuildPlacementMode::Pump))
 	{
 		return;
 	}
@@ -223,6 +247,21 @@ TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
 	if (PlacementMode == EOJJ_BuildPlacementMode::PowerPlant)
 	{
 		return PowerPlantClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::Grinder)
+	{
+		return GrinderClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::Miner)
+	{
+		return MinerClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::Pump)
+	{
+		return PumpClass;
 	}
 
 	return MachineClass;
@@ -505,6 +544,9 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::PowerLine: ModeName = TEXT("PowerLine"); break;
 	case EOJJ_BuildPlacementMode::Shield:    ModeName = TEXT("Shield");    break;
 	case EOJJ_BuildPlacementMode::PowerPlant: ModeName = TEXT("PowerPlant"); break;
+	case EOJJ_BuildPlacementMode::Grinder:   ModeName = TEXT("Grinder");    break;
+	case EOJJ_BuildPlacementMode::Miner:     ModeName = TEXT("Miner");      break;
+	case EOJJ_BuildPlacementMode::Pump:      ModeName = TEXT("Pump");       break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 
