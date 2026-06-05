@@ -110,6 +110,17 @@ void AOJJ_Player::BeginPlay()
 		UE_LOG(LogTemp, Warning,
 			TEXT("[OJJ_Player] AOJJ_BuildCamera spawn 실패 — 빌드모드 탑다운 전환 비활성."));
 	}
+	
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (PC && MainHUDWidgetClass)
+	{
+		MainHUDWidgetInstance = CreateWidget<UUserWidget>(PC, MainHUDWidgetClass);
+		if (MainHUDWidgetInstance)
+		{
+			MainHUDWidgetInstance->AddToViewport();
+		}
+	}
+	
 	ConnectFactoryAgentClient();
 }
 
@@ -335,6 +346,12 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 				TEXT("[OJJ_Player] IMC_Build 미할당 — 빌드모드 Look 차단 불가(IMC_Player 유지). ")
 				TEXT("BP_OJJ_Player에 IMC_Build 할당 필요."));
 		}
+		
+		if (MainHUDWidgetInstance)
+		{
+			MainHUDWidgetInstance->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		
 		if (PC && BuildModeWidgetClass && !BuildModeWidgetInstance)
 		{
 			BuildModeWidgetInstance = CreateWidget<UUserWidget>(PC, BuildModeWidgetClass);
@@ -368,8 +385,11 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 		}
 		if (BuildModeWidgetInstance)
 		{
-			BuildModeWidgetInstance->RemoveFromParent();
-			BuildModeWidgetInstance = nullptr;
+			BuildModeWidgetInstance->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		if (MainHUDWidgetInstance)
+		{
+			MainHUDWidgetInstance->SetVisibility(ESlateVisibility::Visible);
 		}
 	}
 }
