@@ -65,6 +65,7 @@ struct FQuestState
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMainQuestChanged, const FQuestState&, Quest);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSubQuestRequestStarted, const FString&, RequestId, const FString&, Agent);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSubQuestsGenerated, const FString&, RequestId, const TArray<FQuestState>&, Quests);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSubQuestTitlesUpdated, const FString&, RequestId, const TArray<FString>&, Titles);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSubQuestRequestFailed, const FString&, RequestId, const FString&, ErrorMessage);
 
 UCLASS()
@@ -91,6 +92,9 @@ public:
 	FOnSubQuestsGenerated OnSubQuestsGenerated;
 
 	UPROPERTY(BlueprintAssignable, Category = "Quest|Sub")
+	FOnSubQuestTitlesUpdated OnSubQuestTitlesUpdated;
+
+	UPROPERTY(BlueprintAssignable, Category = "Quest|Sub")
 	FOnSubQuestRequestFailed OnSubQuestRequestFailed;
 
 	UFUNCTION(BlueprintPure, Category = "Quest|Main")
@@ -111,6 +115,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Quest|Sub")
 	void GetSubQuests(TArray<FQuestState>& OutQuests) const;
 
+	UFUNCTION(BlueprintPure, Category = "Quest|Sub")
+	void GetSubQuestTitles(TArray<FString>& OutTitles) const;
+
 	UFUNCTION(BlueprintCallable, Category = "Quest|Sub")
 	void ClearSubQuests();
 
@@ -128,6 +135,9 @@ private:
 
 	UPROPERTY()
 	TArray<FQuestState> SubQuests;
+
+	UPROPERTY()
+	TArray<FString> SubQuestTitles;
 
 	UPROPERTY()
 	TObjectPtr<UFactoryAgentClientSubsystem> AgentClient;
