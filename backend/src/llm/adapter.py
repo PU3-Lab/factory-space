@@ -116,6 +116,7 @@ class GoogleGenAiLLMAdapter:
 
         if not self.slot.model:
             return None
+        logger.info("Calling Google Gen AI LLM (model: %s)", self.slot.model)
         try:
             client = self.client or _create_google_client(self.slot.api_key)
             if client is None:
@@ -158,7 +159,7 @@ class OpenAILLMAdapter:
             return None
         if not self.slot.model:
             return None
-
+        logger.info("Calling OpenAI LLM (model: %s)", self.slot.model)
         try:
             client = self.client or _create_openai_client(
                 api_key=self.slot.api_key,
@@ -210,6 +211,7 @@ class LocalLLMAdapter:
 
         if not self.slot.base_url:
             return None
+        logger.info("Calling Local LLM (model: %s, url: %s)", self.slot.model, self.slot.base_url)
         return _invoke_openai_compatible(
             slot=self.slot,
             prompt=prompt,
@@ -263,7 +265,7 @@ def _google_generate_config(
     temperature: float,
 ) -> object:
     return types.GenerateContentConfig(
-        response_mime_type="application/json",
+        response_mime_type="text/plain",
         max_output_tokens=max_output_tokens,
         temperature=temperature,
         http_options=types.HttpOptions(timeout=timeout_ms),

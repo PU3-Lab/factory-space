@@ -341,8 +341,14 @@ class AgentPipeline:
             if not raw:
                 return {}
 
+            cleaned = raw.strip()
+            if cleaned.startswith("```"):
+                lines = cleaned.splitlines()
+                if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].startswith("```"):
+                    cleaned = "\n".join(lines[1:-1]).strip()
+
             try:
-                payload = json.loads(raw)
+                payload = json.loads(cleaned)
             except json.JSONDecodeError:
                 return {
                     "error": build_error_payload(
