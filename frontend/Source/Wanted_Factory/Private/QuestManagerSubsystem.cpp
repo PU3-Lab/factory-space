@@ -1,12 +1,9 @@
 #include "QuestManagerSubsystem.h"
 
+#include "FactoryAgentJsonUtils.h"
 #include "FactoryAgentClientSubsystem.h"
 #include "Wanted_Factory.h"
 #include "Dom/JsonObject.h"
-#include "Serialization/JsonReader.h"
-#include "Serialization/JsonSerializer.h"
-#include "Serialization/JsonWriter.h"
-#include "Policies/CondensedJsonPrintPolicy.h"
 
 namespace
 {
@@ -15,46 +12,6 @@ constexpr TCHAR ProductionQuestSubAgentId[] = TEXT("quest_generator.production_q
 constexpr TCHAR QuestSampleRequestId[] = TEXT("request-quest-sample");
 constexpr TCHAR QuestSampleSessionId[] = TEXT("smoke-session");
 constexpr TCHAR QuestSampleClientId[] = TEXT("smoke-client");
-
-bool ParseJsonObject(const FString& Json, TSharedPtr<FJsonObject>& OutObject)
-{
-	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
-	return FJsonSerializer::Deserialize(Reader, OutObject) && OutObject.IsValid();
-}
-
-FString WriteJsonObject(const TSharedPtr<FJsonObject>& JsonObject)
-{
-	if (!JsonObject.IsValid())
-	{
-		return TEXT("{}");
-	}
-
-	FString Output;
-	const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
-		TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Output);
-	FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
-	return Output;
-}
-
-FString GetStringField(const TSharedPtr<FJsonObject>& JsonObject, const TCHAR* FieldName)
-{
-	FString Value;
-	if (JsonObject.IsValid())
-	{
-		JsonObject->TryGetStringField(FieldName, Value);
-	}
-	return Value;
-}
-
-int32 GetIntegerField(const TSharedPtr<FJsonObject>& JsonObject, const TCHAR* FieldName, int32 DefaultValue)
-{
-	double Value = DefaultValue;
-	if (JsonObject.IsValid())
-	{
-		JsonObject->TryGetNumberField(FieldName, Value);
-	}
-	return FMath::FloorToInt(Value);
-}
 
 TSharedPtr<FJsonObject> CreateProductionPayload(const FString& Question)
 {
@@ -77,8 +34,8 @@ bool ReadQuestObjective(const TSharedPtr<FJsonObject>& ObjectiveObject, FQuestOb
 		return false;
 	}
 
-	OutObjective.TargetItemId = GetStringField(ObjectiveObject, TEXT("target_item_id"));
-	OutObjective.Quantity = GetIntegerField(ObjectiveObject, TEXT("quantity"), 1);
+	OutObjective.TargetItemId = FactoryAgentJsonUtils::GetStringField(ObjectiveObject, TEXT("target_item_id"));
+	OutObjective.Quantity = FactoryAgentJsonUtils::GetIntegerField(ObjectiveObject, TEXT("quantity"), 1);
 	return !OutObjective.TargetItemId.IsEmpty() && OutObjective.Quantity > 0;
 }
 
@@ -89,11 +46,11 @@ bool ReadQuestState(const TSharedPtr<FJsonObject>& QuestObject, FQuestState& Out
 		return false;
 	}
 
-	OutQuest.QuestId = FString::FromInt(GetIntegerField(QuestObject, TEXT("id"), 0));
+	OutQuest.QuestId = FString::FromInt(FactoryAgentJsonUtils::GetIntegerField(QuestObject, TEXT("id"), 0));
 	OutQuest.Kind = EQuestKind::Sub;
-	OutQuest.QuestType = GetStringField(QuestObject, TEXT("type"));
-	OutQuest.Title = FText::FromString(GetStringField(QuestObject, TEXT("title")));
-	OutQuest.Description = FText::FromString(GetStringField(QuestObject, TEXT("description")));
+	OutQuest.QuestType = FactoryAgentJsonUtils::GetStringField(QuestObject, TEXT("type"));
+	OutQuest.Title = FText::FromString(FactoryAgentJsonUtils::GetStringField(QuestObject, TEXT("title")));
+	OutQuest.Description = FText::FromString(FactoryAgentJsonUtils::GetStringField(QuestObject, TEXT("description")));
 	OutQuest.Status = EQuestStatus::Active;
 	OutQuest.Objectives.Empty();
 
@@ -264,7 +221,7 @@ FString UQuestManagerSubsystem::RequestSubQuests()
 
 FString UQuestManagerSubsystem::RequestProductionSubQuests(const FString& Question)
 {
-	return SendSubQuestRequest(WriteJsonObject(CreateProductionPayload(Question)));
+	return SendSubQuestRequest(FactoryAgentJsonUtils::WriteJsonObject(CreateProductionPayload(Question)));
 }
 
 void UQuestManagerSubsystem::ActivateCurrentMainQuest()
@@ -336,7 +293,7 @@ void UQuestManagerSubsystem::HandleAgentResponse(
 	PendingSubQuestRequestIds.Remove(RequestId);
 
 	TSharedPtr<FJsonObject> PayloadObject;
-	if (!ParseJsonObject(PayloadJson, PayloadObject))
+	if (!FactoryAgentJsonUtils::ParseJsonObject(PayloadJson, PayloadObject))
 	{
 		OnSubQuestRequestFailed.Broadcast(RequestId, TEXT("Sub quest response payload was not valid JSON."));
 		return;
