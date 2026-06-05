@@ -24,7 +24,8 @@ enum class EOJJ_BuildPlacementMode : uint8
 	PowerPlant,
 	Grinder,
 	Miner,
-	Pump
+	Pump,
+	Smelter
 };
 
 /**
@@ -103,6 +104,11 @@ protected:
 	// ※ 인접 자원/선점 배치 제약([2])은 도메인 소유자(SSR) 조율 후 별도 진행 — 현재는 일반 머신 배치.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
 	TSubclassOf<AMachineBase> PumpClass;
+
+	// 스멜터(Smelter) 모드에서 배치할 머신 클래스(ASmelter 등). 머신 배치 경로 재사용 — PowerPlant와 동일.
+	// ※ Smelter는 generic Machine 모드로도 배치 가능하며, 전용 키는 추가 경로(두 경로 공존).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AMachineBase> SmelterClass;
 
 	// 현재 배치 모드. Machine(기본)/Conveyor. 플레이어가 SetPlacementMode로 전환.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")

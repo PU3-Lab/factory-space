@@ -184,6 +184,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_SetPumpMode;
 
+	// 빌드모드 배치 모드 전환 — 스멜터(예: 3키 — 빈 키 가정, IMC_Build에서 확정). 에셋 연결은 에디터 작업.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetSmelterMode;
+
 	// --- 이동 속도 ---
 	// 평상시 걷기 속도. BeginPlay에서 MaxWalkSpeed의 권위 있는 초기값으로 적용(BP CharacterMovement 기본값 덮음).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (ClampMin = "0.0"))
@@ -255,6 +259,7 @@ protected:
 	void SetGrinderMode(const FInputActionValue& Value);
 	void SetMinerMode(const FInputActionValue& Value);
 	void SetPumpMode(const FInputActionValue& Value);
+	void SetSmelterMode(const FInputActionValue& Value);
 
 	// 스프린트 — Started=달리기 속도, Completed=걷기 속도로 복귀.
 	void StartSprint(const FInputActionValue& Value);
