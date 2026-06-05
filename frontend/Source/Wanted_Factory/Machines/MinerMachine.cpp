@@ -12,6 +12,12 @@ AMinerMachine::AMinerMachine()
 {
 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = false;
+
+	// 형제 머신(Smelter/Grinder/Pump 등)과 동일하게 CSV 조회 키를 채운다.
+	// 이게 비어 있으면(="None") CDO/인스턴스 양쪽에서 FindMachineData가 실패해
+	// DataTable 주입이 통째로 스킵 → GridSize가 기본 1x1로 남아 호버/배치 footprint·
+	// 인접 광맥 Claim·F키 라벨이 모두 어긋난다. CSV 행 이름과 일치시켜야 함("MinerMachine").
+	MachineType = TEXT("MinerMachine");
 }
 
 // Called when the game starts or when spawned

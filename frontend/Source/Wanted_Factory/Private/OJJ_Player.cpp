@@ -407,6 +407,15 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 				BuildModeWidgetInstance->AddToViewport();
 			}
 		}
+
+		// 재진입 정합(MainHUD의 Collapsed/Visible 토글과 대칭). Exit가 위젯을 Collapsed로 숨긴 채
+		// 인스턴스를 유지하므로, 위 생성 가드(!BuildModeWidgetInstance)는 2회차+엔 스킵된다.
+		// 여기서 Visible로 되돌리지 않으면 재진입 시 버튼 UI가 Collapsed로 방치돼 안 보인다
+		// (1회차는 새로 생성돼 기본 Visible이라 정상). 최초 생성 직후엔 멱등.
+		if (BuildModeWidgetInstance)
+		{
+			BuildModeWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+		}
 	}
 	else
 	{
