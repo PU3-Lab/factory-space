@@ -91,6 +91,22 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|PortArrow")
 	TObjectPtr<UInstancedStaticMeshComponent> HoverOutputArrowISM;
 
+	// 배치 머신 화살표가 현재 표시 중인지(=빌드모드 활성) — RefreshPlacedMachineArrows에서 true,
+	// ClearPlacedMachineArrows에서 false. 그리드는 BuildController의 bIsBuildMode를 모르므로,
+	// 머신 제거(RemoveMachine) 시 이 플래그로 가드해 빌드모드 중일 때만 화살표를 재적재한다
+	// (빌드모드 밖 제거가 화살표를 띄우는 회귀 방지).
+	UPROPERTY(Transient)
+	bool bPlacedArrowsVisible = false;
+
+	// 포트 화살표 시각 튜닝 — 에디터/PIE에서 리컴파일 없이 조정. 콘 인스턴스 균일 스케일.
+	// 디테일 패널/레벨 인스턴스에서 바로 만지도록 EditAnywhere + BlueprintReadWrite.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|PortArrow", meta = (ClampMin = "0.01"))
+	float PortArrowScale = 0.5f;
+
+	// 포트 화살표를 셀 평면 위로 띄우는 높이(uu) — 너무 낮으면 머신 메쉬에 가려짐.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|PortArrow", meta = (ClampMin = "0.0"))
+	float PortArrowHeightOffset = 25.0f;
+
 	// 화살표 틴트용 베이스/동적 머티리얼 (BeginPlay에서 베이스로부터 MID 생성).
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> ArrowBaseMaterial;
@@ -118,11 +134,8 @@ private:
 	// 포트 셀 공유 헬퍼: footprint 셀 C 중 (C+Dir)이 footprint 밖이면 C는 Dir쪽 모서리 → 그 이웃(C+Dir)이 포트 셀.
 	// 출력(GetMachineOutputCells)·입력(OJJ_GetMachineInputCells)이 방향만 바꿔 공유. Dir==(0,0)/무효 머신이면 빈 배열.
 	// footprint 모양/회전 무관(EffectiveSize가 X/Y만 swap하므로 모서리 판정 동일).
-	TArray<FIntPoint> OJJ_GetMachinePortCells(AMachineBase* Machine, FIntPoint Dir) const;
-
-	// footprint 셀 집합에서 Dir 쪽 모서리 이웃(포트 셀)을 산출 — 등록 머신(OJJ_GetMachinePortCells)과
-	// 호버 프리뷰(DrawHoverMachineArrows)가 공유하는 단일 모서리 워크. 새 진실원 아님(기존 규칙 추출).
-	static TArray<FIntPoint> OJJ_PortCellsFromFootprint(const TArray<FIntPoint>& Cells, FIntPoint Dir);
+	// PortCount로 대칭 배치 규칙 적용(GetMachineOutputCells/InputCells가 각 포트수를 전달).
+	TArray<FIntPoint> OJJ_GetMachinePortCells(AMachineBase* Machine, FIntPoint Dir, int32 PortCount) const;
 
 	// 추출 머신(채굴기/펌프/공압) 판정 — 입력이 자원 노드라 입력 화살표를 생략한다.
 	// TODO(SSR 협의): MachineType 문자열 비교 대신 AMachineBase 가상 predicate로 대체.
@@ -215,6 +228,15 @@ public:
 	// Codex 검증: 90° 배수 정확, 임의 각도도 우세축 스냅으로 대각선 아티팩트 차단.
 	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
 	static FIntPoint CardinalFromVector(FVector V);
+
+	// footprint 셀 집합에서 Dir 쪽 모서리 이웃(포트 셀)을 산출 + PortCount 대칭 배치 규칙 적용.
+	// 화살표·컨베이어 도킹 판정·머신 출력 타깃 그래프가 모두 이 함수를 경유 → 셀 집합 완전 일치(단일 진실원).
+	//  - PortCount<=0 또는 >=면길이 → 전부 (현행 동일, 리그레션 0)
+	//  - PortCount==1 → 면 중앙(홀수 면만), 짝수 면이면 대칭 불가
+	//  - PortCount>=2 → 양끝 포함 중심축 대칭 균등 분산
+	//  - 대칭 불가 조합(짝수면 1포트 등) → (면길이,포트수)당 경고 1회 + 전부 반환 폴백(크래시/임의 배치 금지)
+	// 면 축(Dir 수직)으로 정렬 후 선택하므로 회전 시 footprint/forward가 함께 돌아 상대 위치 유지.
+	static TArray<FIntPoint> OJJ_PortCellsFromFootprint(const TArray<FIntPoint>& Cells, FIntPoint Dir, int32 PortCount);
 
 	// 머신 출력이 향하는 월드 grid 방향 (= -Front 카디널). 무효 머신이면 (0,0).
 	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")

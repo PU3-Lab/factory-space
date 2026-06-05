@@ -22,10 +22,6 @@ namespace
 {
 constexpr float OJJ_PortDotThreshold = 0.01f;
 
-// 포트 화살표(Cone) 시각 파라미터 — 셀 평면 위로 띄우는 높이 / 콘 스케일.
-constexpr float OJJ_PortArrowHeightOffset = 25.0f;
-constexpr float OJJ_PortArrowScale = 0.25f;
-
 const FIntPoint OJJ_NeighborSteps[] = {
 	FIntPoint(1, 0),
 	FIntPoint(-1, 0),
@@ -121,6 +117,16 @@ bool OJJ_IsMachineBackOutputPair(
 		return false;
 	}
 
+	// 포트 셀 일원화: ConveyorCell이 대칭 규칙으로 선택된 출력 포트 셀이어야 도킹 허용.
+	// GetMachineOutputCells와 동일한 OJJ_PortCellsFromFootprint(BackStep, 출력 포트수) 경유 →
+	// 화살표 표시 셀 = 도킹 허용 셀 완전 일치. 포트수=면길이/0이면 전부라 기존 동작 불변.
+	const TArray<FIntPoint> OutputPortCells =
+		AOJJ_Grid::OJJ_PortCellsFromFootprint(MachineCells, BackStep, Machine->GetOutputPortCount());
+	if (!OutputPortCells.Contains(ConveyorCell))
+	{
+		return false;
+	}
+
 	return OJJ_IsBehindMachine(Grid, Machine, ConveyorCell);
 }
 
@@ -143,6 +149,16 @@ bool OJJ_IsMachineFrontInputPair(
 	}
 
 	if (MachineCells.Contains(ConveyorCell) || !Grid->IsValidGridCell(ConveyorCell))
+	{
+		return false;
+	}
+
+	// 포트 셀 일원화: ConveyorCell이 대칭 규칙으로 선택된 입력 포트 셀이어야 도킹 허용.
+	// OJJ_GetMachineInputCells와 동일한 OJJ_PortCellsFromFootprint(FrontStep, 입력 포트수) 경유 →
+	// 화살표 표시 셀 = 도킹 허용 셀 완전 일치. 포트수=면길이/0이면 전부라 기존 동작 불변.
+	const TArray<FIntPoint> InputPortCells =
+		AOJJ_Grid::OJJ_PortCellsFromFootprint(MachineCells, FrontStep, Machine->GetInputPortCount());
+	if (!InputPortCells.Contains(ConveyorCell))
 	{
 		return false;
 	}
@@ -640,30 +656,101 @@ FIntPoint AOJJ_Grid::GetMachineOutputDir(AMachineBase* Machine) const
 	return CardinalFromVector(Back);
 }
 
-TArray<FIntPoint> AOJJ_Grid::OJJ_PortCellsFromFootprint(const TArray<FIntPoint>& Cells, FIntPoint Dir)
+TArray<FIntPoint> AOJJ_Grid::OJJ_PortCellsFromFootprint(const TArray<FIntPoint>& Cells, FIntPoint Dir, int32 PortCount)
 {
-	TArray<FIntPoint> Result;
+	TArray<FIntPoint> AllPortCells;
 
 	if (Cells.Num() == 0 || Dir == FIntPoint::ZeroValue)
 	{
-		return Result;
+		return AllPortCells;
 	}
 
-	// footprint 셀 C 중 (C + Dir)이 footprint 밖이면 C는 Dir쪽 모서리 → 그 이웃이 포트 셀.
-	// 모양/회전 무관, 멀티셀이면 모서리 셀마다 포트 셀 생성.
+	// 1) Dir쪽 모서리 포트 셀 전부 수집: footprint 셀 C 중 (C + Dir)이 footprint 밖이면 그 이웃(C+Dir)이 포트 셀.
 	const TSet<FIntPoint> Footprint(Cells);
 	for (const FIntPoint& Cell : Cells)
 	{
 		const FIntPoint Target = Cell + Dir;
 		if (!Footprint.Contains(Target))
 		{
-			Result.AddUnique(Target);
+			AllPortCells.AddUnique(Target);
 		}
 	}
-	return Result;
+
+	const int32 L = AllPortCells.Num();
+
+	// 2) 포트 카운트 미설정(0)/면길이 이상 → 전부 (현행 동일, 리그레션 0).
+	if (PortCount <= 0 || PortCount >= L)
+	{
+		return AllPortCells;
+	}
+
+	// 3) 면 축(Dir에 수직)으로 정렬 — 대칭 선택을 위한 결정적 순서. Dir이 X축이면 면은 Y로 변함(키=Y), 아니면 키=X.
+	const bool bDirAlongX = (Dir.X != 0);
+	AllPortCells.Sort([bDirAlongX](const FIntPoint& A, const FIntPoint& B)
+	{
+		return bDirAlongX ? (A.Y < B.Y) : (A.X < B.X);
+	});
+
+	// 4) 중심축 대칭 균등 분산으로 K개 인덱스 선택.
+	TArray<int32> Indices;
+	if (PortCount == 1)
+	{
+		// 단일 포트는 홀수 면에서만 정중앙 가능. 짝수 면이면 대칭 불가 → 아래 검증에서 폴백.
+		if ((L % 2) == 1)
+		{
+			Indices.Add((L - 1) / 2);
+		}
+	}
+	else
+	{
+		// 양끝(0, L-1) 포함 균등 분산. idx_j = round(j*(L-1)/(K-1)).
+		for (int32 j = 0; j < PortCount; ++j)
+		{
+			const int32 Idx = FMath::RoundToInt(static_cast<float>(j) * (L - 1) / (PortCount - 1));
+			Indices.AddUnique(Idx);
+		}
+	}
+
+	// 5) 검증: 정확히 K개 + 중심축(L-1) 대칭이어야 채택. 아니면 (면길이,포트수)당 1회 경고 + 전부 반환 폴백.
+	bool bValid = (Indices.Num() == PortCount);
+	if (bValid)
+	{
+		const TSet<int32> IndexSet(Indices);
+		for (int32 Idx : Indices)
+		{
+			if (!IndexSet.Contains((L - 1) - Idx))
+			{
+				bValid = false;
+				break;
+			}
+		}
+	}
+
+	if (!bValid)
+	{
+		static TSet<int32> WarnedConfigs;  // 매 프레임/매 도킹 호출 스팸 방지 — 조합당 1회.
+		const int32 ConfigKey = L * 1000 + PortCount;
+		if (!WarnedConfigs.Contains(ConfigKey))
+		{
+			WarnedConfigs.Add(ConfigKey);
+			UE_LOG(LogTemp, Warning,
+				TEXT("[OJJ_Grid] 포트 대칭 배치 불가 (면길이=%d, 포트수=%d) — 전부 반환 폴백."),
+				L, PortCount);
+		}
+		return AllPortCells;
+	}
+
+	// 6) 선택 인덱스 → 포트 셀.
+	TArray<FIntPoint> Selected;
+	Selected.Reserve(Indices.Num());
+	for (int32 Idx : Indices)
+	{
+		Selected.Add(AllPortCells[Idx]);
+	}
+	return Selected;
 }
 
-TArray<FIntPoint> AOJJ_Grid::OJJ_GetMachinePortCells(AMachineBase* Machine, FIntPoint Dir) const
+TArray<FIntPoint> AOJJ_Grid::OJJ_GetMachinePortCells(AMachineBase* Machine, FIntPoint Dir, int32 PortCount) const
 {
 	const TArray<FIntPoint>* Cells = GetMachineCells(Machine);  // 내부 IsValid 가드
 	if (!Cells)
@@ -671,14 +758,16 @@ TArray<FIntPoint> AOJJ_Grid::OJJ_GetMachinePortCells(AMachineBase* Machine, FInt
 		return TArray<FIntPoint>();
 	}
 
-	// 등록 머신의 footprint를 공유 모서리 워크에 위임(호버 프리뷰와 동일 규칙).
-	return OJJ_PortCellsFromFootprint(*Cells, Dir);
+	// 등록 머신의 footprint를 공유 모서리 워크 + 대칭 규칙에 위임(호버 프리뷰·도킹과 동일 규칙).
+	return OJJ_PortCellsFromFootprint(*Cells, Dir, PortCount);
 }
 
 TArray<FIntPoint> AOJJ_Grid::GetMachineOutputCells(AMachineBase* Machine) const
 {
-	// 출력 = OutputDir(-Front) 방향 포트 셀. 동작은 기존과 동일(로직을 OJJ_GetMachinePortCells로 추출만).
-	return OJJ_GetMachinePortCells(Machine, GetMachineOutputDir(Machine));
+	// 출력 = OutputDir(-Front) 방향 포트 셀. 출력 포트수로 대칭 배치 적용.
+	return Machine
+		? OJJ_GetMachinePortCells(Machine, GetMachineOutputDir(Machine), Machine->GetOutputPortCount())
+		: TArray<FIntPoint>();
 }
 
 FIntPoint AOJJ_Grid::OJJ_GetMachineInputDir(AMachineBase* Machine) const
@@ -690,8 +779,10 @@ FIntPoint AOJJ_Grid::OJJ_GetMachineInputDir(AMachineBase* Machine) const
 
 TArray<FIntPoint> AOJJ_Grid::OJJ_GetMachineInputCells(AMachineBase* Machine) const
 {
-	// 입력 = InputDir(+Front) 방향 포트 셀. 출력 셀과 같은 헬퍼 공유, 방향만 반전.
-	return OJJ_GetMachinePortCells(Machine, OJJ_GetMachineInputDir(Machine));
+	// 입력 = InputDir(+Front) 방향 포트 셀. 출력 셀과 같은 헬퍼 공유, 방향만 반전 + 입력 포트수로 대칭 배치.
+	return Machine
+		? OJJ_GetMachinePortCells(Machine, OJJ_GetMachineInputDir(Machine), Machine->GetInputPortCount())
+		: TArray<FIntPoint>();
 }
 
 TArray<AMachineBase*> AOJJ_Grid::GetMachineOutputTargets(AMachineBase* Machine) const
@@ -785,6 +876,13 @@ bool AOJJ_Grid::OJJ_RegisterActorCells(AActor* Actor, const TArray<FIntPoint>& C
 	}
 	OJJ_ActorToOrigin.Add(Actor, Origin);
 	OJJ_ActorToCells.Add(Actor, MoveTemp(UniqueCells));
+
+	// 컨베이어 등 actor가 포트 셀을 점유하면 해당 포트 화살표가 숨겨져야 하므로 빌드모드 중 재계산.
+	if (bPlacedArrowsVisible)
+	{
+		RefreshPlacedMachineArrows();
+	}
+
 	return true;
 }
 
@@ -831,6 +929,12 @@ bool AOJJ_Grid::OJJ_RemoveActorAt(FIntPoint Cell)
 			}
 		}
 		OJJ_ActorToOrigin.Remove(Actor);
+
+		// 비정상 복구 경로에서도 포트 셀 점유가 풀렸을 수 있으므로 화살표 시각 일관성 유지(Codex 리뷰 Low).
+		if (bPlacedArrowsVisible)
+		{
+			RefreshPlacedMachineArrows();
+		}
 		return false;
 	}
 
@@ -840,6 +944,13 @@ bool AOJJ_Grid::OJJ_RemoveActorAt(FIntPoint Cell)
 	}
 	OJJ_ActorToCells.Remove(Actor);
 	OJJ_ActorToOrigin.Remove(Actor);
+
+	// 컨베이어 제거로 포트 셀 점유가 풀리면 숨겼던 포트 화살표가 복귀해야 하므로 빌드모드 중 재계산.
+	if (bPlacedArrowsVisible)
+	{
+		RefreshPlacedMachineArrows();
+	}
+
 	return true;
 }
 
@@ -1302,6 +1413,14 @@ void AOJJ_Grid::OJJ_EmitPortArrows(
 			return;
 		}
 
+		// 연결된 포트 숨김: 포트 셀에 컨베이어가 점유 중이면 그 포트 화살표를 그리지 않는다.
+		// bIsConnected(머신↔머신 직접 포트 연결, SSR 소유)는 컨베이어와 무관하므로 기하 판정 사용 —
+		// 그리드 점유 진실원(OJJ_GetConveyorAtCell)을 직접 조회. 컨베이어 제거 시 점유가 풀려 화살표 복귀.
+		if (OJJ_GetConveyorAtCell(Cell))
+		{
+			return;
+		}
+
 		const FVector Dir3D = FVector(FacingDir.X, FacingDir.Y, 0.0f).GetSafeNormal();
 		if (Dir3D.IsNearlyZero())
 		{
@@ -1309,11 +1428,11 @@ void AOJJ_Grid::OJJ_EmitPortArrows(
 		}
 
 		const FVector CellCenter = GridToWorld(Cell);
-		const FVector Location(CellCenter.X, CellCenter.Y, CellCenter.Z + OJJ_PortArrowHeightOffset);
+		const FVector Location(CellCenter.X, CellCenter.Y, CellCenter.Z + PortArrowHeightOffset);
 
 		// 콘 메시 apex(+Z)를 수평 FacingDir로 정렬.
 		const FRotator Rotation = FRotationMatrix::MakeFromZ(Dir3D).Rotator();
-		const FTransform InstanceTransform(Rotation, Location, FVector(OJJ_PortArrowScale));
+		const FTransform InstanceTransform(Rotation, Location, FVector(PortArrowScale));
 
 		ISM->AddInstance(InstanceTransform, /*bWorldSpace=*/true);
 	};
@@ -1358,6 +1477,9 @@ void AOJJ_Grid::RefreshPlacedMachineArrows()
 			PlacedInputArrowISM, bDrawInput, OJJ_GetMachineInputCells(Machine), OJJ_GetMachineInputDir(Machine),
 			PlacedOutputArrowISM, bDrawOutput, GetMachineOutputCells(Machine), GetMachineOutputDir(Machine));
 	}
+
+	// 빌드모드 활성(=화살표 표시 중) 표식 — RemoveMachine의 stale 정리 가드용.
+	bPlacedArrowsVisible = true;
 }
 
 void AOJJ_Grid::DrawHoverMachineArrows(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps)
@@ -1382,8 +1504,10 @@ void AOJJ_Grid::DrawHoverMachineArrows(AMachineBase* Machine, FIntPoint Origin, 
 	const bool bDrawOutput = Machine->GetOutputPortCount() > 0;
 
 	OJJ_EmitPortArrows(
-		HoverInputArrowISM, bDrawInput, OJJ_PortCellsFromFootprint(Footprint, InputDir), InputDir,
-		HoverOutputArrowISM, bDrawOutput, OJJ_PortCellsFromFootprint(Footprint, OutputDir), OutputDir);
+		HoverInputArrowISM, bDrawInput,
+		OJJ_PortCellsFromFootprint(Footprint, InputDir, Machine->GetInputPortCount()), InputDir,
+		HoverOutputArrowISM, bDrawOutput,
+		OJJ_PortCellsFromFootprint(Footprint, OutputDir, Machine->GetOutputPortCount()), OutputDir);
 }
 
 void AOJJ_Grid::ClearPlacedMachineArrows()
@@ -1396,6 +1520,8 @@ void AOJJ_Grid::ClearPlacedMachineArrows()
 	{
 		PlacedOutputArrowISM->ClearInstances();
 	}
+
+	bPlacedArrowsVisible = false;
 }
 
 void AOJJ_Grid::ClearHoverMachineArrows()
@@ -1445,6 +1571,15 @@ bool AOJJ_Grid::RemoveMachine(AMachineBase* Machine)
 			FactoryManager->UnregisterMachine(Machine);
 		}
 	}
+
+	// 빌드모드 중 제거였다면 placed 화살표를 즉시 재적재 — 제거된 머신의 stale 화살표가 다음 호버
+	// 리빌드(커서/회전/모드 전환)까지 남는 것을 방지(Codex 리뷰 Medium). 위에서 OJJ_ActorToCells가
+	// 이미 갱신됐으므로 재적재 시 제거 머신은 빠진다. 빌드모드 밖이면 플래그 false → 그림 안 그림.
+	if (bPlacedArrowsVisible)
+	{
+		RefreshPlacedMachineArrows();
+	}
+
 	return true;
 }
 
