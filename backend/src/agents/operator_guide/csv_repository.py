@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import cached_property
-from collections.abc import Iterable
 from pathlib import Path
 
 
