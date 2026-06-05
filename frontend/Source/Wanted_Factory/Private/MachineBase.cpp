@@ -83,6 +83,13 @@ AMachineBase::AMachineBase()
 
 	MeshComponent->SetupAttachment(Root);
 
+	// 메쉬 방향 보정: 머신 메쉬의 시각적 입출력부가 논리 포트 방향(액터 forward 기반)과 -90° Yaw
+	// 어긋나는 문제(전 머신 균일, PIE 관찰 확정)를 +90° 회전으로 상쇄. RelativeRotation은 자식 메쉬만
+	// 회전시키므로 액터 forward/footprint/포트 셀 계산(GetActorForwardVector 기반)에는 무영향 —
+	// 시각 정렬만 보정한다. 기본 Cube는 대칭이라 무해. 부호(+90)는 PIE로 검증: 전 머신 배출부가
+	// 출력(주황) 포트 화살표 방향과 일치, BP 수동 RelativeRotation 오버라이드(이중 보정) 없음 확인.
+	MeshComponent->SetRelativeRotation(FRotator(0.0f, 90.0f, 0.0f));
+
 	DebugBufferText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("DebugBufferText"));
 	DebugBufferText->SetupAttachment(Root);
 	DebugBufferText->SetCollisionEnabled(ECollisionEnabled::NoCollision);
