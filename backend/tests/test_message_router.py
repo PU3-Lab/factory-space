@@ -72,7 +72,7 @@ def test_pipeline_routes_empty_quest_request_through_llm() -> None:
     assert response["payload"]["quests"][0]["id"] == 1
     assert response["payload"]["metadata"]["llm"] == "used"
     assert len(llm.prompts) == 3
-    assert "Factory Space production quest selector." in llm.prompts[2]
+    assert "팩토리 스페이스 생산 퀘스트 선택 에이전트입니다." in llm.prompts[2]
     assert '"selected_quest_ids":[1,2,3,4,5]' in llm.prompts[2]
     assert "[AVAILABLE_QUESTS]" in llm.prompts[2]
 

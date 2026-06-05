@@ -367,7 +367,7 @@ class AgentPipeline:
                     return {
                         "error": build_error_payload(
                             "INVALID_LLM_RESPONSE",
-                            "Quest LLM response must select quest ids.",
+                            "퀘스트 LLM 응답은 선택한 퀘스트 id 목록을 포함해야 합니다.",
                         )
                     }
                 try:

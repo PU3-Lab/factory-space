@@ -1,5 +1,13 @@
 # Quest Agent LLM Response Plan
 
+## 언어 작성 원칙
+
+- 퀘스트 `title`, `description`, `objective`처럼 플레이어에게 노출될 수 있는 문장은 기본적으로 한글로 작성한다.
+- quest agent의 LLM prompt도 가능한 한 한글로 작성해서 모델이 한글 문장을 우선 반환하도록 유도한다.
+- JSON key, agent id, item id, protocol field처럼 Unreal/backend 계약에 해당하는 값은 기존 영문 snake_case를 유지한다.
+- fallback 문구와 LLM 응답 검증 에러도 Unreal에 노출될 수 있으므로 한글을 기본값으로 둔다.
+- 기존 6개 퀘스트 선택지의 제목과 설명은 한글 원문을 유지하고, LLM은 이를 새로 만들거나 번역하지 않고 id만 선택한다.
+
 ## 프로토 범위 메모
 
 이 문서는 현재 프로토 단계에서 "퀘스트 에이전트가 LLM 경로를 탄다"는 최소 변경을 추적하기 위한 문서다. 아래 후속 작업 후보는 그대로 구현하지 않는다. schema 검증 강화, fallback payload 통일, RAG/CSV 근거 주입은 별도 결정이 있을 때만 진행한다.

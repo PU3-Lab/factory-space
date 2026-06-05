@@ -1,4 +1,4 @@
-"""Production quest leaf agent."""
+"""생산 퀘스트 leaf agent."""
 
 from __future__ import annotations
 
@@ -10,31 +10,31 @@ from agents.quest_generator.service import QuestAgentService
 
 
 class ProductionQuestAgent:
-    """Generate production quests for gathering resources or crafting items."""
+    """자원 채집 또는 아이템 제작 생산 퀘스트를 선택합니다."""
 
     agent_id = "quest_generator.production_quest"
     tools = ()
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
+        available_quests = json.dumps(
+            QuestAgentService().available_quest_json(),
+            ensure_ascii=False,
+        )
         return (
-            f"다음 요청을 바탕으로 생산 퀘스트를 생성하세요: {payload}\n"
-            "반드시 다음 JSON 스키마 형식의 JSON 객체 하나만 출력하세요. 마크다운 펜스(```json)나 부가 설명은 절대 쓰지 마세요.\n"
-            "{\n"
-            '  "quests": [\n'
-            "    {\n"
-            '      "id": 1,\n'
-            '      "type": "production",\n'
-            '      "title": "퀘스트 제목",\n'
-            '      "description": "퀘스트 설명",\n'
-            '      "objectives": [\n'
-            "        {\n"
-            '          "target_item_id": "대상 아이템 ID",\n'
-            '          "quantity": 10\n'
-            "        }\n"
-            "      ]\n"
-            "    }\n"
-            "  ]\n"
-            "}"
+            "[ROLE]\n"
+            "팩토리 스페이스 생산 퀘스트 선택 에이전트입니다.\n\n"
+            "[TASK]\n"
+            "AVAILABLE_QUESTS에 있는 기존 퀘스트 id 중 정확히 5개를 고르세요.\n"
+            "퀘스트 제목, 설명, 목표는 새로 만들거나 고치거나 번역하지 마세요.\n\n"
+            "[AVAILABLE_QUESTS]\n"
+            f"{available_quests}\n\n"
+            "[REQUEST_PAYLOAD]\n"
+            f"{payload}\n\n"
+            "[OUTPUT_CONTRACT]\n"
+            "다음 형태의 JSON 객체만 반환하세요:\n"
+            '{"selected_quest_ids":[1,2,3,4,5]}\n'
+            "AVAILABLE_QUESTS 안의 id만 정확히 5개, 중복 없이 사용하세요.\n"
+            "quests, markdown, 주석, 이유, 추가 key는 포함하지 마세요."
         )
 
     def fallback(
@@ -42,7 +42,7 @@ class ProductionQuestAgent:
         payload: dict[str, Any],
         context: AgentContext,
     ) -> AgentRunResult:
-        """Return example production quests when LLM output is unavailable."""
+        """LLM 응답을 사용할 수 없을 때 예시 생산 퀘스트를 반환합니다."""
 
         return AgentRunResult(
             agent="quest_generator",

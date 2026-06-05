@@ -48,7 +48,7 @@ def test_service_rejects_invalid_selected_quest_ids() -> None:
     try:
         service.generate_quest_json_from_ids([1, 2, 3, 4, 99])
     except ValueError as exc:
-        assert "Unknown quest id: 99" in str(exc)
+        assert "알 수 없는 퀘스트 id입니다: 99" in str(exc)
     else:
         raise AssertionError("Expected ValueError")
 
