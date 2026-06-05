@@ -23,6 +23,14 @@ APowerGridNode::APowerGridNode()
 	OutputPorts.Reset();
 }
 
+void APowerGridNode::ApplyMachineData(const FMachineTableRow& MachineData)
+{
+	Super::ApplyMachineData(MachineData);
+
+	PowerConsumption = 0.f;
+	bNeedPower = false;
+}
+
 void APowerGridNode::BeginPlay()
 {
 	Super::BeginPlay();

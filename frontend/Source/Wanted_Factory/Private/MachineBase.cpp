@@ -5,6 +5,7 @@
 #include "Components/TextRenderComponent.h"
 #include "Engine/StaticMesh.h"
 #include "FactoryManagerSubsystem.h"
+#include "Machines/MachineSubsystem.h"
 #include "PlanetEventManagerSubsystem.h"
 #include "RecipeManagerSubsystem.h"
 #include "Wanted_Factory.h"
@@ -103,12 +104,73 @@ AMachineBase::AMachineBase()
 	}
 }
 
+void AMachineBase::ApplyMachineData(const FMachineTableRow& MachineData)
+{
+	InputPortCount = FMath::Max(0, MachineData.InputPortCnt);
+	OutputPortCount = FMath::Max(0, MachineData.OutputPortCnt);
+	InputBufferCount = FMath::Max(0, MachineData.InputBufCnt);
+	OutputBufferCount = FMath::Max(0, MachineData.OutputBufCnt);
+	GridSize = FIntPoint(FMath::Max(1, MachineData.Xlen), FMath::Max(1, MachineData.Ylen));
+
+	MaxDurability = FMath::Max(1.f, MachineData.Durability);
+	CurrentDurability = FMath::Clamp(CurrentDurability, 0.f, MaxDurability);
+	PowerConsumption = FMath::Max(0.f, MachineData.Power);
+
+	InputPorts.Reset();
+	for (int32 PortIndex = 0; PortIndex < InputPortCount; ++PortIndex)
+	{
+		FMachinePortData InputPort;
+		InputPort.PortIndex = PortIndex;
+		InputPort.PortType = EPortType::Input;
+		InputPorts.Add(InputPort);
+	}
+
+	OutputPorts.Reset();
+	for (int32 PortIndex = 0; PortIndex < OutputPortCount; ++PortIndex)
+	{
+		FMachinePortData OutputPort;
+		OutputPort.PortIndex = PortIndex;
+		OutputPort.PortType = EPortType::Output;
+		OutputPorts.Add(OutputPort);
+	}
+}
+
+bool AMachineBase::ApplyMachineDataFromSubsystem()
+{
+	if (MachineType.IsNone())
+	{
+		return false;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!GameInstance)
+	{
+		return false;
+	}
+
+	UMachineSubsystem* MachineSubsystem = GameInstance->GetSubsystem<UMachineSubsystem>();
+	if (!MachineSubsystem)
+	{
+		return false;
+	}
+
+	FMachineTableRow MachineData;
+	if (!MachineSubsystem->FindMachineData(MachineType, MachineData))
+	{
+		return false;
+	}
+
+	ApplyMachineData(MachineData);
+	return true;
+}
+
 
 // Called when the game starts or when spawned
 void AMachineBase::BeginPlay()
 {
 	Super::BeginPlay();
 
+	ApplyMachineDataFromSubsystem();
 	CurrentDurability = MaxDurability;
 	if (UWorld* World = GetWorld())
 	{
@@ -151,6 +213,7 @@ void AMachineBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AMachineBase::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
+	ApplyMachineDataFromSubsystem();
 	if (MeshComponent)
 	{
 		// 메시 네이티브 바운즈를 footprint(GridSize × MeshFitCellWorld)에 정규화 → 셀 자동 정합.

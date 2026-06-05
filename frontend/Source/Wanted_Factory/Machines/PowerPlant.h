@@ -14,6 +14,7 @@ class WANTED_FACTORY_API APowerPlant : public AMachineBase
 public:
 	APowerPlant();
 
+	virtual void ApplyMachineData(const FMachineTableRow& MachineData) override;
 	virtual bool AddItem(FName ItemID, int32 Count) override;
 	virtual bool CanReceiveConveyorItem(FName ItemID, int32 Count = 1) const override;
 
