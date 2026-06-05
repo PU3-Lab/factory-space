@@ -820,20 +820,75 @@ _TEST_PAGE_TEMPLATE = """<!doctype html>
     .btn-sm { padding: 5px 10px; font-size: 12px; }
     .console-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
     @media (max-width: 860px) { .console-grid { grid-template-columns: 1fr; } }
+    /* ── 요청 설정 ── */
+    details.req-settings { margin-bottom: 12px; border: 1px solid var(--line); border-radius: 6px; }
+    details.req-settings > summary {
+      padding: 8px 12px; cursor: pointer; font-size: 13px; font-weight: 700;
+      color: var(--muted); list-style: none; user-select: none;
+      display: flex; align-items: center; gap: 6px;
+    }
+    details.req-settings > summary::before { content: '\\25B6'; font-size: 10px; transition: transform .15s; }
+    details.req-settings[open] > summary::before { transform: rotate(90deg); }
+    .settings-body { padding: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 600px) { .settings-body { grid-template-columns: 1fr; } }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field.full { grid-column: 1 / -1; }
+    .field label { font-size: 12px; font-weight: 700; color: var(--muted); }
+    .field label span { font-weight: 400; }
+    .field input, .field select, .field textarea {
+      padding: 6px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: 4px;
+      background: #f9fafb; color: var(--ink); font-family: inherit;
+    }
+    .field textarea { resize: vertical; }
+    .temp-row { display: flex; align-items: center; gap: 6px; }
+    .temp-row input[type=range] { flex: 1; accent-color: var(--accent); }
+    .temp-row span { font-size: 12px; color: var(--muted); min-width: 14px; }
+    /* ── 에디터 ── */
     .preset-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
     .preset-row label { font-size: 13px; color: var(--muted); font-weight: 600; }
     #preset-select { padding: 6px 10px; font-size: 13px; border: 1px solid var(--line);
                      border-radius: 5px; background: #f9fafb; color: var(--ink); cursor: pointer; }
-    #editor { width: 100%; height: 310px; border: 1px solid var(--line); border-radius: 6px;
+    #editor { width: 100%; height: 240px; border: 1px solid var(--line); border-radius: 6px;
               padding: 12px; resize: vertical; font-size: 12.5px;
               font-family: Consolas, "Liberation Mono", monospace;
               background: #fafafa; color: var(--ink); line-height: 1.55; }
     #editor:focus { outline: 2px solid var(--accent); border-color: transparent; }
-    .send-row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
-    .hint { font-size: 12px; color: var(--muted); }
+    .send-row { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
+    #tag-input { flex: 1; min-width: 60px; max-width: 140px; padding: 6px 8px; font-size: 12px;
+                 border: 1px solid var(--line); border-radius: 5px;
+                 background: #f9fafb; color: var(--ink); }
+    .hint { font-size: 12px; color: var(--muted); margin-left: auto; }
+    /* ── 실시간 응답 ── */
+    #stream-out { width: 100%; height: 88px; border: 1px solid #2d3748; border-radius: 6px;
+                  padding: 10px; resize: vertical; font-size: 11.5px;
+                  font-family: Consolas, "Liberation Mono", monospace;
+                  background: #0d1117; color: #8b949e; line-height: 1.5; margin-bottom: 10px; }
+    /* ── 지표 바 ── */
+    .metrics-bar { display: flex; margin-bottom: 10px;
+                   border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+    .metric-item { flex: 1; display: flex; flex-direction: column; align-items: center;
+                   padding: 7px 4px; border-right: 1px solid var(--line); background: #f8fafc; }
+    .metric-item:last-child { border-right: none; }
+    .metric-label { font-size: 10px; font-weight: 700; color: var(--muted);
+                    text-transform: uppercase; letter-spacing: .4px; }
+    .metric-value { font-size: 13px; font-weight: 700; font-family: monospace;
+                    color: var(--ink); margin-top: 2px; }
+    /* ── 결과 분석 ── */
+    .analysis-strip { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+                       padding: 8px 12px; background: #f8fafc;
+                       border: 1px solid var(--line); border-radius: 6px; margin-bottom: 14px; }
+    .an-item { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+    .an-label { font-weight: 700; color: var(--muted); }
+    .badge-ok   { display: inline-block; padding: 2px 7px; border-radius: 4px;
+                  font-size: 11px; font-weight: 700; background: #dcfce7; color: #166534; }
+    .badge-warn { display: inline-block; padding: 2px 7px; border-radius: 4px;
+                  font-size: 11px; font-weight: 700; background: #fef9c3; color: #854d0e; }
+    .badge-err  { display: inline-block; padding: 2px 7px; border-radius: 4px;
+                  font-size: 11px; font-weight: 700; background: #fee2e2; color: #991b1b; }
+    /* ── 로그 ── */
     .resp-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
     .resp-title h2 { margin: 0; }
-    #log { display: flex; flex-direction: column; gap: 10px; max-height: 500px; overflow-y: auto; }
+    #log { display: flex; flex-direction: column; gap: 10px; max-height: 380px; overflow-y: auto; }
     .card { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
     .card-head { display: flex; justify-content: space-between; align-items: center;
                  padding: 7px 12px; background: #f1f5f9;
@@ -851,13 +906,26 @@ _TEST_PAGE_TEMPLATE = """<!doctype html>
     .jk { color: #0550ae; } .js { color: #0a7a61; }
     .jn { color: #7c3aed; } .jb { color: #c2410c; } .jz { color: #6b7280; }
     .empty { text-align: center; color: var(--muted); padding: 44px 0; font-size: 14px; }
+    /* ── 비교 기록 ── */
+    .comparison-section { margin-top: 18px; }
+    .hist-filter { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .hist-filter select { padding: 4px 8px; font-size: 12px; border: 1px solid var(--line);
+                          border-radius: 4px; background: #f9fafb; color: var(--ink); cursor: pointer; }
+    .table-wrap { overflow-x: auto; }
+    #history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    #history-table th { text-align: left; padding: 8px 10px; border-bottom: 2px solid var(--line);
+                        font-size: 11px; color: var(--muted); font-weight: 700;
+                        white-space: nowrap; text-transform: uppercase; letter-spacing: .4px; }
+    #history-table td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    #history-table tr:last-child td { border-bottom: none; }
+    #history-table tr:hover td { background: #f8fafc; }
   </style>
 </head>
 <body>
 <main>
   <header>
     <h1>에이전트 테스트 콘솔</h1>
-    <p>WebSocket으로 에이전트에 직접 요청을 보내고 응답을 확인합니다.</p>
+    <p>WebSocket으로 에이전트에 직접 요청을 보내고 응답을 분석합니다.</p>
     <nav class="nav">
       <a href="/agent-docs">전체 에이전트 서비스 문서</a>
       <a href="/architecture">전체 에이전트 아키텍처</a>
@@ -876,8 +944,46 @@ _TEST_PAGE_TEMPLATE = """<!doctype html>
   </div>
 
   <div class="console-grid">
+    <!-- 왼쪽: 요청 설정 + 에디터 -->
     <section class="panel">
       <h2>요청</h2>
+
+      <details class="req-settings">
+        <summary>요청 설정</summary>
+        <div class="settings-body">
+          <div class="field">
+            <label>모델</label>
+            <select id="cfg-model">
+              <option value="">기본값</option>
+              <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
+              <option value="claude-opus-4-8">claude-opus-4-8</option>
+              <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Max Tokens</label>
+            <input type="number" id="cfg-maxtokens" min="1" max="8192" placeholder="기본값">
+          </div>
+          <div class="field full">
+            <label>Temperature &nbsp;<span id="cfg-temp-val">1.0</span></label>
+            <div class="temp-row">
+              <span>0</span>
+              <input type="range" id="cfg-temp" min="0" max="2" step="0.1" value="1"
+                     oninput="document.getElementById('cfg-temp-val').textContent=parseFloat(this.value).toFixed(1)">
+              <span>2</span>
+            </div>
+          </div>
+          <div class="field full">
+            <label>시스템 프롬프트 오버라이드 <span style="color:var(--muted)">(context.system_prompt)</span></label>
+            <textarea id="cfg-system" rows="2" placeholder="비워두면 에이전트 기본 프롬프트 사용"></textarea>
+          </div>
+          <div class="field full">
+            <label>사용자 프롬프트 오버라이드 <span style="color:var(--muted)">(context.user_prompt)</span></label>
+            <textarea id="cfg-user-prompt" rows="2" placeholder="비워두면 payload 그대로 사용"></textarea>
+          </div>
+        </div>
+      </details>
+
       <div class="preset-row">
         <label>프리셋</label>
         <select id="preset-select" onchange="applyPreset()">
@@ -902,11 +1008,56 @@ _TEST_PAGE_TEMPLATE = """<!doctype html>
       <textarea id="editor" spellcheck="false" oninput="onInput()"></textarea>
       <div class="send-row">
         <button id="btn-send" class="btn btn-primary" onclick="doSend()" disabled>전송</button>
+        <input id="tag-input" type="text" placeholder="태그 (선택)">
         <span id="hint" class="hint"></span>
       </div>
     </section>
 
+    <!-- 오른쪽: 실시간 응답 + 지표 + 분석 + 로그 -->
     <section class="panel">
+      <h2 style="margin-bottom:8px">실시간 응답</h2>
+      <textarea id="stream-out" readonly placeholder="전송하면 응답 원문이 여기에 표시됩니다..."></textarea>
+
+      <div class="metrics-bar">
+        <div class="metric-item">
+          <span class="metric-label">TTFT</span>
+          <span id="m-ttft" class="metric-value">—</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-label">Latency</span>
+          <span id="m-latency" class="metric-value">—</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-label">Tokens</span>
+          <span id="m-tokens" class="metric-value">—</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-label">Tokens/s</span>
+          <span id="m-tps" class="metric-value">—</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-label">비용</span>
+          <span id="m-cost" class="metric-value">—</span>
+        </div>
+      </div>
+
+      <div class="analysis-strip">
+        <div class="an-item">
+          <span class="an-label">JSON</span>
+          <span id="an-json">—</span>
+        </div>
+        <div class="an-item">
+          <span class="an-label">스키마</span>
+          <span id="an-schema">—</span>
+        </div>
+        <div class="an-item">
+          <span class="an-label">품질</span>
+          <span id="an-quality">—</span>
+        </div>
+        <button id="btn-retry" class="btn btn-ghost btn-sm" onclick="doRetry()"
+                style="margin-left:auto" disabled>오류 재시도</button>
+      </div>
+
       <div class="resp-title">
         <h2>응답 로그</h2>
         <button class="btn btn-ghost btn-sm" onclick="clearLog()">지우기</button>
@@ -914,11 +1065,41 @@ _TEST_PAGE_TEMPLATE = """<!doctype html>
       <div id="log"><div class="empty">연결 후 전송하면 응답이 여기에 표시됩니다.</div></div>
     </section>
   </div>
+
+  <!-- 비교 기록 -->
+  <section class="panel comparison-section">
+    <div class="resp-title">
+      <h2>비교 기록</h2>
+      <div class="hist-filter">
+        <select id="hist-filter-agent" onchange="renderHistory()">
+          <option value="">전체 에이전트</option>
+        </select>
+        <select id="hist-filter-model" onchange="renderHistory()">
+          <option value="">전체 모델</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="clearHistory()">기록 지우기</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="history-table">
+        <thead>
+          <tr>
+            <th>#</th><th>시간</th><th>태그</th><th>에이전트</th><th>모델</th>
+            <th>Latency</th><th>Tokens</th><th>비용</th><th>품질</th><th>상태</th>
+          </tr>
+        </thead>
+        <tbody id="history-body">
+          <tr><td colspan="10" class="empty">아직 기록이 없습니다.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
 </main>
 <script>
 const PRESETS = __PRESETS_JSON__;
 
-let ws = null;
+let ws = null, sendTs = 0, firstMsgTs = 0;
+let lastRequest = null, lastAgent = '', runCounter = 0, runHistory = [];
 
 function uuid() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -944,10 +1125,31 @@ function toggleConn() {
   var url = document.getElementById('ws-url').value.trim() || wsDefault();
   setStatus('connecting', '연결 중...');
   try { ws = new WebSocket(url); } catch(e) { setStatus('error', '연결 실패: ' + e.message); return; }
-  ws.onopen    = function() { setStatus('connected', '연결됨'); };
-  ws.onclose   = function() { setStatus('', '연결 안됨'); ws = null; };
-  ws.onerror   = function() { setStatus('error', '오류'); };
-  ws.onmessage = function(e) { addCard(e.data, false); };
+  ws.onopen  = function() { setStatus('connected', '연결됨'); };
+  ws.onclose = function() { setStatus('', '연결 안됨'); ws = null; };
+  ws.onerror = function() { setStatus('error', '오류'); };
+  ws.onmessage = function(e) {
+    if (!firstMsgTs) firstMsgTs = Date.now();
+    document.getElementById('stream-out').value = e.data;
+    addCard(e.data, false);
+    updateMetrics(e.data);
+    updateAnalysis(e.data);
+  };
+}
+
+function getReqSettings() {
+  var model  = document.getElementById('cfg-model').value;
+  var temp   = document.getElementById('cfg-temp').value;
+  var maxTok = document.getElementById('cfg-maxtokens').value;
+  var sys    = document.getElementById('cfg-system').value.trim();
+  var userP  = document.getElementById('cfg-user-prompt').value.trim();
+  var out = {};
+  if (model)  out.model = model;
+  if (temp !== '') out.temperature = parseFloat(temp);
+  if (maxTok !== '') out.max_tokens = parseInt(maxTok, 10);
+  if (sys)    out.system_prompt = sys;
+  if (userP)  out.user_prompt = userP;
+  return out;
 }
 
 function doSend() {
@@ -955,8 +1157,15 @@ function doSend() {
   var raw = document.getElementById('editor').value.trim();
   var msg;
   try { msg = JSON.parse(raw); } catch(e) { addErrCard('JSON 파싱 오류: ' + e.message); return; }
-  if (!msg.request_id) { msg.request_id = uuid(); }
+  if (!msg.request_id) msg.request_id = uuid();
+  var ov = getReqSettings();
+  if (Object.keys(ov).length > 0) msg.context = Object.assign({}, msg.context || {}, ov);
   document.getElementById('editor').value = JSON.stringify(msg, null, 2);
+  sendTs = Date.now(); firstMsgTs = 0;
+  lastRequest = JSON.stringify(msg); lastAgent = msg.agent || '';
+  resetMetrics(); resetAnalysis();
+  document.getElementById('stream-out').value = '';
+  document.getElementById('btn-retry').disabled = false;
   ws.send(JSON.stringify(msg));
   addCard(JSON.stringify(msg), true);
 }
@@ -965,9 +1174,7 @@ function applyPreset() {
   var key = document.getElementById('preset-select').value;
   var p = PRESETS[key]; if (!p) return;
   var msg = JSON.parse(JSON.stringify(p));
-  msg.request_id = uuid();
-  msg.session_id = 'test-session';
-  msg.client_id  = 'test-console';
+  msg.request_id = uuid(); msg.session_id = 'test-session'; msg.client_id = 'test-console';
   document.getElementById('editor').value = JSON.stringify(msg, null, 2);
   onInput();
 }
@@ -985,6 +1192,168 @@ function onInput() {
   document.getElementById('hint').textContent = n.toLocaleString() + ' chars';
 }
 
+function resetMetrics() {
+  ['m-ttft','m-latency','m-tokens','m-tps','m-cost'].forEach(function(id) {
+    document.getElementById(id).textContent = '—';
+  });
+}
+
+function resetAnalysis() {
+  document.getElementById('an-json').innerHTML = '—';
+  document.getElementById('an-schema').innerHTML = '—';
+  document.getElementById('an-quality').innerHTML = '—';
+}
+
+function updateMetrics(rawJson) {
+  var latMs = firstMsgTs - sendTs;
+  document.getElementById('m-ttft').textContent    = latMs + ' ms';
+  document.getElementById('m-latency').textContent = latMs + ' ms';
+  var parsed; try { parsed = JSON.parse(rawJson); } catch(_) {}
+  var tokens = 0, known = false;
+  if (parsed && Array.isArray(parsed.streams)) {
+    parsed.streams.forEach(function(s) {
+      if (s && s.usage && typeof s.usage.output_tokens === 'number') {
+        tokens += s.usage.output_tokens; known = true;
+      }
+    });
+  }
+  if (!known) tokens = Math.round(rawJson.length / 4);
+  document.getElementById('m-tokens').textContent = (known ? '' : '~') + tokens;
+  document.getElementById('m-tps').textContent =
+    latMs > 0 ? Math.round(tokens / (latMs / 1000)) + '/s' : '—';
+  var model = '';
+  if (parsed && parsed.payload && parsed.payload.metadata &&
+      parsed.payload.metadata.currentModel) {
+    model = parsed.payload.metadata.currentModel.model || '';
+  }
+  if (!model && parsed && parsed.payload && parsed.payload.metadata) {
+    model = parsed.payload.metadata.llmModel || '';
+  }
+  if (!model) model = document.getElementById('cfg-model').value || '기본값';
+  var cost = calcCost(model, tokens);
+  document.getElementById('m-cost').textContent = cost;
+  var tag  = document.getElementById('tag-input').value.trim();
+  var qual = calcQuality(parsed);
+  var isErr = !!(parsed && parsed.type === 'agent.error');
+  runCounter++;
+  runHistory.unshift({ n: runCounter, time: new Date().toLocaleTimeString('ko-KR'),
+    tag: tag, agent: (parsed && parsed.agent) || lastAgent, model: model,
+    latency: latMs, tokens: tokens, known: known, cost: cost, quality: qual,
+    status: isErr ? 'error' : 'ok' });
+  updateHistoryFilters();
+  renderHistory();
+}
+
+function calcCost(model, tokens) {
+  if (!model || model === '기본값') return '—';
+  if (model.indexOf('claude') === -1) return '로컬';
+  var rate = model.indexOf('haiku') !== -1 ? 4 : model.indexOf('opus') !== -1 ? 75 : 15;
+  var usd = (tokens / 1e6) * rate;
+  return usd < 1e-7 ? '<$0.0000001' : '$' + usd.toFixed(7);
+}
+
+function calcQuality(parsed) {
+  if (!parsed || typeof parsed !== 'object') return 0;
+  var s = 0;
+  if (parsed.type === 'agent.response') s += 30;
+  if (typeof parsed.request_id === 'string') s += 20;
+  if (typeof parsed.agent === 'string') s += 20;
+  if (parsed.payload && typeof parsed.payload === 'object' &&
+      Object.keys(parsed.payload).length > 0) s += 30;
+  return s;
+}
+
+function updateAnalysis(rawJson) {
+  var parsed, ok = false;
+  try { parsed = JSON.parse(rawJson); ok = true; } catch(_) {}
+  document.getElementById('an-json').innerHTML =
+    ok ? '<span class="badge-ok">PASS</span>' : '<span class="badge-err">FAIL</span>';
+  if (ok && parsed) {
+    var hasT = typeof parsed.type === 'string' &&
+               (parsed.type === 'agent.response' || parsed.type === 'agent.error');
+    var hasR = typeof parsed.request_id === 'string';
+    var hasA = typeof parsed.agent === 'string';
+    if (hasT && hasR && hasA) {
+      document.getElementById('an-schema').innerHTML = '<span class="badge-ok">PASS</span>';
+    } else {
+      var miss = [];
+      if (!hasT) miss.push('type'); if (!hasR) miss.push('request_id'); if (!hasA) miss.push('agent');
+      document.getElementById('an-schema').innerHTML =
+        '<span class="badge-warn">WARN: ' + esc(miss.join(', ')) + ' 누락</span>';
+    }
+  } else {
+    document.getElementById('an-schema').innerHTML = '<span class="badge-err">FAIL</span>';
+  }
+  var q = ok ? calcQuality(parsed) : 0;
+  var qc = q >= 80 ? 'badge-ok' : q >= 40 ? 'badge-warn' : 'badge-err';
+  document.getElementById('an-quality').innerHTML = '<span class="' + qc + '">' + q + '/100</span>';
+}
+
+function doRetry() {
+  if (!lastRequest || !ws || ws.readyState !== 1) return;
+  var msg; try { msg = JSON.parse(lastRequest); } catch(_) { return; }
+  msg.request_id = uuid();
+  lastRequest = JSON.stringify(msg);
+  document.getElementById('editor').value = JSON.stringify(msg, null, 2);
+  sendTs = Date.now(); firstMsgTs = 0;
+  resetMetrics(); resetAnalysis();
+  document.getElementById('stream-out').value = '';
+  ws.send(JSON.stringify(msg));
+  addCard(JSON.stringify(msg), true);
+}
+
+function updateHistoryFilters() {
+  var agents = new Set(), models = new Set();
+  runHistory.forEach(function(r) { if (r.agent) agents.add(r.agent); if (r.model) models.add(r.model); });
+  function refresh(selId, cur, values, allLabel) {
+    var sel = document.getElementById(selId);
+    sel.innerHTML = '<option value="">' + allLabel + '</option>';
+    values.forEach(function(v) {
+      var o = document.createElement('option');
+      o.value = v; o.textContent = v; if (v === cur) o.selected = true;
+      sel.appendChild(o);
+    });
+  }
+  refresh('hist-filter-agent', document.getElementById('hist-filter-agent').value, agents, '전체 에이전트');
+  refresh('hist-filter-model', document.getElementById('hist-filter-model').value, models, '전체 모델');
+}
+
+function renderHistory() {
+  var af = document.getElementById('hist-filter-agent').value;
+  var mf = document.getElementById('hist-filter-model').value;
+  var rows = runHistory.filter(function(r) {
+    return (!af || r.agent === af) && (!mf || r.model === mf);
+  });
+  var tbody = document.getElementById('history-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="empty">기록이 없습니다.</td></tr>'; return;
+  }
+  tbody.innerHTML = rows.map(function(r) {
+    var sc = r.status === 'ok' ? 'badge-ok' : 'badge-err';
+    var sl = r.status === 'ok' ? 'OK' : 'ERR';
+    var qc = r.quality >= 80 ? 'badge-ok' : r.quality >= 40 ? 'badge-warn' : 'badge-err';
+    return '<tr>' +
+      '<td>' + r.n + '</td>' +
+      '<td style="white-space:nowrap">' + r.time + '</td>' +
+      '<td style="color:var(--muted)">' + esc(r.tag || '') + '</td>' +
+      '<td style="font-size:11px;font-family:monospace">' + esc(r.agent) + '</td>' +
+      '<td style="font-size:11px;font-family:monospace">' + esc(r.model) + '</td>' +
+      '<td style="font-family:monospace">' + r.latency + ' ms</td>' +
+      '<td style="font-family:monospace">' + (r.known ? '' : '~') + r.tokens + '</td>' +
+      '<td style="font-size:11px;font-family:monospace">' + esc(r.cost) + '</td>' +
+      '<td><span class="' + qc + '">' + r.quality + '</span></td>' +
+      '<td><span class="' + sc + '">' + sl + '</span></td>' +
+      '</tr>';
+  }).join('');
+}
+
+function clearHistory() {
+  runHistory = []; runCounter = 0;
+  document.getElementById('hist-filter-agent').innerHTML = '<option value="">전체 에이전트</option>';
+  document.getElementById('hist-filter-model').innerHTML = '<option value="">전체 모델</option>';
+  renderHistory();
+}
+
 function clearLog() {
   document.getElementById('log').innerHTML =
     '<div class="empty">연결 후 전송하면 응답이 여기에 표시됩니다.</div>';
@@ -992,7 +1361,7 @@ function clearLog() {
 
 function addCard(rawJson, isSent) {
   var log = document.getElementById('log');
-  if (log.querySelector('.empty')) { log.innerHTML = ''; }
+  if (log.querySelector('.empty')) log.innerHTML = '';
   var ts = new Date().toLocaleTimeString('ko-KR');
   var parsed, isError = false;
   try { parsed = JSON.parse(rawJson); isError = !!(parsed && parsed.type === 'agent.error'); }
@@ -1013,7 +1382,7 @@ function addCard(rawJson, isSent) {
 
 function addErrCard(msg) {
   var log = document.getElementById('log');
-  if (log.querySelector('.empty')) { log.innerHTML = ''; }
+  if (log.querySelector('.empty')) log.innerHTML = '';
   var card = document.createElement('div');
   card.className = 'card';
   card.innerHTML =
@@ -1064,6 +1433,25 @@ function hlJson(obj) {
 
 document.getElementById('ws-url').value = wsDefault();
 applyPreset();
+
+(function loadOllamaModels() {
+  fetch('http://localhost:11434/api/tags')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var models = (data && Array.isArray(data.models)) ? data.models : [];
+      if (!models.length) return;
+      var sel = document.getElementById('cfg-model');
+      var grp = document.createElement('optgroup');
+      grp.label = 'Ollama (로컬)';
+      models.forEach(function(m) {
+        var o = document.createElement('option');
+        o.value = m.name; o.textContent = m.name;
+        grp.appendChild(o);
+      });
+      sel.appendChild(grp);
+    })
+    .catch(function() {});
+})();
 </script>
 </body>
 </html>"""
