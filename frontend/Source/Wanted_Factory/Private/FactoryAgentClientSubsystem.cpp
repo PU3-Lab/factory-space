@@ -1,14 +1,11 @@
 #include "FactoryAgentClientSubsystem.h"
 
+#include "FactoryAgentJsonUtils.h"
 #include "IWebSocket.h"
 #include "Wanted_Factory.h"
 #include "WebSocketsModule.h"
-#include "Dom/JsonObject.h"
 #include "Misc/Guid.h"
-#include "Policies/CondensedJsonPrintPolicy.h"
-#include "Serialization/JsonReader.h"
-#include "Serialization/JsonSerializer.h"
-#include "Serialization/JsonWriter.h"
+#include "Dom/JsonObject.h"
 
 namespace
 {
@@ -23,58 +20,6 @@ constexpr TCHAR QuestSampleClientId[] = TEXT("smoke-client");
 constexpr TCHAR OperatorGuideClientId[] = TEXT("unreal-ui-001");
 constexpr TCHAR DefaultSessionId[] = TEXT("dev-session");
 constexpr TCHAR DefaultClientId[] = TEXT("unreal-client");
-
-bool ParseJsonObject(const FString& Json, TSharedPtr<FJsonObject>& OutObject)
-{
-	if (Json.TrimStartAndEnd().IsEmpty())
-	{
-		OutObject = MakeShared<FJsonObject>();
-		return true;
-	}
-
-	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
-	return FJsonSerializer::Deserialize(Reader, OutObject) && OutObject.IsValid();
-}
-
-FString WriteJsonObject(const TSharedPtr<FJsonObject>& JsonObject)
-{
-	if (!JsonObject.IsValid())
-	{
-		return TEXT("{}");
-	}
-
-	FString Output;
-	const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
-		TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Output);
-	FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
-	return Output;
-}
-
-FString GetStringField(const TSharedPtr<FJsonObject>& JsonObject, const TCHAR* FieldName)
-{
-	FString Value;
-	if (JsonObject.IsValid())
-	{
-		JsonObject->TryGetStringField(FieldName, Value);
-	}
-	return Value;
-}
-
-TSharedPtr<FJsonObject> GetObjectField(const TSharedPtr<FJsonObject>& JsonObject, const TCHAR* FieldName)
-{
-	if (!JsonObject.IsValid())
-	{
-		return nullptr;
-	}
-
-	const TSharedPtr<FJsonObject>* ObjectField = nullptr;
-	if (!JsonObject->TryGetObjectField(FieldName, ObjectField) || ObjectField == nullptr)
-	{
-		return nullptr;
-	}
-
-	return *ObjectField;
-}
 }
 
 void UFactoryAgentClientSubsystem::Deinitialize()
@@ -164,13 +109,13 @@ FString UFactoryAgentClientSubsystem::SendAgentRequestWithContext(
 bool UFactoryAgentClientSubsystem::SendJsonMessage(const FString& JsonMessage)
 {
 	TSharedPtr<FJsonObject> MessageObject;
-	if (!ParseJsonObject(JsonMessage, MessageObject))
+	if (!FactoryAgentJsonUtils::ParseJsonObject(JsonMessage, MessageObject))
 	{
 		LOG_LC_W(TEXT("Factory agent message must be a JSON object."));
 		return false;
 	}
 
-	return SendRawMessage(WriteJsonObject(MessageObject));
+	return SendRawMessage(FactoryAgentJsonUtils::WriteJsonObject(MessageObject));
 }
 
 bool UFactoryAgentClientSubsystem::SendQuestGeneratorRequest(
@@ -185,7 +130,7 @@ bool UFactoryAgentClientSubsystem::SendQuestGeneratorRequest(
 	RequestObject->SetStringField(TEXT("client_id"), ClientId.IsEmpty() ? QuestSampleClientId : ClientId);
 	RequestObject->SetStringField(TEXT("agent"), QuestGeneratorAgentId);
 
-	return SendRawMessage(WriteJsonObject(RequestObject));
+	return SendRawMessage(FactoryAgentJsonUtils::WriteJsonObject(RequestObject));
 }
 
 bool UFactoryAgentClientSubsystem::SendOperatorGuideQuestion(const FString& Question, const FString& ClientId)
@@ -206,7 +151,7 @@ bool UFactoryAgentClientSubsystem::SendOperatorGuideQuestion(const FString& Ques
 	RequestObject->SetStringField(TEXT("agent"), OperatorGuideAgentId);
 	RequestObject->SetObjectField(TEXT("payload"), PayloadObject.ToSharedRef());
 
-	return SendRawMessage(WriteJsonObject(RequestObject));
+	return SendRawMessage(FactoryAgentJsonUtils::WriteJsonObject(RequestObject));
 }
 
 bool UFactoryAgentClientSubsystem::SendRawMessage(const FString& RawMessage)
@@ -229,14 +174,14 @@ FString UFactoryAgentClientSubsystem::SendAgentRequestInternal(
 	const FString& ClientId)
 {
 	TSharedPtr<FJsonObject> PayloadObject;
-	if (!ParseJsonObject(PayloadJson, PayloadObject))
+	if (!FactoryAgentJsonUtils::ParseJsonObject(PayloadJson, PayloadObject))
 	{
 		LOG_LC_W(TEXT("Factory agent payload must be a JSON object."));
 		return FString();
 	}
 
 	TSharedPtr<FJsonObject> ContextObject;
-	if (!ParseJsonObject(ContextJson, ContextObject))
+	if (!FactoryAgentJsonUtils::ParseJsonObject(ContextJson, ContextObject))
 	{
 		LOG_LC_W(TEXT("Factory agent context must be a JSON object."));
 		return FString();
@@ -255,7 +200,7 @@ FString UFactoryAgentClientSubsystem::SendAgentRequestInternal(
 	RequestObject->SetObjectField(TEXT("payload"), PayloadObject.ToSharedRef());
 	RequestObject->SetObjectField(TEXT("context"), ContextObject.ToSharedRef());
 
-	if (!SendRawMessage(WriteJsonObject(RequestObject)))
+	if (!SendRawMessage(FactoryAgentJsonUtils::WriteJsonObject(RequestObject)))
 	{
 		return FString();
 	}
@@ -309,34 +254,34 @@ void UFactoryAgentClientSubsystem::HandleSocketMessage(const FString& Message)
 	OnRawMessageReceived.Broadcast(Message);
 
 	TSharedPtr<FJsonObject> RootObject;
-	if (!ParseJsonObject(Message, RootObject))
+	if (!FactoryAgentJsonUtils::ParseJsonObject(Message, RootObject))
 	{
 		LOG_LC_W(TEXT("Factory agent response was not valid JSON."));
 		return;
 	}
 
-	const FString Type = GetStringField(RootObject, TEXT("type"));
-	const FString RequestId = GetStringField(RootObject, TEXT("request_id"));
-	const FString Agent = GetStringField(RootObject, TEXT("agent"));
+	const FString Type = FactoryAgentJsonUtils::GetStringField(RootObject, TEXT("type"));
+	const FString RequestId = FactoryAgentJsonUtils::GetStringField(RootObject, TEXT("request_id"));
+	const FString Agent = FactoryAgentJsonUtils::GetStringField(RootObject, TEXT("agent"));
 
 	if (Type == AgentResponseType)
 	{
 		OnAgentResponseReceived.Broadcast(
 			RequestId,
 			Agent,
-			WriteJsonObject(GetObjectField(RootObject, TEXT("payload"))),
+			FactoryAgentJsonUtils::WriteJsonObject(FactoryAgentJsonUtils::GetObjectField(RootObject, TEXT("payload"))),
 			Message);
 		return;
 	}
 
 	if (Type == AgentErrorType)
 	{
-		const TSharedPtr<FJsonObject> ErrorObject = GetObjectField(RootObject, TEXT("error"));
+		const TSharedPtr<FJsonObject> ErrorObject = FactoryAgentJsonUtils::GetObjectField(RootObject, TEXT("error"));
 		OnAgentErrorReceived.Broadcast(
 			RequestId,
 			Agent,
-			GetStringField(ErrorObject, TEXT("code")),
-			GetStringField(ErrorObject, TEXT("message")),
+			FactoryAgentJsonUtils::GetStringField(ErrorObject, TEXT("code")),
+			FactoryAgentJsonUtils::GetStringField(ErrorObject, TEXT("message")),
 			Message);
 		return;
 	}
