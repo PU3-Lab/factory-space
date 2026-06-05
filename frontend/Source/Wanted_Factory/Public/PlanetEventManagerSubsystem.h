@@ -33,6 +33,9 @@ struct FPlanetTimeState
 	int32 DayIndex = 1;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Event|Time")
+	int32 ElapsedDayCount = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Event|Time")
 	float DaySeconds = 0.0f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Planet Event|Time")
@@ -84,10 +87,10 @@ public:
 	float SimulationTickSeconds = 1.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Time", meta = (ClampMin = "1.0"))
-	float DayDurationSeconds = 300.0f;
+	float DayDurationSeconds = 360.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Time", meta = (ClampMin = "1.0"))
-	float NightDurationSeconds = 300.0f;
+	float NightDurationSeconds = 360.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Weather", meta = (ClampMin = "1.0"))
 	float WeatherUpdateIntervalSeconds = 180.0f;
@@ -177,6 +180,24 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Planet Event|Time")
 	float GetDayProgress01() const;
+
+	UFUNCTION(BlueprintPure, Category = "Planet Event|Time")
+	int32 GetCurrentDayIndex() const;
+
+	UFUNCTION(BlueprintPure, Category = "Planet Event|Time")
+	int32 GetElapsedDayCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Planet Event|Time")
+	float GetCurrentTime24Hours() const;
+
+	UFUNCTION(BlueprintPure, Category = "Planet Event|Time")
+	int32 GetCurrentHour24() const;
+
+	UFUNCTION(BlueprintPure, Category = "Planet Event|Time")
+	int32 GetCurrentMinute24() const;
+
+	UFUNCTION(BlueprintPure, Category = "Planet Event|Time")
+	FString GetCurrentTime24String() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Planet Event|Weather")
 	void RollWeatherTarget();

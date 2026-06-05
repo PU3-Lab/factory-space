@@ -144,6 +144,38 @@ float UPlanetEventManagerSubsystem::GetDayProgress01() const
 	return FMath::Clamp(TimeState.DaySeconds / FullDaySeconds, 0.0f, 1.0f);
 }
 
+int32 UPlanetEventManagerSubsystem::GetCurrentDayIndex() const
+{
+	return TimeState.DayIndex;
+}
+
+int32 UPlanetEventManagerSubsystem::GetElapsedDayCount() const
+{
+	return TimeState.ElapsedDayCount;
+}
+
+float UPlanetEventManagerSubsystem::GetCurrentTime24Hours() const
+{
+	return GetDayProgress01() * 24.0f;
+}
+
+int32 UPlanetEventManagerSubsystem::GetCurrentHour24() const
+{
+	return FMath::Clamp(FMath::FloorToInt(GetCurrentTime24Hours()), 0, 23);
+}
+
+int32 UPlanetEventManagerSubsystem::GetCurrentMinute24() const
+{
+	const float TotalMinutes = GetDayProgress01() * 24.0f * 60.0f;
+	const int32 Minute = FMath::FloorToInt(TotalMinutes) % 60;
+	return FMath::Clamp(Minute, 0, 59);
+}
+
+FString UPlanetEventManagerSubsystem::GetCurrentTime24String() const
+{
+	return FString::Printf(TEXT("%02d:%02d"), GetCurrentHour24(), GetCurrentMinute24());
+}
+
 void UPlanetEventManagerSubsystem::RollWeatherTarget()
 {
 	WeatherStartState = WeatherState;
@@ -289,6 +321,7 @@ void UPlanetEventManagerSubsystem::AdvanceTime(float DeltaSeconds)
 	{
 		TimeState.DaySeconds -= FullDaySeconds;
 		TimeState.DayIndex++;
+		TimeState.ElapsedDayCount++;
 	}
 
 	TimeState.Phase = ResolvePhase(TimeState.DaySeconds);

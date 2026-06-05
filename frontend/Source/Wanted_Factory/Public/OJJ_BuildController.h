@@ -120,7 +120,7 @@ protected:
 	bool bIsDraggingPowerLine = false;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController|Power")
-	TWeakObjectPtr<APowerGridNode> PowerLineStartNode;
+	TWeakObjectPtr<AMachineBase> PowerLineStartMachine;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
 	bool bIsBuildMode = false;
@@ -208,7 +208,9 @@ private:
 
 	// 컨베이어 호버 갱신(드래그 중이면 drag, 아니면 단일 셀 미리보기).
 	void UpdateConveyorHover(FIntPoint CursorCell);
-	APowerGridNode* GetPowerGridNodeUnderCursor() const;
-	void BeginPowerLineDrag(APowerGridNode* StartNode);
+	AMachineBase* GetPowerLineEndpointUnderCursor() const;
+	AMachineBase* FindPowerLineEndpointNearLocation(const FVector& Location) const;
+	bool IsPowerLineEndpoint(const AMachineBase* Machine) const;
+	void BeginPowerLineDrag(AMachineBase* StartMachine);
 	void CommitPowerLineDrag();
 };

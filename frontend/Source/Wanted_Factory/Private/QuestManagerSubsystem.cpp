@@ -1,0 +1,378 @@
+#include "QuestManagerSubsystem.h"
+
+#include "FactoryAgentClientSubsystem.h"
+#include "Wanted_Factory.h"
+#include "Dom/JsonObject.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
+#include "Policies/CondensedJsonPrintPolicy.h"
+
+namespace
+{
+constexpr TCHAR QuestGeneratorAgentId[] = TEXT("quest_generator");
+constexpr TCHAR ProductionQuestSubAgentId[] = TEXT("quest_generator.production_quest");
+constexpr TCHAR QuestSampleRequestId[] = TEXT("request-quest-sample");
+constexpr TCHAR QuestSampleSessionId[] = TEXT("smoke-session");
+constexpr TCHAR QuestSampleClientId[] = TEXT("smoke-client");
+
+bool ParseJsonObject(const FString& Json, TSharedPtr<FJsonObject>& OutObject)
+{
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
+	return FJsonSerializer::Deserialize(Reader, OutObject) && OutObject.IsValid();
+}
+
+FString WriteJsonObject(const TSharedPtr<FJsonObject>& JsonObject)
+{
+	if (!JsonObject.IsValid())
+	{
+		return TEXT("{}");
+	}
+
+	FString Output;
+	const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
+		TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Output);
+	FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
+	return Output;
+}
+
+FString GetStringField(const TSharedPtr<FJsonObject>& JsonObject, const TCHAR* FieldName)
+{
+	FString Value;
+	if (JsonObject.IsValid())
+	{
+		JsonObject->TryGetStringField(FieldName, Value);
+	}
+	return Value;
+}
+
+int32 GetIntegerField(const TSharedPtr<FJsonObject>& JsonObject, const TCHAR* FieldName, int32 DefaultValue)
+{
+	double Value = DefaultValue;
+	if (JsonObject.IsValid())
+	{
+		JsonObject->TryGetNumberField(FieldName, Value);
+	}
+	return FMath::FloorToInt(Value);
+}
+
+TSharedPtr<FJsonObject> CreateProductionPayload(const FString& Question)
+{
+	const TSharedPtr<FJsonObject> PayloadObject = MakeShared<FJsonObject>();
+	PayloadObject->SetStringField(TEXT("sub_agent"), ProductionQuestSubAgentId);
+
+	const FString TrimmedQuestion = Question.TrimStartAndEnd();
+	if (!TrimmedQuestion.IsEmpty())
+	{
+		PayloadObject->SetStringField(TEXT("question"), TrimmedQuestion);
+	}
+
+	return PayloadObject;
+}
+
+bool ReadQuestObjective(const TSharedPtr<FJsonObject>& ObjectiveObject, FQuestObjective& OutObjective)
+{
+	if (!ObjectiveObject.IsValid())
+	{
+		return false;
+	}
+
+	OutObjective.TargetItemId = GetStringField(ObjectiveObject, TEXT("target_item_id"));
+	OutObjective.Quantity = GetIntegerField(ObjectiveObject, TEXT("quantity"), 1);
+	return !OutObjective.TargetItemId.IsEmpty() && OutObjective.Quantity > 0;
+}
+
+bool ReadQuestState(const TSharedPtr<FJsonObject>& QuestObject, FQuestState& OutQuest)
+{
+	if (!QuestObject.IsValid())
+	{
+		return false;
+	}
+
+	OutQuest.QuestId = FString::FromInt(GetIntegerField(QuestObject, TEXT("id"), 0));
+	OutQuest.Kind = EQuestKind::Sub;
+	OutQuest.QuestType = GetStringField(QuestObject, TEXT("type"));
+	OutQuest.Title = FText::FromString(GetStringField(QuestObject, TEXT("title")));
+	OutQuest.Description = FText::FromString(GetStringField(QuestObject, TEXT("description")));
+	OutQuest.Status = EQuestStatus::Active;
+	OutQuest.Objectives.Empty();
+
+	const TArray<TSharedPtr<FJsonValue>>* ObjectiveValues = nullptr;
+	if (QuestObject->TryGetArrayField(TEXT("objectives"), ObjectiveValues) && ObjectiveValues)
+	{
+		for (const TSharedPtr<FJsonValue>& ObjectiveValue : *ObjectiveValues)
+		{
+			FQuestObjective Objective;
+			if (ReadQuestObjective(ObjectiveValue->AsObject(), Objective))
+			{
+				OutQuest.Objectives.Add(Objective);
+			}
+		}
+	}
+
+	return !OutQuest.QuestId.IsEmpty() && !OutQuest.Title.IsEmpty() && OutQuest.Objectives.Num() > 0;
+}
+}
+
+UQuestManagerSubsystem::UQuestManagerSubsystem()
+{
+	FQuestState FirstQuest;
+	FirstQuest.QuestId = TEXT("main-001");
+	FirstQuest.Kind = EQuestKind::Main;
+	FirstQuest.QuestType = TEXT("main");
+	FirstQuest.Title = FText::FromString(TEXT("Factory Startup"));
+	FirstQuest.Description = FText::FromString(TEXT("Build the first production line."));
+	FirstQuest.Status = EQuestStatus::Active;
+
+	FQuestObjective FirstObjective;
+	FirstObjective.TargetItemId = TEXT("iron_ore");
+	FirstObjective.Quantity = 10;
+	FirstQuest.Objectives.Add(FirstObjective);
+
+	FQuestState SecondQuest;
+	SecondQuest.QuestId = TEXT("main-002");
+	SecondQuest.Kind = EQuestKind::Main;
+	SecondQuest.QuestType = TEXT("main");
+	SecondQuest.Title = FText::FromString(TEXT("Expand Production"));
+	SecondQuest.Description = FText::FromString(TEXT("Increase resource throughput for the next factory stage."));
+	SecondQuest.Status = EQuestStatus::Inactive;
+
+	FQuestObjective SecondObjective;
+	SecondObjective.TargetItemId = TEXT("iron_ingot");
+	SecondObjective.Quantity = 10;
+	SecondQuest.Objectives.Add(SecondObjective);
+
+	MainQuestSequence.Add(FirstQuest);
+	MainQuestSequence.Add(SecondQuest);
+}
+
+void UQuestManagerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+
+	Collection.InitializeDependency(UFactoryAgentClientSubsystem::StaticClass());
+	AgentClient = GetGameInstance()->GetSubsystem<UFactoryAgentClientSubsystem>();
+	BindAgentClient();
+	ActivateCurrentMainQuest();
+}
+
+void UQuestManagerSubsystem::Deinitialize()
+{
+	if (AgentClient)
+	{
+		AgentClient->OnAgentResponseReceived.RemoveAll(this);
+		AgentClient->OnAgentErrorReceived.RemoveAll(this);
+	}
+
+	PendingSubQuestRequestIds.Empty();
+	AgentClient = nullptr;
+
+	Super::Deinitialize();
+}
+
+bool UQuestManagerSubsystem::GetCurrentMainQuest(FQuestState& OutQuest) const
+{
+	if (!MainQuestSequence.IsValidIndex(CurrentMainQuestIndex))
+	{
+		return false;
+	}
+
+	OutQuest = MainQuestSequence[CurrentMainQuestIndex];
+	return true;
+}
+
+bool UQuestManagerSubsystem::SetCurrentMainQuestIndex(int32 NewIndex)
+{
+	if (!MainQuestSequence.IsValidIndex(NewIndex))
+	{
+		return false;
+	}
+
+	if (MainQuestSequence.IsValidIndex(CurrentMainQuestIndex))
+	{
+		MainQuestSequence[CurrentMainQuestIndex].Status = EQuestStatus::Completed;
+	}
+
+	CurrentMainQuestIndex = NewIndex;
+	ActivateCurrentMainQuest();
+	return true;
+}
+
+bool UQuestManagerSubsystem::AdvanceMainQuest()
+{
+	return SetCurrentMainQuestIndex(CurrentMainQuestIndex + 1);
+}
+
+void UQuestManagerSubsystem::ResetMainQuestProgress()
+{
+	CurrentMainQuestIndex = 0;
+	for (FQuestState& Quest : MainQuestSequence)
+	{
+		Quest.Status = EQuestStatus::Inactive;
+	}
+
+	ActivateCurrentMainQuest();
+}
+
+void UQuestManagerSubsystem::ClearSubQuests()
+{
+	SubQuests.Empty();
+}
+
+void UQuestManagerSubsystem::GetSubQuests(TArray<FQuestState>& OutQuests) const
+{
+	OutQuests = SubQuests;
+}
+
+void UQuestManagerSubsystem::ConnectQuestAgent()
+{
+	if (!AgentClient)
+	{
+		LOG_LC_W(TEXT("Quest manager could not find FactoryAgentClientSubsystem."));
+		return;
+	}
+
+	AgentClient->ConnectToDefaultServer();
+}
+
+FString UQuestManagerSubsystem::RequestSubQuests()
+{
+	if (!AgentClient)
+	{
+		OnSubQuestRequestFailed.Broadcast(FString(), TEXT("FactoryAgentClientSubsystem is not available."));
+		return FString();
+	}
+
+	if (!AgentClient->SendQuestGeneratorRequest(QuestSampleRequestId, QuestSampleSessionId, QuestSampleClientId))
+	{
+		OnSubQuestRequestFailed.Broadcast(FString(), TEXT("Failed to send quest generator request. Check the agent connection."));
+		return FString();
+	}
+
+	const FString RequestId = QuestSampleRequestId;
+	PendingSubQuestRequestIds.Add(RequestId);
+	OnSubQuestRequestStarted.Broadcast(RequestId, QuestGeneratorAgentId);
+	return RequestId;
+}
+
+FString UQuestManagerSubsystem::RequestProductionSubQuests(const FString& Question)
+{
+	return SendSubQuestRequest(WriteJsonObject(CreateProductionPayload(Question)));
+}
+
+void UQuestManagerSubsystem::ActivateCurrentMainQuest()
+{
+	for (int32 Index = 0; Index < MainQuestSequence.Num(); ++Index)
+	{
+		if (Index < CurrentMainQuestIndex)
+		{
+			MainQuestSequence[Index].Status = EQuestStatus::Completed;
+		}
+		else
+		{
+			MainQuestSequence[Index].Status = Index == CurrentMainQuestIndex
+				? EQuestStatus::Active
+				: EQuestStatus::Inactive;
+		}
+	}
+
+	if (MainQuestSequence.IsValidIndex(CurrentMainQuestIndex))
+	{
+		OnMainQuestChanged.Broadcast(MainQuestSequence[CurrentMainQuestIndex]);
+	}
+}
+
+void UQuestManagerSubsystem::BindAgentClient()
+{
+	if (!AgentClient)
+	{
+		LOG_LC_W(TEXT("Quest manager could not bind FactoryAgentClientSubsystem."));
+		return;
+	}
+
+	AgentClient->OnAgentResponseReceived.AddDynamic(this, &UQuestManagerSubsystem::HandleAgentResponse);
+	AgentClient->OnAgentErrorReceived.AddDynamic(this, &UQuestManagerSubsystem::HandleAgentError);
+}
+
+FString UQuestManagerSubsystem::SendSubQuestRequest(const FString& PayloadJson)
+{
+	if (!AgentClient)
+	{
+		OnSubQuestRequestFailed.Broadcast(FString(), TEXT("FactoryAgentClientSubsystem is not available."));
+		return FString();
+	}
+
+	const FString RequestId = AgentClient->SendAgentRequest(QuestGeneratorAgentId, PayloadJson);
+	if (RequestId.IsEmpty())
+	{
+		OnSubQuestRequestFailed.Broadcast(FString(), TEXT("Failed to send sub quest request. Check the agent connection."));
+		return FString();
+	}
+
+	PendingSubQuestRequestIds.Add(RequestId);
+	OnSubQuestRequestStarted.Broadcast(RequestId, QuestGeneratorAgentId);
+	return RequestId;
+}
+
+void UQuestManagerSubsystem::HandleAgentResponse(
+	const FString& RequestId,
+	const FString& Agent,
+	const FString& PayloadJson,
+	const FString& RawMessage)
+{
+	if (Agent != QuestGeneratorAgentId || !PendingSubQuestRequestIds.Contains(RequestId))
+	{
+		return;
+	}
+
+	PendingSubQuestRequestIds.Remove(RequestId);
+
+	TSharedPtr<FJsonObject> PayloadObject;
+	if (!ParseJsonObject(PayloadJson, PayloadObject))
+	{
+		OnSubQuestRequestFailed.Broadcast(RequestId, TEXT("Sub quest response payload was not valid JSON."));
+		return;
+	}
+
+	const TArray<TSharedPtr<FJsonValue>>* QuestValues = nullptr;
+	if (!PayloadObject->TryGetArrayField(TEXT("quests"), QuestValues) || !QuestValues)
+	{
+		OnSubQuestRequestFailed.Broadcast(RequestId, TEXT("Sub quest response did not include a quests array."));
+		return;
+	}
+
+	TArray<FQuestState> GeneratedQuests;
+	for (const TSharedPtr<FJsonValue>& QuestValue : *QuestValues)
+	{
+		FQuestState Quest;
+		if (ReadQuestState(QuestValue->AsObject(), Quest))
+		{
+			GeneratedQuests.Add(Quest);
+		}
+	}
+
+	if (GeneratedQuests.IsEmpty())
+	{
+		OnSubQuestRequestFailed.Broadcast(RequestId, TEXT("Sub quest response did not include any valid quests."));
+		return;
+	}
+
+	SubQuests.Append(GeneratedQuests);
+	OnSubQuestsGenerated.Broadcast(RequestId, GeneratedQuests);
+}
+
+void UQuestManagerSubsystem::HandleAgentError(
+	const FString& RequestId,
+	const FString& Agent,
+	const FString& ErrorCode,
+	const FString& ErrorMessage,
+	const FString& RawMessage)
+{
+	if (Agent != QuestGeneratorAgentId || !PendingSubQuestRequestIds.Contains(RequestId))
+	{
+		return;
+	}
+
+	PendingSubQuestRequestIds.Remove(RequestId);
+	OnSubQuestRequestFailed.Broadcast(RequestId, FString::Printf(TEXT("%s: %s"), *ErrorCode, *ErrorMessage));
+}
