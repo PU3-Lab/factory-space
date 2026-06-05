@@ -7,3 +7,4 @@ AirCompressor,iron_ingot,10,1000,10,1,1,1,1,3,3,
 PowerPlant,iron_ingot,10,1000,30,0,0,0,0,3,3,/Game/Assets/UIImg/Machine/PowerPlant.PowerPlant
 PowerGridNode,iron_ingot,10,1000,40,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/PowerGridNode.PowerGridNode
 MagneticShield,iron_ingot,100,10000,100,,,,,,,/Game/Assets/UIImg/Machine/MagneticShield.MagneticShield
+Conveyor,,,,,,,,,,,/Game/Assets/UIImg/Machine/Conveyor.Conveyor
