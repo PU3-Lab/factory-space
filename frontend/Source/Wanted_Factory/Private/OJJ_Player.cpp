@@ -22,6 +22,7 @@
 #include "OJJ_BuildController.h"
 #include "OJJ_BuildCamera.h"
 #include "OJJ_Grid.h"
+#include "Blueprint/UserWidget.h"
 
 AOJJ_Player::AOJJ_Player()
 {
@@ -334,6 +335,14 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 				TEXT("[OJJ_Player] IMC_Build 미할당 — 빌드모드 Look 차단 불가(IMC_Player 유지). ")
 				TEXT("BP_OJJ_Player에 IMC_Build 할당 필요."));
 		}
+		if (PC && BuildModeWidgetClass && !BuildModeWidgetInstance)
+		{
+			BuildModeWidgetInstance = CreateWidget<UUserWidget>(PC, BuildModeWidgetClass);
+			if (BuildModeWidgetInstance)
+			{
+				BuildModeWidgetInstance->AddToViewport();
+			}
+		}
 	}
 	else
 	{
@@ -356,6 +365,11 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 			{
 				Subsystem->AddMappingContext(IMC_Player, 0);
 			}
+		}
+		if (BuildModeWidgetInstance)
+		{
+			BuildModeWidgetInstance->RemoveFromParent();
+			BuildModeWidgetInstance = nullptr;
 		}
 	}
 }

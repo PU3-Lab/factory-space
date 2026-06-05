@@ -37,6 +37,12 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	
+	// --- UI ---
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
+	TSubclassOf<UUserWidget> BuildModeWidgetClass;
+	UPROPERTY()
+	UUserWidget* BuildModeWidgetInstance;
 
 	// --- Components ---
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
