@@ -217,11 +217,17 @@ void UQuestManagerSubsystem::ResetMainQuestProgress()
 void UQuestManagerSubsystem::ClearSubQuests()
 {
 	SubQuests.Empty();
+	SubQuestTitles.Empty();
 }
 
 void UQuestManagerSubsystem::GetSubQuests(TArray<FQuestState>& OutQuests) const
 {
 	OutQuests = SubQuests;
+}
+
+void UQuestManagerSubsystem::GetSubQuestTitles(TArray<FString>& OutTitles) const
+{
+	OutTitles = SubQuestTitles;
 }
 
 void UQuestManagerSubsystem::ConnectQuestAgent()
@@ -250,6 +256,7 @@ FString UQuestManagerSubsystem::RequestSubQuests()
 	}
 
 	const FString RequestId = QuestSampleRequestId;
+	ClearSubQuests();
 	PendingSubQuestRequestIds.Add(RequestId);
 	OnSubQuestRequestStarted.Broadcast(RequestId, QuestGeneratorAgentId);
 	return RequestId;
@@ -309,6 +316,7 @@ FString UQuestManagerSubsystem::SendSubQuestRequest(const FString& PayloadJson)
 		return FString();
 	}
 
+	ClearSubQuests();
 	PendingSubQuestRequestIds.Add(RequestId);
 	OnSubQuestRequestStarted.Broadcast(RequestId, QuestGeneratorAgentId);
 	return RequestId;
@@ -342,12 +350,14 @@ void UQuestManagerSubsystem::HandleAgentResponse(
 	}
 
 	TArray<FQuestState> GeneratedQuests;
+	TArray<FString> GeneratedTitles;
 	for (const TSharedPtr<FJsonValue>& QuestValue : *QuestValues)
 	{
 		FQuestState Quest;
 		if (ReadQuestState(QuestValue->AsObject(), Quest))
 		{
 			GeneratedQuests.Add(Quest);
+			GeneratedTitles.Add(Quest.Title.ToString());
 		}
 	}
 
@@ -357,8 +367,10 @@ void UQuestManagerSubsystem::HandleAgentResponse(
 		return;
 	}
 
-	SubQuests.Append(GeneratedQuests);
+	SubQuests = GeneratedQuests;
+	SubQuestTitles = GeneratedTitles;
 	OnSubQuestsGenerated.Broadcast(RequestId, GeneratedQuests);
+	OnSubQuestTitlesUpdated.Broadcast(RequestId, SubQuestTitles);
 }
 
 void UQuestManagerSubsystem::HandleAgentError(
