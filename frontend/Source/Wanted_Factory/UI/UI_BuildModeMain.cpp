@@ -7,23 +7,32 @@ void UUI_BuildModeMain::NativeConstruct()
 {
     Super::NativeConstruct();
     
-    if (BTN_Slot_Machine)    BTN_Slot_Machine->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnMachineClicked);
-    if (BTN_Slot_Conveyor)   BTN_Slot_Conveyor->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnConveyorClicked);
-    if (BTN_Slot_PowerNode)  BTN_Slot_PowerNode->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnPowerNodeClicked);
-    if (BTN_Slot_Shield)     BTN_Slot_Shield->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnShieldClicked);
-    if (BTN_Slot_PowerPlant) BTN_Slot_PowerPlant->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnPowerPlantClicked);
-    if (BTN_Slot_PowerLine)  BTN_Slot_PowerLine->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnPowerLineClicked);
+    // 1. 위젯 버튼과 클릭 함수 1:1 바인딩
+    if (BTN_Slot_1_Storage)        BTN_Slot_1_Storage->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnStorageClicked);
+    if (BTN_Slot_2_Conveyor)       BTN_Slot_2_Conveyor->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnConveyorClicked);
+    if (BTN_Slot_3_Smelter)        BTN_Slot_3_Smelter->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnSmelterClicked);
+    if (BTN_Slot_4_Grinder)        BTN_Slot_4_Grinder->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnGrinderClicked);
+    if (BTN_Slot_5_Miner)          BTN_Slot_5_Miner->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnMinerClicked);
+    
+    if (BTN_Slot_7_PowerPlant)     BTN_Slot_7_PowerPlant->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnPowerPlantClicked);
+    if (BTN_Slot_8_PowerGridNode)  BTN_Slot_8_PowerGridNode->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnPowerGridNodeClicked);
+    if (BTN_Slot_9_PowerLine)      BTN_Slot_9_PowerLine->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnPowerLineClicked);
+    if (BTN_Slot_0_MagneticShield) BTN_Slot_0_MagneticShield->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnMagneticShieldClicked);
 }
 
-// ExecutePlacementMode 호출
-void UUI_BuildModeMain::OnMachineClicked()    { ExecutePlacementMode(0); } // 1번 슬롯
-void UUI_BuildModeMain::OnPowerPlantClicked() { ExecutePlacementMode(6); } // 7번 슬롯
-void UUI_BuildModeMain::OnShieldClicked()     { ExecutePlacementMode(7); } // 8번 슬롯
-void UUI_BuildModeMain::OnPowerNodeClicked()  { ExecutePlacementMode(8); } // 9번 슬롯
-void UUI_BuildModeMain::OnConveyorClicked()   { ExecutePlacementMode(9); } // 0번 슬롯
-void UUI_BuildModeMain::OnPowerLineClicked()  { ExecutePlacementMode(10); } // -번 슬롯
+// 2. 징검다리 구역: 각 함수는 기획하신 '키보드 단축키 번호'를 그대로 넘겨줍니다.
+void UUI_BuildModeMain::OnStorageClicked()        { ExecutePlacementMode(1); } // 1번: 창고
+void UUI_BuildModeMain::OnConveyorClicked()       { ExecutePlacementMode(2); } // 2번: 컨베이어
+void UUI_BuildModeMain::OnSmelterClicked()        { ExecutePlacementMode(3); } // 3번: 제련기
+void UUI_BuildModeMain::OnGrinderClicked()        { ExecutePlacementMode(4); } // 4번: 분쇄기
+void UUI_BuildModeMain::OnMinerClicked()          { ExecutePlacementMode(5); } // 5번: 채굴기
 
-// switch-case 제어 타겟 함수
+void UUI_BuildModeMain::OnPowerPlantClicked()     { ExecutePlacementMode(7); } // 7번: 발전소
+void UUI_BuildModeMain::OnPowerGridNodeClicked()  { ExecutePlacementMode(8); } // 8번: 송전탑
+void UUI_BuildModeMain::OnPowerLineClicked()      { ExecutePlacementMode(9); } // 9번: 송전선
+void UUI_BuildModeMain::OnMagneticShieldClicked() { ExecutePlacementMode(0); } // 0번: 차폐막
+
+// 3. 집중 제어 switch-case 함수
 void UUI_BuildModeMain::ExecutePlacementMode(int32 SlotIndex)
 {
     AOJJ_BuildController* BuildController = Cast<AOJJ_BuildController>(
@@ -31,21 +40,22 @@ void UUI_BuildModeMain::ExecutePlacementMode(int32 SlotIndex)
 
     if (!BuildController) return;
     
+    // 유저님이 짜놓으신 직관적인 단축키 번호 규칙 그대로 완벽하게 동작합니다.
     switch (SlotIndex)
     {
-    //case 1: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Storage); break;      // 1번 슬롯: 창고
-    case 2: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Conveyor); break;     // 2번 슬롯: 컨베이어
-    //case 3: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Smelter); break;      // 3번 슬롯: 제련기
-    case 4: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Grinder); break;      // 4번 슬롯: 분쇄기
-    case 5: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Miner); break;        // 5번 슬롯: 채굴기
-    
-        // case 6번은 현재 비어있으므로 필요 시 나중에 추가 가능합니다.
+        //case 1: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Storage); break;     // 1번: 창고
+        case 2: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Conveyor); break;    // 2번: 컨베이어
+        case 3: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Smelter); break;     // 3번: 제련기
+        case 4: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Grinder); break;     // 4번: 분쇄기
+        case 5: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Miner); break;       // 5번: 채굴기
+        
+        // case 6: 나중에 추가 가능하게 배치 보존
 
-    case 7: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerPlant); break;   // 7번 슬롯: 발전소
-    case 8: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerNode); break;   // 8번 슬롯: 송전탑 (기존 PowerNode)
-    case 9: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerLine); break;   // 9번 슬롯: 송전선
-    case 0: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Shield); break;      // 0번 슬롯: 차폐막 (기존 Shield)
-    
-    default: break;
+        case 7: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerPlant); break;  // 7번: 발전소
+        case 8: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerNode); break;   // 8번: 송전탑 (동료 Enum 명칭 유지)
+        case 9: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerLine); break;   // 9번: 송전선
+        case 0: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Shield); break;      // 0번: 차폐막 (동료 Enum 명칭 유지)
+        
+        default: break;
     }
 }

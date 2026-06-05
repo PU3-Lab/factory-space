@@ -1,8 +1,36 @@
 #include "UI_MainHUD.h"
 #include "Components/TextBlock.h"
-#include "QuestManagerSubsystem.h" // 🌟 동료분의 퀘스트 매니저 헤더 포함
+#include "QuestManagerSubsystem.h"
+#include "PlanetEventManagerSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 
+void UUI_MainHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+    Super::NativeTick(MyGeometry, InDeltaTime);
+    
+    if (GetWorld())
+    {
+        UPlanetEventManagerSubsystem* PlanetManager = GetWorld()->GetSubsystem<UPlanetEventManagerSubsystem>();
+        if (PlanetManager)
+        {
+            if (TXT_DisasterDay)
+            {
+                int32 CurrentDay = PlanetManager->GetCurrentDayIndex();
+                
+                FString DayStr = FString::Printf(TEXT("DAY %02d"), CurrentDay);
+
+                TXT_DisasterDay->SetText(FText::FromString(DayStr));
+            }
+            
+            if (TXT_InGameTime)
+            {
+                FString TimeStr = PlanetManager->GetCurrentTime24String();
+
+                TXT_InGameTime->SetText(FText::FromString(TimeStr));
+            }
+        }
+    }
+}
 void UUI_MainHUD::NativeConstruct()
 {
     Super::NativeConstruct();
