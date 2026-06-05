@@ -23,6 +23,8 @@
 #include "OJJ_BuildCamera.h"
 #include "OJJ_Grid.h"
 #include "Blueprint/UserWidget.h"
+#include "MachineBase.h"
+#include "UI/UI_MachineInteract.h"
 
 AOJJ_Player::AOJJ_Player()
 {
@@ -124,6 +126,17 @@ void AOJJ_Player::BeginPlay()
 	ConnectFactoryAgentClient();
 }
 
+void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// 폰 파괴/언포제스 시 열려 있던 머신 상호작용 위젯·입력모드 정리.
+	// ⚠️ EndPlay 시점엔 PlayerController가 이미 무효일 수 있다 — Cast가 null을 반환하면
+	//    CloseMachineInteractWidget의 PC null-가드가 입력모드 복원을 스킵하고 위젯 제거만 수행한다
+	//    (컨트롤러가 없으면 복원할 대상도 없으므로 안전).
+	CloseMachineInteractWidget(Cast<APlayerController>(GetController()));
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void AOJJ_Player::ConnectFactoryAgentClient()
 {
 	if (UGameInstance* GameInstance = GetGameInstance())
@@ -174,6 +187,16 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 		// ACharacter 내장 Jump/StopJumping 사용
 		EnhancedInput->BindAction(IA_Jump, ETriggerEvent::Started, this, &ACharacter::Jump);
 		EnhancedInput->BindAction(IA_Jump, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
+	}
+	if (IA_Interact)
+	{
+		// 머신 상호작용 토글(F) — 누를 때 한 번(Started). 빌드모드 가드는 핸들러 내부에서.
+		EnhancedInput->BindAction(IA_Interact, ETriggerEvent::Started, this, &AOJJ_Player::OnInteract);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] IA_Interact 미할당 — 머신 상호작용(F) 비활성. IMC_Player/BP_OJJ_Player에 IA_Interact 할당 필요."));
 	}
 	if (IA_Build)
 	{
@@ -320,6 +343,14 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 
 	if (bEntering)
 	{
+		// 빌드모드 진입 시 머신 상호작용 위젯이 떠 있으면 닫는다 — F는 빌드모드 중 무시되지만
+		// B(빌드 토글)는 위젯이 열려 있어도 동작하므로, 닫지 않으면 위젯+GameAndUI가 빌드모드 위에
+		// 잔존하는 half-state가 된다(양방향 상호배제). IsValid()만 봐 자체 닫힘(미GC) 잔존 상태도 정리.
+		if (MachineInteractWidgetInstance.IsValid())
+		{
+			CloseMachineInteractWidget(PC);
+		}
+
 		if (BuildCamera && BuildController)
 		{
 			// 진입할 때마다 그리드 중심으로 카메라 재배치 — 그리드가 동적으로 커져도 매 진입 시 맞춰짐.
@@ -596,5 +627,99 @@ void AOJJ_Player::SendOperatorGuideRequest()
 	if (AgentClient->SendJsonMessage(RequestJson))
 	{
 		UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] Sent operator guide request."));
+	}
+}
+
+void AOJJ_Player::OnInteract(const FInputActionValue& Value)
+{
+	// UI는 로컬 전용 — 멀티플레이에서 비로컬 폰의 입력으로 위젯을 띄우지 않도록 가드.
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC)
+	{
+		return;
+	}
+
+	// 빌드모드 중에는 F 무시 — 빌드 입력/탑다운 카메라와 상호작용 UI를 상호배제(half-state 방지).
+	if (BuildController && BuildController->IsInBuildMode())
+	{
+		return;
+	}
+
+	// 토글 닫기: 뷰포트에 떠 있는 위젯이 있으면 닫는다.
+	// IsValid()에 더해 IsInViewport()까지 보는 이유 — 위젯이 자체 BTN_Close(RemoveFromParent)로
+	// 닫혀도 객체는 GC 전까지 살아 있어 IsValid()만으론 "열림"으로 오판하기 때문.
+	// ⚠️ 알려진 한계: 위젯 자체 닫기 경로에선 입력모드/커서 복원이 이 다음 F 입력까지 잔존한다
+	//    (위젯은 수정 금지라 닫힘을 플레이어에 통지하지 못함 — LDJ에 닫힘 델리게이트 요청 예정).
+	if (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport())
+	{
+		CloseMachineInteractWidget(PC);
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!Camera || !World)
+	{
+		return;
+	}
+
+	// 카메라 전방 라인 트레이스 — 빌드모드 호버와 동일 채널(ECC_Visibility), 거리만 MaxInteractDistance.
+	const FVector TraceStart = Camera->GetComponentLocation();
+	const FVector TraceEnd = TraceStart + Camera->GetForwardVector() * MaxInteractDistance;
+	FHitResult Hit;
+	FCollisionQueryParams TraceParams(FName(TEXT("OJJMachineInteract")), /*bTraceComplex=*/ false, this);
+	const bool bHit = World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, TraceParams);
+	if (!bHit)
+	{
+		return;
+	}
+
+	// 히트 액터가 머신(또는 파생)일 때만 상호작용.
+	AMachineBase* Machine = Cast<AMachineBase>(Hit.GetActor());
+	if (!Machine)
+	{
+		return;
+	}
+
+	if (!MachineInteractWidgetClass)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] MachineInteractWidgetClass 미할당 — 머신 상호작용(F) 비활성. ")
+			TEXT("BP_OJJ_Player에 WBP_MachineInteract 할당 필요."));
+		return;
+	}
+
+	UUI_MachineInteract* Widget = CreateWidget<UUI_MachineInteract>(PC, MachineInteractWidgetClass);
+	if (!Widget)
+	{
+		return;
+	}
+	Widget->AddToViewport();
+	// 머신 참조 전달 — 위젯의 모든 실데이터(입출력/상태/진행도/내구도) 표시가 이 참조에 의존.
+	Widget->SetTargetMachine(Machine);
+	MachineInteractWidgetInstance = Widget;
+
+	// 열 때: 마우스로 위젯과 상호작용 가능하도록 GameAndUI + 커서 표시.
+	PC->SetInputMode(FInputModeGameAndUI());
+	PC->SetShowMouseCursor(true);
+}
+
+void AOJJ_Player::CloseMachineInteractWidget(APlayerController* PC)
+{
+	if (UUI_MachineInteract* Widget = MachineInteractWidgetInstance.Get())
+	{
+		Widget->RemoveFromParent();
+	}
+	MachineInteractWidgetInstance = nullptr;
+
+	// 닫을 때: 게임 전용 입력 복원 + 커서 숨김.
+	if (PC)
+	{
+		PC->SetInputMode(FInputModeGameOnly());
+		PC->SetShowMouseCursor(false);
 	}
 }
