@@ -17,7 +17,11 @@ from agents.operator_guide.agent import (
 )
 from agents.orchestrator import TOP_LEVEL_AGENT_IDS, OrchestratorAgent
 from agents.pipeline.graph_edges import wire_agent_graph
-from agents.pipeline.llm_fallback import build_llm_call_slots, invoke_llm_call_slot
+from agents.pipeline.llm_fallback import (
+    LLMCallSlot,
+    build_llm_call_slots,
+    invoke_llm_call_slot,
+)
 from agents.pipeline.middleware import (
     append_middleware_log,
     build_current_model_metadata,
@@ -46,6 +50,30 @@ from protocol.messages import (
     AgentRequestEnvelope,
     AgentResponseEnvelope,
 )
+
+
+class _FallbackRoutingLLM:
+    """LLM adapter wrapper that tries multiple slots sequentially on failure."""
+
+    def __init__(self, slots: list[LLMCallSlot]) -> None:
+        self.slots = slots
+
+    def invoke(self, prompt: str) -> str | None:
+        for slot in self.slots:
+            res = slot.adapter.invoke(prompt)
+            if res is not None:
+                return res
+        return None
+
+
+def _clean_routing_decision(raw: str | None) -> str:
+    """Clean raw routing model output by stripping whitespace and outer JSON quotes."""
+    if not raw:
+        return ""
+    cleaned = raw.strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {'"', "'"}:
+        cleaned = cleaned[1:-1]
+    return cleaned.strip()
 
 
 class AgentPipeline:
@@ -93,7 +121,7 @@ class AgentPipeline:
             adapter_factory=self.llm_adapter_factory,
         )
         llm_slots_by_name = {slot.name: slot for slot in llm_slots}
-        routing_llm = self.llm or llm_slots[0].adapter
+        routing_llm = self.llm or _FallbackRoutingLLM(list(llm_slots))
         orchestrator = OrchestratorAgent()
         operator_guide = OperatorGuideAgent()
         quest_generator = QuestGeneratorAgent()
@@ -158,7 +186,7 @@ class AgentPipeline:
             return {
                 "routingPrompt": routing_prompt,
                 "routingRaw": routing_raw,
-                "selectedAgent": (routing_raw or "").strip(),
+                "selectedAgent": _clean_routing_decision(routing_raw),
             }
 
         def validate_process_payload(state: AgentGraphState) -> AgentGraphState:
@@ -212,7 +240,7 @@ class AgentPipeline:
             return {
                 "routingPrompt": routing_prompt,
                 "routingRaw": routing_raw,
-                "selectedLeafAgent": (routing_raw or "").strip(),
+                "selectedLeafAgent": _clean_routing_decision(routing_raw),
             }
 
         def route_quest_sub_agent(state: AgentGraphState) -> AgentGraphState:
@@ -239,7 +267,7 @@ class AgentPipeline:
             return {
                 "routingPrompt": routing_prompt,
                 "routingRaw": routing_raw,
-                "selectedLeafAgent": (routing_raw or "").strip(),
+                "selectedLeafAgent": _clean_routing_decision(routing_raw),
             }
 
         def cache_lookup(state: AgentGraphState) -> AgentGraphState:
@@ -306,8 +334,14 @@ class AgentPipeline:
             if not raw:
                 return {}
 
+            cleaned = raw.strip()
+            if cleaned.startswith("```"):
+                lines = cleaned.splitlines()
+                if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].startswith("```"):
+                    cleaned = "\n".join(lines[1:-1]).strip()
+
             try:
-                payload = json.loads(raw)
+                payload = json.loads(cleaned)
             except json.JSONDecodeError:
                 return {
                     "error": build_error_payload(

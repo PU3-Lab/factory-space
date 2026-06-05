@@ -2,36 +2,30 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "Engine/DataTable.h"
 #include "UI_BuildModeMain.generated.h"
 
 UCLASS()
-class UUI_BuildModeMain : public UUserWidget
+class WANTED_FACTORY_API UUI_BuildModeMain : public UUserWidget
 {
 	GENERATED_BODY()
 
 public:
 	virtual void NativeConstruct() override;
-	
-	UFUNCTION(BlueprintCallable, Category = "Quickslot")
-	void HandleQuickslotClicked(int32 SlotIndex);
 
 protected:
-	UPROPERTY(meta = (BindWidget))
-	class UHorizontalBox* HBox_QuickslotBar; 
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FactoryData")
-	class UDataTable* FactoryDataTable;
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_Machine;     // 1번: 기계
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_Conveyor;    // 0번: 컨베이어
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_PowerNode;   // 9번: 전력 노드
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_Shield;      // 8번: 쉴드
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_PowerPlant;  // 7번: 발전소
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_PowerLine;   // -번: 전선
 
 private:
-	void OnKey1Pressed();
-	void OnKey2Pressed();
-	void OnKey3Pressed();
-	void OnKey4Pressed();
-	void OnKey5Pressed();
-	void OnKey6Pressed();
-	void OnKey7Pressed();
-	void OnKey8Pressed();
-	void OnKey9Pressed();
-	void OnKey0Pressed();
+	UFUNCTION() void OnMachineClicked();
+	UFUNCTION() void OnConveyorClicked();
+	UFUNCTION() void OnPowerNodeClicked();
+	UFUNCTION() void OnShieldClicked();
+	UFUNCTION() void OnPowerPlantClicked();
+	UFUNCTION() void OnPowerLineClicked();
+	void ExecutePlacementMode(int32 SlotIndex);
 };

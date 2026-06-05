@@ -16,27 +16,25 @@ class ProductionQuestAgent:
     tools = ()
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
-        """Build the prompt used to generate production quests with an LLM."""
-
-        available_quests = json.dumps(
-            QuestAgentService().available_quest_json(),
-            ensure_ascii=False,
-        )
         return (
-            "[ROLE]\n"
-            "Factory Space production quest selector.\n\n"
-            "[TASK]\n"
-            "Choose exactly 5 quest ids from AVAILABLE_QUESTS.\n"
-            "Do not create, rewrite, translate, or modify any quest content.\n\n"
-            "[AVAILABLE_QUESTS]\n"
-            f"{available_quests}\n\n"
-            "[REQUEST_PAYLOAD]\n"
-            f"{payload}\n\n"
-            "[OUTPUT_CONTRACT]\n"
-            "Return only a JSON object with this shape:\n"
-            '{"selected_quest_ids":[1,2,3,4,5]}\n'
-            "Use exactly 5 unique ids from AVAILABLE_QUESTS.\n"
-            "Do not include quests, markdown, comments, reasons, or extra keys."
+            f"다음 요청을 바탕으로 생산 퀘스트를 생성하세요: {payload}\n"
+            "반드시 다음 JSON 스키마 형식의 JSON 객체 하나만 출력하세요. 마크다운 펜스(```json)나 부가 설명은 절대 쓰지 마세요.\n"
+            "{\n"
+            '  "quests": [\n'
+            "    {\n"
+            '      "id": 1,\n'
+            '      "type": "production",\n'
+            '      "title": "퀘스트 제목",\n'
+            '      "description": "퀘스트 설명",\n'
+            '      "objectives": [\n'
+            "        {\n"
+            '          "target_item_id": "대상 아이템 ID",\n'
+            '          "quantity": 10\n'
+            "        }\n"
+            "      ]\n"
+            "    }\n"
+            "  ]\n"
+            "}"
         )
 
     def fallback(
