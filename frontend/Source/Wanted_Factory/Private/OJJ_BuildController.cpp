@@ -17,10 +17,42 @@
 #include "Machines/PowerLine.h"
 #include "Machines/PowerPlant.h"
 #include "Machines/Grinder.h"
+#include "Machines/MachineSubsystem.h"
 #include "Machines/MinerMachine.h"
 #include "Machines/Pump.h"
 #include "Machines/Smelter.h"
 #include "OJJ_ProtectionTower.h"
+
+namespace
+{
+	void ApplyMachineDataToDefault(UObject* Context, AMachineBase* DefaultMachine)
+	{
+		if (!Context || !DefaultMachine)
+		{
+			return;
+		}
+
+		UGameInstance* GameInstance = Context->GetWorld()
+			? Context->GetWorld()->GetGameInstance()
+			: nullptr;
+		if (!GameInstance)
+		{
+			return;
+		}
+
+		UMachineSubsystem* MachineSubsystem = GameInstance->GetSubsystem<UMachineSubsystem>();
+		if (!MachineSubsystem)
+		{
+			return;
+		}
+
+		FMachineTableRow MachineData;
+		if (MachineSubsystem->FindMachineData(DefaultMachine->GetMachineType(), MachineData))
+		{
+			DefaultMachine->ApplyMachineData(MachineData);
+		}
+	}
+}
 
 AOJJ_BuildController::AOJJ_BuildController()
 {
@@ -404,6 +436,7 @@ void AOJJ_BuildController::UpdateMouseHover()
 	{
 		return;
 	}
+	ApplyMachineDataToDefault(this, DefaultMachine);
 
 	// cursor cell → lower-left origin (마우스 = 풋프린트 중심 정책).
 	// 예전엔 IsValidGridCell(cursor)로 anchor 음수/초과를 사전 차단했으나, 이 차단이
@@ -479,6 +512,7 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	// 배치도 회전 반영(단계 4). origin/CanPlace/TryPlace + 메시 yaw 모두 같은 HoverRotationSteps를
 	// 써야 점유·중심·메시가 일치(Codex 지적 핵심). 호버 미리보기(UpdateMouseHover)와도 동일 step이라
 	// "미리보기 = 실제 배치" 정합.
+	ApplyMachineDataToDefault(this, DefaultMachine);
 	const FIntPoint Origin = ComputeOriginFromCursorCell(CurrentHoverCell, DefaultMachine, HoverRotationSteps);
 
 	if (!TargetGrid->CanPlaceMachine(DefaultMachine, Origin, HoverRotationSteps))

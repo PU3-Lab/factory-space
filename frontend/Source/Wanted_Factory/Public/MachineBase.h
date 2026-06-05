@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Machines/MachineTable.h"
 #include "Recipe/RecipeTable.h"
 #include "MachineBase.generated.h"
 
@@ -97,11 +98,13 @@ public:
 	FTimerHandle GetProcessTimer() const { return ProcessTimer; }
 	float GetProcessTime() const { return ProcessTime; }
 	FName GetMachineType() const { return MachineType; }
+	virtual void ApplyMachineData(const FMachineTableRow& MachineData);
 
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void OnConstruction(const FTransform& Transform) override;
+	bool ApplyMachineDataFromSubsystem();
 
 	// 그리드 세팅
 
@@ -128,6 +131,12 @@ protected:
 	// 출력 포트 개수
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Ports", meta = (ClampMin = "0"))
 	int32 OutputPortCount;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Inventory", meta = (ClampMin = "0"))
+	int32 InputBufferCount = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Inventory", meta = (ClampMin = "0"))
+	int32 OutputBufferCount = 1;
 
 	// 생산시간
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Settings")
@@ -252,6 +261,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Machine Settings")
 	int32 GetOutputPortCount() const { return OutputPortCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Machine Settings")
+	int32 GetInputBufferCount() const { return InputBufferCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Machine Settings")
+	int32 GetOutputBufferCount() const { return OutputBufferCount; }
 
 	// 배치 Z(바닥 안착) 계산 등에서 메시 로컬 바운즈/월드스케일을 읽기 위한 접근자.
 	UStaticMeshComponent* GetMeshComponent() const { return MeshComponent; }
