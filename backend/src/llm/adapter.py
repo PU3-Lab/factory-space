@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ from openai import OpenAI
 from llm.settings import LLMModelSlot
 
 _OPENAI_BASE_URL = "https://api.openai.com/v1"
+
+logger = logging.getLogger(__name__)
 
 
 class LLMAdapter(Protocol):
@@ -170,7 +173,8 @@ class OpenAILLMAdapter:
                 max_tokens=self.max_output_tokens,
                 temperature=self.temperature,
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning("OpenAI LLM call failed: %s", exc)
             return None
 
         if completion is None:
