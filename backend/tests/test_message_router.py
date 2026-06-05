@@ -11,7 +11,7 @@ from tests.harness import (
     top_agent_decision,
 )
 
-QUEST_LLM_RESPONSE = '{"selected_quest_ids":[1,2,3,4,5]}'
+QUEST_LLM_RESPONSE = '{"selected_quest_ids":[10,9,8,7,6]}'
 
 
 def test_pipeline_uses_prompt_based_top_level_routing() -> None:
@@ -36,7 +36,7 @@ def test_pipeline_uses_prompt_based_top_level_routing() -> None:
     )
     assert len(response["payload"]["quests"]) == 5
     assert response["payload"]["quests"][0]["type"] == "production"
-    assert response["payload"]["quests"][0]["id"] == 1
+    assert response["payload"]["quests"][0]["id"] == 10
     assert response["payload"]["metadata"]["llm"] == "used"
     assert "서버 전체 오케스트레이터" in llm.prompts[0]
     assert "[OUTPUT_CONTRACT]" in llm.prompts[0]
@@ -69,11 +69,12 @@ def test_pipeline_routes_empty_quest_request_through_llm() -> None:
         sub_agent="quest_generator.production_quest",
     )
     assert len(response["payload"]["quests"]) == 5
-    assert response["payload"]["quests"][0]["id"] == 1
+    assert response["payload"]["quests"][0]["id"] == 10
     assert response["payload"]["metadata"]["llm"] == "used"
     assert len(llm.prompts) == 3
     assert "팩토리 스페이스 생산 퀘스트 선택 에이전트입니다." in llm.prompts[2]
-    assert '"selected_quest_ids":[1,2,3,4,5]' in llm.prompts[2]
+    assert '"selected_quest_ids":[2,4,6,8,10]' in llm.prompts[2]
+    assert "그대로 따라 쓰지 마세요" in llm.prompts[2]
     assert "[AVAILABLE_QUESTS]" in llm.prompts[2]
 
 

@@ -17,7 +17,7 @@ from tests.harness import (
     top_agent_decision,
 )
 
-QUEST_LLM_RESPONSE = '{"selected_quest_ids":[1,2,3,4,5]}'
+QUEST_LLM_RESPONSE = '{"selected_quest_ids":[10,9,8,7,6]}'
 
 
 class BrokenFallbackAgent:
@@ -919,10 +919,11 @@ def test_pipeline_routes_production_quest_from_llm_leaf_decision() -> None:
     )
     assert len(response["payload"]["quests"]) == 5
     assert response["payload"]["quests"][0]["type"] == "production"
-    assert response["payload"]["quests"][0]["id"] == 1
+    assert response["payload"]["quests"][0]["id"] == 10
     assert response["payload"]["metadata"]["llm"] == "used"
     assert "팩토리 스페이스 생산 퀘스트 선택 에이전트입니다." in llm.prompts[2]
-    assert '"selected_quest_ids":[1,2,3,4,5]' in llm.prompts[2]
+    assert '"selected_quest_ids":[2,4,6,8,10]' in llm.prompts[2]
+    assert "그대로 따라 쓰지 마세요" in llm.prompts[2]
     assert "퀘스트 생성 도메인 오케스트레이터" in llm.prompts[1]
 
 
