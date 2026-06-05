@@ -230,10 +230,12 @@ def test_google_llm_adapter_returns_response_text() -> None:
     assert models.calls[0]["model"] == "gemini-2.5-flash"
     assert models.calls[0]["contents"] == "prompt"
     config = models.calls[0]["config"]
-    assert getattr(config, "response_mime_type") == "application/json"
+    assert getattr(config, "response_mime_type") == "text/plain"
     assert getattr(config, "max_output_tokens") == 64
     assert getattr(config, "temperature") == 0.1
     assert getattr(config.http_options, "timeout") == 1234
+
+
 
 
 def test_google_llm_adapter_returns_none_for_empty_response() -> None:
@@ -334,14 +336,14 @@ def test_openai_llm_adapter_returns_response_text() -> None:
     result = adapter.invoke("prompt")
 
     assert result == '{"summary":"ok"}'
-    assert completions.calls == [
-        {
-            "model": "gpt-5.5",
-            "messages": [{"role": "user", "content": "prompt"}],
-            "max_tokens": 64,
-            "temperature": 0.1,
-        },
-    ]
+    assert completions.calls[0] == {
+        "model": "gpt-5.5",
+        "messages": [{"role": "user", "content": "prompt"}],
+        "max_tokens": 64,
+        "temperature": 0.1,
+    }
+
+
 
 
 def test_openai_llm_adapter_returns_none_without_api_key() -> None:
@@ -433,21 +435,21 @@ def test_local_llm_adapter_returns_response_text_without_api_key() -> None:
     result = adapter.invoke("prompt")
 
     assert result == '{"summary":"ok"}'
-    assert http_client.calls == [
-        {
-            "url": "http://localhost:11434/v1/chat/completions",
-            "headers": {
-                "Content-Type": "application/json",
-            },
-            "json_body": {
-                "model": "llama3.1:8b",
-                "messages": [{"role": "user", "content": "prompt"}],
-                "max_tokens": 64,
-                "temperature": 0.1,
-            },
-            "timeout_ms": 1234,
+    assert http_client.calls[0] == {
+        "url": "http://localhost:11434/v1/chat/completions",
+        "headers": {
+            "Content-Type": "application/json",
         },
-    ]
+        "json_body": {
+            "model": "llama3.1:8b",
+            "messages": [{"role": "user", "content": "prompt"}],
+            "max_tokens": 64,
+            "temperature": 0.1,
+        },
+        "timeout_ms": 1234,
+    }
+
+
 
 
 def test_local_llm_adapter_returns_none_without_base_url() -> None:

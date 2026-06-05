@@ -30,3 +30,14 @@ uv run python scripts/run_server.py --port 18001
 uv run --env-file smoke-none.env.example python scripts/run_server.py
 uv run --env-file smoke-none.env.example python scripts/smoke_agent_pipeline.py none
 ```
+
+### 프로덕션(Prod) 서버 실행
+
+프로덕션 설정 파일(`.env.prod`)을 로드하여 서버를 실행하려면 `run_prod_server.py` 스크립트를 사용합니다.
+
+```bash
+cd backend
+uv run python scripts/run_prod_server.py
+```
+
+이 스크립트는 `.env.prod` 환경설정 파일을 로드하며, 로컬 LLM 슬롯이 설정되어 있을 경우 Ollama 서버 기동 여부를 확인하고 백그라운드로 안전하게 구동한 뒤 Uvicorn 프로덕션 서버를 시작합니다.
