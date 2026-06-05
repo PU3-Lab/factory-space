@@ -22,6 +22,7 @@
 #include "OJJ_BuildController.h"
 #include "OJJ_BuildCamera.h"
 #include "OJJ_Grid.h"
+#include "Blueprint/UserWidget.h"
 
 AOJJ_Player::AOJJ_Player()
 {
@@ -109,6 +110,17 @@ void AOJJ_Player::BeginPlay()
 		UE_LOG(LogTemp, Warning,
 			TEXT("[OJJ_Player] AOJJ_BuildCamera spawn 실패 — 빌드모드 탑다운 전환 비활성."));
 	}
+	
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (PC && MainHUDWidgetClass)
+	{
+		MainHUDWidgetInstance = CreateWidget<UUserWidget>(PC, MainHUDWidgetClass);
+		if (MainHUDWidgetInstance)
+		{
+			MainHUDWidgetInstance->AddToViewport();
+		}
+	}
+	
 	ConnectFactoryAgentClient();
 }
 
@@ -209,6 +221,18 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	if (IA_SetPowerPlantMode)
 	{
 		EnhancedInput->BindAction(IA_SetPowerPlantMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerPlantMode);
+	}
+	if (IA_SetGrinderMode)
+	{
+		EnhancedInput->BindAction(IA_SetGrinderMode, ETriggerEvent::Started, this, &AOJJ_Player::SetGrinderMode);
+	}
+	if (IA_SetMinerMode)
+	{
+		EnhancedInput->BindAction(IA_SetMinerMode, ETriggerEvent::Started, this, &AOJJ_Player::SetMinerMode);
+	}
+	if (IA_SetPumpMode)
+	{
+		EnhancedInput->BindAction(IA_SetPumpMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPumpMode);
 	}
 	if (IA_BuildPan)
 	{
@@ -334,6 +358,20 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 				TEXT("[OJJ_Player] IMC_Build 미할당 — 빌드모드 Look 차단 불가(IMC_Player 유지). ")
 				TEXT("BP_OJJ_Player에 IMC_Build 할당 필요."));
 		}
+		
+		if (MainHUDWidgetInstance)
+		{
+			MainHUDWidgetInstance->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		
+		if (PC && BuildModeWidgetClass && !BuildModeWidgetInstance)
+		{
+			BuildModeWidgetInstance = CreateWidget<UUserWidget>(PC, BuildModeWidgetClass);
+			if (BuildModeWidgetInstance)
+			{
+				BuildModeWidgetInstance->AddToViewport();
+			}
+		}
 	}
 	else
 	{
@@ -356,6 +394,14 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 			{
 				Subsystem->AddMappingContext(IMC_Player, 0);
 			}
+		}
+		if (BuildModeWidgetInstance)
+		{
+			BuildModeWidgetInstance->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		if (MainHUDWidgetInstance)
+		{
+			MainHUDWidgetInstance->SetVisibility(ESlateVisibility::Visible);
 		}
 	}
 }
@@ -444,6 +490,33 @@ void AOJJ_Player::SetPowerPlantMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerPlant);
+}
+
+void AOJJ_Player::SetGrinderMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Grinder);
+}
+
+void AOJJ_Player::SetMinerMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Miner);
+}
+
+void AOJJ_Player::SetPumpMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pump);
 }
 
 void AOJJ_Player::StartSprint(const FInputActionValue& Value)

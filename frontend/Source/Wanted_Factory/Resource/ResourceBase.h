@@ -8,6 +8,8 @@
 #include "Engine/DataTable.h"
 #include "ResourceBase.generated.h"
 
+class AMachineBase;
+
 UCLASS()
 class WANTED_FACTORY_API AResourceBase : public AActor
 {
@@ -43,6 +45,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Resource")
 	bool bIsInfinite = false;
 
+	// 이 자원을 선점한 머신(채굴기/펌프). weak — 머신이 비정상 소멸해도 자동 무효화돼
+	// 선점이 자연 해제된다(IsClaimed가 IsValid로 판정). 명시 Release(머신 제거/EndPlay)도 병행.
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Resource|Claim")
+	TWeakObjectPtr<AMachineBase> ClaimedBy;
+
 public:
 	UFUNCTION(BlueprintCallable)
 	virtual bool ConsumeResource(int32 ConsumeAmount);
@@ -59,4 +66,33 @@ public:
 	UFUNCTION(BlueprintCallable)
 	FName GetResourceRowName() const;
 
+	// === 선점(Claim) 시스템 — 1자원 1머신 보장 ===
+
+	// 유효한 머신이 선점 중인가. weak ptr이라 선점 머신이 소멸하면 자동 false(스테일 해제).
+	UFUNCTION(BlueprintPure, Category = "Resource|Claim")
+	bool IsClaimed() const;
+
+	// Claimant가 이 자원을 선점. 이미 다른 유효 머신이 선점 중이면 false.
+	// 동일 머신 재선점은 true(멱등). 서버 권위에서만 의미.
+	UFUNCTION(BlueprintCallable, Category = "Resource|Claim")
+	bool Claim(AMachineBase* Claimant);
+
+	// 선점 해제. ClaimedBy가 Claimant와 같을 때만 해제(남의 선점 해제 방지). Claimant null이면 무조건 해제.
+	UFUNCTION(BlueprintCallable, Category = "Resource|Claim")
+	void Release(AMachineBase* Claimant);
+
+	// === 타입 질의 (배치 제약 판정용) — DataTable shape/form 조회 래퍼 ===
+
+	// ResourceData.shape == Shape 인가 (채굴기 Ore 판정 등). DataTable 무효면 false.
+	UFUNCTION(BlueprintPure, Category = "Resource")
+	bool HasShape(EResourceShape Shape) const;
+
+	// ResourceData.form == Form 인가 (펌프 liquid 판정 등). DataTable 무효면 false.
+	UFUNCTION(BlueprintPure, Category = "Resource")
+	bool HasForm(FName Form) const;
+
+private:
+	// 맵 사전 배치 대응: BeginPlay에서 자기 셀을 그리드 점유에 등록(+ XY를 셀 중심 스냅).
+	// 단일 그리드 가정(SP) — 멀티 그리드는 OJJ_Grid.h KNOWN LIMITATION 참조.
+	void RegisterToGrid();
 };

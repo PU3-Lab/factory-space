@@ -40,9 +40,7 @@ def test_default_agent_router_contains_leaf_agents() -> None:
         "operator_guide.troubleshooter",
         "process_optimizer",
         "quest_generator.economy_quest",
-        "quest_generator.exploration_quest",
         "quest_generator.production_quest",
-        "quest_generator.tutorial_quest",
     ]
 
 
@@ -150,6 +148,6 @@ def test_sub_orchestrators_use_structured_prompt_id_contract() -> None:
     assert "operator_guide.recipe_explainer" in operator_guide_prompt
     assert "operator_guide.troubleshooter" in operator_guide_prompt
     assert "quest_generator.production_quest" in quest_prompt
-    assert "quest_generator.tutorial_quest" in quest_prompt
-    assert "quest_generator.exploration_quest" in quest_prompt
     assert "quest_generator.economy_quest" in quest_prompt
+    assert "quest_generator.tutorial_quest" not in quest_prompt
+    assert "quest_generator.exploration_quest" not in quest_prompt

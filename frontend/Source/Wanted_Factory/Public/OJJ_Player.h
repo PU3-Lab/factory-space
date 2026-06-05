@@ -37,6 +37,17 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	
+	// --- UI ---
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
+	TSubclassOf<UUserWidget> BuildModeWidgetClass;
+	UPROPERTY()
+	UUserWidget* BuildModeWidgetInstance;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
+	TSubclassOf<UUserWidget> MainHUDWidgetClass;
+	UPROPERTY()
+	UUserWidget* MainHUDWidgetInstance;
 
 	// --- Components ---
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
@@ -144,6 +155,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_SetPowerPlantMode;
 
+	// 빌드모드 배치 모드 전환 — 그라인더(예: 2키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetGrinderMode;
+
+	// 빌드모드 배치 모드 전환 — 채굴기(예: 5키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetMinerMode;
+
+	// 빌드모드 배치 모드 전환 — 펌프(예: 6키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetPumpMode;
+
 	// --- 이동 속도 ---
 	// 평상시 걷기 속도. BeginPlay에서 MaxWalkSpeed의 권위 있는 초기값으로 적용(BP CharacterMovement 기본값 덮음).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (ClampMin = "0.0"))
@@ -194,6 +217,9 @@ protected:
 	void SetShieldMode(const FInputActionValue& Value);
 	void SetPowerLineMode(const FInputActionValue& Value);
 	void SetPowerPlantMode(const FInputActionValue& Value);
+	void SetGrinderMode(const FInputActionValue& Value);
+	void SetMinerMode(const FInputActionValue& Value);
+	void SetPumpMode(const FInputActionValue& Value);
 
 	// 스프린트 — Started=달리기 속도, Completed=걷기 속도로 복귀.
 	void StartSprint(const FInputActionValue& Value);
