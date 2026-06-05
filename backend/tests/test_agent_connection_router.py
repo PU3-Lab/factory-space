@@ -44,9 +44,7 @@ def test_agent_connection_manifest_lists_supported_agent_ids() -> None:
             "operator_guide.troubleshooter",
         ],
         "quest_generator": [
-            "quest_generator.tutorial_quest",
             "quest_generator.production_quest",
-            "quest_generator.exploration_quest",
             "quest_generator.economy_quest",
         ],
         "new_material_generator": ["new_material_generator"],
