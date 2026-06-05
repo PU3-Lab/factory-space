@@ -33,12 +33,19 @@ void UUI_BuildModeMain::ExecutePlacementMode(int32 SlotIndex)
     
     switch (SlotIndex)
     {
-        case 0:  BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Machine); break;     // 1번 슬롯 칸: 기계
-        case 6:  BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerPlant); break;  // 7번 슬롯 칸: 발전소
-        case 7:  BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Shield); break;      // 8번 슬롯 칸: 쉴드
-        case 8:  BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerNode); break;   // 9번 슬롯 칸: 전력 노드
-        case 9:  BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Conveyor); break;    // 0번 슬롯 칸: 컨베이어
-        case 10: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerLine); break;   // -번 슬롯 칸: 전선
-        default: break;
+    //case 1: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Storage); break;      // 1번 슬롯: 창고
+    case 2: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Conveyor); break;     // 2번 슬롯: 컨베이어
+    //case 3: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Smelter); break;      // 3번 슬롯: 제련기
+    case 4: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Grinder); break;      // 4번 슬롯: 분쇄기
+    case 5: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Miner); break;        // 5번 슬롯: 채굴기
+    
+        // case 6번은 현재 비어있으므로 필요 시 나중에 추가 가능합니다.
+
+    case 7: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerPlant); break;   // 7번 슬롯: 발전소
+    case 8: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerNode); break;   // 8번 슬롯: 송전탑 (기존 PowerNode)
+    case 9: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerLine); break;   // 9번 슬롯: 송전선
+    case 0: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Shield); break;      // 0번 슬롯: 차폐막 (기존 Shield)
+    
+    default: break;
     }
 }
