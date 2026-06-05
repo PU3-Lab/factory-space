@@ -17,8 +17,29 @@ def test_service_returns_five_random_quests_from_example_pool() -> None:
     quests = result["quests"]
     assert len(quests) == 5
     assert len({quest["id"] for quest in quests}) == 5
-    assert {quest["id"] for quest in quests}.issubset({1, 2, 3, 4, 5, 6})
+    assert {quest["id"] for quest in quests}.issubset(set(range(1, 11)))
     assert all(isinstance(quest["id"], int) for quest in quests)
+
+
+def test_service_available_quest_pool_has_ten_csv_based_examples() -> None:
+    service = QuestAgentService(rng=random.Random(0))
+
+    result = service.available_quest_json()
+
+    assert len(result) == 10
+    assert [quest["id"] for quest in result] == list(range(1, 11))
+    assert {quest["objectives"][0]["target_item_id"] for quest in result} == {
+        "iron_ore",
+        "copper_ore",
+        "coal",
+        "wood",
+        "iron_ingot",
+        "copper_ingot",
+        "iron_powder",
+        "copper_powder",
+        "charcoal",
+        "coal_dust",
+    }
 
 
 def test_service_quest_objectives_keep_item_id_and_quantity_only() -> None:
@@ -35,11 +56,11 @@ def test_service_quest_objectives_keep_item_id_and_quantity_only() -> None:
 def test_service_returns_quests_selected_by_ids_from_example_pool() -> None:
     service = QuestAgentService(rng=random.Random(1))
 
-    result = service.generate_quest_json_from_ids([6, 5, 4, 3, 2])
+    result = service.generate_quest_json_from_ids([10, 9, 8, 7, 6])
 
     QuestResponse.model_validate(result)
-    assert [quest["id"] for quest in result["quests"]] == [6, 5, 4, 3, 2]
-    assert result["quests"][0]["objectives"][0]["target_item_id"] == "gear"
+    assert [quest["id"] for quest in result["quests"]] == [10, 9, 8, 7, 6]
+    assert result["quests"][0]["objectives"][0]["target_item_id"] == "coal_dust"
 
 
 def test_service_rejects_invalid_selected_quest_ids() -> None:

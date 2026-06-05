@@ -6,7 +6,7 @@
 - quest agent의 LLM prompt도 가능한 한 한글로 작성해서 모델이 한글 문장을 우선 반환하도록 유도한다.
 - JSON key, agent id, item id, protocol field처럼 Unreal/backend 계약에 해당하는 값은 기존 영문 snake_case를 유지한다.
 - fallback 문구와 LLM 응답 검증 에러도 Unreal에 노출될 수 있으므로 한글을 기본값으로 둔다.
-- 기존 6개 퀘스트 선택지의 제목과 설명은 한글 원문을 유지하고, LLM은 이를 새로 만들거나 번역하지 않고 id만 선택한다.
+- 기존 10개 퀘스트 선택지의 제목과 설명은 한글 원문을 유지하고, LLM은 이를 새로 만들거나 번역하지 않고 id만 선택한다.
 
 ## 프로토 범위 메모
 
@@ -20,7 +20,7 @@
 
 1. top-level orchestrator가 `quest_generator`를 선택한다.
 2. quest domain orchestrator가 leaf agent를 선택한다.
-3. 선택된 leaf agent가 기존 quest option 6개를 보여주는 선택 prompt를 만든다.
+3. 선택된 leaf agent가 기존 quest option 10개를 보여주는 선택 prompt를 만든다.
 4. LLM은 `selected_quest_ids` 5개만 고른다.
 5. backend가 선택된 id를 기존 quest option payload로 변환한다.
 6. LLM 응답이 없을 때만 deterministic fallback을 사용한다.
@@ -41,7 +41,7 @@
 
 - 빈 퀘스트 요청의 LLM 우회 제거
 - `skipLlm` direct fallback 분기 제거
-- production quest leaf prompt에 6개 option 중 5개 id 선택 계약 추가
+- production quest leaf prompt에 10개 option 중 5개 id 선택 계약 추가
 - 테스트에서 LLM이 고른 id가 기존 quest option payload로 변환되는지 검증
 
 이번 변경에서 제외한 범위:
@@ -57,7 +57,7 @@
 - [x] `runtime.py`에서 빈 quest payload의 production leaf 직접 선택 제거
 - [x] `state.py`에서 `skipLlm` 상태 필드 제거
 - [x] `graph_edges.py`에서 `direct -> agent.middleware.fallback` 분기 제거
-- [x] `ProductionQuestAgent.build_prompt()`가 기존 6개 quest option 중 5개 id 선택 계약을 명시하도록 변경
+- [x] `ProductionQuestAgent.build_prompt()`가 기존 10개 quest option 중 5개 id 선택 계약을 명시하도록 변경
 - [x] `EconomyQuestAgent.build_prompt()`가 5개 economy quest JSON 계약을 명시하도록 변경
 - [x] 빈 quest 요청 테스트가 top-level routing, leaf routing, LLM selection prompt를 모두 확인하도록 변경
 - [x] quest pipeline 테스트가 fallback 결과가 아니라 LLM 선택 id 기반 quest payload를 확인하도록 변경
