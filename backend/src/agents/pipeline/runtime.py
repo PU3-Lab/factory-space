@@ -65,6 +65,16 @@ class _FallbackRoutingLLM:
         return None
 
 
+def _clean_routing_decision(raw: str | None) -> str:
+    """Clean raw routing model output by stripping whitespace and outer JSON quotes."""
+    if not raw:
+        return ""
+    cleaned = raw.strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {'"', "'"}:
+        cleaned = cleaned[1:-1]
+    return cleaned.strip()
+
+
 class AgentPipeline:
     """LangGraph-backed execution pipeline for agent requests."""
 
@@ -177,7 +187,7 @@ class AgentPipeline:
             return {
                 "routingPrompt": routing_prompt,
                 "routingRaw": routing_raw,
-                "selectedAgent": (routing_raw or "").strip(),
+                "selectedAgent": _clean_routing_decision(routing_raw),
             }
 
         def validate_process_payload(state: AgentGraphState) -> AgentGraphState:
@@ -231,7 +241,7 @@ class AgentPipeline:
             return {
                 "routingPrompt": routing_prompt,
                 "routingRaw": routing_raw,
-                "selectedLeafAgent": (routing_raw or "").strip(),
+                "selectedLeafAgent": _clean_routing_decision(routing_raw),
             }
 
         def route_quest_sub_agent(state: AgentGraphState) -> AgentGraphState:
@@ -264,7 +274,7 @@ class AgentPipeline:
             return {
                 "routingPrompt": routing_prompt,
                 "routingRaw": routing_raw,
-                "selectedLeafAgent": (routing_raw or "").strip(),
+                "selectedLeafAgent": _clean_routing_decision(routing_raw),
             }
 
         def cache_lookup(state: AgentGraphState) -> AgentGraphState:

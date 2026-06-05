@@ -129,7 +129,8 @@ class GoogleGenAiLLMAdapter:
                     temperature=self.temperature,
                 ),
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning("Google Gen AI LLM call failed: %s", exc)
             return None
 
         text = getattr(response, "text", None)
@@ -334,7 +335,8 @@ def _invoke_openai_compatible(
             },
             timeout_ms=timeout_ms,
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning("Local LLM call failed: %s", exc)
         return None
 
     if response.status_code < 200 or response.status_code >= 300:

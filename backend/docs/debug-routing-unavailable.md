@@ -2,7 +2,7 @@
 
 **날짜:** 2026-06-05  
 **브랜치:** feat/openai-sdk-env-prod  
-**상태:** **Resolved** (모든 수정 조치 완료)  
+**상태:** **Partially Resolved** — fallback 로직은 추가됐으나 코드 리뷰에서 잔여 결함 2건 발견 (아래 "코드 리뷰 결과" 참조)  
 **증상:** WebSocket `/ws/agent` 연결 시 모든 요청에서 `ROUTING_UNAVAILABLE` 에러 반환
 
 ---
@@ -68,6 +68,45 @@ ROUTING_UNAVAILABLE 기본 메시지 반환
 | 파일 | 역할 | 상태 |
 |------|------|------|
 | `backend/src/agents/pipeline/runtime.py` | routing_llm에 `_FallbackRoutingLLM` 적용 | **Resolved** |
-| `backend/src/llm/adapter.py` | OpenAILLMAdapter 예외 로깅 추가 | **Resolved** |
+| `backend/src/llm/adapter.py` | OpenAILLMAdapter 예외 로깅 추가 | **Partial** (Google/Local 미적용) |
 | `backend/main.py` | 지연 임포트로 인한 E402 린트 예외 처리 | **Resolved** |
 | `backend/.env.prod` | 모델/API 키 설정 | **Resolved** |
+
+---
+
+## 코드 리뷰 결과 (2026-06-05, `/code-review` high)
+
+fallback 추가 PR을 리뷰한 결과, **fallback 자체는 동작하지만 prod 시나리오에서 여전히 실패할 수 있는** 잔여 결함 2건과 유지보수 이슈 1건이 확인되었다.
+
+### 🔴 R1 — Gemini fallback도 routing 검증에 실패 (CONFIRMED, 미해결)
+
+**파일:** `backend/src/llm/adapter.py` (`_google_generate_config`)
+
+- `GoogleGenAiLLMAdapter`는 `response_mime_type="application/json"`으로 호출된다.
+- routing 프롬프트는 맨 문자열(`operator_guide`)을 요구한다 (`orchestrator.py` OUTPUT_CONTRACT: "JSON, 따옴표, 코드블록 출력 금지").
+- JSON 모드 강제 때문에 Gemini는 `"operator_guide"`(따옴표 포함)를 반환한다.
+- `(routing_raw or "").strip()`은 따옴표를 제거하지 못하므로 `'"operator_guide"'`가 되어 `TOP_LEVEL_AGENT_IDS` 검증에 실패한다.
+
+**영향:** default(OpenAI)가 실패하면 fallback1(Gemini)도 동일하게 `ROUTING_UNAVAILABLE`을 낸다. fallback2(local/Ollama)만 routing을 구제할 수 있다. **즉 이 PR이 의도한 "Gemini fallback"은 routing 경로에서 실질적으로 동작하지 않는다.**
+
+**수정 방향:** routing 경로에서 JSON mime type을 끄거나, routing 결과에서 JSON 따옴표를 벗기는 후처리를 추가한다.
+
+### 🟡 R2 — 예외 로깅이 OpenAI에만 비대칭 (PLAUSIBLE)
+
+**파일:** `backend/src/llm/adapter.py`
+
+이번 PR은 `OpenAILLMAdapter.invoke()`에만 `logger.warning(...)`를 추가했다. `GoogleGenAiLLMAdapter`와 `LocalLLMAdapter`는 여전히 예외를 조용히 삼킨다. Gemini/Local fallback이 실패해도 운영자는 원인을 볼 수 없으므로, 위 "원인 2 (Resolved)" 표기는 OpenAI 슬롯 한정으로만 유효하다.
+
+**수정 방향:** Google/Local 어댑터의 `except` 블록에도 동일한 경고 로깅을 추가한다.
+
+### 🟡 R3 — prod 스크립트가 run_server.py를 통째 복제 (CONFIRMED)
+
+**파일:** `backend/scripts/run_prod_server.py`
+
+`check_ollama_running`, `ensure_ollama_running`, `load_env_file` 세 함수가 `run_server.py`와 거의 동일하다(로그 메시지만 차이). Ollama 기동/env 로딩 로직 변경 시 두 파일을 모두 수정해야 한다.
+
+**수정 방향:** 공통 모듈로 추출하여 dev/prod 스크립트가 공유하도록 한다.
+
+### 기각된 후보
+- tool_followup의 slot None 조회 → 이미 `if slot is None: return {}` 가드 존재 (REFUTED)
+- 타입 힌트 / 빈 슬롯 가드 등 → 관측 가능한 영향 없음
