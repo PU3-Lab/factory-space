@@ -10,6 +10,7 @@ from typing import Any, Protocol
 
 from google import genai
 from google.genai import types
+from openai import OpenAI
 
 from llm.settings import LLMModelSlot
 
@@ -53,6 +54,38 @@ class _HttpClient(Protocol):
         timeout_ms: int,
     ) -> _HttpResponse:
         """Send JSON HTTP POST."""
+
+
+class _OpenAiMessage(Protocol):
+    content: str | None
+
+
+class _OpenAiChoice(Protocol):
+    message: _OpenAiMessage
+
+
+class _OpenAiCompletion(Protocol):
+    choices: list[_OpenAiChoice]
+
+
+class _OpenAiChatCompletions(Protocol):
+    def create(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        max_tokens: int,
+        temperature: float,
+    ) -> _OpenAiCompletion:
+        """Create chat completion."""
+
+
+class _OpenAiChat(Protocol):
+    completions: _OpenAiChatCompletions
+
+
+class _OpenAiClient(Protocol):
+    chat: _OpenAiChat
 
 
 @dataclass(frozen=True)
@@ -106,29 +139,55 @@ class GoogleGenAiLLMAdapter:
 
 @dataclass(frozen=True)
 class OpenAILLMAdapter:
-    """OpenAI-compatible Chat Completions adapter."""
+    """OpenAI Chat Completions adapter using the official SDK."""
 
     slot: LLMModelSlot
-    http_client: _HttpClient | None = None
+    client: _OpenAiClient | None = None
     timeout_ms: int = 20000
     max_output_tokens: int = 2048
     temperature: float = 0.2
 
     def invoke(self, prompt: str) -> str | None:
-        """Return raw generated text from an OpenAI-compatible endpoint."""
+        """Return raw generated text from OpenAI."""
 
         if not self.slot.api_key:
             return None
-        return _invoke_openai_compatible(
-            slot=self.slot,
-            prompt=prompt,
-            http_client=self.http_client,
-            timeout_ms=self.timeout_ms,
-            max_output_tokens=self.max_output_tokens,
-            temperature=self.temperature,
-            base_url=self.slot.base_url or _OPENAI_BASE_URL,
-            api_key=self.slot.api_key,
-        )
+        if not self.slot.model:
+            return None
+
+        try:
+            client = self.client or _create_openai_client(
+                api_key=self.slot.api_key,
+                base_url=self.slot.base_url,
+                timeout_ms=self.timeout_ms,
+            )
+            if client is None:
+                return None
+
+            completion = client.chat.completions.create(
+                model=self.slot.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=self.max_output_tokens,
+                temperature=self.temperature,
+            )
+        except Exception:
+            return None
+
+        if completion is None:
+            return None
+        try:
+            choices = completion.choices
+            if not choices:
+                return None
+            message = choices[0].message
+            content = message.content
+            if not isinstance(content, str):
+                return None
+            if not content.strip():
+                return None
+            return content
+        except (AttributeError, IndexError):
+            return None
 
 
 @dataclass(frozen=True)
@@ -175,6 +234,21 @@ def _create_google_client(api_key: str | None) -> _GoogleClient | None:
         return None
 
     return genai.Client(api_key=api_key)
+
+
+def _create_openai_client(
+    api_key: str | None,
+    base_url: str | None,
+    timeout_ms: int,
+) -> _OpenAiClient | None:
+    if not api_key:
+        return None
+
+    return OpenAI(
+        api_key=api_key,
+        base_url=base_url or _OPENAI_BASE_URL,
+        timeout=timeout_ms / 1000.0,
+    )
 
 
 def _google_generate_config(
