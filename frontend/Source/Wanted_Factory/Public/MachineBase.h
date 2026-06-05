@@ -8,6 +8,7 @@
 #include "MachineBase.generated.h"
 
 class UTextRenderComponent;
+class AOJJ_Grid;
 
 // 효율 modifier 키 모음 (요인별). 새 효율 요인은 여기에 한 줄 추가 — 머신/이벤트 매니저 등
 // 양쪽 파일의 문자열 중복을 방지하는 단일 정의 지점. 정의는 MachineBase.cpp.
@@ -259,6 +260,22 @@ public:
 	UFUNCTION(BlueprintCallable)
 	virtual bool CanPlace();
 
+	// === 머신별 추가 배치 제약 / 배치·제거 훅 (기본 무제약) ===
+	// 그리드가 머신 종류를 모르게 하기 위해 머신이 오버라이드(채굴기=인접 광맥, 펌프=인접 수원 등).
+	// CanPlaceMachine이 footprint 점유 검사에 더해 이 함수를 AND로 호출 → 호버 색/배치 판정 동일 경로.
+	//
+	// ⚠️ CDO-safe 요구: 호버 미리보기는 머신을 스폰하기 전에 CDO(GetDefaultObject)로 판정한다
+	//    (AOJJ_BuildController가 CDO로 풋프린트·CanPlaceMachine 호출). 따라서 구현은 인자 Grid/Origin/
+	//    RotationSteps와 CDO-safe getter(GetMachineSize 등)만 사용하고, this의 GetWorld()/GetActorLocation()/
+	//    인스턴스 멤버 상태에 의존하지 말 것. (CDO는 월드/트랜스폼이 없다.)
+	virtual bool CanPlaceAdditional(const AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps) const { return true; }
+
+	// 그리드 등록 성공 직후(배치 확정) 호출 — 자원 선점 등. 실제 인스턴스에서만 호출(CDO 아님).
+	virtual void OnPlacedOnGrid(AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps) {}
+
+	// 그리드에서 제거되기 직전 호출 — 자원 선점 해제 등. 실제 인스턴스에서만 호출.
+	virtual void OnRemovedFromGrid() {}
+
 	// 임시 테스트 용 : 아이템 투입
 	UFUNCTION(BlueprintCallable, Category = "Machine | Inventory")
 	virtual bool AddItem(FName ItemID, int32 Count);
@@ -303,10 +320,10 @@ public:
 	bool TakeOutputItem(FName ItemID, int32 Count);
 
 	UFUNCTION(BlueprintPure, Category = "Machine | Conveyor")
-	bool PeekFirstOutputItem(FName& OutItemID) const;
+	virtual bool PeekFirstOutputItem(FName& OutItemID) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Machine | Conveyor")
-	bool TryTakeFirstOutputItem(FName& OutItemID);
+	virtual bool TryTakeFirstOutputItem(FName& OutItemID);
 
 	UFUNCTION(BlueprintPure, Category = "Machine | Conveyor")
 	virtual bool CanReceiveConveyorItem(FName ItemID, int32 Count = 1) const;

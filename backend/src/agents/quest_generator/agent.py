@@ -7,9 +7,7 @@ from typing import Any
 from agents.base import AgentContext
 
 QUEST_SUB_AGENT_IDS = (
-    "quest_generator.tutorial_quest",
     "quest_generator.production_quest",
-    "quest_generator.exploration_quest",
     "quest_generator.economy_quest",
 )
 

@@ -21,7 +21,10 @@ enum class EOJJ_BuildPlacementMode : uint8
 	PowerNode,
 	PowerLine,
 	Shield,
-	PowerPlant
+	PowerPlant,
+	Grinder,
+	Miner,
+	Pump
 };
 
 /**
@@ -87,6 +90,20 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
 	TSubclassOf<AMachineBase> PowerPlantClass;
 
+	// 그라인더(Grinder) 모드에서 배치할 머신 클래스(AGrinder 등). 머신 배치 경로 재사용 — PowerPlant와 동일.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AMachineBase> GrinderClass;
+
+	// 채굴기(Miner) 모드에서 배치할 머신 클래스(AMinerMachine 등). 머신 배치 경로 재사용 — PowerPlant와 동일.
+	// ※ 인접 자원/선점 배치 제약([2])은 도메인 소유자(SSR) 조율 후 별도 진행 — 현재는 일반 머신 배치.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AMachineBase> MinerClass;
+
+	// 펌프(Pump) 모드에서 배치할 머신 클래스(APump 등). 머신 배치 경로 재사용 — PowerPlant와 동일.
+	// ※ 인접 자원/선점 배치 제약([2])은 도메인 소유자(SSR) 조율 후 별도 진행 — 현재는 일반 머신 배치.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AMachineBase> PumpClass;
+
 	// 현재 배치 모드. Machine(기본)/Conveyor. 플레이어가 SetPlacementMode로 전환.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
 	EOJJ_BuildPlacementMode PlacementMode = EOJJ_BuildPlacementMode::Machine;
@@ -103,7 +120,7 @@ protected:
 	bool bIsDraggingPowerLine = false;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController|Power")
-	TWeakObjectPtr<APowerGridNode> PowerLineStartNode;
+	TWeakObjectPtr<AMachineBase> PowerLineStartMachine;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
 	bool bIsBuildMode = false;
@@ -191,7 +208,9 @@ private:
 
 	// 컨베이어 호버 갱신(드래그 중이면 drag, 아니면 단일 셀 미리보기).
 	void UpdateConveyorHover(FIntPoint CursorCell);
-	APowerGridNode* GetPowerGridNodeUnderCursor() const;
-	void BeginPowerLineDrag(APowerGridNode* StartNode);
+	AMachineBase* GetPowerLineEndpointUnderCursor() const;
+	AMachineBase* FindPowerLineEndpointNearLocation(const FVector& Location) const;
+	bool IsPowerLineEndpoint(const AMachineBase* Machine) const;
+	void BeginPowerLineDrag(AMachineBase* StartMachine);
 	void CommitPowerLineDrag();
 };

@@ -149,6 +149,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Query")
 	AMachineBase* GetMachineAtCell(FIntPoint Cell) const;
 
+	// 셀에 등록된 임의 점유 액터 반환(머신·컨베이어·자원 등 무관). 비점유/GC 셀이면 nullptr.
+	// GetMachineAtCell이 Cast<AMachineBase>로 좁히는 것과 달리, 비머신 점유 액터(AResourceBase 등)를
+	// 그대로 얻기 위한 접근자. 배치 제약(채굴기 인접 광맥 탐색 등)에서 셀의 자원 노드를 찾는 데 사용.
+	UFUNCTION(BlueprintPure, Category = "Grid|Query")
+	AActor* GetActorAtCell(FIntPoint Cell) const;
+
 	// AActor 점유 여부 (머신 존재와 무관 — 컨베이어 등 비머신 점유 셀도 true,
 	// GetMachineAtCell은 그 셀에 null 반환). stale(파괴된) 액터 셀은 weak IsValid()로 false.
 	UFUNCTION(BlueprintPure, Category = "Grid|Query")

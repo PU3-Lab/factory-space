@@ -42,7 +42,17 @@ APump::APump()
 void APump::BeginPlay()
 {
 	Super::BeginPlay();
-	
+
+}
+
+bool APump::CanPlaceAdditional(const AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps) const
+{
+	// [뼈대 / 임시 true] 수원 인접 제약 미구현 — 현재는 일반 머신처럼 무제약 배치.
+	// TODO: 채굴기 FindAdjacentUnclaimedOre 패턴을 미러링해, 4방향 인접 셀에서
+	//   form == LiquidFormName("liquid") (CanPump 판정과 동일)인 미선점 AResourceBase를 찾고,
+	//   OnPlacedOnGrid에서 Claim + SetLinkedResource, OnRemovedFromGrid/EndPlay에서 Release.
+	//   (구현 시 LinkedResource 연결까지 채굴기와 대칭.)
+	return true;
 }
 
 // Called every frame

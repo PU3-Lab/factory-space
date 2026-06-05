@@ -87,7 +87,7 @@ FACTORY_LLM_FALLBACK1_PROVIDER=none
 FACTORY_LLM_FALLBACK2_PROVIDER=none
 ```
 
-원격 provider와 local fallback을 함께 운영하려면 slot별 provider/model/key를 명시합니다. Google slot은 slot 전용 key, `GEMINI_API_KEY`, `GOOGLE_API_KEY` 순서로 key를 찾고, OpenAI slot은 slot 전용 key와 `OPENAI_API_KEY`를 지원합니다.
+원격 provider와 local fallback을 함께 운영하려면 slot별 provider/model/key를 명시합니다. Google slot은 slot 전용 key, `GEMINI_API_KEY`, `GOOGLE_API_KEY` 순서로 key를 찾고, OpenAI slot은 slot 전용 key와 `OPENAI_API_KEY`를 지원합니다. OpenAI slot(`openai` provider)은 공식 OpenAI Python SDK를 사용하여 API를 호출하며, Local slot(`local` provider)은 기존과 같이 직접 HTTP Chat Completions API POST 통신을 유지합니다.
 
 ```bash
 FACTORY_LLM_DEFAULT_PROVIDER=google

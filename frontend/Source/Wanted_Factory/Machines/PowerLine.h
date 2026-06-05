@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "PowerLine.generated.h"
 
+class AMachineBase;
 class APowerGridNode;
 
 UCLASS()
@@ -17,16 +18,24 @@ public:
 	APowerLine();
 
 	UFUNCTION(BlueprintCallable, Category = "Power Line")
-	void ConfigurePowerLine(APowerGridNode* NewSourceNode, APowerGridNode* NewTargetNode);
+	void ConfigurePowerLine(AMachineBase* NewSourceMachine, AMachineBase* NewTargetMachine);
 
 	UFUNCTION(BlueprintCallable, Category = "Power Line")
 	void UpdateLineVisual();
 
-	UFUNCTION(BlueprintPure, Category = "Power Line")
-	APowerGridNode* GetSourceNode() const { return SourceNode.Get(); }
+	static FVector GetEndpointLocationForActor(const AActor* Actor, float AdditionalHeightOffset);
 
 	UFUNCTION(BlueprintPure, Category = "Power Line")
-	APowerGridNode* GetTargetNode() const { return TargetNode.Get(); }
+	AMachineBase* GetSourceMachine() const { return SourceMachine.Get(); }
+
+	UFUNCTION(BlueprintPure, Category = "Power Line")
+	AMachineBase* GetTargetMachine() const { return TargetMachine.Get(); }
+
+	UFUNCTION(BlueprintPure, Category = "Power Line")
+	APowerGridNode* GetSourceNode() const;
+
+	UFUNCTION(BlueprintPure, Category = "Power Line")
+	APowerGridNode* GetTargetNode() const;
 
 protected:
 	virtual void BeginPlay() override;
@@ -40,16 +49,16 @@ protected:
 	TObjectPtr<UStaticMeshComponent> LineMesh;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line", meta = (ClampMin = "0.0"))
-	float LineHeightOffset = 350.0f;
+	float EndpointHeightOffset = 20.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line", meta = (ClampMin = "0.1"))
 	float LineThickness = 8.0f;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Power Line")
-	TWeakObjectPtr<APowerGridNode> SourceNode;
+	TWeakObjectPtr<AMachineBase> SourceMachine;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Power Line")
-	TWeakObjectPtr<APowerGridNode> TargetNode;
+	TWeakObjectPtr<AMachineBase> TargetMachine;
 
 private:
 	void RegisterToFactoryManager();

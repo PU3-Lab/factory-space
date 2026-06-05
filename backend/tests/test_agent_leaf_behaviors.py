@@ -11,9 +11,7 @@ from agents.operator_guide.recipe_explainer import RecipeExplainerAgent
 from agents.operator_guide.troubleshooter import TroubleshooterAgent
 from agents.process_optimizer import ProcessOptimizerAgent
 from agents.quest_generator.economy_quest import EconomyQuestAgent
-from agents.quest_generator.exploration_quest import ExplorationQuestAgent
 from agents.quest_generator.production_quest import ProductionQuestAgent
-from agents.quest_generator.tutorial_quest import TutorialQuestAgent
 
 
 class LeafAgent(Protocol):
@@ -116,9 +114,7 @@ def test_operator_guide_leaf_agents_return_normalized_fallbacks(
 @pytest.mark.parametrize(
     ("agent", "expected_type", "expected_prompt"),
     [
-        (TutorialQuestAgent(), "tutorial", "튜토리얼 퀘스트를 생성"),
         (ProductionQuestAgent(), "production", "생산 퀘스트를 생성"),
-        (ExplorationQuestAgent(), "exploration", "탐험 퀘스트를 생성"),
         (EconomyQuestAgent(), "economy", "경제 퀘스트를 생성"),
     ],
 )

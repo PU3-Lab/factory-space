@@ -14,7 +14,20 @@ class ProcessOptimizerAgent:
     tools = ()
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
-        return f"공장 snapshot에서 공정 병목과 개선 우선순위를 찾아주세요: {payload}"
+        return (
+            f"공장 snapshot에서 공정 병목과 개선 우선순위를 찾아주세요: {payload}\n"
+            "반드시 다음 JSON 스키마 형식의 JSON 객체 하나만 출력하세요. 마크다운 펜스(```json)나 부가 설명은 절대 쓰지 마세요.\n"
+            "{\n"
+            '  "summary": "공정 개선 요약",\n'
+            '  "recommendations": [\n'
+            "    {\n"
+            '      "title": "추천 조치 제목",\n'
+            '      "priority": "우선순위 (high/medium/low)",\n'
+            '      "reason": "추천 이유"\n'
+            "    }\n"
+            "  ]\n"
+            "}"
+        )
 
     def fallback(
         self,
