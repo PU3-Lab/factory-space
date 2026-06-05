@@ -39,7 +39,7 @@ from agents.pipeline.utils import (
     run_fallback,
 )
 from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS, QuestGeneratorAgent
-from agents.quest_generator.service import QuestAgentService
+from agents.quest_generator.tools import PRODUCTION_QUEST_SELECTION_TOOL_NAME
 from agents.router import AgentRouter, UnknownAgentError, create_default_agent_router
 from cache.response_cache import ResponseCache
 from llm.adapter import LLMAdapter, create_llm_adapter
@@ -359,26 +359,14 @@ class AgentPipeline:
                 }
 
             if state.get("selectedLeafAgent") == "quest_generator.production_quest":
-                selected_ids = payload.get("selected_quest_ids")
-                if (
-                    not isinstance(selected_ids, list)
-                    or not all(type(quest_id) is int for quest_id in selected_ids)
+                if not _has_successful_tool_call(
+                    state,
+                    PRODUCTION_QUEST_SELECTION_TOOL_NAME,
                 ):
                     return {
                         "error": build_error_payload(
                             "INVALID_LLM_RESPONSE",
-                            "퀘스트 LLM 응답은 선택한 퀘스트 id 목록을 포함해야 합니다.",
-                        )
-                    }
-                try:
-                    payload = QuestAgentService().generate_quest_json_from_ids(
-                        selected_ids
-                    )
-                except ValueError as exc:
-                    return {
-                        "error": build_error_payload(
-                            "INVALID_LLM_RESPONSE",
-                            str(exc),
+                            "퀘스트 LLM 응답은 production quest 선택 tool을 먼저 호출해야 합니다.",
                         )
                     }
 
@@ -530,6 +518,13 @@ class AgentPipeline:
 
         wire_agent_graph(graph)
         return graph.compile()
+
+
+def _has_successful_tool_call(state: AgentGraphState, tool_name: str) -> bool:
+    return any(
+        tool_call.get("name") == tool_name and tool_call.get("ok") is True
+        for tool_call in state.get("toolCalls", [])
+    )
 
 
 def run_agent_pipeline(message: AgentRequestEnvelope | dict[str, Any]) -> dict[str, Any]:

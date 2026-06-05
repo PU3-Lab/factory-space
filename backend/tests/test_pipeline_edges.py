@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -7,6 +8,8 @@ import pytest
 
 from agents.base import AgentContext, AgentRunResult
 from agents.pipeline import AgentPipeline, run_agent_pipeline
+from agents.quest_generator.service import QuestAgentService
+from agents.quest_generator.tools import PRODUCTION_QUEST_SELECTION_TOOL_NAME
 from agents.router import AgentRouter
 from llm.settings import LLMModelSlot, LLMSettings
 from tests.harness import (
@@ -17,7 +20,19 @@ from tests.harness import (
     top_agent_decision,
 )
 
-QUEST_LLM_RESPONSE = '{"selected_quest_ids":[10,9,8,7,6]}'
+QUEST_SELECTED_IDS = [10, 9, 8, 7, 6]
+QUEST_TOOL_CALL = json.dumps(
+    {
+        "tool_call": {
+            "name": PRODUCTION_QUEST_SELECTION_TOOL_NAME,
+            "args": {"selected_quest_ids": QUEST_SELECTED_IDS},
+        }
+    },
+)
+QUEST_TOOL_RESPONSE = json.dumps(
+    QuestAgentService().generate_quest_json_from_ids(QUEST_SELECTED_IDS),
+    ensure_ascii=False,
+)
 
 
 class BrokenFallbackAgent:
@@ -899,7 +914,8 @@ def test_pipeline_routes_production_quest_from_llm_leaf_decision() -> None:
         [
             top_agent_decision("quest_generator"),
             leaf_agent_decision("quest_generator.production_quest"),
-            QUEST_LLM_RESPONSE,
+            QUEST_TOOL_CALL,
+            QUEST_TOOL_RESPONSE,
         ]
     )
     pipeline = AgentPipeline(llm=llm)
@@ -921,10 +937,15 @@ def test_pipeline_routes_production_quest_from_llm_leaf_decision() -> None:
     assert response["payload"]["quests"][0]["type"] == "production"
     assert response["payload"]["quests"][0]["id"] == 10
     assert response["payload"]["metadata"]["llm"] == "used"
+    assert response["payload"]["metadata"]["toolCalls"] == [
+        {"name": PRODUCTION_QUEST_SELECTION_TOOL_NAME, "ok": True},
+    ]
     assert "팩토리 스페이스 생산 퀘스트 선택 에이전트입니다." in llm.prompts[2]
-    assert '"selected_quest_ids":[2,4,6,8,10]' in llm.prompts[2]
+    tool_call_prefix = '"tool_call":{"name":"quest_generator.select_production_quests"'
+    assert tool_call_prefix in llm.prompts[2]
     assert "그대로 따라 쓰지 마세요" in llm.prompts[2]
     assert "퀘스트 생성 도메인 오케스트레이터" in llm.prompts[1]
+    assert "[TOOL_RESULT]" in llm.prompts[-1]
 
 
 def test_pipeline_rejects_json_top_level_routing_decision_in_edges() -> None:

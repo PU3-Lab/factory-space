@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+
 from agents.pipeline import AgentPipeline
+from agents.quest_generator.service import QuestAgentService
+from agents.quest_generator.tools import PRODUCTION_QUEST_SELECTION_TOOL_NAME
 from tests.harness import (
     PipelineScenario,
     StubLLM,
@@ -11,7 +15,19 @@ from tests.harness import (
     top_agent_decision,
 )
 
-QUEST_LLM_RESPONSE = '{"selected_quest_ids":[10,9,8,7,6]}'
+QUEST_SELECTED_IDS = [10, 9, 8, 7, 6]
+QUEST_TOOL_CALL = json.dumps(
+    {
+        "tool_call": {
+            "name": PRODUCTION_QUEST_SELECTION_TOOL_NAME,
+            "args": {"selected_quest_ids": QUEST_SELECTED_IDS},
+        }
+    },
+)
+QUEST_TOOL_RESPONSE = json.dumps(
+    QuestAgentService().generate_quest_json_from_ids(QUEST_SELECTED_IDS),
+    ensure_ascii=False,
+)
 
 
 def test_pipeline_uses_prompt_based_top_level_routing() -> None:
@@ -24,7 +40,8 @@ def test_pipeline_uses_prompt_based_top_level_routing() -> None:
             llm_responses=[
                 top_agent_decision("quest_generator"),
                 leaf_agent_decision("quest_generator.production_quest"),
-                QUEST_LLM_RESPONSE,
+                QUEST_TOOL_CALL,
+                QUEST_TOOL_RESPONSE,
             ],
         )
     )
@@ -38,6 +55,9 @@ def test_pipeline_uses_prompt_based_top_level_routing() -> None:
     assert response["payload"]["quests"][0]["type"] == "production"
     assert response["payload"]["quests"][0]["id"] == 10
     assert response["payload"]["metadata"]["llm"] == "used"
+    assert response["payload"]["metadata"]["toolCalls"] == [
+        {"name": PRODUCTION_QUEST_SELECTION_TOOL_NAME, "ok": True},
+    ]
     assert "서버 전체 오케스트레이터" in llm.prompts[0]
     assert "[OUTPUT_CONTRACT]" in llm.prompts[0]
     assert "퀘스트 생성 도메인 오케스트레이터" in llm.prompts[1]
@@ -50,7 +70,8 @@ def test_pipeline_routes_empty_quest_request_through_llm() -> None:
         [
             top_agent_decision("quest_generator"),
             leaf_agent_decision("quest_generator.production_quest"),
-            QUEST_LLM_RESPONSE,
+            QUEST_TOOL_CALL,
+            QUEST_TOOL_RESPONSE,
         ]
     )
     pipeline = AgentPipeline(llm=llm)
@@ -71,11 +92,16 @@ def test_pipeline_routes_empty_quest_request_through_llm() -> None:
     assert len(response["payload"]["quests"]) == 5
     assert response["payload"]["quests"][0]["id"] == 10
     assert response["payload"]["metadata"]["llm"] == "used"
-    assert len(llm.prompts) == 3
+    assert response["payload"]["metadata"]["toolCalls"] == [
+        {"name": PRODUCTION_QUEST_SELECTION_TOOL_NAME, "ok": True},
+    ]
+    assert len(llm.prompts) == 4
     assert "팩토리 스페이스 생산 퀘스트 선택 에이전트입니다." in llm.prompts[2]
-    assert '"selected_quest_ids":[2,4,6,8,10]' in llm.prompts[2]
+    tool_call_prefix = '"tool_call":{"name":"quest_generator.select_production_quests"'
+    assert tool_call_prefix in llm.prompts[2]
     assert "그대로 따라 쓰지 마세요" in llm.prompts[2]
     assert "[AVAILABLE_QUESTS]" in llm.prompts[2]
+    assert "[TOOL_RESULT]" in llm.prompts[-1]
 
 
 def test_pipeline_rejects_generated_quest_payload_for_production_quest() -> None:

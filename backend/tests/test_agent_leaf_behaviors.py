@@ -12,6 +12,7 @@ from agents.operator_guide.troubleshooter import TroubleshooterAgent
 from agents.process_optimizer import ProcessOptimizerAgent
 from agents.quest_generator.economy_quest import EconomyQuestAgent
 from agents.quest_generator.production_quest import ProductionQuestAgent
+from agents.quest_generator.tools import PRODUCTION_QUEST_SELECTION_TOOL_NAME
 
 
 class LeafAgent(Protocol):
@@ -152,3 +153,15 @@ def test_production_quest_fallback_returns_five_example_quests(
         "quantity",
     }
     assert result.metadata == {"fallback": True, "sub_agent": agent.agent_id}
+
+
+def test_production_quest_agent_exposes_selection_tool(
+    context: AgentContext,
+) -> None:
+    agent = ProductionQuestAgent()
+
+    prompt = agent.build_prompt({}, context)
+
+    assert [tool.name for tool in agent.tools] == [PRODUCTION_QUEST_SELECTION_TOOL_NAME]
+    assert PRODUCTION_QUEST_SELECTION_TOOL_NAME in prompt
+    assert "tool_call" in prompt
