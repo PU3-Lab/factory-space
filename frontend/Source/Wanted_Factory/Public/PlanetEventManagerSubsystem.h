@@ -182,10 +182,10 @@ public:
 	float GetDayProgress01() const;
 
 	UFUNCTION(BlueprintPure, Category = "Planet Event|Time")
-	int32 GetCurrentDayIndex() const { return TimeState.DayIndex; }
+	int32 GetCurrentDayIndex() const;
 
 	UFUNCTION(BlueprintPure, Category = "Planet Event|Time")
-	int32 GetElapsedDayCount() const { return TimeState.ElapsedDayCount; }
+	int32 GetElapsedDayCount() const;
 
 	UFUNCTION(BlueprintPure, Category = "Planet Event|Time")
 	float GetCurrentTime24Hours() const;

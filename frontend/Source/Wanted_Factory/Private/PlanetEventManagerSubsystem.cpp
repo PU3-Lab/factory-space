@@ -144,6 +144,16 @@ float UPlanetEventManagerSubsystem::GetDayProgress01() const
 	return FMath::Clamp(TimeState.DaySeconds / FullDaySeconds, 0.0f, 1.0f);
 }
 
+int32 UPlanetEventManagerSubsystem::GetCurrentDayIndex() const
+{
+	return TimeState.DayIndex;
+}
+
+int32 UPlanetEventManagerSubsystem::GetElapsedDayCount() const
+{
+	return TimeState.ElapsedDayCount;
+}
+
 float UPlanetEventManagerSubsystem::GetCurrentTime24Hours() const
 {
 	return GetDayProgress01() * 24.0f;
