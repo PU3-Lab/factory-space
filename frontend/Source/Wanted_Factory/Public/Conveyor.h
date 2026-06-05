@@ -93,6 +93,12 @@ protected:
 	UPROPERTY(Transient)
 	TArray<FName> PreviousItemSlots;
 
+	UPROPERTY(Transient)
+	TArray<int32> ItemVisualIds;
+
+	UPROPERTY(Transient)
+	TArray<int32> PreviousItemVisualIds;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items", meta = (ClampMin = "0.01"))
 	float SecondsPerGrid = 1.0f;
 
@@ -116,6 +122,7 @@ protected:
 
 	FTimerHandle ItemMoveTimerHandle;
 	float LastItemMoveWorldTime = 0.0f;
+	int32 NextItemVisualId = 1;
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
@@ -173,6 +180,7 @@ private:
 	FVector GetSlotLocalCenter(int32 SlotIndex) const;
 	FVector GetIncomingItemLocalCenter() const;
 	FVector ResolveItemVisualStartLocation(int32 SlotIndex) const;
+	int32 FindPreviousVisualSlotIndex(int32 VisualId) const;
 	bool HasVisibleItems() const;
 	FVector GetDebugTextLocalLocation() const;
 	FString BuildMovingItemSummary() const;

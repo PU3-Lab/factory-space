@@ -227,6 +227,9 @@ void AConveyor::ClearPath()
 	TargetMachine.Reset();
 	ItemSlots.Reset();
 	PreviousItemSlots.Reset();
+	ItemVisualIds.Reset();
+	PreviousItemVisualIds.Reset();
+	NextItemVisualId = 1;
 	StopItemMoveTimer();
 	RebuildVisuals();
 	RefreshItemVisualInstances();
@@ -371,8 +374,11 @@ void AConveyor::ResetItemSlots()
 		ItemSlot = NAME_None;
 	}
 
+	ItemVisualIds.Init(INDEX_NONE, OccupiedGridCells.Num());
 	PreviousItemSlots = ItemSlots;
+	PreviousItemVisualIds = ItemVisualIds;
 	LastItemMoveWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+	NextItemVisualId = 1;
 }
 
 void AConveyor::RestartItemMoveTimer()
@@ -413,6 +419,7 @@ void AConveyor::MoveItemsOneGrid()
 	if (ItemSlots.Num() == 0 || !SourceMachine.IsValid() || !TargetMachine.IsValid())
 	{
 		PreviousItemSlots = ItemSlots;
+		PreviousItemVisualIds = ItemVisualIds;
 		LastItemMoveWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastItemMoveWorldTime;
 		RefreshItemVisualInstances();
 		UpdateDebugStateText();
@@ -420,6 +427,7 @@ void AConveyor::MoveItemsOneGrid()
 	}
 
 	PreviousItemSlots = ItemSlots;
+	PreviousItemVisualIds = ItemVisualIds;
 
 	const int32 LastIndex = ItemSlots.Num() - 1;
 	const FName LastItem = ItemSlots[LastIndex];
@@ -429,6 +437,7 @@ void AConveyor::MoveItemsOneGrid()
 			&& TargetMachine->ReceiveConveyorItem(LastItem, 1))
 		{
 			ItemSlots[LastIndex] = NAME_None;
+			ItemVisualIds[LastIndex] = INDEX_NONE;
 		}
 	}
 
@@ -438,6 +447,8 @@ void AConveyor::MoveItemsOneGrid()
 		{
 			ItemSlots[Index] = ItemSlots[Index - 1];
 			ItemSlots[Index - 1] = NAME_None;
+			ItemVisualIds[Index] = ItemVisualIds[Index - 1];
+			ItemVisualIds[Index - 1] = INDEX_NONE;
 		}
 	}
 
@@ -447,6 +458,7 @@ void AConveyor::MoveItemsOneGrid()
 		if (SourceMachine->TryTakeFirstOutputItem(NewItem))
 		{
 			ItemSlots[0] = NewItem;
+			ItemVisualIds[0] = NextItemVisualId++;
 		}
 	}
 
@@ -547,21 +559,21 @@ FVector AConveyor::GetIncomingItemLocalCenter() const
 FVector AConveyor::ResolveItemVisualStartLocation(int32 SlotIndex) const
 {
 	const FVector CurrentLocation = GetSlotLocalCenter(SlotIndex);
-	if (!PreviousItemSlots.IsValidIndex(SlotIndex))
+	if (!ItemVisualIds.IsValidIndex(SlotIndex))
 	{
 		return CurrentLocation;
 	}
 
-	if (PreviousItemSlots[SlotIndex] == ItemSlots[SlotIndex])
+	const int32 VisualId = ItemVisualIds[SlotIndex];
+	if (VisualId == INDEX_NONE)
 	{
 		return CurrentLocation;
 	}
 
-	if (SlotIndex > 0
-		&& PreviousItemSlots.IsValidIndex(SlotIndex - 1)
-		&& !PreviousItemSlots[SlotIndex - 1].IsNone())
+	const int32 PreviousSlotIndex = FindPreviousVisualSlotIndex(VisualId);
+	if (PreviousSlotIndex != INDEX_NONE)
 	{
-		return GetSlotLocalCenter(SlotIndex - 1);
+		return GetSlotLocalCenter(PreviousSlotIndex);
 	}
 
 	if (SlotIndex == 0)
@@ -570,6 +582,24 @@ FVector AConveyor::ResolveItemVisualStartLocation(int32 SlotIndex) const
 	}
 
 	return CurrentLocation;
+}
+
+int32 AConveyor::FindPreviousVisualSlotIndex(int32 VisualId) const
+{
+	if (VisualId == INDEX_NONE)
+	{
+		return INDEX_NONE;
+	}
+
+	for (int32 Index = 0; Index < PreviousItemVisualIds.Num(); ++Index)
+	{
+		if (PreviousItemVisualIds[Index] == VisualId)
+		{
+			return Index;
+		}
+	}
+
+	return INDEX_NONE;
 }
 
 bool AConveyor::HasVisibleItems() const
