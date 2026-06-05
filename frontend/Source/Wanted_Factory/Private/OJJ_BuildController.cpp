@@ -151,6 +151,9 @@ void AOJJ_BuildController::EnterBuildMode()
 
 	TargetGrid->SetVisualizationVisible(true);
 
+	// 진입 즉시 배치 머신 포트 화살표 표시(첫 호버 전이라도 보이도록). 호버 화살표는 첫 UpdateMouseHover에서.
+	TargetGrid->RefreshPlacedMachineArrows();
+
 	bIsBuildMode = true;
 
 	// 빌드 세션은 항상 회전 0(미회전)으로 시작 — 예측 가능한 기본 방향.
@@ -186,7 +189,8 @@ void AOJJ_BuildController::ExitBuildMode()
 	if (TargetGrid)
 	{
 		TargetGrid->SetVisualizationVisible(false);
-		TargetGrid->ClearHoverPreview();
+		TargetGrid->ClearHoverPreview();         // 호버 셀 + 호버 화살표 제거
+		TargetGrid->ClearPlacedMachineArrows();  // 배치 머신 화살표 제거 (진입 RefreshPlacedMachineArrows와 대칭)
 	}
 
 	bIsBuildMode = false;
