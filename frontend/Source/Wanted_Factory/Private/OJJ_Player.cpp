@@ -257,6 +257,10 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	{
 		EnhancedInput->BindAction(IA_SetPumpMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPumpMode);
 	}
+	if (IA_SetSmelterMode)
+	{
+		EnhancedInput->BindAction(IA_SetSmelterMode, ETriggerEvent::Started, this, &AOJJ_Player::SetSmelterMode);
+	}
 	if (IA_BuildPan)
 	{
 		// 매 프레임 입력(연속 이동) → Triggered
@@ -548,6 +552,15 @@ void AOJJ_Player::SetPumpMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pump);
+}
+
+void AOJJ_Player::SetSmelterMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Smelter);
 }
 
 void AOJJ_Player::StartSprint(const FInputActionValue& Value)
