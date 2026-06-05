@@ -320,10 +320,10 @@ public:
 	bool TakeOutputItem(FName ItemID, int32 Count);
 
 	UFUNCTION(BlueprintPure, Category = "Machine | Conveyor")
-	bool PeekFirstOutputItem(FName& OutItemID) const;
+	virtual bool PeekFirstOutputItem(FName& OutItemID) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Machine | Conveyor")
-	bool TryTakeFirstOutputItem(FName& OutItemID);
+	virtual bool TryTakeFirstOutputItem(FName& OutItemID);
 
 	UFUNCTION(BlueprintPure, Category = "Machine | Conveyor")
 	virtual bool CanReceiveConveyorItem(FName ItemID, int32 Count = 1) const;

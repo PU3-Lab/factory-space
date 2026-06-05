@@ -614,17 +614,8 @@ void AOJJ_Player::SendOperatorGuideRequest()
 		return;
 	}
 
-	const FString RequestJson =
-		TEXT("{")
-		TEXT("\"type\":\"agent.request\",")
-		TEXT("\"request_id\":\"req-manual-qa-001\",")
-		TEXT("\"session_id\":\"session-001\",")
-		TEXT("\"client_id\":\"unreal-ui-001\",")
-		TEXT("\"agent\":\"operator_guide\",")
-		TEXT("\"payload\":{\"question\":\"\\uAE30\\uC5B4 \\uB9CC\\uB4E4\\uB824\\uBA74 \\uBB50\\uAC00 \\uD544\\uC694\\uD574?\"}")
-		TEXT("}");
-
-	if (AgentClient->SendJsonMessage(RequestJson))
+	const FString Question = TEXT("\uAE30\uC5B4 \uB9CC\uB4E4\uB824\uBA74 \uBB50\uAC00 \uD544\uC694\uD574?");
+	if (AgentClient->SendOperatorGuideQuestion(Question, TEXT("unreal-ui-001")))
 	{
 		UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] Sent operator guide request."));
 	}

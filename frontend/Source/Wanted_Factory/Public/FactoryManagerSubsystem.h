@@ -62,10 +62,10 @@ struct FPowerConnectionEdge
 	FName ID = NAME_None;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Power")
-	FName SourceNode = NAME_None;
+	FName SourceMachine = NAME_None;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Power")
-	FName TargetNode = NAME_None;
+	FName TargetMachine = NAME_None;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Power")
 	TWeakObjectPtr<APowerLine> PowerLineActor;
@@ -110,13 +110,16 @@ public:
 	void UnregisterPowerLine(APowerLine* PowerLine);
 
 	UFUNCTION(BlueprintCallable, Category = "Factory Manager|Power")
-	bool AddPowerConnection(APowerGridNode* SourceNode, APowerGridNode* TargetNode, APowerLine* PowerLine);
+	bool AddPowerConnection(AMachineBase* SourceMachine, AMachineBase* TargetMachine, APowerLine* PowerLine);
 
 	UFUNCTION(BlueprintCallable, Category = "Factory Manager|Power")
 	void RemovePowerConnection(FName ConnectionID);
 
 	UFUNCTION(BlueprintPure, Category = "Factory Manager|Power")
 	bool CanConnectPowerGridNodes(APowerGridNode* SourceNode, APowerGridNode* TargetNode) const;
+
+	UFUNCTION(BlueprintPure, Category = "Factory Manager|Power")
+	bool CanConnectPowerLineEndpoints(AMachineBase* SourceMachine, AMachineBase* TargetMachine) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Factory Manager")
 	void AddConnection(AMachineBase* SourceMachine, AMachineBase* TargetMachine, AConveyor* Conveyor);
@@ -186,7 +189,9 @@ private:
 
 	FName MakeMachineID(const AMachineBase* Machine) const;
 	FName MakeConnectionID(const AMachineBase* SourceMachine, const AMachineBase* TargetMachine, const AConveyor* Conveyor) const;
-	FName MakePowerConnectionID(const APowerGridNode* SourceNode, const APowerGridNode* TargetNode, const APowerLine* PowerLine) const;
+	FName MakePowerConnectionID(const AMachineBase* SourceMachine, const AMachineBase* TargetMachine, const APowerLine* PowerLine) const;
+	bool IsPowerGeneratorMachine(const AMachineBase* Machine) const;
+	bool ArePowerEndpointsConnected(const AMachineBase* First, const AMachineBase* Second) const;
 	bool ArePowerGridNodesConnected(const APowerGridNode* First, const APowerGridNode* Second) const;
 	bool IsMachineInNodeRadius(const AMachineBase* Machine, const APowerGridNode* Node, float Radius) const;
 	bool IsMachineConnectedToComponent(const AMachineBase* Machine, const TArray<APowerGridNode*>& ComponentNodes) const;

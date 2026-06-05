@@ -147,23 +147,23 @@ void UFactoryManagerSubsystem::UnregisterPowerLine(APowerLine* PowerLine)
 }
 
 bool UFactoryManagerSubsystem::AddPowerConnection(
-	APowerGridNode* SourceNode,
-	APowerGridNode* TargetNode,
+	AMachineBase* SourceMachine,
+	AMachineBase* TargetMachine,
 	APowerLine* PowerLine)
 {
-	if (!SourceNode || !TargetNode || !PowerLine || !CanConnectPowerGridNodes(SourceNode, TargetNode))
+	if (!SourceMachine || !TargetMachine || !PowerLine || !CanConnectPowerLineEndpoints(SourceMachine, TargetMachine))
 	{
 		return false;
 	}
 
-	const FName SourceID = MakeMachineID(SourceNode);
-	const FName TargetID = MakeMachineID(TargetNode);
-	const FName ConnectionID = MakePowerConnectionID(SourceNode, TargetNode, PowerLine);
+	const FName SourceID = MakeMachineID(SourceMachine);
+	const FName TargetID = MakeMachineID(TargetMachine);
+	const FName ConnectionID = MakePowerConnectionID(SourceMachine, TargetMachine, PowerLine);
 
 	FPowerConnectionEdge& Edge = PowerConnections.FindOrAdd(ConnectionID);
 	Edge.ID = ConnectionID;
-	Edge.SourceNode = SourceID;
-	Edge.TargetNode = TargetID;
+	Edge.SourceMachine = SourceID;
+	Edge.TargetMachine = TargetID;
 	Edge.PowerLineActor = PowerLine;
 
 	MarkGraphDirty();
@@ -183,23 +183,40 @@ void UFactoryManagerSubsystem::RemovePowerConnection(FName ConnectionID)
 
 bool UFactoryManagerSubsystem::CanConnectPowerGridNodes(APowerGridNode* SourceNode, APowerGridNode* TargetNode) const
 {
-	if (!SourceNode || !TargetNode || SourceNode == TargetNode)
+	return CanConnectPowerLineEndpoints(SourceNode, TargetNode);
+}
+
+bool UFactoryManagerSubsystem::CanConnectPowerLineEndpoints(AMachineBase* SourceMachine, AMachineBase* TargetMachine) const
+{
+	if (!SourceMachine || !TargetMachine || SourceMachine == TargetMachine)
 	{
 		return false;
 	}
 
-	const float MaxDistance = FMath::Min(SourceNode->GetConnectionRadius(), TargetNode->GetConnectionRadius());
+	APowerGridNode* SourceNode = Cast<APowerGridNode>(SourceMachine);
+	APowerGridNode* TargetNode = Cast<APowerGridNode>(TargetMachine);
+	const bool bNodeToNode = SourceNode && TargetNode;
+	const bool bPlantToNode = (IsPowerGeneratorMachine(SourceMachine) && TargetNode) ||
+		(IsPowerGeneratorMachine(TargetMachine) && SourceNode);
+	if (!bNodeToNode && !bPlantToNode)
+	{
+		return false;
+	}
+
+	const float MaxDistance = bNodeToNode
+		? FMath::Min(SourceNode->GetConnectionRadius(), TargetNode->GetConnectionRadius())
+		: (SourceNode ? SourceNode->GetConnectionRadius() : TargetNode->GetConnectionRadius());
 	if (MaxDistance <= 0.0f)
 	{
 		return false;
 	}
 
-	if (ArePowerGridNodesConnected(SourceNode, TargetNode))
+	if (ArePowerEndpointsConnected(SourceMachine, TargetMachine))
 	{
 		return false;
 	}
 
-	return FVector::DistSquared(SourceNode->GetActorLocation(), TargetNode->GetActorLocation()) <= FMath::Square(MaxDistance);
+	return FVector::DistSquared(SourceMachine->GetActorLocation(), TargetMachine->GetActorLocation()) <= FMath::Square(MaxDistance);
 }
 
 void UFactoryManagerSubsystem::AddConnection(
@@ -304,14 +321,14 @@ void UFactoryManagerSubsystem::RebuildCachedData()
 			continue;
 		}
 
-		APowerGridNode* SourceNode = PowerLine->GetSourceNode();
-		APowerGridNode* TargetNode = PowerLine->GetTargetNode();
-		if (!SourceNode || !TargetNode || !CanConnectPowerGridNodes(SourceNode, TargetNode))
+		AMachineBase* SourceMachine = PowerLine->GetSourceMachine();
+		AMachineBase* TargetMachine = PowerLine->GetTargetMachine();
+		if (!SourceMachine || !TargetMachine || !CanConnectPowerLineEndpoints(SourceMachine, TargetMachine))
 		{
 			continue;
 		}
 
-		AddPowerConnection(SourceNode, TargetNode, PowerLine);
+		AddPowerConnection(SourceMachine, TargetMachine, PowerLine);
 	}
 
 	bGraphDirty = false;
@@ -462,8 +479,8 @@ void UFactoryManagerSubsystem::RemovePowerConnectionsForNode(FName NodeID)
 	TArray<FName> ConnectionsToRemove;
 	for (const TPair<FName, FPowerConnectionEdge>& ConnectionPair : PowerConnections)
 	{
-		if (ConnectionPair.Value.SourceNode == NodeID ||
-			ConnectionPair.Value.TargetNode == NodeID)
+		if (ConnectionPair.Value.SourceMachine == NodeID ||
+			ConnectionPair.Value.TargetMachine == NodeID)
 		{
 			ConnectionsToRemove.Add(ConnectionPair.Key);
 		}
@@ -633,25 +650,31 @@ FName UFactoryManagerSubsystem::MakeConnectionID(
 }
 
 FName UFactoryManagerSubsystem::MakePowerConnectionID(
-	const APowerGridNode* SourceNode,
-	const APowerGridNode* TargetNode,
+	const AMachineBase* SourceMachine,
+	const AMachineBase* TargetMachine,
 	const APowerLine* PowerLine) const
 {
-	if (!SourceNode || !TargetNode || !PowerLine)
+	if (!SourceMachine || !TargetMachine || !PowerLine)
 	{
 		return NAME_None;
 	}
 
 	return FName(*FString::Printf(
 		TEXT("%s<->%s:%s"),
-		*SourceNode->GetPathName(),
-		*TargetNode->GetPathName(),
+		*SourceMachine->GetPathName(),
+		*TargetMachine->GetPathName(),
 		*PowerLine->GetPathName()));
 }
 
-bool UFactoryManagerSubsystem::ArePowerGridNodesConnected(
-	const APowerGridNode* First,
-	const APowerGridNode* Second) const
+bool UFactoryManagerSubsystem::IsPowerGeneratorMachine(const AMachineBase* Machine) const
+{
+	return Machine &&
+		(Machine->IsA<APowerPlant>() || Machine->GetMachineType() == FName(TEXT("BasicGenerator")));
+}
+
+bool UFactoryManagerSubsystem::ArePowerEndpointsConnected(
+	const AMachineBase* First,
+	const AMachineBase* Second) const
 {
 	if (!First || !Second)
 	{
@@ -663,8 +686,8 @@ bool UFactoryManagerSubsystem::ArePowerGridNodesConnected(
 	for (const TPair<FName, FPowerConnectionEdge>& ConnectionPair : PowerConnections)
 	{
 		const FPowerConnectionEdge& Connection = ConnectionPair.Value;
-		const bool bForward = Connection.SourceNode == FirstID && Connection.TargetNode == SecondID;
-		const bool bBackward = Connection.SourceNode == SecondID && Connection.TargetNode == FirstID;
+		const bool bForward = Connection.SourceMachine == FirstID && Connection.TargetMachine == SecondID;
+		const bool bBackward = Connection.SourceMachine == SecondID && Connection.TargetMachine == FirstID;
 		if (bForward || bBackward)
 		{
 			return true;
@@ -672,6 +695,13 @@ bool UFactoryManagerSubsystem::ArePowerGridNodesConnected(
 	}
 
 	return false;
+}
+
+bool UFactoryManagerSubsystem::ArePowerGridNodesConnected(
+	const APowerGridNode* First,
+	const APowerGridNode* Second) const
+{
+	return ArePowerEndpointsConnected(First, Second);
 }
 
 bool UFactoryManagerSubsystem::IsMachineInNodeRadius(
@@ -693,7 +723,7 @@ bool UFactoryManagerSubsystem::IsMachineConnectedToComponent(
 {
 	for (const APowerGridNode* Node : ComponentNodes)
 	{
-		if (IsMachineInNodeRadius(Machine, Node, Node->GetConnectionRadius()))
+		if (ArePowerEndpointsConnected(Machine, Node))
 		{
 			return true;
 		}
