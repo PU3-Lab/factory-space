@@ -18,6 +18,7 @@ class WANTED_FACTORY_API AConveyor : public AActor
 
 public:
 	AConveyor();
+	virtual void Tick(float DeltaTime) override;
 
 protected:
 	virtual void BeginPlay() override;
@@ -34,6 +35,9 @@ protected:
 	TObjectPtr<UInstancedStaticMeshComponent> CornerSegmentInstances;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Components")
+	TObjectPtr<UInstancedStaticMeshComponent> ItemVisualInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Components")
 	TObjectPtr<UTextRenderComponent> DebugStateText;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Grid", meta = (ClampMin = "1.0"))
@@ -47,6 +51,15 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
 	float ZOffset = 6.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual", meta = (ClampMin = "0.01"))
+	float ItemVisualScaleRatio = 0.28f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual")
+	float ItemVisualZOffset = 28.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual", meta = (ClampMin = "0.0"))
+	float ItemVisualLerpExponent = 1.0f;
 
 	// 코너 ㄱ메시 캐논 방향 정렬 오프셋(0/90/180/270 중 PIE/BP에서 튜닝). ㄱ메시 기준 자세가 180° 돌아가 있어 기본 180.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Corner")
@@ -77,6 +90,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Items")
 	TArray<FName> ItemSlots;
 
+	UPROPERTY(Transient)
+	TArray<FName> PreviousItemSlots;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items", meta = (ClampMin = "0.01"))
 	float SecondsPerGrid = 1.0f;
 
@@ -99,6 +115,7 @@ protected:
 	TWeakObjectPtr<AMachineBase> TargetMachine;
 
 	FTimerHandle ItemMoveTimerHandle;
+	float LastItemMoveWorldTime = 0.0f;
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
@@ -150,6 +167,13 @@ private:
 	void RestartItemMoveTimer();
 	void StopItemMoveTimer();
 	void MoveItemsOneGrid();
+	void RefreshItemVisualInstances();
+	float GetCurrentMoveAlpha() const;
+	FVector GetCellLocalCenter(FIntPoint Cell) const;
+	FVector GetSlotLocalCenter(int32 SlotIndex) const;
+	FVector GetIncomingItemLocalCenter() const;
+	FVector ResolveItemVisualStartLocation(int32 SlotIndex) const;
+	bool HasVisibleItems() const;
 	FVector GetDebugTextLocalLocation() const;
 	FString BuildMovingItemSummary() const;
 };
