@@ -4,6 +4,7 @@
 
 #include "Components/StaticMeshComponent.h"
 #include "FactoryManagerSubsystem.h"
+#include "MachineBase.h"
 #include "Machines/PowerGridNode.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -44,18 +45,49 @@ void APowerLine::OnConstruction(const FTransform& Transform)
 	UpdateLineVisual();
 }
 
-void APowerLine::ConfigurePowerLine(APowerGridNode* NewSourceNode, APowerGridNode* NewTargetNode)
+void APowerLine::ConfigurePowerLine(AMachineBase* NewSourceMachine, AMachineBase* NewTargetMachine)
 {
-	SourceNode = NewSourceNode;
-	TargetNode = NewTargetNode;
+	SourceMachine = NewSourceMachine;
+	TargetMachine = NewTargetMachine;
 	UpdateLineVisual();
 	RegisterToFactoryManager();
 }
 
+APowerGridNode* APowerLine::GetSourceNode() const
+{
+	return Cast<APowerGridNode>(SourceMachine.Get());
+}
+
+APowerGridNode* APowerLine::GetTargetNode() const
+{
+	return Cast<APowerGridNode>(TargetMachine.Get());
+}
+
+FVector APowerLine::GetEndpointLocationForActor(const AActor* Actor, float AdditionalHeightOffset)
+{
+	if (!Actor)
+	{
+		return FVector::ZeroVector;
+	}
+
+	FVector BoundsOrigin = Actor->GetActorLocation();
+	FVector BoundsExtent = FVector::ZeroVector;
+	Actor->GetActorBounds(true, BoundsOrigin, BoundsExtent);
+	if (BoundsExtent.IsNearlyZero())
+	{
+		Actor->GetActorBounds(false, BoundsOrigin, BoundsExtent);
+	}
+
+	return FVector(
+		BoundsOrigin.X,
+		BoundsOrigin.Y,
+		BoundsOrigin.Z + BoundsExtent.Z + AdditionalHeightOffset);
+}
+
 void APowerLine::UpdateLineVisual()
 {
-	APowerGridNode* Source = SourceNode.Get();
-	APowerGridNode* Target = TargetNode.Get();
+	AMachineBase* Source = SourceMachine.Get();
+	AMachineBase* Target = TargetMachine.Get();
 	if (!LineMesh || !Source || !Target || Source == Target)
 	{
 		if (LineMesh)
@@ -65,8 +97,8 @@ void APowerLine::UpdateLineVisual()
 		return;
 	}
 
-	const FVector SourceLocation = Source->GetActorLocation() + FVector(0.0f, 0.0f, LineHeightOffset);
-	const FVector TargetLocation = Target->GetActorLocation() + FVector(0.0f, 0.0f, LineHeightOffset);
+	const FVector SourceLocation = GetEndpointLocationForActor(Source, EndpointHeightOffset);
+	const FVector TargetLocation = GetEndpointLocationForActor(Target, EndpointHeightOffset);
 	const FVector Delta = TargetLocation - SourceLocation;
 	const float Length = Delta.Size();
 	if (Length <= UE_KINDA_SMALL_NUMBER)
