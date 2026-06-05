@@ -1,4 +1,4 @@
-"""Quest generation service."""
+"""서버 안에 준비된 예제 퀘스트 중에서 응답할 퀘스트를 고르는 서비스입니다."""
 
 from __future__ import annotations
 
@@ -54,13 +54,15 @@ _EXAMPLE_QUESTS: tuple[dict[str, Any], ...] = (
 
 
 class QuestAgentService:
-    """Generate validated quests from the server-side example quest pool."""
+    """예제 퀘스트 목록에서 몇 개를 뽑고, 응답 전에 데이터 모양을 검사합니다."""
 
     def __init__(self, rng: random.Random | None = None) -> None:
+        """테스트에서는 고정 난수를 쓰고, 실제 실행에서는 매번 다른 퀘스트를 뽑습니다."""
+
         self._rng = rng or random.SystemRandom()
 
     def generate_quest_json(self, count: int = 5) -> dict[str, Any]:
-        """Return JSON-serializable quests after Pydantic validation."""
+        """검증을 통과한 퀘스트들을 JSON으로 바꾸기 쉬운 dict 형태로 반환합니다."""
 
         selected_quests = self._rng.sample(_EXAMPLE_QUESTS, k=count)
         quests = [Quest.model_validate(quest) for quest in selected_quests]
