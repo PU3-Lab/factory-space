@@ -182,11 +182,15 @@ def test_pipeline_operator_guide_uses_llm_prompt_with_manual_csv_evidence() -> N
     assert response["payload"]["actions"] == []
     assert "answer" not in response["payload"]
     assert "text" not in response["payload"]
-    assert "friendly tutorial NPC" in llm.prompts[2]
-    assert "[CSV_EVIDENCE]" in llm.prompts[2]
-    assert "equipment_smelter" in llm.prompts[2]
-    assert "action_explain_equipment_role" in llm.prompts[2]
-    assert "[OUTPUT_CONTRACT]" in llm.prompts[2]
+    assert len(llm.prompt_messages) == 1
+    messages = llm.prompt_messages[0]
+    assert messages[0]["role"] == "system"
+    assert "tutorial operator inside Factory Space" in messages[0]["content"]
+    assert messages[1]["role"] == "user"
+    assert "[CSV_EVIDENCE]" in messages[1]["content"]
+    assert "equipment_smelter" in messages[1]["content"]
+    assert "action_explain_equipment_role" in messages[1]["content"]
+    assert "[OUTPUT_CONTRACT]" in messages[1]["content"]
 
 
 def test_pipeline_routes_explicit_agent_through_top_level_prompt() -> None:

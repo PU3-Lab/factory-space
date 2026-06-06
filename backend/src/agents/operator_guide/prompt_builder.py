@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from agents.operator_guide.manual_context_builder import ManualQAPromptContext
+from agents.operator_guide.system_prompt import OPERATOR_GUIDE_SYSTEM_PROMPT
 
 
 class ManualQAPromptBuilder:
@@ -18,32 +19,61 @@ class ManualQAPromptBuilder:
         sub_agent: str,
         context: ManualQAPromptContext,
     ) -> str:
+        return self.build_user_prompt(
+            question=question,
+            topic=topic,
+            sub_agent=sub_agent,
+            context=context,
+        )
+
+    def build_messages(
+        self,
+        *,
+        question: str,
+        topic: str,
+        sub_agent: str,
+        context: ManualQAPromptContext,
+    ) -> list[dict[str, str]]:
+        """Return chat messages with a real system prompt."""
+
+        return [
+            {"role": "system", "content": OPERATOR_GUIDE_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": self.build_user_prompt(
+                    question=question,
+                    topic=topic,
+                    sub_agent=sub_agent,
+                    context=context,
+                ),
+            },
+        ]
+
+    def build_user_prompt(
+        self,
+        *,
+        question: str,
+        topic: str,
+        sub_agent: str,
+        context: ManualQAPromptContext,
+    ) -> str:
+        """Render request-specific user content for the operator guide."""
+
         evidence_json = json.dumps(context.evidence, ensure_ascii=False, indent=2)
         actions_json = json.dumps(
             [action.model_dump() for action in context.result.recommended_actions],
             ensure_ascii=False,
             indent=2,
         )
-        return f"""다음 {self._topic_label(topic)} 질문에 답변하세요.
-
-[ROLE]
-You are Factory Space's friendly tutorial NPC.
-플레이어가 막히지 않도록 부드러운 안내형 한국어로 답변하세요.
-
+        return f"""Answer this {self._topic_label(topic)}.
 [PLAYER_QUESTION]
 {question}
 
 [LEAF_AGENT]
 {sub_agent}
 
-[STYLE_RULES]
-- 명령조보다 제안형으로 말하세요.
-- 플레이어를 탓하지 마세요.
-- 답변은 4~6문장으로 작성하세요.
-- CSV 근거를 중심으로 답하세요.
-- CSV 근거에 없는 구체적인 수치, 장비, 레시피, 효과는 만들지 마세요.
-- 전력, 입력, 출력, 저장 공간 확인 같은 일반적인 플레이 안내는 짧게 보충할 수 있습니다.
-- 추천 행동이 있으면 본문에 자연스럽게 녹이되, 별도 불릿 목록으로 반복하지 마세요.
+[QUESTION_TYPE]
+{context.result.question_type}
 
 [CSV_EVIDENCE]
 {evidence_json}
@@ -65,9 +95,9 @@ Use exactly these keys:
 
     def _topic_label(self, topic: str) -> str:
         if topic == "machine":
-            return "설비 도움말"
+            return "machine help question"
         if topic == "recipe":
-            return "레시피"
+            return "recipe question"
         if topic == "troubleshooting":
-            return "공장 문제를 진단"
-        return "운영자 가이드"
+            return "troubleshooting question"
+        return "operator guide question"

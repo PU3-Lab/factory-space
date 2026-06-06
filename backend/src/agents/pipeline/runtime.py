@@ -304,22 +304,42 @@ class AgentPipeline:
                         details={"agent": state["selectedLeafAgent"]},
                     )
                 }
-            return {"prompt": agent.build_prompt(state["typedPayload"], state["context"])}
+            prompt = agent.build_prompt(state["typedPayload"], state["context"])
+            output: AgentGraphState = {"prompt": prompt}
+            build_prompt_messages = getattr(agent, "build_prompt_messages", None)
+            if callable(build_prompt_messages):
+                output["promptMessages"] = build_prompt_messages(
+                    state["typedPayload"],
+                    state["context"],
+                )
+            return output
 
         def call_llm_default(state: AgentGraphState) -> AgentGraphState:
             if state.get("error"):
                 return {}
-            return invoke_llm_call_slot(llm_slots[0], state["prompt"])
+            return invoke_llm_call_slot(
+                llm_slots[0],
+                state["prompt"],
+                state.get("promptMessages"),
+            )
 
         def call_llm_fallback1(state: AgentGraphState) -> AgentGraphState:
             if state.get("error"):
                 return {}
-            return invoke_llm_call_slot(llm_slots[1], state["prompt"])
+            return invoke_llm_call_slot(
+                llm_slots[1],
+                state["prompt"],
+                state.get("promptMessages"),
+            )
 
         def call_llm_fallback2(state: AgentGraphState) -> AgentGraphState:
             if state.get("error"):
                 return {}
-            return invoke_llm_call_slot(llm_slots[2], state["prompt"])
+            return invoke_llm_call_slot(
+                llm_slots[2],
+                state["prompt"],
+                state.get("promptMessages"),
+            )
 
         def call_llm_tool_followup(state: AgentGraphState) -> AgentGraphState:
             if state.get("error"):

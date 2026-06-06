@@ -60,6 +60,23 @@ class ManualQAService:
             context=prompt_context,
         )
 
+    def build_prompt_messages(
+        self,
+        question: str,
+        *,
+        topic: str,
+        sub_agent: str,
+    ) -> list[dict[str, str]]:
+        """Return chat messages grounded in matched CSV evidence."""
+
+        prompt_context = self.build_prompt_context(question)
+        return self._prompt_builder.build_messages(
+            question=question,
+            topic=topic,
+            sub_agent=sub_agent,
+            context=prompt_context,
+        )
+
 
 def build_manual_qa_agent_result(
     payload: dict[str, Any],
@@ -97,6 +114,21 @@ def build_manual_qa_prompt(
     """Build a CSV-grounded LLM prompt for an operator guide leaf agent."""
 
     return ManualQAService().build_prompt(
+        question,
+        topic=topic,
+        sub_agent=sub_agent,
+    )
+
+
+def build_manual_qa_prompt_messages(
+    question: str,
+    *,
+    topic: str,
+    sub_agent: str,
+) -> list[dict[str, str]]:
+    """Build system/user chat messages for an operator guide leaf agent."""
+
+    return ManualQAService().build_prompt_messages(
         question,
         topic=topic,
         sub_agent=sub_agent,

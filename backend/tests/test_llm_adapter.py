@@ -344,6 +344,31 @@ def test_openai_llm_adapter_returns_response_text() -> None:
     }
 
 
+def test_openai_llm_adapter_sends_system_and_user_messages() -> None:
+    completions = FakeOpenAiChatCompletions(
+        FakeOpenAiCompletion([FakeOpenAiChoice(FakeOpenAiMessage('{"summary":"ok"}'))])
+    )
+    client = FakeOpenAiClient(FakeOpenAiChat(completions))
+    adapter = OpenAILLMAdapter(
+        LLMModelSlot(
+            name="fallback1",
+            provider="openai",
+            model="gpt-5.5",
+            api_key="openai-key",
+        ),
+        client=client,
+    )
+    messages = [
+        {"role": "system", "content": "system prompt"},
+        {"role": "user", "content": "user prompt"},
+    ]
+
+    result = adapter.invoke_messages(messages)
+
+    assert result == '{"summary":"ok"}'
+    assert completions.calls[0]["messages"] == messages
+
+
 
 
 def test_openai_llm_adapter_returns_none_without_api_key() -> None:
@@ -448,6 +473,28 @@ def test_local_llm_adapter_returns_response_text_without_api_key() -> None:
         },
         "timeout_ms": 1234,
     }
+
+
+def test_local_llm_adapter_sends_system_and_user_messages() -> None:
+    http_client = FakeOpenAiHttpClient()
+    adapter = LocalLLMAdapter(
+        LLMModelSlot(
+            name="default",
+            provider="local",
+            model="llama3.1:8b",
+            base_url="http://localhost:11434/v1",
+        ),
+        http_client=http_client,
+    )
+    messages = [
+        {"role": "system", "content": "system prompt"},
+        {"role": "user", "content": "user prompt"},
+    ]
+
+    result = adapter.invoke_messages(messages)
+
+    assert result == '{"summary":"ok"}'
+    assert http_client.calls[0]["json_body"]["messages"] == messages
 
 
 
