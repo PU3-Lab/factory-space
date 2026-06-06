@@ -86,14 +86,16 @@ class FakeOpenAiChatCompletions:
         *,
         model: str,
         messages: list[dict[str, Any]],
-        max_tokens: int,
         temperature: float,
+        max_tokens: int | None = None,
+        max_completion_tokens: int | None = None,
     ) -> FakeOpenAiCompletion:
         self.calls.append(
             {
                 "model": model,
                 "messages": messages,
                 "max_tokens": max_tokens,
+                "max_completion_tokens": max_completion_tokens,
                 "temperature": temperature,
             }
         )
@@ -324,7 +326,7 @@ def test_openai_llm_adapter_returns_response_text() -> None:
         LLMModelSlot(
             name="fallback1",
             provider="openai",
-            model="gpt-5.5",
+            model="gpt-4o-mini",
             api_key="openai-key",
         ),
         client=client,
@@ -337,11 +339,35 @@ def test_openai_llm_adapter_returns_response_text() -> None:
 
     assert result == '{"summary":"ok"}'
     assert completions.calls[0] == {
-        "model": "gpt-5.5",
+        "model": "gpt-4o-mini",
         "messages": [{"role": "user", "content": "prompt"}],
         "max_tokens": 64,
+        "max_completion_tokens": None,
         "temperature": 0.1,
     }
+
+
+def test_openai_llm_adapter_uses_max_completion_tokens_for_gpt5_models() -> None:
+    completions = FakeOpenAiChatCompletions(
+        FakeOpenAiCompletion([FakeOpenAiChoice(FakeOpenAiMessage('{"summary":"ok"}'))])
+    )
+    client = FakeOpenAiClient(FakeOpenAiChat(completions))
+    adapter = OpenAILLMAdapter(
+        LLMModelSlot(
+            name="default",
+            provider="openai",
+            model="gpt-5.4-nano",
+            api_key="openai-key",
+        ),
+        client=client,
+        max_output_tokens=64,
+    )
+
+    result = adapter.invoke("prompt")
+
+    assert result == '{"summary":"ok"}'
+    assert completions.calls[0]["max_tokens"] is None
+    assert completions.calls[0]["max_completion_tokens"] == 64
 
 
 def test_openai_llm_adapter_sends_system_and_user_messages() -> None:
@@ -353,7 +379,7 @@ def test_openai_llm_adapter_sends_system_and_user_messages() -> None:
         LLMModelSlot(
             name="fallback1",
             provider="openai",
-            model="gpt-5.5",
+            model="gpt-4o-mini",
             api_key="openai-key",
         ),
         client=client,

@@ -80,8 +80,9 @@ class _OpenAiChatCompletions(Protocol):
         *,
         model: str,
         messages: list[dict[str, Any]],
-        max_tokens: int,
         temperature: float,
+        max_tokens: int | None = None,
+        max_completion_tokens: int | None = None,
     ) -> _OpenAiCompletion:
         """Create chat completion."""
 
@@ -195,8 +196,11 @@ class OpenAILLMAdapter:
             completion = client.chat.completions.create(
                 model=self.slot.model,
                 messages=messages,
-                max_tokens=self.max_output_tokens,
                 temperature=self.temperature,
+                **_openai_token_limit_kwargs(
+                    self.slot.model,
+                    self.max_output_tokens,
+                ),
             )
         except Exception as exc:
             logger.warning("OpenAI LLM call failed: %s", exc)
@@ -273,6 +277,12 @@ def _render_chat_messages(messages: list[dict[str, str]]) -> str:
         f"[{message.get('role', 'user').upper()}]\n{message.get('content', '')}"
         for message in messages
     )
+
+
+def _openai_token_limit_kwargs(model: str, max_output_tokens: int) -> dict[str, int]:
+    if model.startswith("gpt-5"):
+        return {"max_completion_tokens": max_output_tokens}
+    return {"max_tokens": max_output_tokens}
 
 
 def _create_google_client(api_key: str | None) -> _GoogleClient | None:
