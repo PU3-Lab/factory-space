@@ -193,6 +193,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_SetWarehouseMode;
 
+	// 빌드모드 배치 모드 전환 — 철거(X키). IMC_Build에서 X에 매핑(에디터). 좌클릭으로 호버 대상(머신/컨베이어) 제거.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetDemolishMode;
+
 	// --- 이동 속도 ---
 	// 평상시 걷기 속도. BeginPlay에서 MaxWalkSpeed의 권위 있는 초기값으로 적용(BP CharacterMovement 기본값 덮음).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (ClampMin = "0.0"))
@@ -266,6 +270,7 @@ protected:
 	void SetPumpMode(const FInputActionValue& Value);
 	void SetSmelterMode(const FInputActionValue& Value);
 	void SetWarehouseMode(const FInputActionValue& Value);
+	void SetDemolishMode(const FInputActionValue& Value);
 
 	// 스프린트 — Started=달리기 속도, Completed=걷기 속도로 복귀.
 	void StartSprint(const FInputActionValue& Value);

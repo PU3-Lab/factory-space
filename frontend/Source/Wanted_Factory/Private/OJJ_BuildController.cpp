@@ -23,6 +23,7 @@
 #include "Machines/Smelter.h"
 #include "Machines/WarehousePort.h"
 #include "OJJ_ProtectionTower.h"
+#include "Resource/ResourceBase.h"
 
 namespace
 {
@@ -343,6 +344,13 @@ void AOJJ_BuildController::UpdateMouseHover()
 		return;
 	}
 
+	// === Demolish 모드 — 커서 대상 빨강 하이라이트(배치 트레이스/풋프린트 경로와 분리) ===
+	if (PlacementMode == EOJJ_BuildPlacementMode::Demolish)
+	{
+		UpdateDemolishHover();
+		return;
+	}
+
 	FHitResult Hit;
 	const bool bHit = PC->GetHitResultUnderCursorByChannel(
 		UEngineTypes::ConvertToTraceType(ECC_Visibility),
@@ -462,6 +470,96 @@ void AOJJ_BuildController::UpdateMouseHover()
 	CurrentHoverCell = CursorCell;
 }
 
+void AOJJ_BuildController::UpdateDemolishHover()
+{
+	if (!TargetGrid)
+	{
+		return;
+	}
+
+	FIntPoint CursorCell;
+	if (!GetCursorCell(CursorCell))
+	{
+		// 커서가 그리드 밖 → 하이라이트 제거.
+		TargetGrid->ClearHoverPreview();
+		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+		return;
+	}
+
+	// 동일 셀이면 리빌드 스킵(Tick 경로). 철거 직후엔 DemolishUnderCursor가 sentinel을 리셋해 강제 갱신.
+	if (CursorCell == CurrentHoverCell)
+	{
+		return;
+	}
+	CurrentHoverCell = CursorCell;
+
+	AActor* Target = TargetGrid->GetActorAtCell(CursorCell);
+
+	// 빈 셀 또는 맵 고정물(광맥/WaterArea = AResourceBase)은 철거 대상 아님 → 하이라이트 없음.
+	if (!Target || Target->IsA<AResourceBase>())
+	{
+		TargetGrid->ClearHoverPreview();
+		return;
+	}
+
+	// 머신/컨베이어 등 제거 가능 대상 → 점유 셀 전체 빨강.
+	if (const TArray<FIntPoint>* Cells = TargetGrid->GetActorCells(Target))
+	{
+		TargetGrid->OJJ_HighlightCellsInvalid(*Cells);
+	}
+	else
+	{
+		TargetGrid->ClearHoverPreview();
+	}
+}
+
+void AOJJ_BuildController::DemolishUnderCursor()
+{
+	if (!TargetGrid)
+	{
+		return;
+	}
+
+	FIntPoint CursorCell;
+	if (!GetCursorCell(CursorCell))
+	{
+		return; // 그리드 밖 클릭 무시.
+	}
+
+	AActor* Target = TargetGrid->GetActorAtCell(CursorCell);
+	if (!Target)
+	{
+		return; // 빈 셀 무시.
+	}
+
+	// 광맥/WaterArea(AResourceBase)는 맵 고정물 — 철거 금지.
+	if (Target->IsA<AResourceBase>())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] 광맥/Water(AResourceBase)는 철거 대상이 아님 — 무시. Cell=%s"),
+			*CursorCell.ToString());
+		return;
+	}
+
+	bool bRemoved = false;
+	if (Target->IsA<AMachineBase>())
+	{
+		// 머신: RemoveMachineAt → OnRemovedFromGrid 훅(자원 Release/Claim 정리) + FactoryManager Unregister + 화살표 재적재 연쇄.
+		bRemoved = TargetGrid->RemoveMachineAt(CursorCell);
+	}
+	else if (Target->IsA<AConveyor>())
+	{
+		// 컨베이어: 전용 정리(FactoryManager Unregister + 전체 셀 제거).
+		bRemoved = TargetGrid->OJJ_RemoveActorAt(CursorCell);
+	}
+
+	if (bRemoved)
+	{
+		// 연속 철거: 셀이 비었으니 호버 즉시 갱신(sentinel 리셋 → 다음 UpdateMouseHover에서 빈 셀로 리빌드).
+		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+		UpdateMouseHover();
+	}
+}
+
 void AOJJ_BuildController::OnLeftClickPressed()
 {
 	// SP-only contract 강제 (헤더의 MULTIPLAYER LIMITATION 명시와 일치).
@@ -493,6 +591,13 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	if (PlacementMode == EOJJ_BuildPlacementMode::PowerLine)
 	{
 		BeginPowerLineDrag(GetPowerLineEndpointUnderCursor());
+		return;
+	}
+
+	// Demolish 모드: 좌클릭 = 커서 셀 대상 제거(머신/컨베이어). 배치 경로(CanPlaceMachine 등)와 분리.
+	if (PlacementMode == EOJJ_BuildPlacementMode::Demolish)
+	{
+		DemolishUnderCursor();
 		return;
 	}
 
@@ -615,6 +720,7 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::Pump:      ModeName = TEXT("Pump");       break;
 	case EOJJ_BuildPlacementMode::Smelter:   ModeName = TEXT("Smelter");    break;
 	case EOJJ_BuildPlacementMode::Warehouse: ModeName = TEXT("Warehouse");  break;
+	case EOJJ_BuildPlacementMode::Demolish:  ModeName = TEXT("Demolish");   break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 

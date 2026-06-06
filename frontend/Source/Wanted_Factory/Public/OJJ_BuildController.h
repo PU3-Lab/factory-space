@@ -27,7 +27,9 @@ enum class EOJJ_BuildPlacementMode : uint8
 	Pump,
 	Smelter,
 	// 창고(Warehouse) 모드 — 1번 키(generic Machine 진입 키 대체)로 진입. WarehousePort 배치.
-	Warehouse
+	Warehouse,
+	// 철거(Demolish) 모드 — X키. 호버 대상 빨강 하이라이트 + 좌클릭 제거(머신/컨베이어). 광맥/WaterArea 제외.
+	Demolish
 };
 
 /**
@@ -165,6 +167,12 @@ public:
 	// PlayerController가 Tick에서 호출. 마우스 위치 → 그리드 셀 → 호버 미리보기 갱신.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void UpdateMouseHover();
+
+	// [철거 모드] 커서 셀의 제거 가능 대상(머신/컨베이어)을 점유 셀 전체 빨강 하이라이트. 빈 셀/광맥/WaterArea는 제외.
+	void UpdateDemolishHover();
+
+	// [철거 모드] 커서 셀의 대상 제거(머신=RemoveMachineAt 훅 연쇄, 컨베이어=OJJ_RemoveActorAt). 직후 호버 갱신(연속 철거).
+	void DemolishUnderCursor();
 
 	// PlayerController가 입력에서 호출. Machine 모드: 머신 배치. Conveyor 모드: 드래그 시작.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
