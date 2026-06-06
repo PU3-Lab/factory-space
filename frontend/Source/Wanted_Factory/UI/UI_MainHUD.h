@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "QuestManagerSubsystem.h"
+#include "Components/EditableText.h"
 #include "UI_MainHUD.generated.h"
 
 UCLASS()
@@ -11,30 +13,55 @@ class WANTED_FACTORY_API UUI_MainHUD : public UUserWidget
 
 public:
 	virtual void NativeConstruct() override;
-
-	// 외부나 타이머 등에서 서브퀘스트를 새로 요청하고 싶을 때 부르는 함수
-	UFUNCTION(BlueprintCallable, Category = "HUD | Quest")
-	void RefreshSubQuests();
 	
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
-
-protected:
 	
+	UFUNCTION() void OnRequestQuestsClicked();
+	UFUNCTION() void OnToggleGuideClicked();
+protected:
+	// --- 오퍼레이터 가이드 AI 채팅 UI 위젯 ---
+	UPROPERTY(meta = (BindWidget))
+	class UEditableText* ET_OperatorInput;
+
+	UPROPERTY(meta = (BindWidget))
+	class UTextBlock* TXT_GuideResponse;
+	
+	// --- 🌟 [추가] 오퍼레이터 가이드 토글 제어 위젯 ---
+	UPROPERTY(meta = (BindWidget))
+	class UBorder* B_ChatBackground; // 열고 닫힐 채팅창 전체 배경 상자
+
+	UPROPERTY(meta = (BindWidget))
+	class UButton* BTN_ToggleGuide; // 항상 화면에 남아있을 접이식 버튼
+
+	UPROPERTY(meta = (BindWidget))
+	class UTextBlock* TXT_ToggleText; // 버튼의 글자 ("열기" / "닫기" 변경용)
+
+	// --- 퀘스트 정보 위젯 ---
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_RequestQuests;
 	UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_Quest_1;
 	UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_Quest_2;
 	UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_Quest_3;
 	UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_Quest_4;
 	UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_Quest_5;
+    
+	// --- 상단 환경 정보 위젯 ---
+	UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_InGameTime;
+	UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_DisasterDay;
 	
-	UPROPERTY(meta = (BindWidget))
-	class UTextBlock* TXT_DisasterDay;
-
-	// 중앙 상단 인게임 시간 텍스트 블록 바인딩
-	UPROPERTY(meta = (BindWidget))
-	class UTextBlock* TXT_InGameTime;
-
 private:
-	
+	// 성공 시 호출될 함수
 	UFUNCTION()
-	void HandleOnSubQuestTitlesUpdated(const FString& RequestId, const TArray<FString>& Titles);
+	void HandleOnSubQuestsGenerated(const FString& RequestId, const TArray<FQuestState>& Quests);
+	
+	// 서버 연결 실패나 에러 발생 시 텍스트를 원복할 실패 함수
+	UFUNCTION()
+	void HandleOnSubQuestRequestFailed(const FString& RequestId, const FString& ErrorMessage);
+	
+	// 엔터키를 쳤을 때 실행될 입력 바인딩 함수
+	UFUNCTION()
+	void HandleOnTextCommitted(const FText& Text, ETextCommit::Type CommitType);
+
+	//AI 에이전트로부터 오퍼레이터 가이드 답변 패킷이 수신되었을 때 처리할 함수
+	UFUNCTION()
+	void HandleOnOperatorGuideResponse(const FString& RequestId, const FString& Agent, const FString& PayloadJson, const FString& RawMessage);
 };
