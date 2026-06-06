@@ -40,6 +40,13 @@ void AOJJ_DayNightController::BeginPlay()
 			}
 		}
 	}
+
+	// 디버그 오버라이드가 켜진 채 출하/실행되면 태양이 고정돼 낮밤이 흐르지 않는다 → 멈춘 태양의 원인을
+	// 즉시 찾게 해주는 안전망. 출하 전 -1로 되돌릴 것.
+	if (DebugProgressOverride >= 0.0f)
+	{
+		LOG_OJJ_W(TEXT("디버그 오버라이드 활성 상태로 실행 중 — 낮밤이 흐르지 않습니다(DebugProgressOverride=%.2f, -1로 되돌리세요)."), DebugProgressOverride);
+	}
 }
 
 void AOJJ_DayNightController::Tick(float DeltaSeconds)
