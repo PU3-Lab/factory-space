@@ -1,4 +1,4 @@
-"""Quest generator orchestrating agent."""
+"""퀘스트 요청을 어떤 하위 퀘스트 에이전트가 처리할지 고르는 파일입니다."""
 
 from __future__ import annotations
 
@@ -7,15 +7,13 @@ from typing import Any
 from agents.base import AgentContext
 
 QUEST_SUB_AGENT_IDS = (
-    "quest_generator.tutorial_quest",
     "quest_generator.production_quest",
-    "quest_generator.exploration_quest",
     "quest_generator.economy_quest",
 )
 
 
 class QuestGeneratorAgent:
-    """Select the quest generation leaf agent."""
+    """퀘스트 생성 요청을 보고 사용할 하위 에이전트를 선택하는 관리자입니다."""
 
     agent_id = "quest_generator"
     tools = ()
@@ -25,7 +23,7 @@ class QuestGeneratorAgent:
         payload: dict[str, Any],
         context: AgentContext,
     ) -> str:
-        """Build the prompt used to select a quest leaf agent."""
+        """LLM에게 선택 가능한 하위 퀘스트 에이전트 목록을 알려주는 프롬프트를 만듭니다."""
 
         allowed_leaf_agent_ids = "\n".join(
             f"- {sub_agent_id}" for sub_agent_id in QUEST_SUB_AGENT_IDS

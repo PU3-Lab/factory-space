@@ -2,36 +2,42 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "Engine/DataTable.h"
 #include "UI_BuildModeMain.generated.h"
 
 UCLASS()
-class UUI_BuildModeMain : public UUserWidget
+class WANTED_FACTORY_API UUI_BuildModeMain : public UUserWidget
 {
 	GENERATED_BODY()
 
 public:
 	virtual void NativeConstruct() override;
-	
-	UFUNCTION(BlueprintCallable, Category = "Quickslot")
-	void HandleQuickslotClicked(int32 SlotIndex);
 
 protected:
-	UPROPERTY(meta = (BindWidget))
-	class UHorizontalBox* HBox_QuickslotBar; 
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FactoryData")
-	class UDataTable* FactoryDataTable;
+	// 6번 제외
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_1_Storage;
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_2_Conveyor;
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_3_Smelter;
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_4_Grinder;
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_5_Miner;
+    
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_7_PowerPlant;
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_8_PowerGridNode;
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_9_PowerLine;
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_0_MagneticShield;
 
 private:
-	void OnKey1Pressed();
-	void OnKey2Pressed();
-	void OnKey3Pressed();
-	void OnKey4Pressed();
-	void OnKey5Pressed();
-	void OnKey6Pressed();
-	void OnKey7Pressed();
-	void OnKey8Pressed();
-	void OnKey9Pressed();
-	void OnKey0Pressed();
+	// 각 버튼의 클릭 이벤트에 매핑될 내부 함수들
+	UFUNCTION() void OnStorageClicked();
+	UFUNCTION() void OnConveyorClicked();
+	UFUNCTION() void OnSmelterClicked();
+	UFUNCTION() void OnGrinderClicked();
+	UFUNCTION() void OnMinerClicked();
+    
+	UFUNCTION() void OnPowerPlantClicked();
+	UFUNCTION() void OnPowerGridNodeClicked();
+	UFUNCTION() void OnPowerLineClicked();
+	UFUNCTION() void OnMagneticShieldClicked();
+
+	// 단축키 번호(SlotIndex)를 넘겨받아 처리할 공통 함수
+	void ExecutePlacementMode(int32 SlotIndex);
 };

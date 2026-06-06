@@ -17,7 +17,11 @@ from agents.operator_guide.agent import (
 )
 from agents.orchestrator import TOP_LEVEL_AGENT_IDS, OrchestratorAgent
 from agents.pipeline.graph_edges import wire_agent_graph
-from agents.pipeline.llm_fallback import build_llm_call_slots, invoke_llm_call_slot
+from agents.pipeline.llm_fallback import (
+    LLMCallSlot,
+    build_llm_call_slots,
+    invoke_llm_call_slot,
+)
 from agents.pipeline.middleware import (
     append_middleware_log,
     build_current_model_metadata,
@@ -35,6 +39,7 @@ from agents.pipeline.utils import (
     run_fallback,
 )
 from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS, QuestGeneratorAgent
+from agents.quest_generator.tools import PRODUCTION_QUEST_SELECTION_TOOL_NAME
 from agents.router import AgentRouter, UnknownAgentError, create_default_agent_router
 from cache.response_cache import ResponseCache
 from llm.adapter import LLMAdapter, create_llm_adapter
@@ -45,6 +50,30 @@ from protocol.messages import (
     AgentRequestEnvelope,
     AgentResponseEnvelope,
 )
+
+
+class _FallbackRoutingLLM:
+    """LLM adapter wrapper that tries multiple slots sequentially on failure."""
+
+    def __init__(self, slots: list[LLMCallSlot]) -> None:
+        self.slots = slots
+
+    def invoke(self, prompt: str) -> str | None:
+        for slot in self.slots:
+            res = slot.adapter.invoke(prompt)
+            if res is not None:
+                return res
+        return None
+
+
+def _clean_routing_decision(raw: str | None) -> str:
+    """Clean raw routing model output by stripping whitespace and outer JSON quotes."""
+    if not raw:
+        return ""
+    cleaned = raw.strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {'"', "'"}:
+        cleaned = cleaned[1:-1]
+    return cleaned.strip()
 
 
 class AgentPipeline:
@@ -92,7 +121,7 @@ class AgentPipeline:
             adapter_factory=self.llm_adapter_factory,
         )
         llm_slots_by_name = {slot.name: slot for slot in llm_slots}
-        routing_llm = self.llm or llm_slots[0].adapter
+        routing_llm = self.llm or _FallbackRoutingLLM(list(llm_slots))
         orchestrator = OrchestratorAgent()
         operator_guide = OperatorGuideAgent()
         quest_generator = QuestGeneratorAgent()
@@ -147,8 +176,6 @@ class AgentPipeline:
             envelope = state["envelope"]
             context = state["context"]
             payload = state["typedPayload"]
-            if envelope.agent == "quest_generator" and not payload:
-                return {"selectedAgent": "quest_generator"}
 
             routing_prompt = orchestrator.build_routing_prompt(
                 payload,
@@ -159,7 +186,7 @@ class AgentPipeline:
             return {
                 "routingPrompt": routing_prompt,
                 "routingRaw": routing_raw,
-                "selectedAgent": (routing_raw or "").strip(),
+                "selectedAgent": _clean_routing_decision(routing_raw),
             }
 
         def validate_process_payload(state: AgentGraphState) -> AgentGraphState:
@@ -213,17 +240,11 @@ class AgentPipeline:
             return {
                 "routingPrompt": routing_prompt,
                 "routingRaw": routing_raw,
-                "selectedLeafAgent": (routing_raw or "").strip(),
+                "selectedLeafAgent": _clean_routing_decision(routing_raw),
             }
 
         def route_quest_sub_agent(state: AgentGraphState) -> AgentGraphState:
             explicit_sub_agent = state["typedPayload"].get("sub_agent")
-            if explicit_sub_agent is None and not state["typedPayload"]:
-                return {
-                    "selectedLeafAgent": "quest_generator.production_quest",
-                    "skipLlm": True,
-                }
-
             if explicit_sub_agent is not None:
                 if (
                     isinstance(explicit_sub_agent, str)
@@ -246,7 +267,7 @@ class AgentPipeline:
             return {
                 "routingPrompt": routing_prompt,
                 "routingRaw": routing_raw,
-                "selectedLeafAgent": (routing_raw or "").strip(),
+                "selectedLeafAgent": _clean_routing_decision(routing_raw),
             }
 
         def cache_lookup(state: AgentGraphState) -> AgentGraphState:
@@ -313,8 +334,14 @@ class AgentPipeline:
             if not raw:
                 return {}
 
+            cleaned = raw.strip()
+            if cleaned.startswith("```"):
+                lines = cleaned.splitlines()
+                if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].startswith("```"):
+                    cleaned = "\n".join(lines[1:-1]).strip()
+
             try:
-                payload = json.loads(raw)
+                payload = json.loads(cleaned)
             except json.JSONDecodeError:
                 return {
                     "error": build_error_payload(
@@ -330,6 +357,18 @@ class AgentPipeline:
                         "LLM response must be a JSON object.",
                     )
                 }
+
+            if state.get("selectedLeafAgent") == "quest_generator.production_quest":
+                if not _has_successful_tool_call(
+                    state,
+                    PRODUCTION_QUEST_SELECTION_TOOL_NAME,
+                ):
+                    return {
+                        "error": build_error_payload(
+                            "INVALID_LLM_RESPONSE",
+                            "퀘스트 LLM 응답은 production quest 선택 tool을 먼저 호출해야 합니다.",
+                        )
+                    }
 
             metadata = {"llm": "used"}
             if state.get("llmSlot"):
@@ -479,6 +518,13 @@ class AgentPipeline:
 
         wire_agent_graph(graph)
         return graph.compile()
+
+
+def _has_successful_tool_call(state: AgentGraphState, tool_name: str) -> bool:
+    return any(
+        tool_call.get("name") == tool_name and tool_call.get("ok") is True
+        for tool_call in state.get("toolCalls", [])
+    )
 
 
 def run_agent_pipeline(message: AgentRequestEnvelope | dict[str, Any]) -> dict[str, Any]:

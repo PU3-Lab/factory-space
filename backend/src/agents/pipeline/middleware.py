@@ -1,4 +1,4 @@
-"""Shared pipeline middleware metadata helpers."""
+"""에이전트 실행 중간중간 남길 기록을 만드는 미들웨어 도우미입니다."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ def append_middleware_log(
     event: str,
     details: dict[str, Any],
 ) -> AgentGraphState:
-    """Append one middleware log entry using the graph state."""
+    """현재 그래프 상태를 받아 어떤 단계에서 무슨 일이 있었는지 기록으로 남깁니다."""
 
     LOGGER.info(
         "%s %s",
@@ -37,7 +37,7 @@ def append_middleware_log(
 
 
 def build_current_model_metadata(state: AgentGraphState) -> dict[str, str] | None:
-    """Build response metadata for the latest LLM slot used by the graph."""
+    """마지막으로 사용한 LLM 정보를 응답 metadata에 넣기 위해 정리합니다."""
 
     slot = state.get("llmSlot")
     provider = state.get("llmProvider")

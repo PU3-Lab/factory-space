@@ -9,7 +9,7 @@ APowerPlant::APowerPlant()
 {
 	PrimaryActorTick.bCanEverTick = false;
 
-	MachineType = TEXT("BasicGenerator");
+	MachineType = TEXT("PowerPlant");
 	InputPortCount = 0;
 	OutputPortCount = 0;
 	bNeedPower = false;
@@ -20,6 +20,15 @@ APowerPlant::APowerPlant()
 
 	InputPorts.Reset();
 	OutputPorts.Reset();
+}
+
+void APowerPlant::ApplyMachineData(const FMachineTableRow& MachineData)
+{
+	Super::ApplyMachineData(MachineData);
+
+	BasePowerOutput = FMath::Max(0.f, MachineData.Power);
+	PowerConsumption = 0.f;
+	bNeedPower = false;
 }
 
 bool APowerPlant::AddItem(FName ItemID, int32 Count)

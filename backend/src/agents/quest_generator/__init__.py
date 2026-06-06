@@ -1,1 +1,1 @@
-"""Quest generator agent package."""
+"""퀘스트 생성 에이전트에 필요한 코드들을 모아 둔 패키지입니다."""

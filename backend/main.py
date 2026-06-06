@@ -12,7 +12,7 @@ import uvicorn
 backend_root = Path(__file__).resolve().parent
 if str(backend_root) not in sys.path:
     sys.path.insert(0, str(backend_root))
-from scripts.run_server import ensure_ollama_running, prepare_environment
+from scripts.run_server import ensure_ollama_running, prepare_environment  # noqa: E402
 
 
 def main() -> None:

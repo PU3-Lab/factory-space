@@ -79,7 +79,7 @@ float CornerToYaw90(FIntPoint PreviousDirection, FIntPoint NextDirection)
 
 AConveyor::AConveyor()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
@@ -91,6 +91,11 @@ AConveyor::AConveyor()
 	CornerSegmentInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("CornerSegmentInstances"));
 	CornerSegmentInstances->SetupAttachment(Root);
 	CornerSegmentInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	ItemVisualInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("ItemVisualInstances"));
+	ItemVisualInstances->SetupAttachment(Root);
+	ItemVisualInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ItemVisualInstances->SetCastShadow(false);
 
 	DebugStateText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("DebugStateText"));
 	DebugStateText->SetupAttachment(Root);
@@ -105,6 +110,7 @@ AConveyor::AConveyor()
 	{
 		StraightSegmentInstances->SetStaticMesh(CubeMesh.Object);
 		CornerSegmentInstances->SetStaticMesh(CubeMesh.Object);
+		ItemVisualInstances->SetStaticMesh(CubeMesh.Object);
 	}
 
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> MaterialAsset(
@@ -113,7 +119,15 @@ AConveyor::AConveyor()
 	{
 		StraightSegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		CornerSegmentInstances->SetMaterial(0, MaterialAsset.Object);
+		ItemVisualInstances->SetMaterial(0, MaterialAsset.Object);
 	}
+}
+
+void AConveyor::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	RefreshItemVisualInstances();
 }
 
 void AConveyor::OnConstruction(const FTransform& Transform)
@@ -121,6 +135,7 @@ void AConveyor::OnConstruction(const FTransform& Transform)
 	Super::OnConstruction(Transform);
 
 	RebuildVisuals();
+	RefreshItemVisualInstances();
 	UpdateDebugStateText();
 }
 
@@ -137,6 +152,7 @@ void AConveyor::BeginPlay()
 	}
 
 	RestartItemMoveTimer();
+	RefreshItemVisualInstances();
 }
 
 void AConveyor::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -166,6 +182,7 @@ void AConveyor::SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize
 	}
 
 	RebuildVisuals();
+	RefreshItemVisualInstances();
 	UpdateDebugStateText();
 }
 
@@ -184,6 +201,7 @@ void AConveyor::ConfigureTransport(
 	TargetMachine = NewTargetMachine;
 	ResetItemSlots();
 	RestartItemMoveTimer();
+	RefreshItemVisualInstances();
 	UpdateDebugStateText();
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -208,8 +226,13 @@ void AConveyor::ClearPath()
 	SourceMachine.Reset();
 	TargetMachine.Reset();
 	ItemSlots.Reset();
+	PreviousItemSlots.Reset();
+	ItemVisualIds.Reset();
+	PreviousItemVisualIds.Reset();
+	NextItemVisualId = 1;
 	StopItemMoveTimer();
 	RebuildVisuals();
+	RefreshItemVisualInstances();
 	UpdateDebugStateText();
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -350,6 +373,12 @@ void AConveyor::ResetItemSlots()
 	{
 		ItemSlot = NAME_None;
 	}
+
+	ItemVisualIds.Init(INDEX_NONE, OccupiedGridCells.Num());
+	PreviousItemSlots = ItemSlots;
+	PreviousItemVisualIds = ItemVisualIds;
+	LastItemMoveWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+	NextItemVisualId = 1;
 }
 
 void AConveyor::RestartItemMoveTimer()
@@ -366,6 +395,8 @@ void AConveyor::RestartItemMoveTimer()
 	{
 		return;
 	}
+
+	LastItemMoveWorldTime = World->GetTimeSeconds();
 
 	World->GetTimerManager().SetTimer(
 		ItemMoveTimerHandle,
@@ -387,9 +418,16 @@ void AConveyor::MoveItemsOneGrid()
 {
 	if (ItemSlots.Num() == 0 || !SourceMachine.IsValid() || !TargetMachine.IsValid())
 	{
+		PreviousItemSlots = ItemSlots;
+		PreviousItemVisualIds = ItemVisualIds;
+		LastItemMoveWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastItemMoveWorldTime;
+		RefreshItemVisualInstances();
 		UpdateDebugStateText();
 		return;
 	}
+
+	PreviousItemSlots = ItemSlots;
+	PreviousItemVisualIds = ItemVisualIds;
 
 	const int32 LastIndex = ItemSlots.Num() - 1;
 	const FName LastItem = ItemSlots[LastIndex];
@@ -399,6 +437,7 @@ void AConveyor::MoveItemsOneGrid()
 			&& TargetMachine->ReceiveConveyorItem(LastItem, 1))
 		{
 			ItemSlots[LastIndex] = NAME_None;
+			ItemVisualIds[LastIndex] = INDEX_NONE;
 		}
 	}
 
@@ -408,6 +447,8 @@ void AConveyor::MoveItemsOneGrid()
 		{
 			ItemSlots[Index] = ItemSlots[Index - 1];
 			ItemSlots[Index - 1] = NAME_None;
+			ItemVisualIds[Index] = ItemVisualIds[Index - 1];
+			ItemVisualIds[Index - 1] = INDEX_NONE;
 		}
 	}
 
@@ -417,10 +458,161 @@ void AConveyor::MoveItemsOneGrid()
 		if (SourceMachine->TryTakeFirstOutputItem(NewItem))
 		{
 			ItemSlots[0] = NewItem;
+			ItemVisualIds[0] = NextItemVisualId++;
 		}
 	}
 
+	LastItemMoveWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastItemMoveWorldTime;
+	RefreshItemVisualInstances();
 	UpdateDebugStateText();
+}
+
+void AConveyor::RefreshItemVisualInstances()
+{
+	if (!ItemVisualInstances)
+	{
+		return;
+	}
+
+	ItemVisualInstances->ClearInstances();
+	if (!HasVisibleItems())
+	{
+		return;
+	}
+
+	const float MoveAlpha = GetCurrentMoveAlpha();
+	const float ItemScale = FMath::Max(0.01f, CellSize * ItemVisualScaleRatio / 100.0f);
+	const FVector ItemVisualScale(ItemScale, ItemScale, ItemScale);
+
+	for (int32 SlotIndex = 0; SlotIndex < ItemSlots.Num(); ++SlotIndex)
+	{
+		if (ItemSlots[SlotIndex].IsNone())
+		{
+			continue;
+		}
+
+		const FVector StartLocation = ResolveItemVisualStartLocation(SlotIndex);
+		const FVector EndLocation = GetSlotLocalCenter(SlotIndex);
+		const FVector ItemLocation = FMath::Lerp(StartLocation, EndLocation, MoveAlpha);
+		ItemVisualInstances->AddInstance(FTransform(FRotator::ZeroRotator, ItemLocation, ItemVisualScale));
+	}
+}
+
+float AConveyor::GetCurrentMoveAlpha() const
+{
+	if (SecondsPerGrid <= KINDA_SMALL_NUMBER)
+	{
+		return 1.0f;
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return 1.0f;
+	}
+
+	const float RawAlpha = FMath::Clamp((World->GetTimeSeconds() - LastItemMoveWorldTime) / SecondsPerGrid, 0.0f, 1.0f);
+	if (ItemVisualLerpExponent <= KINDA_SMALL_NUMBER)
+	{
+		return RawAlpha;
+	}
+
+	return FMath::Pow(RawAlpha, ItemVisualLerpExponent);
+}
+
+FVector AConveyor::GetCellLocalCenter(FIntPoint Cell) const
+{
+	const FVector Centroid = GetPathCentroidLocal();
+	return FVector(
+		(Cell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
+		(Cell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
+		ZOffset + ItemVisualZOffset);
+}
+
+FVector AConveyor::GetSlotLocalCenter(int32 SlotIndex) const
+{
+	if (!OccupiedGridCells.IsValidIndex(SlotIndex))
+	{
+		return FVector(0.0f, 0.0f, ZOffset + ItemVisualZOffset);
+	}
+
+	return GetCellLocalCenter(OccupiedGridCells[SlotIndex]);
+}
+
+FVector AConveyor::GetIncomingItemLocalCenter() const
+{
+	if (OccupiedGridCells.Num() == 0)
+	{
+		return FVector(0.0f, 0.0f, ZOffset + ItemVisualZOffset);
+	}
+
+	if (OccupiedGridCells.Num() == 1)
+	{
+		return GetSlotLocalCenter(0);
+	}
+
+	const FVector FirstCenter = GetSlotLocalCenter(0);
+	const FVector SecondCenter = GetSlotLocalCenter(1);
+	return FirstCenter - (SecondCenter - FirstCenter);
+}
+
+FVector AConveyor::ResolveItemVisualStartLocation(int32 SlotIndex) const
+{
+	const FVector CurrentLocation = GetSlotLocalCenter(SlotIndex);
+	if (!ItemVisualIds.IsValidIndex(SlotIndex))
+	{
+		return CurrentLocation;
+	}
+
+	const int32 VisualId = ItemVisualIds[SlotIndex];
+	if (VisualId == INDEX_NONE)
+	{
+		return CurrentLocation;
+	}
+
+	const int32 PreviousSlotIndex = FindPreviousVisualSlotIndex(VisualId);
+	if (PreviousSlotIndex != INDEX_NONE)
+	{
+		return GetSlotLocalCenter(PreviousSlotIndex);
+	}
+
+	if (SlotIndex == 0)
+	{
+		return GetIncomingItemLocalCenter();
+	}
+
+	return CurrentLocation;
+}
+
+int32 AConveyor::FindPreviousVisualSlotIndex(int32 VisualId) const
+{
+	if (VisualId == INDEX_NONE)
+	{
+		return INDEX_NONE;
+	}
+
+	for (int32 Index = 0; Index < PreviousItemVisualIds.Num(); ++Index)
+	{
+		if (PreviousItemVisualIds[Index] == VisualId)
+		{
+			return Index;
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+bool AConveyor::HasVisibleItems() const
+{
+	for (const FName& ItemSlot : ItemSlots)
+	{
+		if (!ItemSlot.IsNone())
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 FVector AConveyor::GetPathCentroidLocal() const

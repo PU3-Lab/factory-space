@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from agent_connection.router import router as agent_connection_router
 from agents.pipeline import AgentPipeline
+from docs_router import router as docs_router
 from websocket_gateway.gateway import router as websocket_router
 
 
@@ -31,5 +32,6 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(agent_connection_router)
+    app.include_router(docs_router)
     app.include_router(websocket_router)
     return app

@@ -81,6 +81,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Messages")
 	bool SendJsonMessage(const FString& JsonMessage);
 
+	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
+	bool SendQuestGeneratorRequest(const FString& RequestId, const FString& SessionId, const FString& ClientId);
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
+	bool SendOperatorGuideQuestion(const FString& Question, const FString& ClientId);
+
 	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Messages")
 	bool SendRawMessage(const FString& RawMessage);
 

@@ -5,6 +5,7 @@
 #include "Components/TextRenderComponent.h"
 #include "Engine/StaticMesh.h"
 #include "FactoryManagerSubsystem.h"
+#include "Machines/MachineSubsystem.h"
 #include "PlanetEventManagerSubsystem.h"
 #include "RecipeManagerSubsystem.h"
 #include "Wanted_Factory.h"
@@ -82,6 +83,13 @@ AMachineBase::AMachineBase()
 
 	MeshComponent->SetupAttachment(Root);
 
+	// 메쉬 방향 보정: 머신 메쉬의 시각적 입출력부가 논리 포트 방향(액터 forward 기반)과 -90° Yaw
+	// 어긋나는 문제(전 머신 균일, PIE 관찰 확정)를 +90° 회전으로 상쇄. RelativeRotation은 자식 메쉬만
+	// 회전시키므로 액터 forward/footprint/포트 셀 계산(GetActorForwardVector 기반)에는 무영향 —
+	// 시각 정렬만 보정한다. 기본 Cube는 대칭이라 무해. 부호(+90)는 PIE로 검증: 전 머신 배출부가
+	// 출력(주황) 포트 화살표 방향과 일치, BP 수동 RelativeRotation 오버라이드(이중 보정) 없음 확인.
+	MeshComponent->SetRelativeRotation(FRotator(0.0f, 90.0f, 0.0f));
+
 	DebugBufferText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("DebugBufferText"));
 	DebugBufferText->SetupAttachment(Root);
 	DebugBufferText->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -103,12 +111,73 @@ AMachineBase::AMachineBase()
 	}
 }
 
+void AMachineBase::ApplyMachineData(const FMachineTableRow& MachineData)
+{
+	InputPortCount = FMath::Max(0, MachineData.InputPortCnt);
+	OutputPortCount = FMath::Max(0, MachineData.OutputPortCnt);
+	InputBufferCount = FMath::Max(0, MachineData.InputBufCnt);
+	OutputBufferCount = FMath::Max(0, MachineData.OutputBufCnt);
+	GridSize = FIntPoint(FMath::Max(1, MachineData.Xlen), FMath::Max(1, MachineData.Ylen));
+
+	MaxDurability = FMath::Max(1.f, MachineData.Durability);
+	CurrentDurability = FMath::Clamp(CurrentDurability, 0.f, MaxDurability);
+	PowerConsumption = FMath::Max(0.f, MachineData.Power);
+
+	InputPorts.Reset();
+	for (int32 PortIndex = 0; PortIndex < InputPortCount; ++PortIndex)
+	{
+		FMachinePortData InputPort;
+		InputPort.PortIndex = PortIndex;
+		InputPort.PortType = EPortType::Input;
+		InputPorts.Add(InputPort);
+	}
+
+	OutputPorts.Reset();
+	for (int32 PortIndex = 0; PortIndex < OutputPortCount; ++PortIndex)
+	{
+		FMachinePortData OutputPort;
+		OutputPort.PortIndex = PortIndex;
+		OutputPort.PortType = EPortType::Output;
+		OutputPorts.Add(OutputPort);
+	}
+}
+
+bool AMachineBase::ApplyMachineDataFromSubsystem()
+{
+	if (MachineType.IsNone())
+	{
+		return false;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!GameInstance)
+	{
+		return false;
+	}
+
+	UMachineSubsystem* MachineSubsystem = GameInstance->GetSubsystem<UMachineSubsystem>();
+	if (!MachineSubsystem)
+	{
+		return false;
+	}
+
+	FMachineTableRow MachineData;
+	if (!MachineSubsystem->FindMachineData(MachineType, MachineData))
+	{
+		return false;
+	}
+
+	ApplyMachineData(MachineData);
+	return true;
+}
+
 
 // Called when the game starts or when spawned
 void AMachineBase::BeginPlay()
 {
 	Super::BeginPlay();
 
+	ApplyMachineDataFromSubsystem();
 	CurrentDurability = MaxDurability;
 	if (UWorld* World = GetWorld())
 	{
@@ -151,6 +220,7 @@ void AMachineBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AMachineBase::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
+	ApplyMachineDataFromSubsystem();
 	if (MeshComponent)
 	{
 		// 메시 네이티브 바운즈를 footprint(GridSize × MeshFitCellWorld)에 정규화 → 셀 자동 정합.

@@ -22,6 +22,9 @@
 #include "OJJ_BuildController.h"
 #include "OJJ_BuildCamera.h"
 #include "OJJ_Grid.h"
+#include "Blueprint/UserWidget.h"
+#include "MachineBase.h"
+#include "UI/UI_MachineInteract.h"
 
 AOJJ_Player::AOJJ_Player()
 {
@@ -109,7 +112,29 @@ void AOJJ_Player::BeginPlay()
 		UE_LOG(LogTemp, Warning,
 			TEXT("[OJJ_Player] AOJJ_BuildCamera spawn 실패 — 빌드모드 탑다운 전환 비활성."));
 	}
+	
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (PC && MainHUDWidgetClass)
+	{
+		MainHUDWidgetInstance = CreateWidget<UUserWidget>(PC, MainHUDWidgetClass);
+		if (MainHUDWidgetInstance)
+		{
+			MainHUDWidgetInstance->AddToViewport();
+		}
+	}
+	
 	ConnectFactoryAgentClient();
+}
+
+void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// 폰 파괴/언포제스 시 열려 있던 머신 상호작용 위젯·입력모드 정리.
+	// ⚠️ EndPlay 시점엔 PlayerController가 이미 무효일 수 있다 — Cast가 null을 반환하면
+	//    CloseMachineInteractWidget의 PC null-가드가 입력모드 복원을 스킵하고 위젯 제거만 수행한다
+	//    (컨트롤러가 없으면 복원할 대상도 없으므로 안전).
+	CloseMachineInteractWidget(Cast<APlayerController>(GetController()));
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void AOJJ_Player::ConnectFactoryAgentClient()
@@ -163,6 +188,16 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 		EnhancedInput->BindAction(IA_Jump, ETriggerEvent::Started, this, &ACharacter::Jump);
 		EnhancedInput->BindAction(IA_Jump, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
 	}
+	if (IA_Interact)
+	{
+		// 머신 상호작용 토글(F) — 누를 때 한 번(Started). 빌드모드 가드는 핸들러 내부에서.
+		EnhancedInput->BindAction(IA_Interact, ETriggerEvent::Started, this, &AOJJ_Player::OnInteract);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] IA_Interact 미할당 — 머신 상호작용(F) 비활성. IMC_Player/BP_OJJ_Player에 IA_Interact 할당 필요."));
+	}
 	if (IA_Build)
 	{
 		EnhancedInput->BindAction(IA_Build, ETriggerEvent::Started, this, &AOJJ_Player::ToggleBuild);
@@ -209,6 +244,22 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	if (IA_SetPowerPlantMode)
 	{
 		EnhancedInput->BindAction(IA_SetPowerPlantMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerPlantMode);
+	}
+	if (IA_SetGrinderMode)
+	{
+		EnhancedInput->BindAction(IA_SetGrinderMode, ETriggerEvent::Started, this, &AOJJ_Player::SetGrinderMode);
+	}
+	if (IA_SetMinerMode)
+	{
+		EnhancedInput->BindAction(IA_SetMinerMode, ETriggerEvent::Started, this, &AOJJ_Player::SetMinerMode);
+	}
+	if (IA_SetPumpMode)
+	{
+		EnhancedInput->BindAction(IA_SetPumpMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPumpMode);
+	}
+	if (IA_SetSmelterMode)
+	{
+		EnhancedInput->BindAction(IA_SetSmelterMode, ETriggerEvent::Started, this, &AOJJ_Player::SetSmelterMode);
 	}
 	if (IA_BuildPan)
 	{
@@ -296,6 +347,14 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 
 	if (bEntering)
 	{
+		// 빌드모드 진입 시 머신 상호작용 위젯이 떠 있으면 닫는다 — F는 빌드모드 중 무시되지만
+		// B(빌드 토글)는 위젯이 열려 있어도 동작하므로, 닫지 않으면 위젯+GameAndUI가 빌드모드 위에
+		// 잔존하는 half-state가 된다(양방향 상호배제). IsValid()만 봐 자체 닫힘(미GC) 잔존 상태도 정리.
+		if (MachineInteractWidgetInstance.IsValid())
+		{
+			CloseMachineInteractWidget(PC);
+		}
+
 		if (BuildCamera && BuildController)
 		{
 			// 진입할 때마다 그리드 중심으로 카메라 재배치 — 그리드가 동적으로 커져도 매 진입 시 맞춰짐.
@@ -334,6 +393,29 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 				TEXT("[OJJ_Player] IMC_Build 미할당 — 빌드모드 Look 차단 불가(IMC_Player 유지). ")
 				TEXT("BP_OJJ_Player에 IMC_Build 할당 필요."));
 		}
+		
+		if (MainHUDWidgetInstance)
+		{
+			MainHUDWidgetInstance->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		
+		if (PC && BuildModeWidgetClass && !BuildModeWidgetInstance)
+		{
+			BuildModeWidgetInstance = CreateWidget<UUserWidget>(PC, BuildModeWidgetClass);
+			if (BuildModeWidgetInstance)
+			{
+				BuildModeWidgetInstance->AddToViewport();
+			}
+		}
+
+		// 재진입 정합(MainHUD의 Collapsed/Visible 토글과 대칭). Exit가 위젯을 Collapsed로 숨긴 채
+		// 인스턴스를 유지하므로, 위 생성 가드(!BuildModeWidgetInstance)는 2회차+엔 스킵된다.
+		// 여기서 Visible로 되돌리지 않으면 재진입 시 버튼 UI가 Collapsed로 방치돼 안 보인다
+		// (1회차는 새로 생성돼 기본 Visible이라 정상). 최초 생성 직후엔 멱등.
+		if (BuildModeWidgetInstance)
+		{
+			BuildModeWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+		}
 	}
 	else
 	{
@@ -356,6 +438,14 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 			{
 				Subsystem->AddMappingContext(IMC_Player, 0);
 			}
+		}
+		if (BuildModeWidgetInstance)
+		{
+			BuildModeWidgetInstance->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		if (MainHUDWidgetInstance)
+		{
+			MainHUDWidgetInstance->SetVisibility(ESlateVisibility::Visible);
 		}
 	}
 }
@@ -446,6 +536,42 @@ void AOJJ_Player::SetPowerPlantMode(const FInputActionValue& Value)
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerPlant);
 }
 
+void AOJJ_Player::SetGrinderMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Grinder);
+}
+
+void AOJJ_Player::SetMinerMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Miner);
+}
+
+void AOJJ_Player::SetPumpMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pump);
+}
+
+void AOJJ_Player::SetSmelterMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Smelter);
+}
+
 void AOJJ_Player::StartSprint(const FInputActionValue& Value)
 {
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
@@ -510,18 +636,127 @@ void AOJJ_Player::SendOperatorGuideRequest()
 		return;
 	}
 
-	const FString RequestJson =
-		TEXT("{")
-		TEXT("\"type\":\"agent.request\",")
-		TEXT("\"request_id\":\"req-manual-qa-001\",")
-		TEXT("\"session_id\":\"session-001\",")
-		TEXT("\"client_id\":\"unreal-ui-001\",")
-		TEXT("\"agent\":\"operator_guide\",")
-		TEXT("\"payload\":{\"question\":\"\\uAE30\\uC5B4 \\uB9CC\\uB4E4\\uB824\\uBA74 \\uBB50\\uAC00 \\uD544\\uC694\\uD574?\"}")
-		TEXT("}");
-
-	if (AgentClient->SendJsonMessage(RequestJson))
+	const FString Question = TEXT("\uAE30\uC5B4 \uB9CC\uB4E4\uB824\uBA74 \uBB50\uAC00 \uD544\uC694\uD574?");
+	if (AgentClient->SendOperatorGuideQuestion(Question, TEXT("unreal-ui-001")))
 	{
 		UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] Sent operator guide request."));
+	}
+}
+
+void AOJJ_Player::OnInteract(const FInputActionValue& Value)
+{
+	// UI는 로컬 전용 — 멀티플레이에서 비로컬 폰의 입력으로 위젯을 띄우지 않도록 가드.
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC)
+	{
+		return;
+	}
+
+	// 빌드모드 중에는 F 무시 — 빌드 입력/탑다운 카메라와 상호작용 UI를 상호배제(half-state 방지).
+	if (BuildController && BuildController->IsInBuildMode())
+	{
+		return;
+	}
+
+	// 토글 닫기: 뷰포트에 떠 있는 위젯이 있으면 닫는다.
+	// IsValid()에 더해 IsInViewport()까지 보는 이유 — 위젯이 자체 BTN_Close(RemoveFromParent)로
+	// 닫혀도 객체는 GC 전까지 살아 있어 IsValid()만으론 "열림"으로 오판하기 때문.
+	// (자체 닫기 시 입력모드/커서 즉시 복원은 위젯 OnClosed 델리게이트 → RestoreGameInputMode가 처리.)
+	if (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport())
+	{
+		CloseMachineInteractWidget(PC);
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!Camera || !World)
+	{
+		return;
+	}
+
+	// 카메라 전방 라인 트레이스 — 빌드모드 호버와 동일 채널(ECC_Visibility), 거리만 MaxInteractDistance.
+	const FVector TraceStart = Camera->GetComponentLocation();
+	const FVector TraceEnd = TraceStart + Camera->GetForwardVector() * MaxInteractDistance;
+	FHitResult Hit;
+	FCollisionQueryParams TraceParams(FName(TEXT("OJJMachineInteract")), /*bTraceComplex=*/ false, this);
+	const bool bHit = World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, TraceParams);
+	if (!bHit)
+	{
+		return;
+	}
+
+	// 히트 액터가 머신(또는 파생)일 때만 상호작용.
+	AMachineBase* Machine = Cast<AMachineBase>(Hit.GetActor());
+	if (!Machine)
+	{
+		return;
+	}
+
+	if (!MachineInteractWidgetClass)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] MachineInteractWidgetClass 미할당 — 머신 상호작용(F) 비활성. ")
+			TEXT("BP_OJJ_Player에 WBP_MachineInteract 할당 필요."));
+		return;
+	}
+
+	UUI_MachineInteract* Widget = CreateWidget<UUI_MachineInteract>(PC, MachineInteractWidgetClass);
+	if (!Widget)
+	{
+		return;
+	}
+	Widget->AddToViewport();
+	// 위젯의 모든 닫힘 경로(특히 자체 BTN_Close) 통지 구독 — 닫히면 입력모드/커서 즉시 복원.
+	Widget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
+	// 머신 참조 전달 — 위젯의 모든 실데이터(입출력/상태/진행도/내구도) 표시가 이 참조에 의존.
+	Widget->SetTargetMachine(Machine);
+	MachineInteractWidgetInstance = Widget;
+
+	// 열 때: 마우스로 위젯과 상호작용 가능하도록 GameAndUI + 커서 표시.
+	PC->SetInputMode(FInputModeGameAndUI());
+	PC->SetShowMouseCursor(true);
+}
+
+void AOJJ_Player::CloseMachineInteractWidget(APlayerController* PC)
+{
+	if (UUI_MachineInteract* Widget = MachineInteractWidgetInstance.Get())
+	{
+		Widget->RemoveFromParent();
+	}
+	MachineInteractWidgetInstance = nullptr;
+
+	// 닫을 때: 게임 전용 입력 복원 + 커서 숨김.
+	if (PC)
+	{
+		PC->SetInputMode(FInputModeGameOnly());
+		PC->SetShowMouseCursor(false);
+	}
+}
+
+void AOJJ_Player::RestoreGameInputMode()
+{
+	// 스테일 브로드캐스트 가드 — 우리가 위젯 A를 닫고 새 위젯 B를 연 사이에 A의 지연된
+	// NativeDestruct가 broadcast될 수 있다. 현재 살아있는 위젯이 열려 있으면 그 상태를 건드리지 않는다
+	// (B의 weak 포인터/GameAndUI를 망가뜨리지 않도록).
+	if (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport())
+	{
+		return;
+	}
+
+	// 멱등 — 우리 직접 닫기(CloseMachineInteractWidget)로 이미 복원된 뒤 지연 Destruct 브로드캐스트가
+	// 한 번 더 들어와도 사실상 no-op. weak 인스턴스 정리.
+	MachineInteractWidgetInstance = nullptr;
+
+	// ⚠️ pawn 소멸 중 위젯 Destruct로 재진입할 수 있어 컨트롤러 유효성 체크(무효면 복원 스킵 —
+	//    복원 대상 자체가 없으므로 안전).
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		PC->SetInputMode(FInputModeGameOnly());
+		PC->SetShowMouseCursor(false);
 	}
 }

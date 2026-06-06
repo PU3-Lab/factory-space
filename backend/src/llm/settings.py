@@ -63,10 +63,11 @@ def _slot_from_env(env: Mapping[str, str], slot: str) -> LLMModelSlot:
     if provider == "none":
         return LLMModelSlot(name=slot, provider=provider)
     if provider == "google":
+        _require(model, f"{prefix}_MODEL")
         return LLMModelSlot(
             name=slot,
             provider=provider,
-            model=model or "gemini-2.5-flash",
+            model=model,
             base_url=base_url,
             api_key=api_key,
         )

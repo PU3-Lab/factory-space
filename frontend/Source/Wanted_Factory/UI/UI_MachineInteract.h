@@ -8,6 +8,10 @@
 class UTextBlock;
 class UProgressBar;
 
+// 위젯이 닫힐 때 1회 통지(파라미터 없음). 구독자(예: OJJ_Player)가 입력모드/커서를 즉시 복원하는 용도.
+// LDJ 협의 완료 — 추가만(기존 닫기 로직 OnCloseClicked/RemoveFromParent 무수정).
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInteractClosed);
+
 UCLASS()
 class WANTED_FACTORY_API UUI_MachineInteract : public UUserWidget
 {
@@ -16,7 +20,14 @@ class WANTED_FACTORY_API UUI_MachineInteract : public UUserWidget
 public:
 	virtual void NativeConstruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
-	
+
+	// 모든 닫힘 경로(BTN_Close·외부 RemoveFromParent)를 NativeDestruct 한 곳에서 커버해 OnClosed를 1회 Broadcast.
+	virtual void NativeDestruct() override;
+
+	// 위젯 파괴 직전 1회 브로드캐스트되는 닫힘 통지. BlueprintAssignable이라 BP에서도 바인딩 가능.
+	UPROPERTY(BlueprintAssignable, Category = "Machine Interact")
+	FOnInteractClosed OnClosed;
+
 	UFUNCTION(BlueprintCallable, Category = "Factory UI")
 	void UpdateInputUI(FName ItemName, int32 CurrentAmount, int32 MaxAmount);
 
