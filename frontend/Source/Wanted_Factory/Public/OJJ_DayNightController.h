@@ -31,7 +31,13 @@ class UPlanetEventManagerSubsystem;
  *
  * 와이어링: SunLight 레퍼런스를 레벨의 Directional Light로 지정해야 동작(미지정 시 경고 1회 후 무동작).
  *    하늘색/앰비언트까지 따라오게 하려면 해당 Directional Light를 SkyAtmosphere의 "Atmosphere Sun Light"로
- *    연결(에디터 체크). 본 컨트롤러는 태양 Pitch만 제어한다.
+ *    연결(에디터 체크). 본 컨트롤러는 태양 Pitch를 제어하고, 선택적으로 달빛(MoonLight)을 함께 제어한다.
+ *
+ * 밤 가시성(선택): MoonLight(별도 Directional Light)를 지정하면 태양과 180° 반대 위상으로 회전시키고,
+ *    밤(태양이 지평선 아래)일 때만 MoonIntensity로 은은한 달빛을 켠다(낮엔 강도 0). 일몰 직후 TwilightBlend
+ *    구간에 걸쳐 0↔MoonIntensity로 선형 페이드해 점프를 없앤다(일몰 순간 SunPitch=0 → 강도 0에서 연속 시작).
+ *    ⚠️ MoonLight는 하늘에 영향을 주면 안 되므로 Atmosphere Sun Light 체크를 해제할 것(태양만 하늘 담당).
+ *    런타임 강도/회전 반영을 위해 Mobility=Movable 필요. 미지정이면 달빛 로직 전체 skip(태양만 동작).
  */
 UCLASS()
 class WANTED_FACTORY_API AOJJ_DayNightController : public AActor
@@ -59,9 +65,23 @@ protected:
 	float SunYaw = 0.0f;
 
 	// 디버그/미리보기용 진행률 오버라이드. -1 = 비활성(실제 시각 사용). 0~1이면 그 시각으로 태양을 고정
-	// (예: 0.25 정오, 0.5 일몰). 에디터/PIE에서 특정 시각 라이팅 확인용.
+	// (예: 0.25 정오, 0.5 일몰, 0.75 한밤). 에디터/PIE에서 특정 시각 라이팅 확인용.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Day Night|Debug", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
 	float DebugProgressOverride = -1.0f;
+
+	// 밤 달빛(선택). 지정 시 태양과 반대 위상으로 회전 + 밤에만 점등. null이면 달빛 로직 전체 skip.
+	// ⚠️ 하늘에 영향 주지 않도록 이 라이트는 Atmosphere Sun Light 체크를 해제할 것. Mobility=Movable 필요.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Day Night|Moon")
+	TObjectPtr<ADirectionalLight> MoonLight;
+
+	// 한밤(태양이 지평선 아래로 충분히 내려간 상태)에서의 달빛 강도(절대값, lux). 0이면 사실상 달빛 꺼짐.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Day Night|Moon", meta = (ClampMin = "0.0"))
+	float MoonIntensity = 1.0f;
+
+	// 박명 페이드 폭. 태양이 지평선 아래로 (90°×이 값)만큼 내려가면 달빛이 최대(MoonIntensity)에 도달하고
+	// 그 사이는 선형 페이드. 0.05 ≈ 4.5° → 일몰 직후 부드럽게 점등. 0이면 일몰 순간 즉시 최대(점프).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Day Night|Moon", meta = (ClampMin = "0.0", ClampMax = "0.5"))
+	float TwilightBlend = 0.05f;
 
 private:
 	// 시간 소스. BeginPlay에서 캐시(WorldSubsystem이라 월드 수명과 동일). 미존재 월드 가드.
@@ -70,14 +90,26 @@ private:
 	// SunLight 미지정 경고를 매 프레임 도배하지 않도록 1회만 출력.
 	bool bWarnedMissingLight = false;
 
-	// 직전 프레임에 적용한 회전. 실질 변화가 없으면 SetActorRotation을 건너뛴다(디버그 고정 등에서 불필요한
+	// 직전에 적용한 태양 회전. 실질 변화가 없으면 SetActorRotation을 건너뛴다(디버그 고정 등에서 불필요한
 	// 트랜스폼 갱신 방지). 첫 프레임은 반드시 적용되도록 도달 불가능한 값으로 초기화.
-	float LastAppliedPitch = TNumericLimits<float>::Max();
-	float LastAppliedYaw = TNumericLimits<float>::Max();
+	float LastSunPitch = TNumericLimits<float>::Max();
+	float LastSunYaw = TNumericLimits<float>::Max();
+
+	// 직전에 적용한 달 회전/강도. 달은 SunYaw 축을 공유하지만, 태양 캐시와 갱신 순서가 엮이지 않도록
+	// 전용 캐시를 둔다(태양 적용이 LastSunYaw를 먼저 갱신해 달 갱신을 가리는 버그 방지).
+	float LastMoonPitch = TNumericLimits<float>::Max();
+	float LastMoonYaw = TNumericLimits<float>::Max();
+	float LastMoonIntensity = TNumericLimits<float>::Max();
 
 	// progress(0~1)를 태양 Pitch(도)로 변환. Pitch = -90 * sin(progress * 2π).
 	static float ProgressToSunPitch(float Progress01);
 
 	// 현재 적용할 진행률(디버그 오버라이드 우선, 아니면 서브시스템 폴링). 소스 없으면 false 반환.
 	bool ResolveProgress(float& OutProgress01) const;
+
+	// 태양 회전 적용(skip-if-unchanged 내장).
+	void ApplySunRotation(float SunPitch);
+
+	// 달 회전+강도 적용. 태양과 반대 위상, 밤에만 점등. MoonLight 미지정이면 no-op.
+	void ApplyMoon(float SunPitch);
 };
