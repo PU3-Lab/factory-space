@@ -8,7 +8,7 @@
 
 APowerGridNode::APowerGridNode()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	MachineType = TEXT("PowerGridNode");
 	InputPortCount = 0;

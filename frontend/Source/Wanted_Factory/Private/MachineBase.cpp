@@ -1,10 +1,12 @@
 
 #include "MachineBase.h"
 
+#include "Camera/PlayerCameraManager.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "Engine/StaticMesh.h"
 #include "FactoryManagerSubsystem.h"
+#include "GameFramework/PlayerController.h"
 #include "Machines/MachineSubsystem.h"
 #include "PlanetEventManagerSubsystem.h"
 #include "RecipeManagerSubsystem.h"
@@ -68,8 +70,8 @@ namespace
 
 AMachineBase::AMachineBase()
 {
-	PrimaryActorTick.bCanEverTick = false; // true로 바꿀듯
 	InputPortCount = 1;
+	PrimaryActorTick.bCanEverTick = true;
 	OutputPortCount = 1;
 	MachineType = TEXT("None");
 
@@ -246,12 +248,14 @@ void AMachineBase::OnConstruction(const FTransform& Transform)
 
 	CurrentDurability = FMath::Clamp(CurrentDurability, 0.f, MaxDurability);
 	UpdateDebugBufferText();
+	UpdateDebugTextFacingPlayer();
 }
 
 // Called every frame
 void AMachineBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	UpdateDebugTextFacingPlayer();
 }
 
 bool AMachineBase::CanPlace()
@@ -670,6 +674,7 @@ void AMachineBase::UpdateDebugBufferText()
 	DebugBufferText->SetVisibility(bShowDebugBufferText);
 	DebugBufferText->SetWorldSize(DebugTextWorldSize);
 	DebugBufferText->SetRelativeLocation(DebugTextOffset);
+	SetActorTickEnabled(bShowDebugBufferText);
 	if (!bShowDebugBufferText)
 	{
 		return;
@@ -680,6 +685,42 @@ void AMachineBase::UpdateDebugBufferText()
 		*FormatItemMap(InputInventory),
 		*FormatItemMap(OutputBuffer));
 	DebugBufferText->SetText(FText::FromString(DebugText));
+}
+
+void AMachineBase::UpdateDebugTextFacingPlayer()
+{
+	if (!bShowDebugBufferText || !DebugBufferText)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	APlayerController* PlayerController = World->GetFirstPlayerController();
+	if (!PlayerController)
+	{
+		return;
+	}
+
+	APlayerCameraManager* CameraManager = PlayerController->PlayerCameraManager;
+	if (!CameraManager)
+	{
+		return;
+	}
+
+	FVector ToCamera = CameraManager->GetCameraLocation() - DebugBufferText->GetComponentLocation();
+	ToCamera.Z = 0.0f;
+	if (ToCamera.IsNearlyZero())
+	{
+		return;
+	}
+
+	const float FacingYaw = ToCamera.Rotation().Yaw;
+	DebugBufferText->SetWorldRotation(FRotator(0.0f, FacingYaw, 0.0f));
 }
 
 bool AMachineBase::TransferOutputToMachine(AMachineBase* TargetMachine, FName ItemID, int32 Count)
