@@ -2,11 +2,13 @@
 
 #include "Conveyor.h"
 
+#include "Camera/PlayerCameraManager.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "Engine/StaticMesh.h"
 #include "FactoryManagerSubsystem.h"
+#include "GameFramework/PlayerController.h"
 #include "MachineBase.h"
 #include "Materials/MaterialInterface.h"
 #include "TimerManager.h"
@@ -128,6 +130,7 @@ void AConveyor::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	RefreshItemVisualInstances();
+	UpdateDebugTextFacingPlayer();
 }
 
 void AConveyor::OnConstruction(const FTransform& Transform)
@@ -137,6 +140,7 @@ void AConveyor::OnConstruction(const FTransform& Transform)
 	RebuildVisuals();
 	RefreshItemVisualInstances();
 	UpdateDebugStateText();
+	UpdateDebugTextFacingPlayer();
 }
 
 void AConveyor::BeginPlay()
@@ -153,6 +157,7 @@ void AConveyor::BeginPlay()
 
 	RestartItemMoveTimer();
 	RefreshItemVisualInstances();
+	UpdateDebugTextFacingPlayer();
 }
 
 void AConveyor::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -265,6 +270,7 @@ void AConveyor::UpdateDebugStateText()
 	DebugStateText->SetVisibility(bShowDebugStateText);
 	DebugStateText->SetWorldSize(DebugTextWorldSize);
 	DebugStateText->SetRelativeLocation(GetDebugTextLocalLocation());
+	SetActorTickEnabled(bShowDebugStateText);
 	if (!bShowDebugStateText)
 	{
 		return;
@@ -294,6 +300,42 @@ void AConveyor::UpdateDebugStateText()
 		StatusText,
 		*MovingItemSummary);
 	DebugStateText->SetText(FText::FromString(DebugText));
+}
+
+void AConveyor::UpdateDebugTextFacingPlayer()
+{
+	if (!bShowDebugStateText || !DebugStateText)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	APlayerController* PlayerController = World->GetFirstPlayerController();
+	if (!PlayerController)
+	{
+		return;
+	}
+
+	APlayerCameraManager* CameraManager = PlayerController->PlayerCameraManager;
+	if (!CameraManager)
+	{
+		return;
+	}
+
+	FVector ToCamera = CameraManager->GetCameraLocation() - DebugStateText->GetComponentLocation();
+	ToCamera.Z = 0.0f;
+	if (ToCamera.IsNearlyZero())
+	{
+		return;
+	}
+
+	const float FacingYaw = ToCamera.Rotation().Yaw;
+	DebugStateText->SetWorldRotation(FRotator(0.0f, FacingYaw, 0.0f));
 }
 
 void AConveyor::RebuildVisuals()

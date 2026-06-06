@@ -155,6 +155,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Conveyor|Debug")
 	void UpdateDebugStateText();
 
+	void UpdateDebugTextFacingPlayer();
+
 	UFUNCTION(BlueprintPure, Category = "Conveyor|Grid")
 	float GetCellSize() const { return CellSize; }
 
