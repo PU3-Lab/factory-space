@@ -231,7 +231,7 @@ protected:
 	void BuildRotateMachine(const FInputActionValue& Value);
 	void ConnectFactoryAgentClient();
 	void SendOperatorGuideRequest();
-
+	void TriggerHUDQuestRequest();
 	// 머신 상호작용(F) — 로컬 전용. 카메라 트레이스로 머신을 찾아 UI_MachineInteract를 토글한다.
 	// 빌드모드 중에는 무시(상호배제). 이미 열려 있으면 닫고, 아니면 새로 생성·표시.
 	void OnInteract(const FInputActionValue& Value);
