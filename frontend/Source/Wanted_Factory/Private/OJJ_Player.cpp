@@ -262,6 +262,14 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	{
 		EnhancedInput->BindAction(IA_SetSmelterMode, ETriggerEvent::Started, this, &AOJJ_Player::SetSmelterMode);
 	}
+	if (IA_SetWarehouseMode)
+	{
+		EnhancedInput->BindAction(IA_SetWarehouseMode, ETriggerEvent::Started, this, &AOJJ_Player::SetWarehouseMode);
+	}
+	if (IA_SetDemolishMode)
+	{
+		EnhancedInput->BindAction(IA_SetDemolishMode, ETriggerEvent::Started, this, &AOJJ_Player::SetDemolishMode);
+	}
 	if (IA_BuildPan)
 	{
 		// 매 프레임 입력(연속 이동) → Triggered
@@ -572,6 +580,26 @@ void AOJJ_Player::SetSmelterMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Smelter);
+}
+
+// 창고 모드 진입(1키, generic Machine 진입 키 대체). generic SetMachineMode는 보존(미바인딩 시 dead) — 코드 삭제 없음.
+void AOJJ_Player::SetWarehouseMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Warehouse);
+}
+
+// 철거 모드 진입(X키). 호버 대상 빨강 하이라이트 + 좌클릭 제거.
+void AOJJ_Player::SetDemolishMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Demolish);
 }
 
 void AOJJ_Player::StartSprint(const FInputActionValue& Value)

@@ -25,7 +25,11 @@ enum class EOJJ_BuildPlacementMode : uint8
 	Grinder,
 	Miner,
 	Pump,
-	Smelter
+	Smelter,
+	// 창고(Warehouse) 모드 — 1번 키(generic Machine 진입 키 대체)로 진입. WarehousePort 배치.
+	Warehouse,
+	// 철거(Demolish) 모드 — X키. 호버 대상 빨강 하이라이트 + 좌클릭 제거(머신/컨베이어). 광맥/WaterArea 제외.
+	Demolish
 };
 
 /**
@@ -110,6 +114,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
 	TSubclassOf<AMachineBase> SmelterClass;
 
+	// 창고(Warehouse) 모드에서 배치할 머신 클래스(AWarehousePort 등). 머신 배치 경로 재사용 — Smelter와 동일.
+	// 1번 키(generic Machine 진입 키 대체)로 진입. WarehousePort C++/저장(PlayerWarehouse) 로직은 Chan 소유 — 무수정.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AMachineBase> WarehouseClass;
+
 	// 현재 배치 모드. Machine(기본)/Conveyor. 플레이어가 SetPlacementMode로 전환.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
 	EOJJ_BuildPlacementMode PlacementMode = EOJJ_BuildPlacementMode::Machine;
@@ -158,6 +167,16 @@ public:
 	// PlayerController가 Tick에서 호출. 마우스 위치 → 그리드 셀 → 호버 미리보기 갱신.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void UpdateMouseHover();
+
+	// [철거 모드] 커서 셀의 제거 가능 대상(머신/컨베이어)을 점유 셀 전체 빨강 하이라이트. 빈 셀/광맥/WaterArea는 제외.
+	void UpdateDemolishHover();
+
+	// [철거 모드] 커서 셀의 대상 제거(머신=RemoveMachineAt 훅 연쇄, 컨베이어=OJJ_RemoveActorAt). 직후 호버 갱신(연속 철거).
+	void DemolishUnderCursor();
+
+	// [철거 모드] 철거 머신을 끝점(Source/Target)으로 갖는 컨베이어 라인을 수집. footprint 전 둘레 4방향 셀을
+	// 스캔(포트 셀만이 아니라 둘레 전체 — 포트 규칙 변경에도 견딤) + GetSource/TargetMachine==Machine 검증(오삭제 방지).
+	TArray<class AConveyor*> CollectConveyorsConnectedToMachine(AMachineBase* Machine) const;
 
 	// PlayerController가 입력에서 호출. Machine 모드: 머신 배치. Conveyor 모드: 드래그 시작.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
