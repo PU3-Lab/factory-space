@@ -4,8 +4,11 @@
 
 #include "Wanted_Factory.h"
 #include "OJJ_Grid.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
+#include "UObject/ConstructorHelpers.h"
 
 AWaterArea::AWaterArea()
 {
@@ -15,6 +18,62 @@ AWaterArea::AWaterArea()
 	// form=liquid는 DataTable(ResourceData)에서 지정. bIsInfinite는 액터 프로퍼티라 여기서 기본 보장한다
 	// (AResourceBase 기본값 false → 미설정 시 유한 소진 버그).
 	bIsInfinite = true;
+
+	// 강 비주얼 플레인(영역 전체 한 장). 점유는 그리드가 담당하므로 충돌은 끈다(클릭/오버랩 간섭 방지).
+	WaterPlaneMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WaterPlane"));
+	WaterPlaneMesh->SetupAttachment(Root);
+	WaterPlaneMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	WaterPlaneMesh->SetCanEverAffectNavigation(false);
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> PlaneMesh(TEXT("/Engine/BasicShapes/Plane.Plane"));
+	if (PlaneMesh.Succeeded())
+	{
+		WaterPlaneMesh->SetStaticMesh(PlaneMesh.Object);
+	}
+}
+
+void AWaterArea::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	UpdateWaterVisual();
+}
+
+void AWaterArea::UpdateWaterVisual()
+{
+	if (!WaterPlaneMesh)
+	{
+		return;
+	}
+
+	// 그리드 CellSize는 protected라 직접 못 읽으므로 public GridToWorld로 역산(없으면 기본 100).
+	float CellSize = 100.0f;
+	if (const UWorld* World = GetWorld())
+	{
+		if (const AOJJ_Grid* Grid = Cast<AOJJ_Grid>(UGameplayStatics::GetActorOfClass(World, AOJJ_Grid::StaticClass())))
+		{
+			const float Derived = (Grid->GridToWorld(FIntPoint(1, 0)) - Grid->GridToWorld(FIntPoint(0, 0))).X;
+			if (Derived > KINDA_SMALL_NUMBER)
+			{
+				CellSize = Derived;
+			}
+		}
+	}
+
+	const int32 SizeX = FMath::Max(1, AreaSizeInCells.X);
+	const int32 SizeY = FMath::Max(1, AreaSizeInCells.Y);
+
+	// 엔진 기본 Plane은 100uu 정사각형(중심 원점). 영역 전체(SizeX×SizeY 셀)를 한 장으로 스케일.
+	WaterPlaneMesh->SetRelativeScale3D(FVector(SizeX * CellSize / 100.0f, SizeY * CellSize / 100.0f, 1.0f));
+
+	// 액터 원점(좌하단 셀 중심 — RegisterToGrid가 런타임에 스냅)을 기준으로 영역 중심으로 이동 + z오프셋.
+	const float OffsetX = (SizeX - 1) * CellSize * 0.5f;
+	const float OffsetY = (SizeY - 1) * CellSize * 0.5f;
+	WaterPlaneMesh->SetRelativeLocation(FVector(OffsetX, OffsetY, VisualZOffset));
+
+	if (WaterMaterial)
+	{
+		WaterPlaneMesh->SetMaterial(0, WaterMaterial);
+	}
 }
 
 void AWaterArea::RegisterToGrid()
@@ -61,6 +120,9 @@ void AWaterArea::RegisterToGrid()
 	{
 		RegisteredOrigin = Origin;
 		bRegistered = true;
+
+		// 런타임 셀 스냅 + 실제 그리드 CellSize 반영(에디터 OnConstruction 시 그리드가 없었을 경우 대비).
+		UpdateWaterVisual();
 	}
 	else
 	{

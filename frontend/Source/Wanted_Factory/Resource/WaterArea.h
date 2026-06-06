@@ -7,6 +7,7 @@
 #include "WaterArea.generated.h"
 
 class AOJJ_Grid;
+class UMaterialInterface;
 
 /**
  * 흐르는 강(Water) 영역 (OJJ 소유). AResourceBase를 다중 셀로 확장 — 직사각형 셀 영역을 그리드 점유에
@@ -30,6 +31,9 @@ class WANTED_FACTORY_API AWaterArea : public AResourceBase
 public:
 	AWaterArea();
 
+	// 에디터에서 배치/AreaSizeInCells 변경 시 플레인이 즉시 따라오도록 비주얼 갱신.
+	virtual void OnConstruction(const FTransform& Transform) override;
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -40,7 +44,22 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Water", meta = (ClampMin = "1"))
 	FIntPoint AreaSizeInCells = FIntPoint(3, 1);
 
+	// 강 비주얼 플레인 — 영역 전체를 한 장으로 스케일(셀별 분할 금지: 후속 패닝 머티리얼 UV 이음새 방지).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Water|Visual")
+	TObjectPtr<UStaticMeshComponent> WaterPlaneMesh;
+
+	// 물 머티리얼(임시: 반투명 파랑). 미지정 시 플레인 기본 머티리얼. 정식 M_River(패닝)는 후속.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water|Visual")
+	TObjectPtr<UMaterialInterface> WaterMaterial;
+
+	// 그리드 바닥/머신·화살표와의 z-fighting 방지용 높이 오프셋(액터 z 기준 상대). 에디터에서 조정.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water|Visual")
+	float VisualZOffset = 2.0f;
+
 private:
+	// AreaSizeInCells/그리드 CellSize에 맞춰 플레인 스케일·위치 갱신(에디터 OnConstruction + 등록 후).
+	void UpdateWaterVisual();
+
 	// EndPlay 대칭 해제용. RegisterToGrid 성공 시 저장(전체 해제는 액터의 아무 셀로나 가능 — OJJ_RemoveActorAt).
 	FIntPoint RegisteredOrigin = FIntPoint(0, 0);
 	bool bRegistered = false;
