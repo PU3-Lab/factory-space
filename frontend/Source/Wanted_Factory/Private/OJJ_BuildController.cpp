@@ -21,6 +21,7 @@
 #include "Machines/MinerMachine.h"
 #include "Machines/Pump.h"
 #include "Machines/Smelter.h"
+#include "Machines/WarehousePort.h"
 #include "OJJ_ProtectionTower.h"
 
 namespace
@@ -71,6 +72,7 @@ AOJJ_BuildController::AOJJ_BuildController()
 	MinerClass = AMinerMachine::StaticClass();
 	PumpClass = APump::StaticClass();
 	SmelterClass = ASmelter::StaticClass();
+	WarehouseClass = AWarehousePort::StaticClass();
 }
 
 void AOJJ_BuildController::Tick(float DeltaSeconds)
@@ -248,7 +250,8 @@ void AOJJ_BuildController::RotateHoverClockwise()
 			&& PlacementMode != EOJJ_BuildPlacementMode::Grinder
 			&& PlacementMode != EOJJ_BuildPlacementMode::Miner
 			&& PlacementMode != EOJJ_BuildPlacementMode::Pump
-			&& PlacementMode != EOJJ_BuildPlacementMode::Smelter))
+			&& PlacementMode != EOJJ_BuildPlacementMode::Smelter
+			&& PlacementMode != EOJJ_BuildPlacementMode::Warehouse))
 	{
 		return;
 	}
@@ -312,6 +315,11 @@ TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
 	if (PlacementMode == EOJJ_BuildPlacementMode::Smelter)
 	{
 		return SmelterClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::Warehouse)
+	{
+		return WarehouseClass;
 	}
 
 	return MachineClass;
@@ -606,6 +614,7 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::Miner:     ModeName = TEXT("Miner");      break;
 	case EOJJ_BuildPlacementMode::Pump:      ModeName = TEXT("Pump");       break;
 	case EOJJ_BuildPlacementMode::Smelter:   ModeName = TEXT("Smelter");    break;
+	case EOJJ_BuildPlacementMode::Warehouse: ModeName = TEXT("Warehouse");  break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 

@@ -25,7 +25,9 @@ enum class EOJJ_BuildPlacementMode : uint8
 	Grinder,
 	Miner,
 	Pump,
-	Smelter
+	Smelter,
+	// 창고(Warehouse) 모드 — 1번 키(generic Machine 진입 키 대체)로 진입. WarehousePort 배치.
+	Warehouse
 };
 
 /**
@@ -109,6 +111,11 @@ protected:
 	// ※ Smelter는 generic Machine 모드로도 배치 가능하며, 전용 키는 추가 경로(두 경로 공존).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
 	TSubclassOf<AMachineBase> SmelterClass;
+
+	// 창고(Warehouse) 모드에서 배치할 머신 클래스(AWarehousePort 등). 머신 배치 경로 재사용 — Smelter와 동일.
+	// 1번 키(generic Machine 진입 키 대체)로 진입. WarehousePort C++/저장(PlayerWarehouse) 로직은 Chan 소유 — 무수정.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AMachineBase> WarehouseClass;
 
 	// 현재 배치 모드. Machine(기본)/Conveyor. 플레이어가 SetPlacementMode로 전환.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")

@@ -261,6 +261,10 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	{
 		EnhancedInput->BindAction(IA_SetSmelterMode, ETriggerEvent::Started, this, &AOJJ_Player::SetSmelterMode);
 	}
+	if (IA_SetWarehouseMode)
+	{
+		EnhancedInput->BindAction(IA_SetWarehouseMode, ETriggerEvent::Started, this, &AOJJ_Player::SetWarehouseMode);
+	}
 	if (IA_BuildPan)
 	{
 		// 매 프레임 입력(연속 이동) → Triggered
@@ -570,6 +574,16 @@ void AOJJ_Player::SetSmelterMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Smelter);
+}
+
+// 창고 모드 진입(1키, generic Machine 진입 키 대체). generic SetMachineMode는 보존(미바인딩 시 dead) — 코드 삭제 없음.
+void AOJJ_Player::SetWarehouseMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Warehouse);
 }
 
 void AOJJ_Player::StartSprint(const FInputActionValue& Value)

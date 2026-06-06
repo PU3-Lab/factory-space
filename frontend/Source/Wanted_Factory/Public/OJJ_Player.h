@@ -188,6 +188,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_SetSmelterMode;
 
+	// 빌드모드 배치 모드 전환 — 창고(1키, generic Machine 진입 키 대체). IMC_Build에서 1번을 이 IA로 재매핑(에디터).
+	// generic IA_SetMachineMode/SetMachineMode는 코드에 그대로 보존(진입 키만 교체) — 스멜터 때와 동일 방식.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetWarehouseMode;
+
 	// --- 이동 속도 ---
 	// 평상시 걷기 속도. BeginPlay에서 MaxWalkSpeed의 권위 있는 초기값으로 적용(BP CharacterMovement 기본값 덮음).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (ClampMin = "0.0"))
@@ -260,6 +265,7 @@ protected:
 	void SetMinerMode(const FInputActionValue& Value);
 	void SetPumpMode(const FInputActionValue& Value);
 	void SetSmelterMode(const FInputActionValue& Value);
+	void SetWarehouseMode(const FInputActionValue& Value);
 
 	// 스프린트 — Started=달리기 속도, Completed=걷기 속도로 복귀.
 	void StartSprint(const FInputActionValue& Value);
