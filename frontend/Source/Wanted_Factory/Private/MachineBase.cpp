@@ -255,7 +255,10 @@ void AMachineBase::OnConstruction(const FTransform& Transform)
 void AMachineBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	UpdateDebugTextFacingPlayer();
+	if (bShowDebugBufferText)
+	{
+		UpdateDebugTextFacingPlayer();
+	}
 }
 
 bool AMachineBase::CanPlace()
@@ -674,7 +677,6 @@ void AMachineBase::UpdateDebugBufferText()
 	DebugBufferText->SetVisibility(bShowDebugBufferText);
 	DebugBufferText->SetWorldSize(DebugTextWorldSize);
 	DebugBufferText->SetRelativeLocation(DebugTextOffset);
-	SetActorTickEnabled(bShowDebugBufferText);
 	if (!bShowDebugBufferText)
 	{
 		return;

@@ -130,7 +130,10 @@ void AConveyor::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	RefreshItemVisualInstances();
-	UpdateDebugTextFacingPlayer();
+	if (bShowDebugStateText)
+	{
+		UpdateDebugTextFacingPlayer();
+	}
 }
 
 void AConveyor::OnConstruction(const FTransform& Transform)
@@ -270,7 +273,6 @@ void AConveyor::UpdateDebugStateText()
 	DebugStateText->SetVisibility(bShowDebugStateText);
 	DebugStateText->SetWorldSize(DebugTextWorldSize);
 	DebugStateText->SetRelativeLocation(GetDebugTextLocalLocation());
-	SetActorTickEnabled(bShowDebugStateText);
 	if (!bShowDebugStateText)
 	{
 		return;
@@ -475,11 +477,13 @@ void AConveyor::MoveItemsOneGrid()
 	const FName LastItem = ItemSlots[LastIndex];
 	if (!LastItem.IsNone())
 	{
-		if (TargetMachine->CanReceiveConveyorItem(LastItem, 1)
-			&& TargetMachine->ReceiveConveyorItem(LastItem, 1))
+		if (TargetMachine->CanReceiveConveyorItem(LastItem, 1))
 		{
-			ItemSlots[LastIndex] = NAME_None;
-			ItemVisualIds[LastIndex] = INDEX_NONE;
+			if (TargetMachine->ReceiveConveyorItem(LastItem, 1))
+			{
+				ItemSlots[LastIndex] = NAME_None;
+				ItemVisualIds[LastIndex] = INDEX_NONE;
+			}
 		}
 	}
 

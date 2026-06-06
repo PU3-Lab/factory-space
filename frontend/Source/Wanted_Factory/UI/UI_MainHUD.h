@@ -63,4 +63,12 @@ private:
 	//AI 에이전트로부터 오퍼레이터 가이드 답변 패킷이 수신되었을 때 처리할 함수
 	UFUNCTION()
 	void HandleOnOperatorGuideResponse(const FString& RequestId, const FString& Agent, const FString& PayloadJson, const FString& RawMessage);
+
+	UFUNCTION()
+	void HandleOnOperatorGuideError(
+		const FString& RequestId,
+		const FString& Agent,
+		const FString& ErrorCode,
+		const FString& ErrorMessage,
+		const FString& RawMessage);
 };
