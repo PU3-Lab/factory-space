@@ -11,7 +11,7 @@
 AMinerMachine::AMinerMachine()
 {
 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	// 형제 머신(Smelter/Grinder/Pump 등)과 동일하게 CSV 조회 키를 채운다.
 	// 이게 비어 있으면(="None") CDO/인스턴스 양쪽에서 FindMachineData가 실패해

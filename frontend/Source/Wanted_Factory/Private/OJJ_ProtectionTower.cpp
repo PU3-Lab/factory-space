@@ -9,7 +9,7 @@
 
 AOJJ_ProtectionTower::AOJJ_ProtectionTower()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	// 비-생산 머신 설정 (APowerGridNode 패턴). 루트/메시는 AMachineBase가 생성하므로 여기서 만들지 않는다.
 	MachineType = TEXT("ShieldGenerator");

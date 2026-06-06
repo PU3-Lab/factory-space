@@ -7,7 +7,7 @@
 
 APowerPlant::APowerPlant()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	MachineType = TEXT("PowerPlant");
 	InputPortCount = 0;

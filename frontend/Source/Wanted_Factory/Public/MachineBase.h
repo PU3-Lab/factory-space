@@ -348,6 +348,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Machine | Debug")
 	void UpdateDebugBufferText();
+
+	void UpdateDebugTextFacingPlayer();
 	
 	UFUNCTION(BlueprintCallable, Category = "Machine | Transfer")
 	bool TransferOutputToMachine(AMachineBase* TargetMachine, FName ItemID, int32 Count);
