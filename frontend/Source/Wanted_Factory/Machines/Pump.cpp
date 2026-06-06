@@ -4,6 +4,7 @@
 #include "Pump.h"
 
 #include "Wanted_Factory.h"
+#include "OJJ_Grid.h"
 
 namespace
 {
@@ -47,12 +48,72 @@ void APump::BeginPlay()
 
 bool APump::CanPlaceAdditional(const AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps) const
 {
-	// [뼈대 / 임시 true] 수원 인접 제약 미구현 — 현재는 일반 머신처럼 무제약 배치.
-	// TODO: 채굴기 FindAdjacentUnclaimedOre 패턴을 미러링해, 4방향 인접 셀에서
-	//   form == LiquidFormName("liquid") (CanPump 판정과 동일)인 미선점 AResourceBase를 찾고,
-	//   OnPlacedOnGrid에서 Claim + SetLinkedResource, OnRemovedFromGrid/EndPlay에서 Release.
-	//   (구현 시 LinkedResource 연결까지 채굴기와 대칭.)
-	return true;
+	// 인접 수원(form=liquid)이 하나라도 있어야 배치 가능. (CDO에서도 호출 — Grid 인자만 사용.)
+	return FindAdjacentWater(Grid, Origin, RotationSteps) != nullptr;
+}
+
+AResourceBase* APump::FindAdjacentWater(const AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps) const
+{
+	if (!Grid)
+	{
+		return nullptr;
+	}
+
+	// 풋프린트 셀 집합(회전·정수화 규칙은 그리드와 동일한 EffectiveSize 사용).
+	const FIntPoint Size = AOJJ_Grid::EffectiveSize(GetMachineSize(), RotationSteps);
+	TSet<FIntPoint> Footprint;
+	Footprint.Reserve(Size.X * Size.Y);
+	for (int32 X = 0; X < Size.X; ++X)
+	{
+		for (int32 Y = 0; Y < Size.Y; ++Y)
+		{
+			Footprint.Add(Origin + FIntPoint(X, Y));
+		}
+	}
+
+	static const FIntPoint Dirs[] = {
+		FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1)
+	};
+
+	// footprint 바깥의 4방향 인접 셀만 검사(중복 후보 1회만).
+	TSet<FIntPoint> Visited;
+	for (const FIntPoint& Cell : Footprint)
+	{
+		for (const FIntPoint& Dir : Dirs)
+		{
+			const FIntPoint Neighbor = Cell + Dir;
+			if (Footprint.Contains(Neighbor) || Visited.Contains(Neighbor))
+			{
+				continue;
+			}
+			Visited.Add(Neighbor);
+
+			// form=liquid 자원이면 채택. 채굴기와 달리 IsClaimed 판정 없음 — 무제한 공유(Claim 미사용).
+			AResourceBase* Resource = Cast<AResourceBase>(Grid->GetActorAtCell(Neighbor));
+			if (Resource && Resource->HasForm(LiquidFormName))
+			{
+				return Resource;
+			}
+		}
+	}
+	return nullptr;
+}
+
+void APump::OnPlacedOnGrid(AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps)
+{
+	Super::OnPlacedOnGrid(Grid, Origin, RotationSteps);
+
+	// 인접 수원 연결(Claim 없음 — 여러 펌프가 같은 물을 공유). CanPlaceAdditional 통과 후 못 찾으면
+	// 경합/타이밍 이상(동기 경로라 보통 발생 안 함).
+	AResourceBase* Water = FindAdjacentWater(Grid, Origin, RotationSteps);
+	if (Water)
+	{
+		SetLinkedResource(Water);
+	}
+	else
+	{
+		LOG_SSR_W(TEXT("OnPlacedOnGrid: no adjacent liquid water (race?). Pump=%s"), *GetName());
+	}
 }
 
 // Called every frame
