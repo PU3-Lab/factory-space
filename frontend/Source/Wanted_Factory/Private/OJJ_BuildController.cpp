@@ -541,15 +541,45 @@ void AOJJ_BuildController::DemolishUnderCursor()
 	}
 
 	bool bRemoved = false;
-	if (Target->IsA<AMachineBase>())
+
+	if (AMachineBase* Machine = Cast<AMachineBase>(Target))
 	{
-		// 머신: RemoveMachineAt → OnRemovedFromGrid 훅(자원 Release/Claim 정리) + FactoryManager Unregister + 화살표 재적재 연쇄.
-		bRemoved = TargetGrid->RemoveMachineAt(CursorCell);
+		// 1) 이 머신을 끝점(Source/Target)으로 갖는 컨베이어 라인을 먼저 삭제(고아 방지). 두-머신 전제상 한쪽이
+		//    사라지면 라인은 존재 조건을 잃는다. 컨베이어는 라인 단위(1액터=다중셀)라 점유 셀 하나로
+		//    OJJ_RemoveActorAt 호출 시 라인 전체가 정리되고, 내부 UnregisterConveyor(그래프 엣지 제거) +
+		//    RefreshPlacedMachineArrows로 반대편(살아있는) 머신의 빈 포트 화살표가 복귀한다.
+		for (AConveyor* Conveyor : CollectConveyorsConnectedToMachine(Machine))
+		{
+			if (!Conveyor)
+			{
+				continue;
+			}
+			if (const TArray<FIntPoint>* ConvCells = TargetGrid->GetActorCells(Conveyor))
+			{
+				if (ConvCells->Num() > 0)
+				{
+					TargetGrid->OJJ_RemoveActorAt((*ConvCells)[0]); // 라인 전체 그리드 점유 해제.
+				}
+			}
+			Conveyor->Destroy(); // 액터/비주얼 실제 제거 — 그리드 함수는 점유 해제만, Destroy는 호출자 책임(기존 854 패턴).
+		}
+
+		// 2) 머신 본체: RemoveMachineAt → RemoveMachine → OnRemovedFromGrid 훅(자원 Release/Claim 정리) +
+		//    FactoryManager Unregister + 화살표 재적재. 그 후 액터 Destroy.
+		if (TargetGrid->RemoveMachineAt(CursorCell))
+		{
+			Machine->Destroy();
+			bRemoved = true;
+		}
 	}
-	else if (Target->IsA<AConveyor>())
+	else if (AConveyor* Conveyor = Cast<AConveyor>(Target))
 	{
-		// 컨베이어: 전용 정리(FactoryManager Unregister + 전체 셀 제거).
-		bRemoved = TargetGrid->OJJ_RemoveActorAt(CursorCell);
+		// 컨베이어 직접 철거: 라인 단위(액터 다중셀) 전체 그리드 해제 + Destroy. 반대편 머신 화살표는 내부 RefreshArrows로 복귀.
+		if (TargetGrid->OJJ_RemoveActorAt(CursorCell))
+		{
+			Conveyor->Destroy();
+			bRemoved = true;
+		}
 	}
 
 	if (bRemoved)
@@ -558,6 +588,65 @@ void AOJJ_BuildController::DemolishUnderCursor()
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 		UpdateMouseHover();
 	}
+}
+
+TArray<AConveyor*> AOJJ_BuildController::CollectConveyorsConnectedToMachine(AMachineBase* Machine) const
+{
+	TArray<AConveyor*> Result;
+	if (!TargetGrid || !Machine)
+	{
+		return Result;
+	}
+
+	const TArray<FIntPoint>* MachineCells = TargetGrid->GetMachineCells(Machine);
+	if (!MachineCells || MachineCells->Num() == 0)
+	{
+		return Result;
+	}
+
+	const TSet<FIntPoint> Footprint(*MachineCells);
+	static const FIntPoint Dirs[] = {
+		FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1)
+	};
+
+	// footprint 전 둘레의 4방향 인접 셀을 스캔(2x2/3x3는 면이 여러 셀 — 포트 셀만이 아니라 둘레 전체).
+	TSet<AConveyor*> Seen;
+	int32 AdjacentConveyorCount = 0;
+	for (const FIntPoint& Cell : Footprint)
+	{
+		for (const FIntPoint& Dir : Dirs)
+		{
+			const FIntPoint Neighbor = Cell + Dir;
+			if (Footprint.Contains(Neighbor))
+			{
+				continue;
+			}
+			AConveyor* Conveyor = TargetGrid->OJJ_GetConveyorAtCell(Neighbor);
+			if (!Conveyor || Seen.Contains(Conveyor))
+			{
+				continue;
+			}
+			Seen.Add(Conveyor);
+			++AdjacentConveyorCount;
+
+			// 검증: 실제로 이 머신을 끝점으로 갖는 라인만 삭제(나란히 붙은 다른 머신의 라인 오삭제 방지).
+			if (Conveyor->GetSourceMachine() == Machine || Conveyor->GetTargetMachine() == Machine)
+			{
+				Result.Add(Conveyor);
+			}
+		}
+	}
+
+	// (보험) 인접에 컨베이어가 있었으나 이 머신과 연결된 것이 0개 → 나란한 라인이면 정상, 아니면 "연결 기록 vs 실제
+	// 인접" 불일치(규칙 위반 데이터)의 조기 신호. 그리드만으로의 근사 검출(FactoryManager 그래프 무조회).
+	if (Result.Num() == 0 && AdjacentConveyorCount > 0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[BuildController] 철거 머신 인접 컨베이어 %d개 — Source/Target 연결 일치 0. 나란한 라인이면 정상, 아니면 연결 데이터 불일치 의심. Machine=%s"),
+			AdjacentConveyorCount, *Machine->GetName());
+	}
+
+	return Result;
 }
 
 void AOJJ_BuildController::OnLeftClickPressed()

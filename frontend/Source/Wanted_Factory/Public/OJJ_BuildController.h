@@ -174,6 +174,10 @@ public:
 	// [철거 모드] 커서 셀의 대상 제거(머신=RemoveMachineAt 훅 연쇄, 컨베이어=OJJ_RemoveActorAt). 직후 호버 갱신(연속 철거).
 	void DemolishUnderCursor();
 
+	// [철거 모드] 철거 머신을 끝점(Source/Target)으로 갖는 컨베이어 라인을 수집. footprint 전 둘레 4방향 셀을
+	// 스캔(포트 셀만이 아니라 둘레 전체 — 포트 규칙 변경에도 견딤) + GetSource/TargetMachine==Machine 검증(오삭제 방지).
+	TArray<class AConveyor*> CollectConveyorsConnectedToMachine(AMachineBase* Machine) const;
+
 	// PlayerController가 입력에서 호출. Machine 모드: 머신 배치. Conveyor 모드: 드래그 시작.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void OnLeftClickPressed();
