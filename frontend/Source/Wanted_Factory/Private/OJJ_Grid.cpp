@@ -1389,6 +1389,38 @@ void AOJJ_Grid::ClearHoverPreview()
 	ClearHoverMachineArrows();
 }
 
+const TArray<FIntPoint>* AOJJ_Grid::GetActorCells(AActor* Actor) const
+{
+	if (!Actor)
+	{
+		return nullptr;
+	}
+	// 머신/컨베이어 등 OccupiedCells에 등록된 모든 액터의 footprint를 범용 조회(GetMachineCells의 비머신 포함판).
+	return OJJ_ActorToCells.Find(Actor);
+}
+
+void AOJJ_Grid::OJJ_HighlightCellsInvalid(const TArray<FIntPoint>& Cells)
+{
+	// 기존 호버 프리뷰(배치 ISM/화살표)를 먼저 비우고 철거 대상만 빨강으로 표시 — 상태 혼선 방지.
+	ClearHoverPreview();
+
+	UInstancedStaticMeshComponent* TargetISM = InvalidHoverISM.Get();
+	if (!TargetISM)
+	{
+		return;
+	}
+
+	// 배치 호버(UpdateHoverPreview)와 동일한 셀→인스턴스 규칙(Z+2 가림 방지, Plane 100→CellSize 스케일, world-space).
+	for (const FIntPoint& Cell : Cells)
+	{
+		const FVector CellCenter = GridToWorld(Cell);
+		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, CellCenter.Z + 2.0f);
+		const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
+		const FTransform InstanceTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale);
+		TargetISM->AddInstance(InstanceTransform, /*bWorldSpace=*/true);
+	}
+}
+
 bool AOJJ_Grid::OJJ_IsExtractionMachine(const AMachineBase* Machine)
 {
 	if (!Machine)

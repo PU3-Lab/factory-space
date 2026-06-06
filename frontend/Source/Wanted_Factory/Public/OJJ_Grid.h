@@ -219,6 +219,14 @@ public:
 	//    시 무효화됨. 즉시(같은 프레임) 읽기 전용으로만 사용하고 절대 캐싱하지 말 것. 보관이 필요하면 값 복사.
 	const TArray<FIntPoint>* GetMachineCells(AMachineBase* Machine) const;
 
+	// [철거 모드] 임의 점유 액터(머신/컨베이어)의 등록 셀 목록. 미등록/무효면 nullptr.
+	// GetMachineCells의 비머신 포함 버전 — 즉시 읽기 전용(동일 수명 주의: grid 변경 시 무효화).
+	const TArray<FIntPoint>* GetActorCells(AActor* Actor) const;
+
+	// [철거 모드] 주어진 셀들을 InvalidHover(빨강)로 하이라이트. 기존 호버 프리뷰는 먼저 비움.
+	// 철거 대상 표시 전용 — 배치 호버(UpdateHoverPreview)와 동일 ISM/스케일/Z오프셋 규칙 재사용.
+	void OJJ_HighlightCellsInvalid(const TArray<FIntPoint>& Cells);
+
 	// === Grid Conveyor (출력포트 자급 판별 — ssr 포트 시스템 미변경) ===
 	// 컨벤션: 출력 = 머신 뒤(-Front). 액터 transform(yaw) 기준이라 메시 art와 무관하게 일관.
 	// 메시 art-front의 +X 시각 정합은 별도(리임포트) 작업 — 로직 정확성과 무관.
