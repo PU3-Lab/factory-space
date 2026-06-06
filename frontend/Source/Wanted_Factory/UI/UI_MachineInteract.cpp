@@ -161,7 +161,7 @@ void UUI_MachineInteract::UpdateDurabilityUI(float CurrentDurability, float MaxD
         int32 PercentInt = FMath::RoundToInt(Percent * 100.0f);
 
         // 내구도 현재값 / 최대값
-        FString DurabilityStr = FString::Printf(TEXT("내구도: %d / %d%% "), CurrentInt, MaxInt);
+        FString DurabilityStr = FString::Printf(TEXT("내구도: %d / %d"), CurrentInt, MaxInt);
 
         TXT_DurabilityPercent->SetText(FText::FromString(DurabilityStr));
     }
