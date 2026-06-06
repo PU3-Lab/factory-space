@@ -48,6 +48,7 @@ void UUI_MainHUD::NativeConstruct()
         if (AgentClient)
         {
             AgentClient->OnAgentResponseReceived.AddDynamic(this, &UUI_MainHUD::HandleOnOperatorGuideResponse);
+            AgentClient->OnAgentErrorReceived.AddDynamic(this, &UUI_MainHUD::HandleOnOperatorGuideError);
         }
     }
 }
@@ -117,35 +118,47 @@ void UUI_MainHUD::OnToggleGuideClicked()
 
 void UUI_MainHUD::HandleOnTextCommitted(const FText& Text, ETextCommit::Type CommitType)
 {
-    if (CommitType == ETextCommit::OnEnter)
+    if (CommitType != ETextCommit::OnEnter)
     {
-        FString QuestionStr = Text.ToString().TrimStartAndEnd();
-        
-        // 빈 문장이 아니라면 전송 프로세스 가동
-        if (!QuestionStr.IsEmpty())
+        return;
+    }
+
+    const FString QuestionStr = Text.ToString().TrimStartAndEnd();
+    if (QuestionStr.IsEmpty())
+    {
+        return;
+    }
+
+    UGameInstance* GameInstance = GetGameInstance();
+    if (!GameInstance)
+    {
+        return;
+    }
+
+    UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>();
+    if (!AgentClient)
+    {
+        return;
+    }
+
+    const bool bSent = AgentClient->SendOperatorGuideQuestion(QuestionStr, TEXT("unreal-ui-001"));
+    if (!bSent)
+    {
+        if (TXT_GuideResponse)
         {
-            UGameInstance* GameInstance = GetGameInstance();
-            if (GameInstance)
-            {
-                UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>();
-                if (AgentClient)
-                {
-                    // ClientId에 "unreal-ui-001" 전달하며 찔러주기
-                    AgentClient->SendOperatorGuideQuestion(QuestionStr, TEXT("unreal-ui-001"));
-                    
-                    // 송신 피드백: 입력창은 비워주고, 가이드 창엔 대기 중 연출을 뿌립니다.
-                    ET_OperatorInput->SetText(FText::GetEmpty());
-                    if (TXT_GuideResponse)
-                    {
-                        TXT_GuideResponse->SetText(FText::FromString(TEXT("분석 중...")));
-                    }
-                }
-            }
+            TXT_GuideResponse->SetText(FText::FromString(TEXT("AI 가이드 요청 전송에 실패했습니다.")));
         }
+        return;
+    }
+
+    ET_OperatorInput->SetText(FText::GetEmpty());
+    if (TXT_GuideResponse)
+    {
+        TXT_GuideResponse->SetText(FText::FromString(TEXT("분석 중...")));
     }
 }
 
-//  AI가 보내온 JSON 패킷에서 "question 답변 데이터"만 파싱해서 출력
+// AI가 보내온 JSON 패킷에서 사용자에게 보여줄 답변 필드를 우선순위대로 사용
 void UUI_MainHUD::HandleOnOperatorGuideResponse(const FString& RequestId, const FString& Agent, const FString& PayloadJson, const FString& RawMessage)
 {
     // namespace 규칙에 적혀있던 "operator_guide" 에이전트 신호인지 필터링합니다.
@@ -155,16 +168,38 @@ void UUI_MainHUD::HandleOnOperatorGuideResponse(const FString& RequestId, const 
     // 동료분이 준비해둔 유틸로 페이로드 JSON을 오브젝트화합니다.
     if (FactoryAgentJsonUtils::ParseJsonObject(PayloadJson, PayloadObject) && PayloadObject.IsValid())
     {
-        // 에이전트가 돌려준 답변 텍스트 필드를 추출합니다.
         FString Answer;
-        if (PayloadObject->TryGetStringField(TEXT("question"), Answer) || PayloadObject->TryGetStringField(TEXT("answer"), Answer))
+        if (
+            PayloadObject->TryGetStringField(TEXT("final_answer"), Answer) ||
+            PayloadObject->TryGetStringField(TEXT("answer"), Answer) ||
+            PayloadObject->TryGetStringField(TEXT("text"), Answer))
         {
             if (TXT_GuideResponse)
             {
-                // 실시간으로 화면 중앙 가이드 란에 AI 가이드를 업데이트합니다
                 TXT_GuideResponse->SetText(FText::FromString(Answer));
             }
         }
+    }
+}
+
+void UUI_MainHUD::HandleOnOperatorGuideError(
+    const FString& RequestId,
+    const FString& Agent,
+    const FString& ErrorCode,
+    const FString& ErrorMessage,
+    const FString& RawMessage)
+{
+    if (Agent != TEXT("operator_guide"))
+    {
+        return;
+    }
+
+    if (TXT_GuideResponse)
+    {
+        const FString CombinedMessage = ErrorCode.IsEmpty()
+            ? ErrorMessage
+            : FString::Printf(TEXT("%s: %s"), *ErrorCode, *ErrorMessage);
+        TXT_GuideResponse->SetText(FText::FromString(CombinedMessage));
     }
 }
 
