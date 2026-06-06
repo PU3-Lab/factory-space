@@ -5,7 +5,7 @@
 
 AWarehousePort::AWarehousePort()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	MachineType = TEXT("WarehousePort");
 	GridSize = FIntPoint(2, 2);

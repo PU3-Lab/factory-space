@@ -148,6 +148,6 @@ bool AOJJ_DayNightController::ResolveProgress(float& OutProgress01) const
 
 float AOJJ_DayNightController::ProgressToSunPitch(float Progress01)
 {
-	// progress 0=일출(0°), 0.25=정오(-90°), 0.5=일몰(0°), 0.75=한밤(+90°, 지평선 아래).
-	return -90.0f * FMath::Sin(Progress01 * UE_TWO_PI);
+	// progress 0=0시(+90°), 0.25=6시(0°), 0.5=12시(-90°), 0.75=18시(0°).
+	return 90.0f * FMath::Cos(Progress01 * UE_TWO_PI);
 }
