@@ -79,11 +79,11 @@ void UUI_MainHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 void UUI_MainHUD::OnToggleGuideClicked()
 {
-    UE_LOG(LogTemp, Warning, TEXT("토글 버튼 클릭됨!"));
+    UE_LOG(LogTemp, Warning, TEXT("토글 버튼 클릭됨"));
 
     if (!B_ChatBackground)
     {
-        UE_LOG(LogTemp, Error, TEXT("B_ChatBackground가 Null입니다! 변수 이름을 다시 확인하세요."));
+        UE_LOG(LogTemp, Error, TEXT("B_ChatBackground가 Null입니다 변수 이름을 다시 확인하세요."));
         return;
     }
     
@@ -145,14 +145,14 @@ void UUI_MainHUD::HandleOnTextCommitted(const FText& Text, ETextCommit::Type Com
     }
 }
 
-//  AI가 보내온 JSON 패킷에서 "question 답변 데이터"만 파싱해서 출력
+//  question 답변 데이터 파싱해서 출력
 void UUI_MainHUD::HandleOnOperatorGuideResponse(const FString& RequestId, const FString& Agent, const FString& PayloadJson, const FString& RawMessage)
 {
-    // namespace 규칙에 적혀있던 "operator_guide" 에이전트 신호인지 필터링합니다.
+    // namespace 규칙에 적혀있던 "operator_guide" 에이전트 신호인지 필터링
     if (Agent != TEXT("operator_guide")) return;
 
     TSharedPtr<FJsonObject> PayloadObject;
-    // 동료분이 준비해둔 유틸로 페이로드 JSON을 오브젝트화합니다.
+    // 페이로드 JSON을 오브젝트화합니다.
     if (FactoryAgentJsonUtils::ParseJsonObject(PayloadJson, PayloadObject) && PayloadObject.IsValid())
     {
         // 에이전트가 돌려준 답변 텍스트 필드를 추출합니다.
@@ -168,15 +168,19 @@ void UUI_MainHUD::HandleOnOperatorGuideResponse(const FString& RequestId, const 
     }
 }
 
-// 버튼을 누르는 순간 에이전트 팀 전송 파이프라인 트리거
 void UUI_MainHUD::OnRequestQuestsClicked()
 {
+    UE_LOG(LogTemp, Log, TEXT("[HUD 퀘스트] OnRequestQuestsClicked() 함수 내부 진ip 성공"));
+
     UGameInstance* GameInstance = GetGameInstance();
     if (GameInstance)
     {
         UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>();
         if (QuestManager)
         {
+            // 텍스트가 안 바뀌는 버그 추적용 (위젯 유효성 검사)
+            UE_LOG(LogTemp, Log, TEXT("[HUD 퀘스트] 텍스트 위젯 상태 체크 - TXT_Quest_1 유효성: %s"), TXT_Quest_1 ? TEXT("True") : TEXT("Null"));
+
             if (TXT_Quest_1) TXT_Quest_1->SetText(FText::FromString(TEXT("AI 응답 대기 중...")));
             if (TXT_Quest_2) TXT_Quest_2->SetText(FText::FromString(TEXT("")));
             if (TXT_Quest_3) TXT_Quest_3->SetText(FText::FromString(TEXT("")));
@@ -187,13 +191,15 @@ void UUI_MainHUD::OnRequestQuestsClicked()
             QuestManager->ConnectQuestAgent(); 
             QuestManager->RequestSubQuests();
         }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("[HUD 퀘스트] QuestManagerSubsystem을 찾을 수 없습니다!"));
+        }
     }
 }
 
-// 4. AI 에이전트 패킷 파싱이 끝났을 때 자동 실행 (Description 추출 핵심)
 void UUI_MainHUD::HandleOnSubQuestsGenerated(const FString& RequestId, const TArray<FQuestState>& Quests)
 {
-    // 제어하기 편하게 유저님의 텍스트 박스 5개를 임시 배열로 묶어줍니다.
     TArray<UTextBlock*> QuestTextBoxes;
     if (TXT_Quest_1) QuestTextBoxes.Add(TXT_Quest_1);
     if (TXT_Quest_2) QuestTextBoxes.Add(TXT_Quest_2);
@@ -201,20 +207,20 @@ void UUI_MainHUD::HandleOnSubQuestsGenerated(const FString& RequestId, const TAr
     if (TXT_Quest_4) QuestTextBoxes.Add(TXT_Quest_4);
     if (TXT_Quest_5) QuestTextBoxes.Add(TXT_Quest_5);
 
-    // 에이전트로부터 파싱된 Quests 배열을 루프 돌립니다.
     for (int32 i = 0; i < QuestTextBoxes.Num(); ++i)
     {
         if (i < Quests.Num())
         {
-            // Title 대신 [Description] 정보 추출하여 화면에 꽂기
-            FText QuestDesc = Quests[i].Description;
+            FText QuestTitle = Quests[i].Title;
             
-            QuestTextBoxes[i]->SetText(QuestDesc);
+            // 자동 줄바꿈 
+            QuestTextBoxes[i]->SetAutoWrapText(true);
+            
+            QuestTextBoxes[i]->SetText(QuestTitle);
             QuestTextBoxes[i]->SetVisibility(ESlateVisibility::Visible);
         }
         else
         {
-            // 에이전트가 준 퀘스트가 5개 미만이면 남은 칸은 화면에서 보이지 않게 클리어
             QuestTextBoxes[i]->SetVisibility(ESlateVisibility::Collapsed);
         }
     }

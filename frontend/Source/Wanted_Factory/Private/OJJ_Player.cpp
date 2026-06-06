@@ -25,6 +25,7 @@
 #include "Blueprint/UserWidget.h"
 #include "MachineBase.h"
 #include "UI/UI_MachineInteract.h"
+#include "UI/UI_MainHUD.h"
 
 AOJJ_Player::AOJJ_Player()
 {
@@ -290,6 +291,7 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	}
 
 	PlayerInputComponent->BindKey(EKeys::M, IE_Pressed, this, &AOJJ_Player::SendOperatorGuideRequest);
+	PlayerInputComponent->BindKey(EKeys::Slash, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestRequest);
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -786,5 +788,20 @@ void AOJJ_Player::RestoreGameInputMode()
 	{
 		PC->SetInputMode(FInputModeGameOnly());
 		PC->SetShowMouseCursor(false);
+	}
+}
+void AOJJ_Player::TriggerHUDQuestRequest()
+{
+	// 빌드모드 중에는 화면에 메인 HUD가 꺼지므로 슬래시 키 작동을 막습니다.
+	if (BuildController && BuildController->IsInBuildMode())
+	{
+		return;
+	}
+	if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
+	{
+		// HUD 내부에 구현된 퀘스트 요청 함수를 다이렉트로 원격 실행합니다
+		MainHUD->OnRequestQuestsClicked();
+        
+		UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] 슬래시(/) 키 입력을 감지하여 HUD 퀘스트 요청을 원격 실행했습니다."));
 	}
 }

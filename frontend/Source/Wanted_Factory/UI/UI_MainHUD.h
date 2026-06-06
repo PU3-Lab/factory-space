@@ -13,7 +13,6 @@ class WANTED_FACTORY_API UUI_MainHUD : public UUserWidget
 
 public:
 	virtual void NativeConstruct() override;
-	
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	
 	UFUNCTION() void OnRequestQuestsClicked();
@@ -26,7 +25,7 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	class UTextBlock* TXT_GuideResponse;
 	
-	// --- 🌟 [추가] 오퍼레이터 가이드 토글 제어 위젯 ---
+	// --- 오퍼레이터 가이드 토글 제어 위젯 ---
 	UPROPERTY(meta = (BindWidget))
 	class UBorder* B_ChatBackground; // 열고 닫힐 채팅창 전체 배경 상자
 
