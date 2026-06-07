@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Engine/EngineTypes.h"
 #include "OJJ_Grid.generated.h"
 
 class AMachineBase;
@@ -70,6 +71,57 @@ protected:
 	// 예: GridSize=(20,20), VisualizationRange=30 → 30칸 floor 위에 20×20 placement 영역만 유효.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visualization", meta = (ClampMin = "1"))
 	int32 VisualizationRange;
+
+	// === 지형 높낮이 건설 제약 (정적 지형 — BeginPlay 1회 베이크) ===
+	// BeginPlay에서 GridSize 전 셀 중심에서 ↓라인트레이스 → 지형 높이가 그리드 평면 Z와
+	// BuildableHeightTolerance를 넘게 차이나면 UnbuildableCells에 마킹. CanPlaceMachine/컨베이어 경로가 게이트로 참조.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Terrain", meta = (ClampMin = "0.0"))
+	float BuildableHeightTolerance = 50.0f;
+
+	// 베이크 ↓트레이스 시작 높이(그리드 평면 Z 상대, uu). 예상 지형 최고점보다 높게.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Terrain", meta = (ClampMin = "1.0"))
+	float BuildableTraceStartHeight = 1000.0f;
+
+	// 베이크 ↓트레이스 깊이(시작점 아래로, uu). 예상 지형 최저점보다 깊게.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Terrain", meta = (ClampMin = "1.0"))
+	float BuildableTraceDepth = 2000.0f;
+
+	// 베이크 트레이스 채널(지형 메시가 Block하는 채널). 기본 Visibility(빌드모드 커서 트레이스와 동일).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Terrain")
+	TEnumAsByte<ECollisionChannel> BuildableTraceChannel = ECC_Visibility;
+
+	// [예약·미구현] 경사도 게이트 임계(도). hit.Normal 각도가 이 값 초과 시 불가 — 차후 구현(현재 무시).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Terrain", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+	float BuildableSlopeThresholdDeg = 90.0f;
+
+	// 베이크 3단 분류 중 [2] blocked — 트레이스 hit이나 높이델타 초과(지형 단차). 빨강 오버레이 + 호버/배치 거부.
+	UPROPERTY(Transient)
+	TSet<FIntPoint> UnbuildableCells;
+
+	// 베이크 3단 분류 중 [3] void — 트레이스 미히트(바닥 없음 = 그리드 외). 호버/배치 거부하되
+	// blocked 오버레이는 안 그림. 향후 바닥/그리드라인 비주얼이 이 집합을 제외하면 바닥 모양을 자동 추종.
+	UPROPERTY(Transient)
+	TSet<FIntPoint> VoidCells;
+
+	// 건설 가능(초록) 셀 per-cell 비주얼 ISM — 빌드모드 진입 시 표시. void 셀 제외 → 바닥 모양 자동 추종.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Terrain")
+	TObjectPtr<UInstancedStaticMeshComponent> BuildableCellISM;
+
+	// 건설 불가(빨강) 셀 per-cell 비주얼 ISM — blocked(높이초과)만. void는 제외(그리드 자체 없음).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Terrain")
+	TObjectPtr<UInstancedStaticMeshComponent> BlockedCellISM;
+
+	// 디버그 토글(OJJ.Grid.ShowBlocked) — 빌드모드 밖에서도 오버레이 강제 표시.
+	UPROPERTY(Transient)
+	bool bForceShowBlocked = false;
+
+	// 베이크 완료 여부 — "불가 0개"와 "아직 베이크 안 됨"을 구분(진단/콘솔 리포트용).
+	UPROPERTY(Transient)
+	bool bBuildableBaked = false;
+
+	// 빌드모드 시각화 활성 상태 — bForceShowBlocked 토글이 빌드모드 오버레이를 끄지 않도록 참조.
+	UPROPERTY(Transient)
+	bool bVisualizationActive = false;
 
 	// 배치 가능 셀 호버 표시 (녹색)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Hover")
@@ -186,9 +238,31 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
 	FVector GetMachinePlacementLocation(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
 
-	// 셀이 그리드 유효 범위 ([0, VisualizationRange) × [0, VisualizationRange)) 내인지 검사
+	// 셀이 그리드 유효 범위 ([0, GridSize.X) × [0, GridSize.Y)) 내인지 검사
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
 	bool IsValidGridCell(FIntPoint Cell) const;
+
+	// === 지형 높낮이 건설 제약 ===
+
+	// 셀이 건설 가능한지(blocked·void 둘 다 아님). 베이크 전이면 항상 true.
+	UFUNCTION(BlueprintPure, Category = "Grid|Terrain")
+	bool IsCellBuildable(FIntPoint Cell) const;
+
+	// 셀이 그리드 외(void = 바닥 없음/트레이스 미히트)인지. 그리드 비주얼 셀 제외 판정용.
+	UFUNCTION(BlueprintPure, Category = "Grid|Terrain")
+	bool IsCellVoid(FIntPoint Cell) const;
+
+	// 지형 높이 베이크 — GridSize 전 셀 ↓트레이스로 buildable/blocked/void 재계산. BeginPlay 1회 + 콘솔 재호출.
+	// bVerbose: 평탄(바닥)이 아닌 셀마다 (좌표/hit/Z/부호델타/분류)를 로그(캡 있음) — 큐브 등 베이크 진단용.
+	UFUNCTION(BlueprintCallable, Category = "Grid|Terrain")
+	void BakeBuildableCells(bool bVerbose = false);
+
+	// 그리드 셀 비주얼 갱신 — 현재 상태(bVisualizationActive/bForceShowBlocked) 기준으로 초록(가능)/빨강(blocked)
+	// per-cell ISM 재적재. void 셀은 양쪽 다 제외. 클리어 후 재적재라 진입/퇴장 반복에도 중복·잔존 없음.
+	void RefreshGridVisual();
+
+	// 디버그(OJJ.Grid.ShowBlocked) — 빌드모드와 무관하게 오버레이 강제 표시 토글.
+	void SetForceShowBlocked(bool bShow);
 
 	// === Grid Query (GridManager/컨베이어용 읽기 전용 조회) ===
 	// OccupiedCells / OJJ_ActorToCells를 노출만 함 — write 경로/데이터는 건드리지 않음.
@@ -281,6 +355,9 @@ public:
 	// 머신 등록(RegisterMachineInternal/footprint) 경로와 독립한 컨베이어 전용 등록.
 	// 가드: 서버 권위, 유효 actor, 비어있지 않은 셀, 중복 등록 금지, 다른 actor 점유 셀 충돌 거부(데이터 무결성).
 	// ※ 경로 연속성/포트 정합 등 placement 유효성은 3-c. 여기선 점유 충돌만.
+	// ※ 지형 건설 게이트(IsCellBuildable)는 검사하지 않음 — 이 API는 "점유 데이터 등록" 전용.
+	//   건설 제약은 호출자 책임(머신=CanPlaceMachine, 컨베이어=OJJ_CollectConveyorReservedCells에서 사전 차단).
+	//   자원(광맥/Water)은 디자이너 사전배치라 의도적으로 지형 게이트 면제(점유로만 건설 차단).
 	UFUNCTION(BlueprintCallable, Category = "Grid|Conveyor")
 	bool OJJ_RegisterActorCells(AActor* Actor, const TArray<FIntPoint>& Cells);
 

@@ -8,6 +8,8 @@
 
 class AOJJ_Grid;
 class UMaterialInterface;
+class UMaterialInstanceDynamic;
+class UBoxComponent;
 
 /**
  * 흐르는 강(Water) 영역 (OJJ 소유). AResourceBase를 다중 셀로 확장 — 직사각형 셀 영역을 그리드 점유에
@@ -48,17 +50,35 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Water|Visual")
 	TObjectPtr<UStaticMeshComponent> WaterPlaneMesh;
 
-	// 물 머티리얼(임시: 반투명 파랑). 미지정 시 플레인 기본 머티리얼. 정식 M_River(패닝)는 후속.
+	// 물 머티리얼(M_River 등). 런타임에 MID로 래핑돼 FlowVelocity가 주입된다. 미지정 시 플레인 기본 머티리얼.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water|Visual")
 	TObjectPtr<UMaterialInterface> WaterMaterial;
+
+	// 강 흐름 방향+속도(머티리얼 UV 패닝). XY만 사용(Z 무시). 강마다 방향이 달라 인스턴스별 조정 — M_River의
+	// "FlowVelocity" VectorParameter로 주입(MID). 머티리얼에 동명 파라미터가 없으면 무시될 뿐 에러 없음.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water|Visual")
+	FVector2D FlowVelocity = FVector2D(0.05f, 0.0f);
 
 	// 그리드 바닥/머신·화살표와의 z-fighting 방지용 높이 오프셋(액터 z 기준 상대). 에디터에서 조정.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water|Visual")
 	float VisualZOffset = 2.0f;
 
+	// 캐릭터(Pawn) 진입 차단 볼륨 — 영역 전체를 덮는 보이지 않는 벽. Pawn만 Block, 그 외 전 채널 Ignore
+	// (⚠️ 빌드 커서/베이크 ↓트레이스가 이 박스에 걸리면 안 됨 — Visibility 등 Ignore 필수).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Water|Collision")
+	TObjectPtr<UBoxComponent> WaterBlockingVolume;
+
+	// 차단 벽 높이(uu, 액터 바닥에서 위로). 점프로 못 넘게 충분히. 에디터 조정.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water|Collision", meta = (ClampMin = "1.0"))
+	float BlockingWallHeight = 250.0f;
+
 private:
 	// AreaSizeInCells/그리드 CellSize에 맞춰 플레인 스케일·위치 갱신(에디터 OnConstruction + 등록 후).
 	void UpdateWaterVisual();
+
+	// WaterMaterial을 래핑한 동적 인스턴스(FlowVelocity 주입용). 부모가 바뀔 때만 재생성. Transient — 직렬화 제외.
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> WaterMID;
 
 	// EndPlay 대칭 해제용. RegisterToGrid 성공 시 저장(전체 해제는 액터의 아무 셀로나 가능 — OJJ_RemoveActorAt).
 	FIntPoint RegisteredOrigin = FIntPoint(0, 0);

@@ -5,7 +5,9 @@
 #include "Wanted_Factory.h"
 #include "OJJ_Grid.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/BoxComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "UObject/ConstructorHelpers.h"
@@ -30,6 +32,19 @@ AWaterArea::AWaterArea()
 	{
 		WaterPlaneMesh->SetStaticMesh(PlaneMesh.Object);
 	}
+
+	// Pawn 진입 차단 볼륨 — 영역 전체를 덮는 보이지 않는 벽.
+	WaterBlockingVolume = CreateDefaultSubobject<UBoxComponent>(TEXT("WaterBlockingVolume"));
+	WaterBlockingVolume->SetupAttachment(Root);
+	// 콜리전 설계(핵심): Pawn만 Block, 그 외 전 채널 Ignore. 커스텀 프리셋 대신 명시적 응답 설정.
+	// ⚠️ Visibility/Camera Ignore — 빌드 커서 트레이스/베이크 ↓트레이스가 박스 천장을 잡으면 안 됨.
+	//    (베이크는 AResourceBase(=WaterArea) 액터를 통째로 ignore하므로 이중 안전.)
+	WaterBlockingVolume->SetCollisionEnabled(ECollisionEnabled::QueryOnly);  // 캐릭터 무브먼트 sweep 차단엔 Query면 충분
+	WaterBlockingVolume->SetCollisionObjectType(ECC_WorldStatic);
+	WaterBlockingVolume->SetCollisionResponseToAllChannels(ECR_Ignore);
+	WaterBlockingVolume->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+	WaterBlockingVolume->SetCanEverAffectNavigation(false);
+	WaterBlockingVolume->SetGenerateOverlapEvents(false);
 }
 
 void AWaterArea::OnConstruction(const FTransform& Transform)
@@ -70,9 +85,31 @@ void AWaterArea::UpdateWaterVisual()
 	const float OffsetY = (SizeY - 1) * CellSize * 0.5f;
 	WaterPlaneMesh->SetRelativeLocation(FVector(OffsetX, OffsetY, VisualZOffset));
 
+	// Pawn 차단 박스: XY는 영역 전체, Z는 BlockingWallHeight(바닥→위 벽). 절대값 set이라 OnConstruction
+	// 재진입에도 중복/누적 없음(박스는 생성자 1회 생성). 중심 XY=플레인과 동일, Z중심=높이/2 → 바닥에서 위로.
+	if (WaterBlockingVolume)
+	{
+		const float HalfH = FMath::Max(1.0f, BlockingWallHeight) * 0.5f;
+		WaterBlockingVolume->SetBoxExtent(FVector(SizeX * CellSize * 0.5f, SizeY * CellSize * 0.5f, HalfH), /*bUpdateOverlaps=*/false);
+		WaterBlockingVolume->SetRelativeLocation(FVector(OffsetX, OffsetY, HalfH));
+	}
+
+	// 머티리얼을 MID로 래핑해 FlowVelocity를 주입(강마다 방향 다름). OnConstruction 경로로도 호출되므로
+	// 에디터 배치/FlowVelocity 변경 즉시 프리뷰에 반영된다. 부모 머티리얼이 바뀐 경우에만 MID 재생성.
 	if (WaterMaterial)
 	{
-		WaterPlaneMesh->SetMaterial(0, WaterMaterial);
+		if (!WaterMID || WaterMID->Parent != WaterMaterial)
+		{
+			WaterMID = UMaterialInstanceDynamic::Create(WaterMaterial, this);
+		}
+		if (WaterMID)
+		{
+			// M_River의 VectorParameter "FlowVelocity"에 주입. 동명 파라미터가 없으면 조용히 무시(에러 아님).
+			WaterMID->SetVectorParameterValue(
+				TEXT("FlowVelocity"),
+				FLinearColor(FlowVelocity.X, FlowVelocity.Y, 0.0f, 0.0f));
+			WaterPlaneMesh->SetMaterial(0, WaterMID);
+		}
 	}
 }
 
