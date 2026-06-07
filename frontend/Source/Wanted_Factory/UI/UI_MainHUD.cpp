@@ -8,6 +8,10 @@
 #include "FactoryAgentJsonUtils.h"       // JSON 파싱 유틸리티 헤더
 #include "Dom/JsonObject.h"
 #include "Components/Border.h"
+#include "Components/VerticalBox.h"
+#include "Animation/WidgetAnimation.h"
+#include "Blueprint/UserWidget.h"
+#include "UMG.h"
 #include "Kismet/GameplayStatics.h"
 
 void UUI_MainHUD::NativeConstruct()
@@ -90,7 +94,7 @@ void UUI_MainHUD::OnToggleGuideClicked()
     
     if (!B_ChatBackground) return;
 
-    // 현재 배경 창이 꺼져(Collapsed) 있다면? ➡️ 켜준다
+    // 현재 배경 창이 꺼져(Collapsed) 있다면? 켜준다
     if (B_ChatBackground->GetVisibility() == ESlateVisibility::Collapsed)
     {
         // 1. 창을 화면에 표시 (SelfHitTestInvisible이 마우스 클릭 관통 방지에 좋습니다)
@@ -102,10 +106,10 @@ void UUI_MainHUD::OnToggleGuideClicked()
             TXT_ToggleText->SetText(FText::FromString(TEXT("▲ AI 가이드 접기")));
         }
     }
-    // 현재 배경 창이 켜져 있다면? ➡️ 꺼준다
+    // 현재 배경 창이 켜져 있다면? 꺼준다
     else
     {
-        // 1. 창과 내부 공간까지 싹 제거(Collapsed)
+        // 1. 창과 내부 공간 제거(Collapsed)
         B_ChatBackground->SetVisibility(ESlateVisibility::Collapsed);
         
         // 2. 버튼 텍스트 변경
@@ -229,7 +233,7 @@ void UUI_MainHUD::OnRequestQuestsClicked()
         }
         else
         {
-            UE_LOG(LogTemp, Error, TEXT("[HUD 퀘스트] QuestManagerSubsystem을 찾을 수 없습니다!"));
+            UE_LOG(LogTemp, Error, TEXT("[HUD 퀘스트] QuestManagerSubsystem을 찾을 수 없습니다"));
         }
     }
 }
@@ -268,5 +272,26 @@ void UUI_MainHUD::HandleOnSubQuestRequestFailed(const FString& RequestId, const 
     if (TXT_Quest_1)
     {
         TXT_Quest_1->SetText(FText::FromString(TEXT("서버 연결 실패")));
+    }
+}
+
+void UUI_MainHUD::ToggleQuestWindow()
+{
+    if (!VB_QuestLayout)
+    {
+        UE_LOG(LogTemp, Error, TEXT("VB_QuestLayout이 Null입니다. WBP 변수 설정을 확인하세요."));
+        return;
+    }
+    if (bIsQuestWindowOpen)
+    {
+        bIsQuestWindowOpen = false;
+        K2_PlayQuestAnimation(false);
+    }
+    else
+    {
+        VB_QuestLayout->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        
+        bIsQuestWindowOpen = true;
+        K2_PlayQuestAnimation(true);
     }
 }

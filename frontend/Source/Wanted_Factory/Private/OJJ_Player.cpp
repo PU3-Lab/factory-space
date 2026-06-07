@@ -292,6 +292,7 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 	PlayerInputComponent->BindKey(EKeys::M, IE_Pressed, this, &AOJJ_Player::SendOperatorGuideRequest);
 	PlayerInputComponent->BindKey(EKeys::Slash, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestRequest);
+	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -803,5 +804,20 @@ void AOJJ_Player::TriggerHUDQuestRequest()
 		MainHUD->OnRequestQuestsClicked();
         
 		UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] 슬래시(/) 키 입력을 감지하여 HUD 퀘스트 요청을 원격 실행했습니다."));
+	}
+}
+void AOJJ_Player::TriggerHUDQuestWindowToggle()
+{
+	// 빌드모드 중에는 우측 퀘스트 레이아웃이 꺼지므로 단축키 작동 차단
+	if (BuildController && BuildController->IsInBuildMode())
+	{
+		return;
+	}
+
+	// 캐릭터가 들고 있던 위젯 인스턴스를 MainHUD 타입으로 캐스팅하여 애니메이션 함수 작동
+	if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
+	{
+		MainHUD->ToggleQuestWindow();
+		UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] J키 입력을 감지하여 HUD 퀘스트 창 애니메이션 토글을 호출했습니다."));
 	}
 }
