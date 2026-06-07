@@ -658,17 +658,38 @@ void AOJJ_Grid::BakeBuildableCells(bool bVerbose)
 		{
 			++Total;
 			const FVector Center = GridToWorld(FIntPoint(X, Y));
-			const FVector TraceStart(Center.X, Center.Y, PlaneZ + BuildableTraceStartHeight);
-			const FVector TraceEnd(Center.X, Center.Y, PlaneZ - BuildableTraceDepth);
 
-			FHitResult Hit;
-			const bool bHit = World->LineTraceSingleByChannel(
-				Hit, TraceStart, TraceEnd, BuildableTraceChannel, Params);
+			// 셀당 5점 샘플링(중심 + 4귀퉁이 ±0.4셀) — 큐브가 셀 중심을 안 밟아도 귀퉁이로 검출.
+			// 하나라도 |델타| > tol이면 blocked. void는 5점 전부 미히트일 때만(바닥 전무).
+			const float S = CellSize * 0.4f;
+			const FVector2D SampleOffsets[5] = {
+				FVector2D(0.f, 0.f), FVector2D(S, S), FVector2D(S, -S), FVector2D(-S, S), FVector2D(-S, -S) };
 
-			// 3단 분류: 미히트=void(바닥 없음/그리드 외), hit+높이초과=blocked, hit+높이OK=가능.
-			const float SignedDelta = bHit ? (Hit.ImpactPoint.Z - PlaneZ) : 0.0f;  // 부호 유지 — +면 위로 솟음
-			const bool bBlocked = bHit && (FMath::Abs(SignedDelta) > BuildableHeightTolerance);
-			if (!bHit)
+			bool bAnyHit = false;
+			float WorstAbsDelta = 0.0f;
+			float WorstSignedDelta = 0.0f;  // verbose — 최악점의 부호 델타
+			float WorstHitZ = 0.0f;         // verbose
+			for (const FVector2D& Off : SampleOffsets)
+			{
+				const FVector TraceStart(Center.X + Off.X, Center.Y + Off.Y, PlaneZ + BuildableTraceStartHeight);
+				const FVector TraceEnd(Center.X + Off.X, Center.Y + Off.Y, PlaneZ - BuildableTraceDepth);
+				FHitResult Hit;
+				if (World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, BuildableTraceChannel, Params))
+				{
+					bAnyHit = true;
+					const float Delta = Hit.ImpactPoint.Z - PlaneZ;
+					if (FMath::Abs(Delta) > WorstAbsDelta)
+					{
+						WorstAbsDelta = FMath::Abs(Delta);
+						WorstSignedDelta = Delta;
+						WorstHitZ = Hit.ImpactPoint.Z;
+					}
+				}
+			}
+
+			// 3단 분류: 5점 전부 미히트=void, 최악 |델타|>tol=blocked, 그 외=가능.
+			const bool bBlocked = bAnyHit && (WorstAbsDelta > BuildableHeightTolerance);
+			if (!bAnyHit)
 			{
 				VoidCells.Add(FIntPoint(X, Y));            // [3] void — 오버레이/그리드 비주얼 둘 다 제외, 배치 거부
 			}
@@ -679,13 +700,13 @@ void AOJJ_Grid::BakeBuildableCells(bool bVerbose)
 			// [1] else 건설 가능 (초록) — 미저장
 			// 경사도 게이트(BuildableSlopeThresholdDeg)는 예약 — 현재 미적용.
 
-			// verbose: 평탄 바닥(델타≈0) 외 셀만 출력 — 큐브 위 셀(부호델타·분류)을 직접 확인.
-			if (bVerbose && VerboseLogged < MaxVerboseLines && (!bHit || FMath::Abs(SignedDelta) > 1.0f))
+			// verbose: 평탄 바닥(델타≈0) 외 셀만 출력 — 5점 중 최악값 기준.
+			if (bVerbose && VerboseLogged < MaxVerboseLines && (!bAnyHit || WorstAbsDelta > 1.0f))
 			{
-				const TCHAR* Cls = !bHit ? TEXT("void") : (bBlocked ? TEXT("BLOCKED") : TEXT("buildable"));
+				const TCHAR* Cls = !bAnyHit ? TEXT("void") : (bBlocked ? TEXT("BLOCKED") : TEXT("buildable"));
 				UE_LOG(LogTemp, Log,
-					TEXT("[Grid]   cell(%d,%d) hit=%d hitZ=%.1f delta=%+.1f -> %s"),
-					X, Y, bHit ? 1 : 0, bHit ? Hit.ImpactPoint.Z : 0.0f, SignedDelta, Cls);
+					TEXT("[Grid]   cell(%d,%d) anyHit=%d worstZ=%.1f worstDelta=%+.1f (5pt) -> %s"),
+					X, Y, bAnyHit ? 1 : 0, bAnyHit ? WorstHitZ : 0.0f, WorstSignedDelta, Cls);
 				++VerboseLogged;
 			}
 		}
