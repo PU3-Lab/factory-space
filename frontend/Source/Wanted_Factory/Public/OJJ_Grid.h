@@ -252,9 +252,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Terrain")
 	bool IsCellVoid(FIntPoint Cell) const;
 
-	// 지형 높이 베이크 — GridSize 전 셀 ↓트레이스로 UnbuildableCells 재계산. BeginPlay 1회 + 콘솔 재호출.
+	// 지형 높이 베이크 — GridSize 전 셀 ↓트레이스로 buildable/blocked/void 재계산. BeginPlay 1회 + 콘솔 재호출.
+	// bVerbose: 평탄(바닥)이 아닌 셀마다 (좌표/hit/Z/부호델타/분류)를 로그(캡 있음) — 큐브 등 베이크 진단용.
 	UFUNCTION(BlueprintCallable, Category = "Grid|Terrain")
-	void BakeBuildableCells();
+	void BakeBuildableCells(bool bVerbose = false);
 
 	// 그리드 셀 비주얼 갱신 — 현재 상태(bVisualizationActive/bForceShowBlocked) 기준으로 초록(가능)/빨강(blocked)
 	// per-cell ISM 재적재. void 셀은 양쪽 다 제외. 클리어 후 재적재라 진입/퇴장 반복에도 중복·잔존 없음.

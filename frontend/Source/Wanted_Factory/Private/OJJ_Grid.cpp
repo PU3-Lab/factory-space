@@ -616,7 +616,7 @@ bool AOJJ_Grid::IsCellVoid(FIntPoint Cell) const
 	return VoidCells.Contains(Cell);
 }
 
-void AOJJ_Grid::BakeBuildableCells()
+void AOJJ_Grid::BakeBuildableCells(bool bVerbose)
 {
 	UnbuildableCells.Reset();
 	VoidCells.Reset();
@@ -629,6 +629,17 @@ void AOJJ_Grid::BakeBuildableCells()
 
 	const FVector GridOrigin = GetActorLocation();
 	const float PlaneZ = GridOrigin.Z;
+
+	// verbose 진단: 평탄(바닥) 외 셀만 로그(스팸 방지 캡). 큐브 등 베이크 오판 원인 추적용.
+	int32 VerboseLogged = 0;
+	const int32 MaxVerboseLines = 400;
+	if (bVerbose)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Grid] Bake VERBOSE: PlaneZ=%.1f, tol=%.1f, startH=%.1f, depth=%.1f, trace=%d (평탄 외 셀만, 최대 %d줄)"),
+			PlaneZ, BuildableHeightTolerance, BuildableTraceStartHeight, BuildableTraceDepth,
+			(int32)BuildableTraceChannel.GetValue(), MaxVerboseLines);
+	}
 
 	// 트레이스 견고화: 그리드 자신(floor/호버 ISM) + 셀 위에 서 있는 게임 액터(머신·컨베이어·자원)를 무시 →
 	// 지형 대신 머신/광맥 메시에 걸려 false-block 되는 것 방지. 책임 분리: 자원은 "트레이스 ignore"하고
@@ -655,16 +666,28 @@ void AOJJ_Grid::BakeBuildableCells()
 				Hit, TraceStart, TraceEnd, BuildableTraceChannel, Params);
 
 			// 3단 분류: 미히트=void(바닥 없음/그리드 외), hit+높이초과=blocked, hit+높이OK=가능.
+			const float SignedDelta = bHit ? (Hit.ImpactPoint.Z - PlaneZ) : 0.0f;  // 부호 유지 — +면 위로 솟음
+			const bool bBlocked = bHit && (FMath::Abs(SignedDelta) > BuildableHeightTolerance);
 			if (!bHit)
 			{
 				VoidCells.Add(FIntPoint(X, Y));            // [3] void — 오버레이/그리드 비주얼 둘 다 제외, 배치 거부
 			}
-			else if (FMath::Abs(Hit.ImpactPoint.Z - PlaneZ) > BuildableHeightTolerance)
+			else if (bBlocked)
 			{
 				UnbuildableCells.Add(FIntPoint(X, Y));     // [2] blocked — 빨강 + 배치 거부
 			}
 			// [1] else 건설 가능 (초록) — 미저장
 			// 경사도 게이트(BuildableSlopeThresholdDeg)는 예약 — 현재 미적용.
+
+			// verbose: 평탄 바닥(델타≈0) 외 셀만 출력 — 큐브 위 셀(부호델타·분류)을 직접 확인.
+			if (bVerbose && VerboseLogged < MaxVerboseLines && (!bHit || FMath::Abs(SignedDelta) > 1.0f))
+			{
+				const TCHAR* Cls = !bHit ? TEXT("void") : (bBlocked ? TEXT("BLOCKED") : TEXT("buildable"));
+				UE_LOG(LogTemp, Log,
+					TEXT("[Grid]   cell(%d,%d) hit=%d hitZ=%.1f delta=%+.1f -> %s"),
+					X, Y, bHit ? 1 : 0, bHit ? Hit.ImpactPoint.Z : 0.0f, SignedDelta, Cls);
+				++VerboseLogged;
+			}
 		}
 	}
 
@@ -765,8 +788,8 @@ static FAutoConsoleCommandWithWorld GOJJGridBuildableReport(
 			UE_LOG(LogTemp, Warning, TEXT("[Grid] BuildableReport: 월드에 AOJJ_Grid 없음."));
 			return;
 		}
-		Grid->BakeBuildableCells();      // 요약 로그 포함
-		Grid->SetForceShowBlocked(true); // 즉시 시각 확인
+		Grid->BakeBuildableCells(/*bVerbose=*/true); // 요약 + 평탄 외 셀별 (좌표/hitZ/부호델타/분류) 로그
+		Grid->SetForceShowBlocked(true);             // 즉시 시각 확인
 	}));
 
 static FAutoConsoleCommandWithWorldAndArgs GOJJGridShowBlocked(
@@ -1308,7 +1331,13 @@ bool AOJJ_Grid::OJJ_TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint
 	// 피벗을 belt centroid로 옮겨도 belt 월드위치는 불변(로컬에서 centroid를 차감하므로 상쇄).
 	// centroid는 액터 로컬 오프셋이므로 액터 회전을 적용해 월드 방향으로 변환(무회전에선 항등, 미래 회전 대비).
 	Conveyor->SetPath(PlacementCells, CellSize);
-	Conveyor->SetActorLocation(GetActorLocation() + Conveyor->GetActorRotation().RotateVector(Conveyor->GetPathCentroidLocal()));
+	// 센터화(GridToWorld −half) 정합 보정: 컨베이어 벨트(Conveyor.cpp, 타 소유)는 cell→local을 GridToWorld
+	// 미경유 수동식(Cell*CellSize + 0.5*CellSize)으로 계산해 옛 좌표(원점 +X/+Y)에 놓인다. 벨트는 손대지 않고
+	// 그리드측에서 액터 앵커를 −half extent 만큼 옮겨 다른 시스템(머신/호버/포트)과 동일 좌표로 정렬.
+	// (belt 로컬 오프셋은 선형·centroid 상대라 앵커 평행이동만으로 전체 belt가 정확히 −half 시프트됨.)
+	// ※ 근본 해결은 belt가 Grid->GridToWorld를 쓰는 것 — belt 소유자(SSR/Chan) 리뷰 대상으로 태그.
+	const FVector HalfExtent(GridSize.X * CellSize * 0.5f, GridSize.Y * CellSize * 0.5f, 0.0f);
+	Conveyor->SetActorLocation(GetActorLocation() + Conveyor->GetActorRotation().RotateVector(Conveyor->GetPathCentroidLocal()) - HalfExtent);
 	Conveyor->ConfigureTransport(ReservedCells, SourceMachine, TargetMachine);
 	return true;
 }
