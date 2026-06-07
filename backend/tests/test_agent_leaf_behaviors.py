@@ -89,9 +89,9 @@ def test_new_material_generator_uses_goal_as_material_role(
 @pytest.mark.parametrize(
     ("agent", "expected_topic", "expected_prompt"),
     [
-        (RecipeExplainerAgent(), "recipe", "레시피 질문에 답변"),
-        (MachineHelpAgent(), "machine", "설비 도움말 질문에 답변"),
-        (TroubleshooterAgent(), "troubleshooting", "공장 문제를 진단"),
+        (RecipeExplainerAgent(), "recipe", "recipe question"),
+        (MachineHelpAgent(), "machine", "machine help question"),
+        (TroubleshooterAgent(), "troubleshooting", "troubleshooting question"),
     ],
 )
 def test_operator_guide_leaf_agents_return_normalized_fallbacks(
@@ -106,10 +106,27 @@ def test_operator_guide_leaf_agents_return_normalized_fallbacks(
     result = agent.fallback(payload, context)
 
     assert expected_prompt in prompt
+    assert "[CSV_EVIDENCE]" in prompt
+    assert "[OUTPUT_CONTRACT]" in prompt
+    prompt_messages = agent.build_prompt_messages(payload, context)
+    assert prompt_messages[0]["role"] == "system"
+    assert "tutorial operator inside Factory Space" in prompt_messages[0]["content"]
+    assert prompt_messages[1]["role"] == "user"
+    assert "[CSV_EVIDENCE]" in prompt_messages[1]["content"]
     assert result.agent == "operator_guide"
     assert result.payload["question"] == "How does this work?"
     assert result.payload["topic"] == expected_topic
-    assert result.metadata == {"fallback": True, "sub_agent": agent.agent_id}
+    assert result.payload["actions"] == []
+    assert result.payload["final_answer"]
+    assert "answer" not in result.payload
+    assert "text" not in result.payload
+    assert result.metadata["fallback"] is True
+    assert result.metadata["sub_agent"] == agent.agent_id
+    assert result.metadata["question_type"] == "unknown_question"
+    assert result.metadata["sources"] == []
+    assert result.metadata["recommended_actions"][0]["action_id"] == (
+        "action_answer_unknown_without_guessing"
+    )
 
 
 @pytest.mark.parametrize(

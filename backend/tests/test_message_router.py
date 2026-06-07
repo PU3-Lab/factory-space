@@ -154,6 +154,45 @@ def test_pipeline_uses_prompt_based_operator_guide_sub_agent_routing() -> None:
     assert "[OUTPUT_CONTRACT]" in llm.prompts[1]
 
 
+def test_pipeline_operator_guide_uses_llm_prompt_with_manual_csv_evidence() -> None:
+    response, llm = run_pipeline_scenario(
+        PipelineScenario(
+            name="operator guide manual qa llm answer",
+            agent="operator_guide",
+            payload={"question": "제련기는 뭐야?"},
+            request_id="request-operator-guide-manual-qa",
+            llm_responses=[
+                top_agent_decision("operator_guide"),
+                leaf_agent_decision("operator_guide.machine_help"),
+                (
+                    '{"final_answer":"LLM tutorial answer from CSV evidence.",'
+                    '"actions":[],"question":"제련기는 뭐야?",'
+                    '"topic":"machine"}'
+                ),
+            ],
+        )
+    )
+
+    assert_agent_response(
+        response,
+        agent="operator_guide",
+        sub_agent="operator_guide.machine_help",
+    )
+    assert response["payload"]["final_answer"] == "LLM tutorial answer from CSV evidence."
+    assert response["payload"]["actions"] == []
+    assert "answer" not in response["payload"]
+    assert "text" not in response["payload"]
+    assert len(llm.prompt_messages) == 1
+    messages = llm.prompt_messages[0]
+    assert messages[0]["role"] == "system"
+    assert "tutorial operator inside Factory Space" in messages[0]["content"]
+    assert messages[1]["role"] == "user"
+    assert "[CSV_EVIDENCE]" in messages[1]["content"]
+    assert "equipment_smelter" in messages[1]["content"]
+    assert "action_explain_equipment_role" in messages[1]["content"]
+    assert "[OUTPUT_CONTRACT]" in messages[1]["content"]
+
+
 def test_pipeline_routes_explicit_agent_through_top_level_prompt() -> None:
     llm = StubLLM(
         [

@@ -26,6 +26,9 @@ class LLMAdapter(Protocol):
     def invoke(self, prompt: str) -> str | None:
         """Return raw model output, or None when unavailable."""
 
+    def invoke_messages(self, messages: list[dict[str, str]]) -> str | None:
+        """Return raw model output for chat messages, or None when unavailable."""
+
 
 class _GoogleModelsClient(Protocol):
     def generate_content(
@@ -77,8 +80,9 @@ class _OpenAiChatCompletions(Protocol):
         *,
         model: str,
         messages: list[dict[str, Any]],
-        max_tokens: int,
         temperature: float,
+        max_tokens: int | None = None,
+        max_completion_tokens: int | None = None,
     ) -> _OpenAiCompletion:
         """Create chat completion."""
 
@@ -100,6 +104,11 @@ class NoopLLMAdapter:
 
         return None
 
+    def invoke_messages(self, messages: list[dict[str, str]]) -> str | None:
+        """Return no output."""
+
+        return None
+
 
 @dataclass(frozen=True)
 class GoogleGenAiLLMAdapter:
@@ -114,6 +123,16 @@ class GoogleGenAiLLMAdapter:
     def invoke(self, prompt: str) -> str | None:
         """Return raw generated text from Google Gen AI."""
 
+        return self._invoke_contents(prompt)
+
+    def invoke_messages(self, messages: list[dict[str, str]]) -> str | None:
+        """Return raw generated text from Google Gen AI chat messages."""
+
+        return self._invoke_contents(_render_chat_messages(messages))
+
+    def _invoke_contents(self, contents: str) -> str | None:
+        """Return raw generated text from Google Gen AI contents."""
+
         if not self.slot.model:
             return None
         logger.info("Calling Google Gen AI LLM (model: %s)", self.slot.model)
@@ -123,7 +142,7 @@ class GoogleGenAiLLMAdapter:
                 return None
             response = client.models.generate_content(
                 model=self.slot.model,
-                contents=prompt,
+                contents=contents,
                 config=_google_generate_config(
                     timeout_ms=self.timeout_ms,
                     max_output_tokens=self.max_output_tokens,
@@ -155,6 +174,11 @@ class OpenAILLMAdapter:
     def invoke(self, prompt: str) -> str | None:
         """Return raw generated text from OpenAI."""
 
+        return self.invoke_messages([_user_message(prompt)])
+
+    def invoke_messages(self, messages: list[dict[str, str]]) -> str | None:
+        """Return raw generated text from OpenAI chat messages."""
+
         if not self.slot.api_key:
             return None
         if not self.slot.model:
@@ -171,9 +195,12 @@ class OpenAILLMAdapter:
 
             completion = client.chat.completions.create(
                 model=self.slot.model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=self.max_output_tokens,
+                messages=messages,
                 temperature=self.temperature,
+                **_openai_token_limit_kwargs(
+                    self.slot.model,
+                    self.max_output_tokens,
+                ),
             )
         except Exception as exc:
             logger.warning("OpenAI LLM call failed: %s", exc)
@@ -209,12 +236,17 @@ class LocalLLMAdapter:
     def invoke(self, prompt: str) -> str | None:
         """Return raw generated text from a local OpenAI-compatible endpoint."""
 
+        return self.invoke_messages([_user_message(prompt)])
+
+    def invoke_messages(self, messages: list[dict[str, str]]) -> str | None:
+        """Return raw generated text from local chat messages."""
+
         if not self.slot.base_url:
             return None
         logger.info("Calling Local LLM (model: %s, url: %s)", self.slot.model, self.slot.base_url)
         return _invoke_openai_compatible(
             slot=self.slot,
-            prompt=prompt,
+            messages=messages,
             http_client=self.http_client,
             timeout_ms=self.timeout_ms,
             max_output_tokens=self.max_output_tokens,
@@ -234,6 +266,23 @@ def create_llm_adapter(slot: LLMModelSlot) -> LLMAdapter:
     if slot.provider == "openai":
         return OpenAILLMAdapter(slot)
     return LocalLLMAdapter(slot)
+
+
+def _user_message(prompt: str) -> dict[str, str]:
+    return {"role": "user", "content": prompt}
+
+
+def _render_chat_messages(messages: list[dict[str, str]]) -> str:
+    return "\n\n".join(
+        f"[{message.get('role', 'user').upper()}]\n{message.get('content', '')}"
+        for message in messages
+    )
+
+
+def _openai_token_limit_kwargs(model: str, max_output_tokens: int) -> dict[str, int]:
+    if model.startswith("gpt-5"):
+        return {"max_completion_tokens": max_output_tokens}
+    return {"max_tokens": max_output_tokens}
 
 
 def _create_google_client(api_key: str | None) -> _GoogleClient | None:
@@ -311,7 +360,7 @@ def _openai_chat_completions_url(base_url: str | None) -> str:
 def _invoke_openai_compatible(
     *,
     slot: LLMModelSlot,
-    prompt: str,
+    messages: list[dict[str, str]],
     http_client: _HttpClient | None,
     timeout_ms: int,
     max_output_tokens: int,
@@ -331,7 +380,7 @@ def _invoke_openai_compatible(
             headers=headers,
             json_body={
                 "model": slot.model,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": messages,
                 "max_tokens": max_output_tokens,
                 "temperature": temperature,
             },

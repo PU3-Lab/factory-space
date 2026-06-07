@@ -40,8 +40,16 @@ def build_llm_call_slots(
     )
 
 
-def invoke_llm_call_slot(slot: LLMCallSlot, prompt: str) -> AgentGraphState:
-    raw = slot.adapter.invoke(prompt)
+def invoke_llm_call_slot(
+    slot: LLMCallSlot,
+    prompt: str,
+    prompt_messages: list[dict[str, str]] | None = None,
+) -> AgentGraphState:
+    raw = (
+        slot.adapter.invoke_messages(prompt_messages)
+        if prompt_messages is not None
+        else slot.adapter.invoke(prompt)
+    )
     output: AgentGraphState = {
         "llmRaw": raw,
         "llmSlot": slot.name,

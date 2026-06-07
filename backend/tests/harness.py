@@ -12,9 +12,16 @@ class StubLLM:
     def __init__(self, responses: list[str | None]) -> None:
         self.responses = responses
         self.prompts: list[str] = []
+        self.prompt_messages: list[list[dict[str, str]]] = []
 
     def invoke(self, prompt: str) -> str | None:
         self.prompts.append(prompt)
+        if not self.responses:
+            return None
+        return self.responses.pop(0)
+
+    def invoke_messages(self, messages: list[dict[str, str]]) -> str | None:
+        self.prompt_messages.append(messages)
         if not self.responses:
             return None
         return self.responses.pop(0)
