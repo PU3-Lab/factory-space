@@ -485,10 +485,9 @@ void AOJJ_Grid::BeginPlay()
 		const float ScaleFactor = (VisualizationRange * CellSize) / 100.0f;
 		GridFloorMesh->SetRelativeScale3D(FVector(ScaleFactor, ScaleFactor, 1.0f));
 
-		// Plane은 액터 중심에 위치 → 그리드 lower-left 원점에 맞추려면 절반만큼 +XY 오프셋
-		// Z=1로 Z-fighting 방지
-		const float OffsetXY = (VisualizationRange * CellSize) / 2.0f;
-		GridFloorMesh->SetRelativeLocation(FVector(OffsetXY, OffsetXY, 1.0f));
+		// 센터 기준 그리드: Plane은 본래 액터 중심에 위치하므로 XY 오프셋 0이면 원점 중심에 정렬.
+		// (기존 +half 오프셋 제거 — 그리드가 사방으로 자라므로 커서 충돌 플레인도 원점 중심.) Z=1 Z-fighting 방지.
+		GridFloorMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 1.0f));
 	}
 
 	// 포트 화살표 틴트 동적 머티리얼 — 입력=파랑 계열, 출력=주황 계열.
@@ -525,26 +524,29 @@ void AOJJ_Grid::Tick(float DeltaTime)
 FIntPoint AOJJ_Grid::WorldToGrid(FVector WorldPos) const
 {
 	const FVector Local = WorldPos - GetActorLocation();
-	const int32 X = FMath::FloorToInt(Local.X / CellSize);
-	const int32 Y = FMath::FloorToInt(Local.Y / CellSize);
+	// 센터 기준 역변환: GridToWorld와 동일한 0.5*GridSize 오프셋을 더해 인덱스화. 두 함수가 같은 항을
+	// 공유하므로 round-trip 정확(Floor(c+0.5)=c) — 홀수 GridSize도 반 칸 어긋남 없음.
+	const int32 X = FMath::FloorToInt(Local.X / CellSize + GridSize.X * 0.5f);
+	const int32 Y = FMath::FloorToInt(Local.Y / CellSize + GridSize.Y * 0.5f);
 	return FIntPoint(X, Y);
 }
 
 FVector AOJJ_Grid::GridToWorld(FIntPoint Coord) const
 {
 	const FVector Origin = GetActorLocation();
-	const float WorldX = Origin.X + (Coord.X * CellSize) + (CellSize * 0.5f);
-	const float WorldY = Origin.Y + (Coord.Y * CellSize) + (CellSize * 0.5f);
+	// 센터 기준: 인덱스 공간 [0,N)을 원점 중심으로 매핑(− 절반 extent). WorldToGrid와 0.5*GridSize 항 공유.
+	// 홀수 N → 중앙셀이 원점에 안착 / 짝수 N → 원점이 셀 경계. 둘 다 round-trip 정확.
+	const float HalfExtentX = GridSize.X * CellSize * 0.5f;
+	const float HalfExtentY = GridSize.Y * CellSize * 0.5f;
+	const float WorldX = Origin.X + (Coord.X * CellSize) + (CellSize * 0.5f) - HalfExtentX;
+	const float WorldY = Origin.Y + (Coord.Y * CellSize) + (CellSize * 0.5f) - HalfExtentY;
 	return FVector(WorldX, WorldY, Origin.Z);
 }
 
 FVector AOJJ_Grid::GetGridCenter() const
 {
-	// 원점(액터 위치)은 그리드 좌하단. placement extent(GridSize)의 정중앙.
-	const FVector Origin = GetActorLocation();
-	const float CenterX = Origin.X + (GridSize.X * CellSize * 0.5f);
-	const float CenterY = Origin.Y + (GridSize.Y * CellSize * 0.5f);
-	return FVector(CenterX, CenterY, Origin.Z);
+	// 센터 기준에선 placement extent의 정중앙이 곧 액터 원점.
+	return GetActorLocation();
 }
 
 FIntPoint AOJJ_Grid::EffectiveSize(FVector2D RawSize, int32 RotationSteps)
