@@ -8,10 +8,14 @@
 #include "Components/StaticMeshComponent.h"
 #include "Conveyor.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
 #include "FactoryManagerSubsystem.h"
+#include "HAL/IConsoleManager.h"
 #include "MachineBase.h"
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Resource/ResourceBase.h"
 #include "UObject/ConstructorHelpers.h"
 
 // === Conveyor 포트 판정 헬퍼 (Step 3-b-1) ===
@@ -301,6 +305,13 @@ bool OJJ_CollectConveyorReservedCells(
 			return false;
 		}
 
+		// 지형 높낮이 게이트 — 컨베이어는 CanPlaceMachine을 안 거치므로 여기서 직접 차단(전선 노드는 머신 경로로 게이트됨).
+		if (!Grid->IsCellBuildable(Cell))
+		{
+			OutReason = TEXT("Conveyor path crosses unbuildable terrain.");
+			return false;
+		}
+
 		if (Index > 0 && OJJ_ManhattanDistance(PathCells[Index - 1], Cell) != 1)
 		{
 			OutReason = TEXT("Conveyor path must be contiguous.");
@@ -401,6 +412,20 @@ AOJJ_Grid::AOJJ_Grid()
 		InvalidHoverISM->SetMaterial(0, InvalidHoverMat.Object);
 	}
 
+	// 지형 불가 셀 상시 오버레이 — InvalidHover와 동일 빨강, 별도 ISM(호버와 수명 독립).
+	BlockedCellISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("BlockedCellISM"));
+	BlockedCellISM->SetupAttachment(RootComponent);
+	BlockedCellISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BlockedCellISM->SetCastShadow(false);
+	if (PlaneMesh.Succeeded())
+	{
+		BlockedCellISM->SetStaticMesh(PlaneMesh.Object);
+	}
+	if (InvalidHoverMat.Succeeded())
+	{
+		BlockedCellISM->SetMaterial(0, InvalidHoverMat.Object);
+	}
+
 	// === 포트 방향 화살표 ISM (Cone — 엔진 기본, 전용 메시는 후속) ===
 	// 배치 머신용 / 호버 프리뷰용을 분리해 수명주기를 독립. 색은 BeginPlay의 MID로 입힘.
 	auto MakeArrowISM = [this](const TCHAR* Name) -> UInstancedStaticMeshComponent*
@@ -473,6 +498,9 @@ void AOJJ_Grid::BeginPlay()
 			if (HoverOutputArrowISM) HoverOutputArrowISM->SetMaterial(0, OutputArrowMID);
 		}
 	}
+
+	// 정적 지형 높낮이 건설 제약 베이크(1회). 오버레이는 빌드모드 진입 시 표시되므로 여기선 채우지 않음.
+	BakeBuildableCells();
 }
 
 void AOJJ_Grid::Tick(float DeltaTime)
@@ -560,6 +588,154 @@ bool AOJJ_Grid::IsValidGridCell(FIntPoint Cell) const
 	return Cell.X >= 0 && Cell.X < GridSize.X
 		&& Cell.Y >= 0 && Cell.Y < GridSize.Y;
 }
+
+bool AOJJ_Grid::IsCellBuildable(FIntPoint Cell) const
+{
+	// 베이크 전(UnbuildableCells 비어있음)이면 전부 가능 — 신규 동작이 기존 흐름을 막지 않음.
+	return !UnbuildableCells.Contains(Cell);
+}
+
+void AOJJ_Grid::BakeBuildableCells()
+{
+	UnbuildableCells.Reset();
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const FVector GridOrigin = GetActorLocation();
+	const float PlaneZ = GridOrigin.Z;
+
+	// 트레이스 견고화: 그리드 자신(floor/호버 ISM) + 셀 위에 서 있는 게임 액터(머신·컨베이어·자원)를 무시 →
+	// 지형 대신 머신/광맥 메시에 걸려 false-block 되는 것 방지. 책임 분리: 자원은 "트레이스 ignore"하고
+	// 점유 등록(OJJ_RegisterActorCells)으로 건설 차단(베이크 높이 판정과 이중처리해도 같은 방향이라 안전).
+	// ※ 한계: ECC_Visibility 채널 의존 — 지형 메시가 이 채널을 Block해야 함. 전용 채널 필요 시 BuildableTraceChannel 조정.
+	FCollisionQueryParams Params(FName(TEXT("GridBuildableBake")), /*bTraceComplex=*/false, this);
+	for (TActorIterator<AMachineBase> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
+	for (TActorIterator<AConveyor> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
+	for (TActorIterator<AResourceBase> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
+
+	const double StartTime = FPlatformTime::Seconds();
+	int32 Total = 0;
+	for (int32 X = 0; X < GridSize.X; ++X)
+	{
+		for (int32 Y = 0; Y < GridSize.Y; ++Y)
+		{
+			++Total;
+			const FVector Center = GridToWorld(FIntPoint(X, Y));
+			const FVector TraceStart(Center.X, Center.Y, PlaneZ + BuildableTraceStartHeight);
+			const FVector TraceEnd(Center.X, Center.Y, PlaneZ - BuildableTraceDepth);
+
+			FHitResult Hit;
+			const bool bHit = World->LineTraceSingleByChannel(
+				Hit, TraceStart, TraceEnd, BuildableTraceChannel, Params);
+
+			// 미히트(구멍/가장자리) 또는 평면 Z와의 높이차가 허용오차 초과 → 불가.
+			if (!bHit || FMath::Abs(Hit.ImpactPoint.Z - PlaneZ) > BuildableHeightTolerance)
+			{
+				UnbuildableCells.Add(FIntPoint(X, Y));
+			}
+			// 경사도 게이트(BuildableSlopeThresholdDeg)는 예약 — 현재 미적용.
+		}
+	}
+
+	bBuildableBaked = true;
+
+	const double ElapsedMs = (FPlatformTime::Seconds() - StartTime) * 1000.0;
+	const int32 Blocked = UnbuildableCells.Num();
+	UE_LOG(LogTemp, Log,
+		TEXT("[Grid] Bake: unbuildable %d / total %d (GridSize %dx%d, trace=%d, tol=%.0f) in %.1f ms"),
+		Blocked, Total, GridSize.X, GridSize.Y, (int32)BuildableTraceChannel.GetValue(), BuildableHeightTolerance, ElapsedMs);
+
+	// 사고 조기 발견: 전부 가능(0) 또는 전부 불가(=total)면 트레이스 채널/시작높이/기준면 Z 오설정 의심.
+	if (Total > 0 && (Blocked == 0 || Blocked == Total))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Grid] Bake 이상치: 전부 %s — 트레이스 채널/시작높이/기준면 Z 확인 요망."),
+			Blocked == 0 ? TEXT("가능(불가 0)") : TEXT("불가"));
+	}
+}
+
+void AOJJ_Grid::RefreshBlockedOverlay(bool bShow)
+{
+	if (!BlockedCellISM)
+	{
+		return;
+	}
+
+	// 클리어 후 재적재 — 빌드모드 진입/퇴장 반복 시 인스턴스 중복·잔존 방지(단일 진실원).
+	BlockedCellISM->ClearInstances();
+	if (!bShow)
+	{
+		return;
+	}
+
+	for (const FIntPoint& Cell : UnbuildableCells)
+	{
+		const FVector CellCenter = GridToWorld(Cell);
+		// 호버 프리뷰(+2)보다 살짝 위(+3) — 두 ISM 공존 시 z-fighting 방지.
+		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, CellCenter.Z + 3.0f);
+		const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
+		const FTransform InstanceTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale);
+		BlockedCellISM->AddInstance(InstanceTransform, /*bWorldSpace=*/true);
+	}
+}
+
+void AOJJ_Grid::SetForceShowBlocked(bool bShow)
+{
+	bForceShowBlocked = bShow;
+	// 강제표시 해제(false) 시에도 빌드모드 중이면 오버레이 유지 — 콘솔 토글이 빌드모드 표시를 끄지 않도록.
+	RefreshBlockedOverlay(bShow || bVisualizationActive);
+}
+
+// === 디버그 콘솔 명령 (PIE에서 베이크 검증) ===
+namespace
+{
+	AOJJ_Grid* OJJ_FindGridInWorld(UWorld* World)
+	{
+		if (!World)
+		{
+			return nullptr;
+		}
+		for (TActorIterator<AOJJ_Grid> It(World); It; ++It)
+		{
+			return *It;
+		}
+		return nullptr;
+	}
+}
+
+static FAutoConsoleCommandWithWorld GOJJGridBuildableReport(
+	TEXT("OJJ.Grid.BuildableReport"),
+	TEXT("AOJJ_Grid 지형 베이크 재실행 + 불가/전체 셀 요약 로그 + 오버레이 표시."),
+	FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+	{
+		AOJJ_Grid* Grid = OJJ_FindGridInWorld(World);
+		if (!Grid)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Grid] BuildableReport: 월드에 AOJJ_Grid 없음."));
+			return;
+		}
+		Grid->BakeBuildableCells();      // 요약 로그 포함
+		Grid->SetForceShowBlocked(true); // 즉시 시각 확인
+	}));
+
+static FAutoConsoleCommandWithWorldAndArgs GOJJGridShowBlocked(
+	TEXT("OJJ.Grid.ShowBlocked"),
+	TEXT("불가 셀 오버레이 강제 토글: OJJ.Grid.ShowBlocked 0|1 (빌드모드 무관)."),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+	{
+		AOJJ_Grid* Grid = OJJ_FindGridInWorld(World);
+		if (!Grid)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Grid] ShowBlocked: 월드에 AOJJ_Grid 없음."));
+			return;
+		}
+		const bool bShow = (Args.Num() == 0) || (Args[0] != TEXT("0"));
+		Grid->SetForceShowBlocked(bShow);
+	}));
 
 // === Grid Query (GridManager/컨베이어용 읽기 전용 조회) — 순수 추가, write 경로 미변경 ===
 
@@ -1161,6 +1337,12 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 R
 			return false;
 		}
 
+		// 지형 높낮이 게이트 — 베이크에서 불가로 마킹된 셀이면 배치 거부(호버도 같은 함수라 자동 빨강).
+		if (!IsCellBuildable(Cell))
+		{
+			return false;
+		}
+
 		// AActor 점유 기준 (현재 머신만 담기므로 동작 무변경; 컨베이어 차단 의미 확정은 1-c).
 		const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell);
 		if (Found && Found->IsValid())
@@ -1330,6 +1512,13 @@ void AOJJ_Grid::SetVisualizationVisible(bool bVisible)
 		// 빌드 모드 종료: 어떤 trace에도 영향 없도록 collision 완전 해제.
 		GridFloorMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	}
+
+	// 빌드모드 시각화 상태 기록 — 콘솔 토글(SetForceShowBlocked)이 빌드모드 오버레이를 끄지 않게 참조.
+	bVisualizationActive = bVisible;
+
+	// 불가 셀 오버레이 — 빌드모드 진입 시 표시, 종료 시 클리어(단 디버그 강제표시 중이면 유지).
+	// ClearInstances 후 재적재라 진입/퇴장 반복에도 중복·잔존 없음.
+	RefreshBlockedOverlay(bVisible || bForceShowBlocked);
 }
 
 void AOJJ_Grid::UpdateHoverPreview(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps)
