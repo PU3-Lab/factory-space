@@ -25,8 +25,6 @@ void UUI_MachineInteract::NativeConstruct()
 
 void UUI_MachineInteract::NativeDestruct()
 {
-    // 모든 닫힘 경로를 한 곳에서 통지 — BTN_Close(OnCloseClicked→RemoveFromParent)든
-    // 외부 RemoveFromParent든 위젯 파괴 직전 1회 Broadcast. 기존 라인 무수정, 추가만.
     OnClosed.Broadcast();
 
     Super::NativeDestruct();

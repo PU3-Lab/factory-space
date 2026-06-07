@@ -24,8 +24,13 @@ protected:
 	// --- 퀘스트 창 전체 레이아웃 바인딩 ---
 	UPROPERTY(meta = (BindWidget))
 	class UVerticalBox* VB_QuestLayout;
-	UPROPERTY(Transient, meta = (BindWidgetAnimation))
-	class UWidgetAnimation* QuestToggleAnim;
+	// 애니메이션 변수 대신, 블루프린트에서 호출될 '이벤트 함수'를 선언합니다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD")
+	bool bIsQuestWindowOpen = true;
+	// 이 함수를 선언하면 WBP 이벤트 그래프에서 우클릭으로 이벤트를 배치할 수 있습니다.
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD | Anim")
+	void K2_PlayQuestAnimation(bool bOpen);
+	
 	// --- 오퍼레이터 가이드 AI 채팅 UI 위젯 ---
 	UPROPERTY(meta = (BindWidget))
 	class UEditableText* ET_OperatorInput;
@@ -72,8 +77,6 @@ private:
 	UFUNCTION()
 	void HandleOnOperatorGuideResponse(const FString& RequestId, const FString& Agent, const FString& PayloadJson, const FString& RawMessage);
 	
-	bool bIsQuestWindowOpen = true;
-
 	UFUNCTION()
 	void HandleOnOperatorGuideError(
 		const FString& RequestId,

@@ -94,7 +94,7 @@ void UUI_MainHUD::OnToggleGuideClicked()
     
     if (!B_ChatBackground) return;
 
-    // 현재 배경 창이 꺼져(Collapsed) 있다면? ➡️ 켜준다
+    // 현재 배경 창이 꺼져(Collapsed) 있다면? 켜준다
     if (B_ChatBackground->GetVisibility() == ESlateVisibility::Collapsed)
     {
         // 1. 창을 화면에 표시 (SelfHitTestInvisible이 마우스 클릭 관통 방지에 좋습니다)
@@ -106,10 +106,10 @@ void UUI_MainHUD::OnToggleGuideClicked()
             TXT_ToggleText->SetText(FText::FromString(TEXT("▲ AI 가이드 접기")));
         }
     }
-    // 현재 배경 창이 켜져 있다면? ➡️ 꺼준다
+    // 현재 배경 창이 켜져 있다면? 꺼준다
     else
     {
-        // 1. 창과 내부 공간까지 싹 제거(Collapsed)
+        // 1. 창과 내부 공간 제거(Collapsed)
         B_ChatBackground->SetVisibility(ESlateVisibility::Collapsed);
         
         // 2. 버튼 텍스트 변경
@@ -233,7 +233,7 @@ void UUI_MainHUD::OnRequestQuestsClicked()
         }
         else
         {
-            UE_LOG(LogTemp, Error, TEXT("[HUD 퀘스트] QuestManagerSubsystem을 찾을 수 없습니다!"));
+            UE_LOG(LogTemp, Error, TEXT("[HUD 퀘스트] QuestManagerSubsystem을 찾을 수 없습니다"));
         }
     }
 }
@@ -277,27 +277,21 @@ void UUI_MainHUD::HandleOnSubQuestRequestFailed(const FString& RequestId, const 
 
 void UUI_MainHUD::ToggleQuestWindow()
 {
-    if (!QuestToggleAnim || !VB_QuestLayout)
+    if (!VB_QuestLayout)
     {
-        UE_LOG(LogTemp, Error, TEXT("QuestToggleAnim 또는 VB_QuestLayout이 Null입니다. WBP 세팅을 확인하세요."));
+        UE_LOG(LogTemp, Error, TEXT("VB_QuestLayout이 Null입니다. WBP 변수 설정을 확인하세요."));
         return;
     }
-
-    // 1. 현재 열려 있다면? ➡️ 닫는 애니메이션 재생 (역방향)
     if (bIsQuestWindowOpen)
     {
-        // 🌟 에러를 일으키던 Enum 명칭을 아예 싹 걷어내고 전용 역방향 함수를 호출합니다.
-        // PlayAnimationReverse(애니메이션에셋, 재생속도, 에디터애니메이션보존여부)
-        PlayAnimationReverse(QuestToggleAnim, 1.0f);
         bIsQuestWindowOpen = false;
+        K2_PlayQuestAnimation(false);
     }
-    // 2. 현재 닫혀 있다면? ➡️ 열리는 애니메이션 재생 (정방향)
     else
     {
         VB_QuestLayout->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         
-        // 🌟 전용 정방향 함수를 호출합니다.
-        PlayAnimationForward(QuestToggleAnim, 1.0f);
         bIsQuestWindowOpen = true;
+        K2_PlayQuestAnimation(true);
     }
 }
