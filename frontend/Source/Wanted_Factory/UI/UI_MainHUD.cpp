@@ -8,6 +8,10 @@
 #include "FactoryAgentJsonUtils.h"       // JSON 파싱 유틸리티 헤더
 #include "Dom/JsonObject.h"
 #include "Components/Border.h"
+#include "Components/VerticalBox.h"
+#include "Animation/WidgetAnimation.h"
+#include "Blueprint/UserWidget.h"
+#include "UMG.h"
 #include "Kismet/GameplayStatics.h"
 
 void UUI_MainHUD::NativeConstruct()
@@ -268,5 +272,32 @@ void UUI_MainHUD::HandleOnSubQuestRequestFailed(const FString& RequestId, const 
     if (TXT_Quest_1)
     {
         TXT_Quest_1->SetText(FText::FromString(TEXT("서버 연결 실패")));
+    }
+}
+
+void UUI_MainHUD::ToggleQuestWindow()
+{
+    if (!QuestToggleAnim || !VB_QuestLayout)
+    {
+        UE_LOG(LogTemp, Error, TEXT("QuestToggleAnim 또는 VB_QuestLayout이 Null입니다. WBP 세팅을 확인하세요."));
+        return;
+    }
+
+    // 1. 현재 열려 있다면? ➡️ 닫는 애니메이션 재생 (역방향)
+    if (bIsQuestWindowOpen)
+    {
+        // 🌟 에러를 일으키던 Enum 명칭을 아예 싹 걷어내고 전용 역방향 함수를 호출합니다.
+        // PlayAnimationReverse(애니메이션에셋, 재생속도, 에디터애니메이션보존여부)
+        PlayAnimationReverse(QuestToggleAnim, 1.0f);
+        bIsQuestWindowOpen = false;
+    }
+    // 2. 현재 닫혀 있다면? ➡️ 열리는 애니메이션 재생 (정방향)
+    else
+    {
+        VB_QuestLayout->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        
+        // 🌟 전용 정방향 함수를 호출합니다.
+        PlayAnimationForward(QuestToggleAnim, 1.0f);
+        bIsQuestWindowOpen = true;
     }
 }
