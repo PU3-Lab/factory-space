@@ -412,7 +412,21 @@ AOJJ_Grid::AOJJ_Grid()
 		InvalidHoverISM->SetMaterial(0, InvalidHoverMat.Object);
 	}
 
-	// 지형 불가 셀 상시 오버레이 — InvalidHover와 동일 빨강, 별도 ISM(호버와 수명 독립).
+	// 건설 가능(초록) per-cell 그리드 비주얼 — ValidHover와 동일 초록 재사용, void 제외해 바닥 모양 추종.
+	BuildableCellISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("BuildableCellISM"));
+	BuildableCellISM->SetupAttachment(RootComponent);
+	BuildableCellISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BuildableCellISM->SetCastShadow(false);
+	if (PlaneMesh.Succeeded())
+	{
+		BuildableCellISM->SetStaticMesh(PlaneMesh.Object);
+	}
+	if (ValidHoverMat.Succeeded())
+	{
+		BuildableCellISM->SetMaterial(0, ValidHoverMat.Object);
+	}
+
+	// 건설 불가(빨강) per-cell 그리드 비주얼 — InvalidHover와 동일 빨강. blocked만(void 제외).
 	BlockedCellISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("BlockedCellISM"));
 	BlockedCellISM->SetupAttachment(RootComponent);
 	BlockedCellISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -591,13 +605,19 @@ bool AOJJ_Grid::IsValidGridCell(FIntPoint Cell) const
 
 bool AOJJ_Grid::IsCellBuildable(FIntPoint Cell) const
 {
-	// 베이크 전(UnbuildableCells 비어있음)이면 전부 가능 — 신규 동작이 기존 흐름을 막지 않음.
-	return !UnbuildableCells.Contains(Cell);
+	// blocked(높이초과) 또는 void(바닥없음)면 불가. 베이크 전이면 둘 다 비어 전부 가능(기존 흐름 무영향).
+	return !UnbuildableCells.Contains(Cell) && !VoidCells.Contains(Cell);
+}
+
+bool AOJJ_Grid::IsCellVoid(FIntPoint Cell) const
+{
+	return VoidCells.Contains(Cell);
 }
 
 void AOJJ_Grid::BakeBuildableCells()
 {
 	UnbuildableCells.Reset();
+	VoidCells.Reset();
 
 	UWorld* World = GetWorld();
 	if (!World)
@@ -632,11 +652,16 @@ void AOJJ_Grid::BakeBuildableCells()
 			const bool bHit = World->LineTraceSingleByChannel(
 				Hit, TraceStart, TraceEnd, BuildableTraceChannel, Params);
 
-			// 미히트(구멍/가장자리) 또는 평면 Z와의 높이차가 허용오차 초과 → 불가.
-			if (!bHit || FMath::Abs(Hit.ImpactPoint.Z - PlaneZ) > BuildableHeightTolerance)
+			// 3단 분류: 미히트=void(바닥 없음/그리드 외), hit+높이초과=blocked, hit+높이OK=가능.
+			if (!bHit)
 			{
-				UnbuildableCells.Add(FIntPoint(X, Y));
+				VoidCells.Add(FIntPoint(X, Y));            // [3] void — 오버레이/그리드 비주얼 둘 다 제외, 배치 거부
 			}
+			else if (FMath::Abs(Hit.ImpactPoint.Z - PlaneZ) > BuildableHeightTolerance)
+			{
+				UnbuildableCells.Add(FIntPoint(X, Y));     // [2] blocked — 빨강 + 배치 거부
+			}
+			// [1] else 건설 가능 (초록) — 미저장
 			// 경사도 게이트(BuildableSlopeThresholdDeg)는 예약 — 현재 미적용.
 		}
 	}
@@ -645,49 +670,69 @@ void AOJJ_Grid::BakeBuildableCells()
 
 	const double ElapsedMs = (FPlatformTime::Seconds() - StartTime) * 1000.0;
 	const int32 Blocked = UnbuildableCells.Num();
+	const int32 Void = VoidCells.Num();
+	const int32 Buildable = Total - Blocked - Void;
 	UE_LOG(LogTemp, Log,
-		TEXT("[Grid] Bake: unbuildable %d / total %d (GridSize %dx%d, trace=%d, tol=%.0f) in %.1f ms"),
-		Blocked, Total, GridSize.X, GridSize.Y, (int32)BuildableTraceChannel.GetValue(), BuildableHeightTolerance, ElapsedMs);
+		TEXT("[Grid] Bake: buildable %d / blocked %d / void %d (total %d, GridSize %dx%d, trace=%d, tol=%.0f) in %.1f ms"),
+		Buildable, Blocked, Void, Total, GridSize.X, GridSize.Y, (int32)BuildableTraceChannel.GetValue(), BuildableHeightTolerance, ElapsedMs);
 
-	// 사고 조기 발견: 전부 가능(0) 또는 전부 불가(=total)면 트레이스 채널/시작높이/기준면 Z 오설정 의심.
-	if (Total > 0 && (Blocked == 0 || Blocked == Total))
+	// 사고 조기 발견: 건설 가능 셀이 0(전부 blocked이거나 전부 void)이면 트레이스 채널/시작높이/기준면 Z/그리드 위치 의심.
+	if (Total > 0 && Buildable == 0)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[Grid] Bake 이상치: 전부 %s — 트레이스 채널/시작높이/기준면 Z 확인 요망."),
-			Blocked == 0 ? TEXT("가능(불가 0)") : TEXT("불가"));
+			TEXT("[Grid] Bake 이상치: 건설 가능 셀 0 (blocked %d / void %d) — 트레이스 채널/시작높이/기준면 Z/그리드 위치 확인 요망."),
+			Blocked, Void);
 	}
 }
 
-void AOJJ_Grid::RefreshBlockedOverlay(bool bShow)
+void AOJJ_Grid::RefreshGridVisual()
 {
-	if (!BlockedCellISM)
-	{
-		return;
-	}
+	// 클리어 후 재적재 — 빌드모드 진입/퇴장 반복에도 인스턴스 중복·잔존 방지(단일 진실원).
+	if (BuildableCellISM) { BuildableCellISM->ClearInstances(); }
+	if (BlockedCellISM) { BlockedCellISM->ClearInstances(); }
 
-	// 클리어 후 재적재 — 빌드모드 진입/퇴장 반복 시 인스턴스 중복·잔존 방지(단일 진실원).
-	BlockedCellISM->ClearInstances();
-	if (!bShow)
+	// 셀 중심 → 인스턴스 트랜스폼. 그리드 평면 위 +3(호버 프리뷰 +2보다 위 — z-fighting 방지).
+	auto MakeCellXform = [this](const FIntPoint& Cell) -> FTransform
 	{
-		return;
-	}
+		const FVector C = GridToWorld(Cell);
+		return FTransform(
+			FRotator::ZeroRotator,
+			FVector(C.X, C.Y, C.Z + 3.0f),
+			FVector(CellSize / 100.0f, CellSize / 100.0f, 1.0f));
+	};
 
-	for (const FIntPoint& Cell : UnbuildableCells)
+	if (bVisualizationActive)
 	{
-		const FVector CellCenter = GridToWorld(Cell);
-		// 호버 프리뷰(+2)보다 살짝 위(+3) — 두 ISM 공존 시 z-fighting 방지.
-		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, CellCenter.Z + 3.0f);
-		const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
-		const FTransform InstanceTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale);
-		BlockedCellISM->AddInstance(InstanceTransform, /*bWorldSpace=*/true);
+		// 빌드모드: 전 셀을 가능(초록)/blocked(빨강)으로 채움. void는 양쪽 다 제외 → 그리드가 바닥 모양만 따라 보임.
+		TArray<FTransform> GreenXforms;
+		TArray<FTransform> RedXforms;
+		for (int32 X = 0; X < GridSize.X; ++X)
+		{
+			for (int32 Y = 0; Y < GridSize.Y; ++Y)
+			{
+				const FIntPoint Cell(X, Y);
+				if (VoidCells.Contains(Cell)) { continue; }                  // void → 아무것도 안 그림
+				if (UnbuildableCells.Contains(Cell)) { RedXforms.Add(MakeCellXform(Cell)); }
+				else { GreenXforms.Add(MakeCellXform(Cell)); }
+			}
+		}
+		if (BuildableCellISM && GreenXforms.Num() > 0) { BuildableCellISM->AddInstances(GreenXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
+		if (BlockedCellISM && RedXforms.Num() > 0) { BlockedCellISM->AddInstances(RedXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
+	}
+	else if (bForceShowBlocked)
+	{
+		// 디버그(빌드모드 밖): blocked만 빨강. 가능 셀은 표시 안 함.
+		TArray<FTransform> RedXforms;
+		for (const FIntPoint& Cell : UnbuildableCells) { RedXforms.Add(MakeCellXform(Cell)); }
+		if (BlockedCellISM && RedXforms.Num() > 0) { BlockedCellISM->AddInstances(RedXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
 	}
 }
 
 void AOJJ_Grid::SetForceShowBlocked(bool bShow)
 {
 	bForceShowBlocked = bShow;
-	// 강제표시 해제(false) 시에도 빌드모드 중이면 오버레이 유지 — 콘솔 토글이 빌드모드 표시를 끄지 않도록.
-	RefreshBlockedOverlay(bShow || bVisualizationActive);
+	// 상태 기반 갱신 — 빌드모드 중이면 전체(초록+빨강) 유지, 밖이면 blocked만/없음.
+	RefreshGridVisual();
 }
 
 // === 디버그 콘솔 명령 (PIE에서 베이크 검증) ===
@@ -1497,7 +1542,9 @@ void AOJJ_Grid::SetVisualizationVisible(bool bVisible)
 		return;
 	}
 
-	GridFloorMesh->SetVisibility(bVisible);
+	// 그리드 비주얼은 per-cell ISM(가능/blocked)가 담당 → 플레인 메시는 시각적으로 항상 숨김.
+	// 단 커서 라인트레이스 대상(컴포넌트 식별)이므로 충돌은 빌드모드에서 유지(아래).
+	GridFloorMesh->SetVisibility(false);
 
 	if (bVisible)
 	{
@@ -1513,12 +1560,11 @@ void AOJJ_Grid::SetVisualizationVisible(bool bVisible)
 		GridFloorMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	}
 
-	// 빌드모드 시각화 상태 기록 — 콘솔 토글(SetForceShowBlocked)이 빌드모드 오버레이를 끄지 않게 참조.
+	// 빌드모드 시각화 상태 기록 — RefreshGridVisual/콘솔 토글이 참조.
 	bVisualizationActive = bVisible;
 
-	// 불가 셀 오버레이 — 빌드모드 진입 시 표시, 종료 시 클리어(단 디버그 강제표시 중이면 유지).
-	// ClearInstances 후 재적재라 진입/퇴장 반복에도 중복·잔존 없음.
-	RefreshBlockedOverlay(bVisible || bForceShowBlocked);
+	// per-cell 그리드 비주얼 갱신(가능=초록/blocked=빨강/void=없음). 진입 시 채우고 퇴장 시 비움(강제표시 중이면 blocked 유지).
+	RefreshGridVisual();
 }
 
 void AOJJ_Grid::UpdateHoverPreview(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps)

@@ -94,11 +94,20 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Terrain", meta = (ClampMin = "0.0", ClampMax = "90.0"))
 	float BuildableSlopeThresholdDeg = 90.0f;
 
-	// 베이크 결과 — 건설 불가 셀만 희소 저장(가능 셀 미저장). 베이크 전이면 비어 전부 가능.
+	// 베이크 3단 분류 중 [2] blocked — 트레이스 hit이나 높이델타 초과(지형 단차). 빨강 오버레이 + 호버/배치 거부.
 	UPROPERTY(Transient)
 	TSet<FIntPoint> UnbuildableCells;
 
-	// 불가 셀 상시 오버레이 ISM(빌드모드 진입 시 표시). InvalidHover와 동일 빨강 재사용, 수명 독립.
+	// 베이크 3단 분류 중 [3] void — 트레이스 미히트(바닥 없음 = 그리드 외). 호버/배치 거부하되
+	// blocked 오버레이는 안 그림. 향후 바닥/그리드라인 비주얼이 이 집합을 제외하면 바닥 모양을 자동 추종.
+	UPROPERTY(Transient)
+	TSet<FIntPoint> VoidCells;
+
+	// 건설 가능(초록) 셀 per-cell 비주얼 ISM — 빌드모드 진입 시 표시. void 셀 제외 → 바닥 모양 자동 추종.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Terrain")
+	TObjectPtr<UInstancedStaticMeshComponent> BuildableCellISM;
+
+	// 건설 불가(빨강) 셀 per-cell 비주얼 ISM — blocked(높이초과)만. void는 제외(그리드 자체 없음).
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Terrain")
 	TObjectPtr<UInstancedStaticMeshComponent> BlockedCellISM;
 
@@ -235,16 +244,21 @@ public:
 
 	// === 지형 높낮이 건설 제약 ===
 
-	// 셀이 지형 높이상 건설 가능한지(=UnbuildableCells에 없음). 베이크 전이면 항상 true.
+	// 셀이 건설 가능한지(blocked·void 둘 다 아님). 베이크 전이면 항상 true.
 	UFUNCTION(BlueprintPure, Category = "Grid|Terrain")
 	bool IsCellBuildable(FIntPoint Cell) const;
+
+	// 셀이 그리드 외(void = 바닥 없음/트레이스 미히트)인지. 그리드 비주얼 셀 제외 판정용.
+	UFUNCTION(BlueprintPure, Category = "Grid|Terrain")
+	bool IsCellVoid(FIntPoint Cell) const;
 
 	// 지형 높이 베이크 — GridSize 전 셀 ↓트레이스로 UnbuildableCells 재계산. BeginPlay 1회 + 콘솔 재호출.
 	UFUNCTION(BlueprintCallable, Category = "Grid|Terrain")
 	void BakeBuildableCells();
 
-	// 불가 셀 오버레이 갱신(클리어 후 재적재 — 중복/잔존 방지). bShow=false면 클리어만.
-	void RefreshBlockedOverlay(bool bShow);
+	// 그리드 셀 비주얼 갱신 — 현재 상태(bVisualizationActive/bForceShowBlocked) 기준으로 초록(가능)/빨강(blocked)
+	// per-cell ISM 재적재. void 셀은 양쪽 다 제외. 클리어 후 재적재라 진입/퇴장 반복에도 중복·잔존 없음.
+	void RefreshGridVisual();
 
 	// 디버그(OJJ.Grid.ShowBlocked) — 빌드모드와 무관하게 오버레이 강제 표시 토글.
 	void SetForceShowBlocked(bool bShow);
