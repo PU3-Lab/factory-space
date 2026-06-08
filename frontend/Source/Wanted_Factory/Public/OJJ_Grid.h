@@ -15,6 +15,20 @@ class UMaterialInterface;
 class UMaterialInstanceDynamic;
 
 /**
+ * 그리드 셀 베이크 분류 (사전베이크 캐시 2bit 패킹용). 상호배타 4상태.
+ * Water는 Blocked와 별개 상태지만 IsCellBuildable=false는 동일(건설금지 불변식 — §3).
+ * 값(0~3)이 패킹 비트와 직결되므로 재정렬 금지(직렬화 캐시 호환 깨짐).
+ */
+UENUM()
+enum class EOJJCellClass : uint8
+{
+	Buildable = 0,  // 건설 가능(초록)
+	Blocked   = 1,  // 높이 단차 초과(빨강) — 건설 불가
+	Void      = 2,  // 트레이스 미히트(바닥 없음) — 건설 불가, 오버레이 제외
+	Water     = 3   // 물(셀 최저 Z 상대델타 < WaterSurfaceZ, 파랑) — 건설 불가 + 펌프 수원 후보(Phase B)
+};
+
+/**
  * AOJJ_Grid is the source of truth for grid occupancy.
  * Machines not registered via TryPlaceMachine or RegisterExistingMachine
  * are invisible to this grid. CanPlaceMachine may return true for cells
@@ -94,6 +108,24 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Terrain", meta = (ClampMin = "0.0", ClampMax = "90.0"))
 	float BuildableSlopeThresholdDeg = 90.0f;
 
+	// === 물 자동 감지 (베이크 4번째 분류 — 시각화/건설금지까지. 펌프 연동은 Phase B) ===
+
+	// 물 표면 고도 임계(그리드 평면 Z 상대, uu). 셀 최저 트레이스 hit의 평면대비 델타가 이 값 미만이면 water 분류.
+	// 강바닥이 평면보다 파여 있으므로 음수. ⚠️ §0(BuildableReport) 미측정 — 에디터 Rebake+OJJ.Grid.ShowWater로
+	// 분포 보며 튜닝(PIE 400줄 cap 회피). 변경 시 캐시 시그니처 불일치 → 재트레이스 폴백.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Water")
+	float WaterSurfaceZ = -20.0f;
+
+	// 최소 연속 물 영역(셀 수). flood-fill 4-연결 영역 크기 < 이 값이면 일반 지형으로 환원(잔웅덩이 무시).
+	// 0/1 = 필터 없음(기본). Rebake 시 적용. 변경 시 캐시 무효화.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Water", meta = (ClampMin = "0"))
+	int32 MinWaterCellCount = 0;
+
+	// 셀별 지형 높이(평면 Z 상대 uu) 캐시 저장 여부. 높이추종 스폰(Phase B)용 — 기본 off(umap 비대 방지:
+	// 셀당 int16 2바이트, 718²이면 ~1MB 추가). Phase B 진입 시 켜고 Rebake.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Water")
+	bool bBakeGroundHeights = false;
+
 	// 베이크 3단 분류 중 [2] blocked — 트레이스 hit이나 높이델타 초과(지형 단차). 빨강 오버레이 + 호버/배치 거부.
 	UPROPERTY(Transient)
 	TSet<FIntPoint> UnbuildableCells;
@@ -103,6 +135,50 @@ protected:
 	UPROPERTY(Transient)
 	TSet<FIntPoint> VoidCells;
 
+	// 베이크 분류 [4] water — 별도 태그(파랑). blocked와 상호배타 상태지만 IsCellBuildable=false 유지(건설금지 불변식 §3).
+	// 캐시 로드 또는 트레이스로 채워짐. 펌프 수원 인정(Phase B)은 미구현 — 현재는 분류+시각화+건설금지 전용.
+	UPROPERTY(Transient)
+	TSet<FIntPoint> WaterCells;
+
+	// === 사전베이크 캐시 (직렬화 — 에디터 RebakeAndCache로 채우고 BeginPlay는 로드만, 런타임 트레이스 0) ===
+
+	// 셀당 2bit EOJJCellClass 패킹. 인덱스 idx = X*CacheGridSize.Y + Y, byte = idx>>2, shift = (idx&3)*2.
+	// 비-Transient → 레벨 저장 시 .umap에 직렬화. 718²면 ~129KB.
+	UPROPERTY()
+	TArray<uint8> PackedCellClasses;
+
+	// 셀별 지형 높이(평면 Z 상대 uu, int16 양자화 클램프 ±32767). bBakeGroundHeights일 때만 채움. 빈 배열=미저장.
+	UPROPERTY()
+	TArray<int16> CellGroundZQuant;
+
+	// 캐시 존재 여부 — false면 BeginPlay가 트레이스 폴백.
+	UPROPERTY()
+	bool bHasBakeCache = false;
+
+	// 캐시 무효화 시그니처 — BeginPlay 로드 시 현재값과 불일치하면 경고 + 재트레이스(인덱싱/분류 정합 보장).
+	UPROPERTY()
+	FIntPoint CacheGridSize = FIntPoint(0, 0);
+	UPROPERTY()
+	float CacheCellSize = 0.0f;
+	UPROPERTY()
+	FVector CacheGridOrigin = FVector::ZeroVector;
+	UPROPERTY()
+	float CacheHeightTolerance = 0.0f;
+	UPROPERTY()
+	float CacheWaterSurfaceZ = 0.0f;
+	UPROPERTY()
+	int32 CacheMinWaterCellCount = 0;
+	// 트레이스 파라미터도 분류(hit 여부=void/blocked/water)에 영향 → 시그니처 포함(변경 시 stale 캐시 차단).
+	UPROPERTY()
+	float CacheTraceStartHeight = 0.0f;
+	UPROPERTY()
+	float CacheTraceDepth = 0.0f;
+	UPROPERTY()
+	TEnumAsByte<ECollisionChannel> CacheTraceChannel = ECC_Visibility;
+	// GroundZ 저장 토글 — off→on 시 캐시에 높이가 없으므로 무효화(Phase B 진입 시 자동 재트레이스 유도).
+	UPROPERTY()
+	bool bCacheBakeGroundHeights = false;
+
 	// 건설 가능(초록) 셀 per-cell 비주얼 ISM — 빌드모드 진입 시 표시. void 셀 제외 → 바닥 모양 자동 추종.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Terrain")
 	TObjectPtr<UInstancedStaticMeshComponent> BuildableCellISM;
@@ -111,9 +187,22 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Terrain")
 	TObjectPtr<UInstancedStaticMeshComponent> BlockedCellISM;
 
+	// 물(파랑) 셀 per-cell 비주얼 ISM — water 분류만. ShowBlocked 패턴 미러. 머티리얼은 RefreshGridVisual에서 lazy MID(파랑).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Water")
+	TObjectPtr<UInstancedStaticMeshComponent> WaterCellISM;
+
+	// water 오버레이 파랑 틴트용 동적 머티리얼(BasicShapeMaterial 기반). RefreshGridVisual에서 최초 1회 생성(에디터/PIE 공용).
+	// ⚠️ 불투명 — 디버그용. 후속: 전용 translucent MI_OJJ_GridWater 에셋으로 교체.
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> WaterCellMID;
+
 	// 디버그 토글(OJJ.Grid.ShowBlocked) — 빌드모드 밖에서도 오버레이 강제 표시.
 	UPROPERTY(Transient)
 	bool bForceShowBlocked = false;
+
+	// 디버그 토글(OJJ.Grid.ShowWater) — 빌드모드 밖에서도 물 오버레이 강제 표시. ShowBlocked와 독립.
+	UPROPERTY(Transient)
+	bool bForceShowWater = false;
 
 	// 베이크 완료 여부 — "불가 0개"와 "아직 베이크 안 됨"을 구분(진단/콘솔 리포트용).
 	UPROPERTY(Transient)
@@ -206,6 +295,19 @@ private:
 	// RotationSteps는 점유 footprint 계산(CanPlace/CalculateFootprint)에 전달(기본 0).
 	bool RegisterMachineInternal(AMachineBase* Machine, FIntPoint Origin, FString& OutReason, int32 RotationSteps = 0);
 
+	// === 사전베이크 캐시 직렬화 헬퍼 ===
+
+	// 시그니처 일치 시 PackedCellClasses를 풀어 UnbuildableCells/VoidCells/WaterCells 재구성. 성공 시 true(트레이스 생략).
+	// 불일치/크기오류면 경고 후 false → 호출자(BeginPlay)가 트레이스 폴백.
+	bool TryLoadBakeCache();
+
+	// 셀 → 선형 인덱스(패킹/언패킹 공통 규약). X*GridSz.Y + Y. 음수/범위 밖은 호출자가 보장.
+	static int32 OJJ_CellLinearIndex(FIntPoint Cell, FIntPoint GridSz);
+
+	// PackedCellClasses 2bit 접근자(인덱스 범위는 호출자 보장). Get은 범위 밖이면 Buildable 반환(안전 기본).
+	EOJJCellClass OJJ_GetPackedClass(int32 LinearIdx) const;
+	void OJJ_SetPackedClass(int32 LinearIdx, EOJJCellClass CellClass);
+
 public:
 	virtual void Tick(float DeltaTime) override;
 
@@ -252,10 +354,21 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Terrain")
 	bool IsCellVoid(FIntPoint Cell) const;
 
-	// 지형 높이 베이크 — GridSize 전 셀 ↓트레이스로 buildable/blocked/void 재계산. BeginPlay 1회 + 콘솔 재호출.
+	// 셀이 물(water 분류)인지. 건설은 IsCellBuildable이 별도로 막음 — 이 질의는 수원/시각화 판정용(Phase B 펌프).
+	UFUNCTION(BlueprintPure, Category = "Grid|Water")
+	bool IsCellWater(FIntPoint Cell) const;
+
+	// 지형 높이 베이크 — GridSize 전 셀 ↓트레이스로 buildable/blocked/void/water 재계산. BeginPlay 폴백 + 콘솔 재호출.
 	// bVerbose: 평탄(바닥)이 아닌 셀마다 (좌표/hit/Z/부호델타/분류)를 로그(캡 있음) — 큐브 등 베이크 진단용.
+	// bWriteCache: 분류 결과를 PackedCellClasses(+선택 GroundZ)로 패킹하고 시그니처 기록(에디터 RebakeAndCache 경로).
 	UFUNCTION(BlueprintCallable, Category = "Grid|Terrain")
-	void BakeBuildableCells(bool bVerbose = false);
+	void BakeBuildableCells(bool bVerbose = false, bool bWriteCache = false);
+
+	// [에디터 전용 버튼] 트레이스 1회 → 패킹 캐시 저장 + 맵 dirty + 즉시 오버레이(blocked+water) 표시.
+	// ⚠️ "빈 부지"(머신/컨베이어 제거)에서 실행할 것 — 베이크는 월드의 머신/컨베이어/자원을 ignore-list로 순회하므로
+	//    채워진 상태로 구우면 시간만 늘고(결과는 동일) 불필요. 실행 후 반드시 레벨 저장해야 캐시가 .umap에 영속.
+	UFUNCTION(CallInEditor, BlueprintCallable, Category = "Grid|Terrain")
+	void RebakeAndCache();
 
 	// 그리드 셀 비주얼 갱신 — 현재 상태(bVisualizationActive/bForceShowBlocked) 기준으로 초록(가능)/빨강(blocked)
 	// per-cell ISM 재적재. void 셀은 양쪽 다 제외. 클리어 후 재적재라 진입/퇴장 반복에도 중복·잔존 없음.
@@ -263,6 +376,9 @@ public:
 
 	// 디버그(OJJ.Grid.ShowBlocked) — 빌드모드와 무관하게 오버레이 강제 표시 토글.
 	void SetForceShowBlocked(bool bShow);
+
+	// 디버그(OJJ.Grid.ShowWater) — 빌드모드와 무관하게 물 오버레이 강제 표시 토글.
+	void SetForceShowWater(bool bShow);
 
 	// === Grid Query (GridManager/컨베이어용 읽기 전용 조회) ===
 	// OccupiedCells / OJJ_ActorToCells를 노출만 함 — write 경로/데이터는 건드리지 않음.

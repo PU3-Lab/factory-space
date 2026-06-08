@@ -440,6 +440,16 @@ AOJJ_Grid::AOJJ_Grid()
 		BlockedCellISM->SetMaterial(0, InvalidHoverMat.Object);
 	}
 
+	// 물(파랑) per-cell 비주얼 — ShowWater 디버그/빌드모드 오버레이. 머티리얼(파랑 MID)은 RefreshGridVisual에서 lazy 부여.
+	WaterCellISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("WaterCellISM"));
+	WaterCellISM->SetupAttachment(RootComponent);
+	WaterCellISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	WaterCellISM->SetCastShadow(false);
+	if (PlaneMesh.Succeeded())
+	{
+		WaterCellISM->SetStaticMesh(PlaneMesh.Object);
+	}
+
 	// === 포트 방향 화살표 ISM (Cone — 엔진 기본, 전용 메시는 후속) ===
 	// 배치 머신용 / 호버 프리뷰용을 분리해 수명주기를 독립. 색은 BeginPlay의 MID로 입힘.
 	auto MakeArrowISM = [this](const TCHAR* Name) -> UInstancedStaticMeshComponent*
@@ -512,8 +522,12 @@ void AOJJ_Grid::BeginPlay()
 		}
 	}
 
-	// 정적 지형 높낮이 건설 제약 베이크(1회). 오버레이는 빌드모드 진입 시 표시되므로 여기선 채우지 않음.
-	BakeBuildableCells();
+	// 정적 지형 높낮이 건설 제약 — 사전베이크 캐시가 유효하면 로드만(런타임 트레이스 0), 없으면/불일치면 트레이스 폴백.
+	// 오버레이는 빌드모드 진입 시 표시되므로 여기선 채우지 않음.
+	if (!TryLoadBakeCache())
+	{
+		BakeBuildableCells(/*bVerbose=*/false, /*bWriteCache=*/false);
+	}
 }
 
 void AOJJ_Grid::Tick(float DeltaTime)
@@ -607,8 +621,9 @@ bool AOJJ_Grid::IsValidGridCell(FIntPoint Cell) const
 
 bool AOJJ_Grid::IsCellBuildable(FIntPoint Cell) const
 {
-	// blocked(높이초과) 또는 void(바닥없음)면 불가. 베이크 전이면 둘 다 비어 전부 가능(기존 흐름 무영향).
-	return !UnbuildableCells.Contains(Cell) && !VoidCells.Contains(Cell);
+	// blocked(높이초과)·void(바닥없음)·water(물) 중 하나라도면 불가. water 건설금지 불변식(§3) — 별도 태그지만 여기서 게이트.
+	// 베이크 전이면 세 집합 모두 비어 전부 가능(기존 흐름 무영향).
+	return !UnbuildableCells.Contains(Cell) && !VoidCells.Contains(Cell) && !WaterCells.Contains(Cell);
 }
 
 bool AOJJ_Grid::IsCellVoid(FIntPoint Cell) const
@@ -616,10 +631,16 @@ bool AOJJ_Grid::IsCellVoid(FIntPoint Cell) const
 	return VoidCells.Contains(Cell);
 }
 
-void AOJJ_Grid::BakeBuildableCells(bool bVerbose)
+bool AOJJ_Grid::IsCellWater(FIntPoint Cell) const
+{
+	return WaterCells.Contains(Cell);
+}
+
+void AOJJ_Grid::BakeBuildableCells(bool bVerbose, bool bWriteCache)
 {
 	UnbuildableCells.Reset();
 	VoidCells.Reset();
+	WaterCells.Reset();
 
 	UWorld* World = GetWorld();
 	if (!World)
@@ -627,8 +648,21 @@ void AOJJ_Grid::BakeBuildableCells(bool bVerbose)
 		return;
 	}
 
+	const int32 NumCells = GridSize.X * GridSize.Y;
+	if (NumCells <= 0)
+	{
+		return;
+	}
+
 	const FVector GridOrigin = GetActorLocation();
 	const float PlaneZ = GridOrigin.Z;
+
+	// 분류 임시 버퍼(선형 인덱스 = X*GridSize.Y + Y). flood-fill 필터까지 끝낸 뒤 TSet/패킹으로 한 번에 커밋.
+	// WouldBlockTmp: water 필터 환원 시 "원래 blocked였는지"로 blocked/buildable 되돌림 판정.
+	TArray<uint8> ClassTmp;      ClassTmp.Init((uint8)EOJJCellClass::Buildable, NumCells);
+	TArray<uint8> WouldBlockTmp; WouldBlockTmp.Init(0, NumCells);
+	TArray<int16> GroundZTmp;
+	if (bBakeGroundHeights) { GroundZTmp.Init(0, NumCells); }
 
 	// verbose 진단: 평탄(바닥) 외 셀만 로그(스팸 방지 캡). 큐브 등 베이크 오판 원인 추적용.
 	int32 VerboseLogged = 0;
@@ -636,8 +670,8 @@ void AOJJ_Grid::BakeBuildableCells(bool bVerbose)
 	if (bVerbose)
 	{
 		UE_LOG(LogTemp, Log,
-			TEXT("[Grid] Bake VERBOSE: PlaneZ=%.1f, tol=%.1f, startH=%.1f, depth=%.1f, trace=%d (평탄 외 셀만, 최대 %d줄)"),
-			PlaneZ, BuildableHeightTolerance, BuildableTraceStartHeight, BuildableTraceDepth,
+			TEXT("[Grid] Bake VERBOSE: PlaneZ=%.1f, tol=%.1f, waterZ=%.1f, startH=%.1f, depth=%.1f, trace=%d (평탄 외 셀만, 최대 %d줄)"),
+			PlaneZ, BuildableHeightTolerance, WaterSurfaceZ, BuildableTraceStartHeight, BuildableTraceDepth,
 			(int32)BuildableTraceChannel.GetValue(), MaxVerboseLines);
 	}
 
@@ -651,24 +685,24 @@ void AOJJ_Grid::BakeBuildableCells(bool bVerbose)
 	for (TActorIterator<AResourceBase> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
 
 	const double StartTime = FPlatformTime::Seconds();
-	int32 Total = 0;
 	for (int32 X = 0; X < GridSize.X; ++X)
 	{
 		for (int32 Y = 0; Y < GridSize.Y; ++Y)
 		{
-			++Total;
+			const int32 Idx = X * GridSize.Y + Y;
 			const FVector Center = GridToWorld(FIntPoint(X, Y));
 
 			// 셀당 5점 샘플링(중심 + 4귀퉁이 ±0.4셀) — 큐브가 셀 중심을 안 밟아도 귀퉁이로 검출.
-			// 하나라도 |델타| > tol이면 blocked. void는 5점 전부 미히트일 때만(바닥 전무).
+			// 하나라도 |델타| > tol이면 blocked. void는 5점 전부 미히트일 때만(바닥 전무). water는 5점 중 최저 델타 기준.
 			const float S = CellSize * 0.4f;
 			const FVector2D SampleOffsets[5] = {
 				FVector2D(0.f, 0.f), FVector2D(S, S), FVector2D(S, -S), FVector2D(-S, S), FVector2D(-S, -S) };
 
 			bool bAnyHit = false;
 			float WorstAbsDelta = 0.0f;
-			float WorstSignedDelta = 0.0f;  // verbose — 최악점의 부호 델타
-			float WorstHitZ = 0.0f;         // verbose
+			float WorstSignedDelta = 0.0f;                          // verbose/groundZ — 최악점의 부호 델타
+			float WorstHitZ = 0.0f;                                 // verbose
+			float LowestSignedDelta = TNumericLimits<float>::Max(); // water 판정 — 5점 중 최저(가장 깊은) 평면대비 델타
 			for (const FVector2D& Off : SampleOffsets)
 			{
 				const FVector TraceStart(Center.X + Off.X, Center.Y + Off.Y, PlaneZ + BuildableTraceStartHeight);
@@ -684,58 +718,284 @@ void AOJJ_Grid::BakeBuildableCells(bool bVerbose)
 						WorstSignedDelta = Delta;
 						WorstHitZ = Hit.ImpactPoint.Z;
 					}
+					LowestSignedDelta = FMath::Min(LowestSignedDelta, Delta);
 				}
 			}
 
-			// 3단 분류: 5점 전부 미히트=void, 최악 |델타|>tol=blocked, 그 외=가능.
-			const bool bBlocked = bAnyHit && (WorstAbsDelta > BuildableHeightTolerance);
-			if (!bAnyHit)
-			{
-				VoidCells.Add(FIntPoint(X, Y));            // [3] void — 오버레이/그리드 비주얼 둘 다 제외, 배치 거부
-			}
-			else if (bBlocked)
-			{
-				UnbuildableCells.Add(FIntPoint(X, Y));     // [2] blocked — 빨강 + 배치 거부
-			}
-			// [1] else 건설 가능 (초록) — 미저장
-			// 경사도 게이트(BuildableSlopeThresholdDeg)는 예약 — 현재 미적용.
+			// 4단 분류 (우선순위: void > water > blocked > buildable). water는 셀 최저점이 WaterSurfaceZ보다 깊을 때 —
+			// blocked보다 먼저 태그(둘 다 건설 불가지만 파랑 표시/수원 후보 우선). WouldBlock은 필터 환원용으로 별도 보존.
+			const bool bWouldBlock = bAnyHit && (WorstAbsDelta > BuildableHeightTolerance);
+			const bool bWater = bAnyHit && (LowestSignedDelta < WaterSurfaceZ);
+			EOJJCellClass CellClass;
+			if (!bAnyHit)         { CellClass = EOJJCellClass::Void; }
+			else if (bWater)      { CellClass = EOJJCellClass::Water; }
+			else if (bWouldBlock) { CellClass = EOJJCellClass::Blocked; }
+			else                  { CellClass = EOJJCellClass::Buildable; }
 
-			// verbose: 평탄 바닥(델타≈0) 외 셀만 출력 — 5점 중 최악값 기준.
-			if (bVerbose && VerboseLogged < MaxVerboseLines && (!bAnyHit || WorstAbsDelta > 1.0f))
+			ClassTmp[Idx] = (uint8)CellClass;
+			WouldBlockTmp[Idx] = bWouldBlock ? 1 : 0;
+			if (bBakeGroundHeights)
 			{
-				const TCHAR* Cls = !bAnyHit ? TEXT("void") : (bBlocked ? TEXT("BLOCKED") : TEXT("buildable"));
+				// 평면 대비 최대편차(uu) 양자화. 절대높이 = ActorLocation.Z + 값. 평탄셀=0.
+				GroundZTmp[Idx] = (int16)FMath::Clamp(FMath::RoundToInt(WorstSignedDelta), -32768, 32767);
+			}
+
+			// verbose: 평탄 바닥(델타≈0) 외 셀만 출력 — 5점 중 최악/최저값 기준.
+			if (bVerbose && VerboseLogged < MaxVerboseLines && (!bAnyHit || WorstAbsDelta > 1.0f || bWater))
+			{
+				const TCHAR* Cls = !bAnyHit ? TEXT("void")
+					: (bWater ? TEXT("WATER") : (bWouldBlock ? TEXT("BLOCKED") : TEXT("buildable")));
 				UE_LOG(LogTemp, Log,
-					TEXT("[Grid]   cell(%d,%d) anyHit=%d worstZ=%.1f worstDelta=%+.1f (5pt) -> %s"),
-					X, Y, bAnyHit ? 1 : 0, bAnyHit ? WorstHitZ : 0.0f, WorstSignedDelta, Cls);
+					TEXT("[Grid]   cell(%d,%d) anyHit=%d worstZ=%.1f worstDelta=%+.1f lowDelta=%+.1f (5pt) -> %s"),
+					X, Y, bAnyHit ? 1 : 0, bAnyHit ? WorstHitZ : 0.0f, WorstSignedDelta,
+					bAnyHit ? LowestSignedDelta : 0.0f, Cls);
 				++VerboseLogged;
+			}
+		}
+	}
+
+	// 잔웅덩이 필터: 연결된(4-이웃) water 영역의 셀 수 < MinWaterCellCount면 일반 지형으로 환원(blocked/buildable).
+	// BFS는 Region을 큐로 재사용(Pop 시그니처 버전차/리얼로케이션 회피). 0/1이면 필터 없음.
+	int32 WaterFilteredRegions = 0;
+	int32 WaterFilteredCells = 0;
+	if (MinWaterCellCount > 1)
+	{
+		TArray<uint8> Visited; Visited.Init(0, NumCells);
+		TArray<int32> Region;
+		for (int32 Seed = 0; Seed < NumCells; ++Seed)
+		{
+			if (Visited[Seed] || ClassTmp[Seed] != (uint8)EOJJCellClass::Water) { continue; }
+			Region.Reset();
+			Region.Add(Seed);
+			Visited[Seed] = 1;
+			for (int32 Head = 0; Head < Region.Num(); ++Head)
+			{
+				const int32 Cur = Region[Head];
+				const int32 CX = Cur / GridSize.Y;
+				const int32 CY = Cur % GridSize.Y;
+				const FIntPoint Neighbors[4] = {
+					FIntPoint(CX + 1, CY), FIntPoint(CX - 1, CY), FIntPoint(CX, CY + 1), FIntPoint(CX, CY - 1) };
+				for (const FIntPoint& N : Neighbors)
+				{
+					if (N.X < 0 || N.X >= GridSize.X || N.Y < 0 || N.Y >= GridSize.Y) { continue; }
+					const int32 NIdx = N.X * GridSize.Y + N.Y;
+					if (!Visited[NIdx] && ClassTmp[NIdx] == (uint8)EOJJCellClass::Water)
+					{
+						Visited[NIdx] = 1;
+						Region.Add(NIdx);
+					}
+				}
+			}
+			if (Region.Num() < MinWaterCellCount)
+			{
+				for (const int32 RIdx : Region)
+				{
+					ClassTmp[RIdx] = WouldBlockTmp[RIdx] ? (uint8)EOJJCellClass::Blocked : (uint8)EOJJCellClass::Buildable;
+				}
+				++WaterFilteredRegions;
+				WaterFilteredCells += Region.Num();
+			}
+		}
+	}
+
+	// 임시 분류 → 런타임 TSet 커밋. Buildable은 미저장(기존 규약).
+	for (int32 X = 0; X < GridSize.X; ++X)
+	{
+		for (int32 Y = 0; Y < GridSize.Y; ++Y)
+		{
+			switch ((EOJJCellClass)ClassTmp[X * GridSize.Y + Y])
+			{
+			case EOJJCellClass::Blocked: UnbuildableCells.Add(FIntPoint(X, Y)); break;
+			case EOJJCellClass::Void:    VoidCells.Add(FIntPoint(X, Y)); break;
+			case EOJJCellClass::Water:   WaterCells.Add(FIntPoint(X, Y)); break;
+			default: break;
 			}
 		}
 	}
 
 	bBuildableBaked = true;
 
+	// 패킹 캐시 기록(에디터 RebakeAndCache 경로). 시그니처는 BeginPlay 로드 시 정합 검증에 사용.
+	if (bWriteCache)
+	{
+		PackedCellClasses.Init(0, (NumCells + 3) / 4);
+		for (int32 Idx = 0; Idx < NumCells; ++Idx)
+		{
+			OJJ_SetPackedClass(Idx, (EOJJCellClass)ClassTmp[Idx]);
+		}
+		if (bBakeGroundHeights) { CellGroundZQuant = MoveTemp(GroundZTmp); }
+		else { CellGroundZQuant.Reset(); }
+
+		CacheGridSize = GridSize;
+		CacheCellSize = CellSize;
+		CacheGridOrigin = GridOrigin;
+		CacheHeightTolerance = BuildableHeightTolerance;
+		CacheWaterSurfaceZ = WaterSurfaceZ;
+		CacheMinWaterCellCount = MinWaterCellCount;
+		CacheTraceStartHeight = BuildableTraceStartHeight;
+		CacheTraceDepth = BuildableTraceDepth;
+		CacheTraceChannel = BuildableTraceChannel;
+		bCacheBakeGroundHeights = bBakeGroundHeights;
+		bHasBakeCache = true;
+	}
+
 	const double ElapsedMs = (FPlatformTime::Seconds() - StartTime) * 1000.0;
 	const int32 Blocked = UnbuildableCells.Num();
 	const int32 Void = VoidCells.Num();
-	const int32 Buildable = Total - Blocked - Void;
+	const int32 Water = WaterCells.Num();
+	const int32 Buildable = NumCells - Blocked - Void - Water;
 	UE_LOG(LogTemp, Log,
-		TEXT("[Grid] Bake: buildable %d / blocked %d / void %d (total %d, GridSize %dx%d, trace=%d, tol=%.0f) in %.1f ms"),
-		Buildable, Blocked, Void, Total, GridSize.X, GridSize.Y, (int32)BuildableTraceChannel.GetValue(), BuildableHeightTolerance, ElapsedMs);
+		TEXT("[Grid] Bake: buildable %d / blocked %d / void %d / water %d (total %d, GridSize %dx%d, trace=%d, tol=%.0f, waterZ=%.0f, minWater=%d) in %.1f ms%s"),
+		Buildable, Blocked, Void, Water, NumCells, GridSize.X, GridSize.Y, (int32)BuildableTraceChannel.GetValue(),
+		BuildableHeightTolerance, WaterSurfaceZ, MinWaterCellCount, ElapsedMs, bWriteCache ? TEXT(" [cached]") : TEXT(""));
 
-	// 사고 조기 발견: 건설 가능 셀이 0(전부 blocked이거나 전부 void)이면 트레이스 채널/시작높이/기준면 Z/그리드 위치 의심.
-	if (Total > 0 && Buildable == 0)
+	if (WaterFilteredRegions > 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[Grid] Bake: water 잔웅덩이 필터 — %d개 영역(%d셀) 환원 (MinWaterCellCount=%d)."),
+			WaterFilteredRegions, WaterFilteredCells, MinWaterCellCount);
+	}
+
+	// 사고 조기 발견: 건설 가능 셀이 0이면 트레이스 채널/시작높이/기준면 Z/그리드 위치 의심.
+	if (NumCells > 0 && Buildable == 0)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[Grid] Bake 이상치: 건설 가능 셀 0 (blocked %d / void %d) — 트레이스 채널/시작높이/기준면 Z/그리드 위치 확인 요망."),
-			Blocked, Void);
+			TEXT("[Grid] Bake 이상치: 건설 가능 셀 0 (blocked %d / void %d / water %d) — 트레이스 채널/시작높이/기준면 Z/그리드 위치 확인 요망."),
+			Blocked, Void, Water);
 	}
+}
+
+// === 사전베이크 캐시 직렬화 ===
+
+int32 AOJJ_Grid::OJJ_CellLinearIndex(FIntPoint Cell, FIntPoint GridSz)
+{
+	return Cell.X * GridSz.Y + Cell.Y;
+}
+
+EOJJCellClass AOJJ_Grid::OJJ_GetPackedClass(int32 LinearIdx) const
+{
+	const int32 ByteIdx = LinearIdx >> 2;
+	if (!PackedCellClasses.IsValidIndex(ByteIdx))
+	{
+		return EOJJCellClass::Buildable;  // 범위 밖 = 안전 기본(건설 가능)
+	}
+	const int32 Shift = (LinearIdx & 3) * 2;
+	return (EOJJCellClass)((PackedCellClasses[ByteIdx] >> Shift) & 0x3);
+}
+
+void AOJJ_Grid::OJJ_SetPackedClass(int32 LinearIdx, EOJJCellClass CellClass)
+{
+	const int32 ByteIdx = LinearIdx >> 2;
+	if (!PackedCellClasses.IsValidIndex(ByteIdx))
+	{
+		return;
+	}
+	const int32 Shift = (LinearIdx & 3) * 2;
+	const uint8 Cleared = (uint8)(PackedCellClasses[ByteIdx] & ~(0x3u << Shift));
+	PackedCellClasses[ByteIdx] = (uint8)(Cleared | (((uint8)CellClass & 0x3u) << Shift));
+}
+
+bool AOJJ_Grid::TryLoadBakeCache()
+{
+	if (!bHasBakeCache)
+	{
+		return false;
+	}
+
+	// 시그니처 정합 — 구조(GridSize/CellSize/Origin)는 패킹 인덱싱 정확성, 분류 파라미터(tol/waterZ/minWater)는 결과 정확성.
+	// 하나라도 불일치면 캐시 무효 → 트레이스 폴백. 에디터에서 Rebake 누르면 캐시 갱신.
+	const bool bStructMatch =
+		CacheGridSize == GridSize &&
+		FMath::IsNearlyEqual(CacheCellSize, CellSize) &&
+		GetActorLocation().Equals(CacheGridOrigin, 1.0f);
+	const bool bParamMatch =
+		FMath::IsNearlyEqual(CacheHeightTolerance, BuildableHeightTolerance) &&
+		FMath::IsNearlyEqual(CacheWaterSurfaceZ, WaterSurfaceZ) &&
+		CacheMinWaterCellCount == MinWaterCellCount &&
+		FMath::IsNearlyEqual(CacheTraceStartHeight, BuildableTraceStartHeight) &&
+		FMath::IsNearlyEqual(CacheTraceDepth, BuildableTraceDepth) &&
+		CacheTraceChannel.GetValue() == BuildableTraceChannel.GetValue() &&
+		bCacheBakeGroundHeights == bBakeGroundHeights;
+
+	if (!bStructMatch || !bParamMatch)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Grid] Bake 캐시 무효(시그니처 불일치: struct=%d param=%d) — 재트레이스 폴백. 에디터에서 Rebake로 캐시 갱신 요망."),
+			bStructMatch ? 1 : 0, bParamMatch ? 1 : 0);
+		return false;
+	}
+
+	const int32 NumCells = GridSize.X * GridSize.Y;
+	const int32 ExpectedBytes = (NumCells + 3) / 4;
+	if (NumCells <= 0 || PackedCellClasses.Num() != ExpectedBytes)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Grid] Bake 캐시 크기 불일치(packed %d != expected %d, cells %d) — 재트레이스 폴백."),
+			PackedCellClasses.Num(), ExpectedBytes, NumCells);
+		return false;
+	}
+
+	UnbuildableCells.Reset();
+	VoidCells.Reset();
+	WaterCells.Reset();
+	for (int32 X = 0; X < GridSize.X; ++X)
+	{
+		for (int32 Y = 0; Y < GridSize.Y; ++Y)
+		{
+			switch (OJJ_GetPackedClass(X * GridSize.Y + Y))
+			{
+			case EOJJCellClass::Blocked: UnbuildableCells.Add(FIntPoint(X, Y)); break;
+			case EOJJCellClass::Void:    VoidCells.Add(FIntPoint(X, Y)); break;
+			case EOJJCellClass::Water:   WaterCells.Add(FIntPoint(X, Y)); break;
+			default: break;
+			}
+		}
+	}
+
+	bBuildableBaked = true;
+	UE_LOG(LogTemp, Log,
+		TEXT("[Grid] Bake 캐시 로드(트레이스 0): buildable %d / blocked %d / void %d / water %d (total %d, GridSize %dx%d)."),
+		NumCells - UnbuildableCells.Num() - VoidCells.Num() - WaterCells.Num(),
+		UnbuildableCells.Num(), VoidCells.Num(), WaterCells.Num(), NumCells, GridSize.X, GridSize.Y);
+	return true;
+}
+
+void AOJJ_Grid::RebakeAndCache()
+{
+	// 에디터 버튼: 트레이스 1회 + 패킹 캐시 저장. 즉시 오버레이(blocked+water)로 분포 확인.
+	BakeBuildableCells(/*bVerbose=*/false, /*bWriteCache=*/true);
+
+	bForceShowBlocked = true;
+	bForceShowWater = true;
+	RefreshGridVisual();
+
+#if WITH_EDITOR
+	Modify();
+	MarkPackageDirty();
+#endif
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[Grid] RebakeAndCache 완료 — 캐시 저장됨(water %d, GroundZ %s). ⚠️ 레벨을 저장해야 .umap에 영속됩니다."),
+		WaterCells.Num(), bBakeGroundHeights ? TEXT("on") : TEXT("off"));
 }
 
 void AOJJ_Grid::RefreshGridVisual()
 {
+	// water 오버레이 파랑 머티리얼 lazy 생성(에디터 Rebake/PIE 공용 — BeginPlay에 의존하지 않음).
+	// BasicShapeMaterial(ArrowBaseMaterial) 기반 + "Color" 파랑. 동명 파라미터 없으면 기본색이지만 분류는 정상.
+	if (WaterCellISM && !WaterCellMID && ArrowBaseMaterial)
+	{
+		WaterCellMID = UMaterialInstanceDynamic::Create(ArrowBaseMaterial, this);
+		if (WaterCellMID)
+		{
+			WaterCellMID->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.1f, 0.5f, 1.0f));
+			WaterCellISM->SetMaterial(0, WaterCellMID);
+		}
+	}
+
 	// 클리어 후 재적재 — 빌드모드 진입/퇴장 반복에도 인스턴스 중복·잔존 방지(단일 진실원).
 	if (BuildableCellISM) { BuildableCellISM->ClearInstances(); }
 	if (BlockedCellISM) { BlockedCellISM->ClearInstances(); }
+	if (WaterCellISM) { WaterCellISM->ClearInstances(); }
 
 	// 셀 중심 → 인스턴스 트랜스폼. 그리드 평면 위 +3(호버 프리뷰 +2보다 위 — z-fighting 방지).
 	auto MakeCellXform = [this](const FIntPoint& Cell) -> FTransform
@@ -749,35 +1009,54 @@ void AOJJ_Grid::RefreshGridVisual()
 
 	if (bVisualizationActive)
 	{
-		// 빌드모드: 전 셀을 가능(초록)/blocked(빨강)으로 채움. void는 양쪽 다 제외 → 그리드가 바닥 모양만 따라 보임.
+		// 빌드모드: 전 셀을 water(파랑)/blocked(빨강)/가능(초록)으로 채움. void는 모두 제외 → 그리드가 바닥 모양만 따라 보임.
+		// 우선순위 water > blocked: water도 건설 불가지만 파랑으로 구분 표시(분류 우선순위와 일치).
 		TArray<FTransform> GreenXforms;
 		TArray<FTransform> RedXforms;
+		TArray<FTransform> BlueXforms;
 		for (int32 X = 0; X < GridSize.X; ++X)
 		{
 			for (int32 Y = 0; Y < GridSize.Y; ++Y)
 			{
 				const FIntPoint Cell(X, Y);
 				if (VoidCells.Contains(Cell)) { continue; }                  // void → 아무것도 안 그림
-				if (UnbuildableCells.Contains(Cell)) { RedXforms.Add(MakeCellXform(Cell)); }
+				if (WaterCells.Contains(Cell)) { BlueXforms.Add(MakeCellXform(Cell)); }
+				else if (UnbuildableCells.Contains(Cell)) { RedXforms.Add(MakeCellXform(Cell)); }
 				else { GreenXforms.Add(MakeCellXform(Cell)); }
 			}
 		}
 		if (BuildableCellISM && GreenXforms.Num() > 0) { BuildableCellISM->AddInstances(GreenXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
 		if (BlockedCellISM && RedXforms.Num() > 0) { BlockedCellISM->AddInstances(RedXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
+		if (WaterCellISM && BlueXforms.Num() > 0) { WaterCellISM->AddInstances(BlueXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
 	}
-	else if (bForceShowBlocked)
+	else
 	{
-		// 디버그(빌드모드 밖): blocked만 빨강. 가능 셀은 표시 안 함.
-		TArray<FTransform> RedXforms;
-		for (const FIntPoint& Cell : UnbuildableCells) { RedXforms.Add(MakeCellXform(Cell)); }
-		if (BlockedCellISM && RedXforms.Num() > 0) { BlockedCellISM->AddInstances(RedXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
+		// 디버그(빌드모드 밖): 토글된 분류만 표시. ShowBlocked=빨강, ShowWater=파랑(독립).
+		if (bForceShowBlocked)
+		{
+			TArray<FTransform> RedXforms;
+			for (const FIntPoint& Cell : UnbuildableCells) { RedXforms.Add(MakeCellXform(Cell)); }
+			if (BlockedCellISM && RedXforms.Num() > 0) { BlockedCellISM->AddInstances(RedXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
+		}
+		if (bForceShowWater)
+		{
+			TArray<FTransform> BlueXforms;
+			for (const FIntPoint& Cell : WaterCells) { BlueXforms.Add(MakeCellXform(Cell)); }
+			if (WaterCellISM && BlueXforms.Num() > 0) { WaterCellISM->AddInstances(BlueXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
+		}
 	}
 }
 
 void AOJJ_Grid::SetForceShowBlocked(bool bShow)
 {
 	bForceShowBlocked = bShow;
-	// 상태 기반 갱신 — 빌드모드 중이면 전체(초록+빨강) 유지, 밖이면 blocked만/없음.
+	// 상태 기반 갱신 — 빌드모드 중이면 전체(초록+빨강+파랑) 유지, 밖이면 토글된 분류만.
+	RefreshGridVisual();
+}
+
+void AOJJ_Grid::SetForceShowWater(bool bShow)
+{
+	bForceShowWater = bShow;
 	RefreshGridVisual();
 }
 
@@ -826,6 +1105,21 @@ static FAutoConsoleCommandWithWorldAndArgs GOJJGridShowBlocked(
 		}
 		const bool bShow = (Args.Num() == 0) || (Args[0] != TEXT("0"));
 		Grid->SetForceShowBlocked(bShow);
+	}));
+
+static FAutoConsoleCommandWithWorldAndArgs GOJJGridShowWater(
+	TEXT("OJJ.Grid.ShowWater"),
+	TEXT("물 셀 오버레이(파랑) 강제 토글: OJJ.Grid.ShowWater 0|1 (빌드모드 무관). WaterSurfaceZ 튜닝 분포 확인용."),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+	{
+		AOJJ_Grid* Grid = OJJ_FindGridInWorld(World);
+		if (!Grid)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Grid] ShowWater: 월드에 AOJJ_Grid 없음."));
+			return;
+		}
+		const bool bShow = (Args.Num() == 0) || (Args[0] != TEXT("0"));
+		Grid->SetForceShowWater(bShow);
 	}));
 
 // === Grid Query (GridManager/컨베이어용 읽기 전용 조회) — 순수 추가, write 경로 미변경 ===
