@@ -9,6 +9,7 @@
 #include "Dom/JsonObject.h"
 #include "Components/Border.h"
 #include "Components/VerticalBox.h"
+#include "GameFramework/PlayerController.h"
 #include "Animation/WidgetAnimation.h"
 #include "Blueprint/UserWidget.h"
 #include "UMG.h"
@@ -84,40 +85,64 @@ void UUI_MainHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 void UUI_MainHUD::OnToggleGuideClicked()
 {
-    UE_LOG(LogTemp, Warning, TEXT("토글 버튼 클릭됨"));
+    ToggleAIGuideWindow();
+}
 
-    if (!B_ChatBackground)
-    {
-        UE_LOG(LogTemp, Error, TEXT("B_ChatBackground가 Null입니다 변수 이름을 다시 확인하세요."));
-        return;
-    }
-    
+void UUI_MainHUD::ToggleAIGuideWindow()
+{
     if (!B_ChatBackground) return;
+    
+    APlayerController* PC = GetOwningPlayer();
 
-    // 현재 배경 창이 꺼져(Collapsed) 있다면? 켜준다
+    // 현재 가이드 창이 꺼져 있다면
     if (B_ChatBackground->GetVisibility() == ESlateVisibility::Collapsed)
     {
-        // 1. 창을 화면에 표시 (SelfHitTestInvisible이 마우스 클릭 관통 방지에 좋습니다)
         B_ChatBackground->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         
-        // 2. 버튼 텍스트 변경
         if (TXT_ToggleText)
         {
             TXT_ToggleText->SetText(FText::FromString(TEXT("▲ AI 가이드 접기")));
         }
+
+        if (PC)
+        {
+            PC->SetInputMode(FInputModeGameAndUI());
+            PC->SetShowMouseCursor(true);
+        }
+
+        if (ET_OperatorInput)
+        {
+            ET_OperatorInput->SetFocus();
+        }
     }
-    // 현재 배경 창이 켜져 있다면? 꺼준다
+    // 현재 가이드 창이 켜져 있다면
     else
     {
-        // 1. 창과 내부 공간 제거(Collapsed)
         B_ChatBackground->SetVisibility(ESlateVisibility::Collapsed);
         
-        // 2. 버튼 텍스트 변경
         if (TXT_ToggleText)
         {
             TXT_ToggleText->SetText(FText::FromString(TEXT("▼ AI 가이드 열기")));
         }
+
+        if (PC)
+        {
+            PC->SetInputMode(FInputModeGameOnly());
+            PC->SetShowMouseCursor(false);
+        }
     }
+}
+
+// 입력창에 포커스가 가 있을 때 Tab 키를 누르면 focus navigation을 씹고 창을 닫아버립니다.
+FReply UUI_MainHUD::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+    if (InKeyEvent.GetKey() == EKeys::Tab)
+    {
+        ToggleAIGuideWindow();
+        return FReply::Handled();
+    }
+
+    return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
 }
 
 void UUI_MainHUD::HandleOnTextCommitted(const FText& Text, ETextCommit::Type CommitType)
