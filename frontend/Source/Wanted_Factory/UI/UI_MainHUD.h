@@ -17,7 +17,20 @@ public:
 	
 	UFUNCTION() void OnRequestQuestsClicked();
 	UFUNCTION() void OnToggleGuideClicked();
+	UFUNCTION(BlueprintCallable, Category = "HUD | Quest")
+	// 캐릭터가 J키를 눌렀을 때 호출해 줄 외부 함수
+	void ToggleQuestWindow();
 protected:
+	// --- 퀘스트 창 전체 레이아웃 바인딩 ---
+	UPROPERTY(meta = (BindWidget))
+	class UVerticalBox* VB_QuestLayout;
+	// 애니메이션 변수 대신, 블루프린트에서 호출될 '이벤트 함수'를 선언합니다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD")
+	bool bIsQuestWindowOpen = true;
+	// 이 함수를 선언하면 WBP 이벤트 그래프에서 우클릭으로 이벤트를 배치할 수 있습니다.
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD | Anim")
+	void K2_PlayQuestAnimation(bool bOpen);
+	
 	// --- 오퍼레이터 가이드 AI 채팅 UI 위젯 ---
 	UPROPERTY(meta = (BindWidget))
 	class UEditableText* ET_OperatorInput;
@@ -63,7 +76,7 @@ private:
 	//AI 에이전트로부터 오퍼레이터 가이드 답변 패킷이 수신되었을 때 처리할 함수
 	UFUNCTION()
 	void HandleOnOperatorGuideResponse(const FString& RequestId, const FString& Agent, const FString& PayloadJson, const FString& RawMessage);
-
+	
 	UFUNCTION()
 	void HandleOnOperatorGuideError(
 		const FString& RequestId,

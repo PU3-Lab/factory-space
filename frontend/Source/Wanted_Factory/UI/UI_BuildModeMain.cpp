@@ -43,18 +43,16 @@ void UUI_BuildModeMain::ExecutePlacementMode(int32 SlotIndex)
     // 유저님이 짜놓으신 직관적인 단축키 번호 규칙 그대로 완벽하게 동작합니다.
     switch (SlotIndex)
     {
-        //case 1: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Storage); break;     // 1번: 창고
+        case 1: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Warehouse); break;   // 1번: 창고
         case 2: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Conveyor); break;    // 2번: 컨베이어
         case 3: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Smelter); break;     // 3번: 제련기
         case 4: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Grinder); break;     // 4번: 분쇄기
         case 5: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Miner); break;       // 5번: 채굴기
-        
-        // case 6: 나중에 추가 가능하게 배치 보존
-
+        case 6: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pump); break;        // 6번 : 수력발전소
         case 7: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerPlant); break;  // 7번: 발전소
-        case 8: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerNode); break;   // 8번: 송전탑 (동료 Enum 명칭 유지)
+        case 8: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerNode); break;   // 8번: 송전탑
         case 9: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerLine); break;   // 9번: 송전선
-        case 0: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Shield); break;      // 0번: 차폐막 (동료 Enum 명칭 유지)
+        case 0: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Shield); break;      // 0번: 차폐막
         
         default: break;
     }
