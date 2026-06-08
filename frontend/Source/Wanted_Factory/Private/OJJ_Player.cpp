@@ -293,6 +293,7 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::M, IE_Pressed, this, &AOJJ_Player::SendOperatorGuideRequest);
 	PlayerInputComponent->BindKey(EKeys::Slash, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestRequest);
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
+	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -800,10 +801,8 @@ void AOJJ_Player::TriggerHUDQuestRequest()
 	}
 	if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
 	{
-		// HUD 내부에 구현된 퀘스트 요청 함수를 다이렉트로 원격 실행합니다
+		// 퀘스트 요청 함수 원격 실행
 		MainHUD->OnRequestQuestsClicked();
-        
-		UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] 슬래시(/) 키 입력을 감지하여 HUD 퀘스트 요청을 원격 실행했습니다."));
 	}
 }
 void AOJJ_Player::TriggerHUDQuestWindowToggle()
@@ -818,6 +817,16 @@ void AOJJ_Player::TriggerHUDQuestWindowToggle()
 	if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
 	{
 		MainHUD->ToggleQuestWindow();
-		UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] J키 입력을 감지하여 HUD 퀘스트 창 애니메이션 토글을 호출했습니다."));
+	}
+}
+
+void AOJJ_Player::TriggerHUDAIGuideToggle()
+{
+	if (BuildController && BuildController->IsInBuildMode()) return;
+
+	if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
+	{
+		// HUD 토글 함수 원격 호출
+		MainHUD->ToggleAIGuideWindow();
 	}
 }
