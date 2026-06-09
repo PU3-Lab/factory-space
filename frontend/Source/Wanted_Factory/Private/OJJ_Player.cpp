@@ -26,6 +26,8 @@
 #include "MachineBase.h"
 #include "UI/UI_MachineInteract.h"
 #include "UI/UI_MainHUD.h"
+#include "UI/UI_Inventory.h"
+#include "Machines/WarehousePort.h"
 
 AOJJ_Player::AOJJ_Player()
 {
@@ -294,6 +296,7 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::Slash, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestRequest);
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
 	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
+	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -828,5 +831,80 @@ void AOJJ_Player::TriggerHUDAIGuideToggle()
 	{
 		// HUD 토글 함수 원격 호출
 		MainHUD->ToggleAIGuideWindow();
+	}
+}
+
+void AOJJ_Player::TriggerInventoryToggle()
+{
+	if (BuildController && BuildController->IsInBuildMode()) return;
+
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC) return;
+
+	// 1. 이미 열려 있다면 닫기
+	if (bIsInventoryOpen)
+	{
+		if (InventoryWidgetInstance)
+		{
+			InventoryWidgetInstance->RemoveFromParent();
+			bIsInventoryOpen = false;
+		}
+		
+		PC->SetInputMode(FInputModeGameOnly());
+		PC->SetShowMouseCursor(false);
+
+		GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
+		return;
+	}
+
+	// 2. 레이저 검사 (창고 포트인지 확인)
+	UWorld* World = GetWorld();
+	if (!Camera || !World) return;
+
+	FVector TraceStart = Camera->GetComponentLocation();
+	FVector TraceEnd = TraceStart + Camera->GetForwardVector() * MaxInteractDistance;
+	FHitResult Hit;
+	FCollisionQueryParams TraceParams(FName(TEXT("OJJInventoryInteract")), false, this);
+
+	bool bHit = World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, TraceParams);
+	if (!bHit) return;
+
+	AWarehousePort* WarehouseMachine = Cast<AWarehousePort>(Hit.GetActor());
+	if (!WarehouseMachine) return;
+
+	// 3. 창고 포트 확인 완료 시 인벤토리 오픈
+	if (!InventoryWidgetInstance && InventoryWidgetClass)
+	{
+		InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
+	}
+
+	if (InventoryWidgetInstance)
+	{
+		InventoryWidgetInstance->RefreshInventoryWindow();
+		InventoryWidgetInstance->AddToViewport();
+		bIsInventoryOpen = true;
+		
+		PC->SetInputMode(FInputModeGameAndUI());
+		PC->SetShowMouseCursor(true);
+
+		GetWorldTimerManager().SetTimer(
+			InventoryRefreshTimerHandle, 
+			this, 
+			&AOJJ_Player::UpdateInventoryRealtime, 
+			0.1f, 
+			true
+		);
+	}
+}
+
+void AOJJ_Player::UpdateInventoryRealtime()
+{
+	if (bIsInventoryOpen && InventoryWidgetInstance)
+	{
+		InventoryWidgetInstance->RefreshInventoryWindow();
+	}
+	else
+	{
+		GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
 	}
 }
