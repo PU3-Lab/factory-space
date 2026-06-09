@@ -7,6 +7,7 @@
 #include "QuestManagerSubsystem.generated.h"
 
 class UFactoryAgentClientSubsystem;
+class UPlayerWarehouseSubsystem;
 
 UENUM(BlueprintType)
 enum class EQuestKind : uint8
@@ -66,6 +67,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMainQuestChanged, const FQuestSta
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSubQuestRequestStarted, const FString&, RequestId, const FString&, Agent);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSubQuestsGenerated, const FString&, RequestId, const TArray<FQuestState>&, Quests);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSubQuestTitlesUpdated, const FString&, RequestId, const TArray<FString>&, Titles);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSubQuestsUpdated, const TArray<FQuestState>&, Quests);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSubQuestRequestFailed, const FString&, RequestId, const FString&, ErrorMessage);
 
 UCLASS()
@@ -93,6 +95,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Quest|Sub")
 	FOnSubQuestTitlesUpdated OnSubQuestTitlesUpdated;
+
+	UPROPERTY(BlueprintAssignable, Category = "Quest|Sub")
+	FOnSubQuestsUpdated OnSubQuestsUpdated;
 
 	UPROPERTY(BlueprintAssignable, Category = "Quest|Sub")
 	FOnSubQuestRequestFailed OnSubQuestRequestFailed;
@@ -142,11 +147,20 @@ private:
 	UPROPERTY()
 	TObjectPtr<UFactoryAgentClientSubsystem> AgentClient;
 
+	UPROPERTY()
+	TObjectPtr<UPlayerWarehouseSubsystem> WarehouseSubsystem;
+
 	TSet<FString> PendingSubQuestRequestIds;
 
 	void ActivateCurrentMainQuest();
 	void BindAgentClient();
+	void BindWarehouse();
 	FString SendSubQuestRequest(const FString& PayloadJson);
+	void RefreshSubQuestCompletion();
+	bool IsQuestCompletedByWarehouse(const FQuestState& Quest) const;
+
+	UFUNCTION()
+	void HandleWarehouseItemAdded(FName ItemID, int32 AddedCount, int32 NewTotalCount);
 
 	UFUNCTION()
 	void HandleAgentResponse(

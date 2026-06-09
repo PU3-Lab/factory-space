@@ -48,11 +48,29 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Power Line")
 	TObjectPtr<UStaticMeshComponent> LineMesh;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Power Line")
+	TArray<TObjectPtr<UStaticMeshComponent>> LineSegments;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line", meta = (ClampMin = "0.0"))
 	float EndpointHeightOffset = 20.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line", meta = (ClampMin = "0.1"))
 	float LineThickness = 8.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Sag", meta = (ClampMin = "0.0"))
+	float SagRatio = 0.035f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Sag", meta = (ClampMin = "0.0"))
+	float MaxSagDepth = 120.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Sag", meta = (ClampMin = "1"))
+	int32 MinSagSegments = 6;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Sag", meta = (ClampMin = "1"))
+	int32 MaxSagSegments = 24;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Sag", meta = (ClampMin = "1.0"))
+	float SegmentTargetLength = 150.0f;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Power Line")
 	TWeakObjectPtr<AMachineBase> SourceMachine;
@@ -61,6 +79,10 @@ protected:
 	TWeakObjectPtr<AMachineBase> TargetMachine;
 
 private:
+	FVector GetSagPoint(const FVector& SourceLocation, const FVector& TargetLocation, float Alpha, float SagDepth) const;
+	UStaticMeshComponent* GetOrCreateLineSegment(int32 SegmentIndex);
+	void HideUnusedLineSegments(int32 UsedSegmentCount);
+	void UpdateLineSegment(UStaticMeshComponent* Segment, const FVector& StartLocation, const FVector& EndLocation);
 	void RegisterToFactoryManager();
 	void UnregisterFromFactoryManager();
 };
