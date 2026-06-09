@@ -4,6 +4,7 @@
 #include "AirCompressor.h"
 
 #include "Wanted_Factory.h"
+#include "OJJ_Grid.h"
 
 namespace
 {
@@ -43,6 +44,86 @@ void AAirCompressor::BeginPlay()
 {
 	Super::BeginPlay();
 	
+}
+
+void AAirCompressor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	StopCompressing();
+	LinkedResource = nullptr;
+
+	Super::EndPlay(EndPlayReason);
+}
+
+bool AAirCompressor::CanPlaceAdditional(const AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps) const
+{
+	return FindAdjacentGas(Grid, Origin, RotationSteps) != nullptr;
+}
+
+void AAirCompressor::OnPlacedOnGrid(AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps)
+{
+	Super::OnPlacedOnGrid(Grid, Origin, RotationSteps);
+
+	AResourceBase* Gas = FindAdjacentGas(Grid, Origin, RotationSteps);
+	if (!Gas)
+	{
+		LOG_SSR_W(TEXT("OnPlacedOnGrid: no adjacent gas resource. AirCompressor=%s"), *GetName());
+		return;
+	}
+
+	SetLinkedResource(Gas);
+	StartCompressing();
+}
+
+void AAirCompressor::OnRemovedFromGrid()
+{
+	Super::OnRemovedFromGrid();
+
+	StopCompressing();
+	LinkedResource = nullptr;
+}
+
+AResourceBase* AAirCompressor::FindAdjacentGas(const AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps) const
+{
+	if (!Grid)
+	{
+		return nullptr;
+	}
+
+	const FIntPoint Size = AOJJ_Grid::EffectiveSize(GetMachineSize(), RotationSteps);
+	TSet<FIntPoint> Footprint;
+	Footprint.Reserve(Size.X * Size.Y);
+	for (int32 X = 0; X < Size.X; ++X)
+	{
+		for (int32 Y = 0; Y < Size.Y; ++Y)
+		{
+			Footprint.Add(Origin + FIntPoint(X, Y));
+		}
+	}
+
+	static const FIntPoint Dirs[] = {
+		FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1)
+	};
+
+	TSet<FIntPoint> Visited;
+	for (const FIntPoint& Cell : Footprint)
+	{
+		for (const FIntPoint& Dir : Dirs)
+		{
+			const FIntPoint Neighbor = Cell + Dir;
+			if (Footprint.Contains(Neighbor) || Visited.Contains(Neighbor))
+			{
+				continue;
+			}
+			Visited.Add(Neighbor);
+
+			AResourceBase* Resource = Cast<AResourceBase>(Grid->GetActorAtCell(Neighbor));
+			if (Resource && Resource->HasForm(GasFormName))
+			{
+				return Resource;
+			}
+		}
+	}
+	return nullptr;
 }
 
 // Called every frame
@@ -143,7 +224,7 @@ bool AAirCompressor::CanCompress() const
 
 void AAirCompressor::StartCompressing()
 {
-	if (MachineState == EMachineState::Working)
+	if (MachineState == EMachineState::Working || GetWorldTimerManager().IsTimerActive(CompressTimerHandle))
 	{
 		return;
 	}
