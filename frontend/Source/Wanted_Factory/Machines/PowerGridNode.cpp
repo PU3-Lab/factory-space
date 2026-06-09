@@ -18,6 +18,7 @@ APowerGridNode::APowerGridNode()
 	MaxDurability = 1000.f;
 	CurrentDurability = MaxDurability;
 	bDisableWhenBroken = true;
+	MeshScaleMultiplier = FVector(1.0f, 1.0f, 3.0f);
 
 	InputPorts.Reset();
 	OutputPorts.Reset();

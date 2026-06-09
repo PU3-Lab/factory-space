@@ -35,4 +35,5 @@ protected:
 
 private:
 	UPlayerWarehouseSubsystem* GetWarehouse() const;
+	bool StoreInputItem(FName ItemID, int32 Count);
 };
