@@ -8,6 +8,7 @@ AWarehousePort::AWarehousePort()
 	PrimaryActorTick.bCanEverTick = true;
 
 	MachineType = TEXT("WarehousePort");
+	SelectedOutputItemID = TEXT("iron_ore");
 	GridSize = FIntPoint(2, 2);
 	InputPortCount = 1;
 	OutputPortCount = 1;

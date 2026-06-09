@@ -10,6 +10,8 @@ class WANTED_FACTORY_API UPlayerWarehouseSubsystem : public UGameInstanceSubsyst
 	GENERATED_BODY()
 
 public:
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+
 	UFUNCTION(BlueprintCallable, Category = "Player Warehouse")
 	bool AddItem(FName ItemID, int32 Count);
 
