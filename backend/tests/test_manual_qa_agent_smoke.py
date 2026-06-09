@@ -25,13 +25,13 @@ SMOKE_CASES: list[dict[str, Any]] = [
     {
         "question": "철괴는 어떻게 만들어?",
         "expected_question_type": "resource_question",
-        "expected_source_ids": ["resource_iron_ingot", "recipe_iron_ingot"],
+        "expected_source_ids": ["resource_iron_ingot", "recipe_smelt_iron"],
         "expected_action_ids": ["action_explain_resource_production"],
     },
     {
-        "question": "기어 만들려면 뭐가 필요해?",
+        "question": "철괴 만들려면 뭐가 필요해?",
         "expected_question_type": "recipe_question",
-        "expected_source_ids": ["recipe_gear", "resource_iron_ingot"],
+        "expected_source_ids": ["recipe_smelt_iron", "resource_iron_ore"],
         "expected_action_ids": ["action_explain_recipe_requirements"],
     },
     {
@@ -151,7 +151,7 @@ def test_manual_qa_troubleshooting_fallback_keeps_csv_metadata() -> None:
 
 def test_manual_qa_fallback_does_not_build_rule_based_template_answers() -> None:
     equipment_response = answer_manual_qa("제련기는 뭐야?")
-    recipe_response = answer_manual_qa("기어 만들려면 뭐가 필요해?")
+    recipe_response = answer_manual_qa("철괴 만들려면 뭐가 필요해?")
     unknown_response = answer_manual_qa("우주 엘리베이터는 어떻게 업그레이드해?")
 
     assert equipment_response["final_answer"] == (
@@ -180,4 +180,4 @@ def test_manual_qa_csv_paths_work_outside_project_root(
     response = answer_manual_qa("철괴는 어떻게 만들어?")
 
     source_ids = {source["doc_id"] for source in response["sources"]}
-    assert {"resource_iron_ingot", "recipe_iron_ingot"} <= source_ids
+    assert {"resource_iron_ingot", "recipe_smelt_iron"} <= source_ids

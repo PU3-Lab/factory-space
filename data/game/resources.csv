@@ -1,9 +1,58 @@
 ﻿resource_id,name,kind,acquisition_method,produced_by,used_for,used_in_recipes,related_resources
-resource_iron_ore,철광석,raw,철광석 노드에 채굴기를 설치한다,equipment_miner,철괴 제작에 사용,recipe_iron_ingot,resource_iron_ingot
-resource_iron_ingot,철괴,processed,철광석을 제련기에서 제련한다,equipment_smelter,기어 및 기본 모터 제작에 사용,recipe_gear;recipe_basic_motor,resource_iron_ore;resource_gear;resource_basic_motor
-resource_copper_ore,구리광석,raw,구리광석 노드에 채굴기를 설치한다,equipment_miner,구리괴 제작에 사용,recipe_copper_ingot,resource_copper_ingot
-resource_copper_ingot,구리괴,processed,구리광석을 제련기에서 제련한다,equipment_smelter,전선 제작에 사용,recipe_wire,resource_copper_ore;resource_wire
-resource_gear,기어,component,철괴를 조립기에서 가공한다,equipment_assembler,기본 모터 제작에 사용,recipe_basic_motor,resource_iron_ingot;resource_basic_motor
-resource_wire,전선,component,구리괴를 조립기에서 가공한다,equipment_assembler,기본 모터 제작에 사용,recipe_basic_motor,resource_copper_ingot;resource_basic_motor
-resource_power,전력,utility,발전기에서 공급한다,equipment_generator,생산 장비와 물류 장비 가동에 사용,,
-resource_basic_motor,기본 모터,component,기어와 전선을 조립기에서 조립한다,equipment_assembler,상위 부품 제작에 사용,,resource_gear;resource_wire;resource_iron_ingot;resource_copper_ingot
+resource_wood,목재,raw,목재은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,관련 레시피 입력 재료로 사용,recipe_make_charcoal;recipe_make_sawdust,
+resource_sawdust,톱밥,processed,톱밥은(는) equipment_grinder 장비의 recipe_make_sawdust 공정에서 생산한다,equipment_grinder,추가 사용처 확인 필요,,
+resource_charcoal,숯,processed,숯은(는) equipment_smelter 장비의 recipe_make_charcoal 공정에서 생산한다,equipment_smelter,관련 레시피 입력 재료로 사용,recipe_crush_charcoal,
+resource_charcoal_dust,숯가루,processed,숯가루은(는) equipment_grinder 장비의 recipe_crush_charcoal 공정에서 생산한다,equipment_grinder,추가 사용처 확인 필요,,
+resource_coal,석탄,raw,석탄은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,관련 레시피 입력 재료로 사용,recipe_crush_coal,
+resource_coal_dust,석탄가루,processed,석탄가루은(는) equipment_grinder 장비의 recipe_crush_coal 공정에서 생산한다,equipment_grinder,추가 사용처 확인 필요,,
+resource_iron_ore,철광석,raw,철광석은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,관련 레시피 입력 재료로 사용,recipe_smelt_iron,resource_iron_ingot;resource_iron_powder
+resource_iron_ingot,철괴,processed,철괴은(는) equipment_smelter 장비의 recipe_smelt_iron 공정에서 생산한다,equipment_smelter,관련 레시피 입력 재료로 사용,recipe_crush_iron,resource_iron_ore;resource_iron_powder
+resource_iron_powder,철 분말,processed,철 분말은(는) equipment_grinder 장비의 recipe_crush_iron 공정에서 생산한다,equipment_grinder,추가 사용처 확인 필요,,resource_iron_ore;resource_iron_ingot
+resource_copper_ore,구리광석,raw,구리광석은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,관련 레시피 입력 재료로 사용,recipe_smelt_copper,resource_copper_ingot;resource_copper_powder
+resource_copper_ingot,구리괴,processed,구리괴은(는) equipment_smelter 장비의 recipe_smelt_copper 공정에서 생산한다,equipment_smelter,관련 레시피 입력 재료로 사용,recipe_crush_copper,resource_copper_ore;resource_copper_powder
+resource_copper_powder,구리 분말,processed,구리 분말은(는) equipment_grinder 장비의 recipe_crush_copper 공정에서 생산한다,equipment_grinder,추가 사용처 확인 필요,,resource_copper_ore;resource_copper_ingot
+resource_zinc_ore,아연광석,raw,아연광석은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,관련 레시피 입력 재료로 사용,recipe_smelt_zinc,resource_zinc_ingot;resource_zinc_powder
+resource_zinc_ingot,아연괴,processed,아연괴은(는) equipment_smelter 장비의 recipe_smelt_zinc 공정에서 생산한다,equipment_smelter,관련 레시피 입력 재료로 사용,recipe_crush_zinc,resource_zinc_ore;resource_zinc_powder
+resource_zinc_powder,아연 분말,processed,아연 분말은(는) equipment_grinder 장비의 recipe_crush_zinc 공정에서 생산한다,equipment_grinder,추가 사용처 확인 필요,,resource_zinc_ore;resource_zinc_ingot
+resource_lead_ore,납광석,raw,납광석은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,관련 레시피 입력 재료로 사용,recipe_smelt_lead,resource_lead_ingot;resource_lead_powder
+resource_lead_ingot,납괴,processed,납괴은(는) equipment_smelter 장비의 recipe_smelt_lead 공정에서 생산한다,equipment_smelter,관련 레시피 입력 재료로 사용,recipe_crush_lead,resource_lead_ore;resource_lead_powder
+resource_lead_powder,납 분말,processed,납 분말은(는) equipment_grinder 장비의 recipe_crush_lead 공정에서 생산한다,equipment_grinder,추가 사용처 확인 필요,,resource_lead_ore;resource_lead_ingot
+resource_tin_ore,주석광석,raw,주석광석은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,관련 레시피 입력 재료로 사용,recipe_smelt_tin,resource_tin_ingot;resource_tin_powder
+resource_tin_ingot,주석괴,processed,주석괴은(는) equipment_smelter 장비의 recipe_smelt_tin 공정에서 생산한다,equipment_smelter,관련 레시피 입력 재료로 사용,recipe_crush_tin,resource_tin_ore;resource_tin_powder
+resource_tin_powder,주석 분말,processed,주석 분말은(는) equipment_grinder 장비의 recipe_crush_tin 공정에서 생산한다,equipment_grinder,추가 사용처 확인 필요,,resource_tin_ore;resource_tin_ingot
+resource_aluminum_ore,알루미늄광석,raw,알루미늄광석은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,관련 레시피 입력 재료로 사용,recipe_smelt_aluminum,resource_aluminum_ingot;resource_aluminum_powder
+resource_aluminum_ingot,알루미늄괴,processed,알루미늄괴은(는) equipment_smelter 장비의 recipe_smelt_aluminum 공정에서 생산한다,equipment_smelter,관련 레시피 입력 재료로 사용,recipe_crush_aluminum,resource_aluminum_ore;resource_aluminum_powder
+resource_aluminum_powder,알루미늄 분말,processed,알루미늄 분말은(는) equipment_grinder 장비의 recipe_crush_aluminum 공정에서 생산한다,equipment_grinder,추가 사용처 확인 필요,,resource_aluminum_ore;resource_aluminum_ingot
+resource_nickel_ore,니켈광석,raw,니켈광석은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,관련 레시피 입력 재료로 사용,recipe_smelt_nickel,resource_nickel_ingot;resource_nickel_powder
+resource_nickel_ingot,니켈괴,processed,니켈괴은(는) equipment_smelter 장비의 recipe_smelt_nickel 공정에서 생산한다,equipment_smelter,관련 레시피 입력 재료로 사용,recipe_crush_nickel,resource_nickel_ore;resource_nickel_powder
+resource_nickel_powder,니켈 분말,processed,니켈 분말은(는) equipment_grinder 장비의 recipe_crush_nickel 공정에서 생산한다,equipment_grinder,추가 사용처 확인 필요,,resource_nickel_ore;resource_nickel_ingot
+resource_tungsten_ore,텅스텐광석,raw,텅스텐광석은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,관련 레시피 입력 재료로 사용,recipe_smelt_tungsten,resource_tungsten_ingot;resource_tungsten_powder
+resource_tungsten_ingot,텅스텐괴,processed,텅스텐괴은(는) equipment_smelter 장비의 recipe_smelt_tungsten 공정에서 생산한다,equipment_smelter,관련 레시피 입력 재료로 사용,recipe_crush_tungsten,resource_tungsten_ore;resource_tungsten_powder
+resource_tungsten_powder,텅스텐 분말,processed,텅스텐 분말은(는) equipment_grinder 장비의 recipe_crush_tungsten 공정에서 생산한다,equipment_grinder,추가 사용처 확인 필요,,resource_tungsten_ore;resource_tungsten_ingot
+resource_titanium_ore,티타늄광석,raw,티타늄광석은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,관련 레시피 입력 재료로 사용,recipe_smelt_titanium,resource_titanium_ingot;resource_titanium_powder
+resource_titanium_ingot,티타늄괴,processed,티타늄괴은(는) equipment_smelter 장비의 recipe_smelt_titanium 공정에서 생산한다,equipment_smelter,관련 레시피 입력 재료로 사용,recipe_crush_titanium,resource_titanium_ore;resource_titanium_powder
+resource_titanium_powder,티타늄 분말,processed,티타늄 분말은(는) equipment_grinder 장비의 recipe_crush_titanium 공정에서 생산한다,equipment_grinder,추가 사용처 확인 필요,,resource_titanium_ore;resource_titanium_ingot
+resource_magnesium_ore,마그네슘광석,raw,마그네슘광석은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,관련 레시피 입력 재료로 사용,recipe_smelt_magnesium,resource_magnesium_ingot;resource_magnesium_powder
+resource_magnesium_ingot,마그네슘괴,processed,마그네슘괴은(는) equipment_smelter 장비의 recipe_smelt_magnesium 공정에서 생산한다,equipment_smelter,관련 레시피 입력 재료로 사용,recipe_crush_magnesium,resource_magnesium_ore;resource_magnesium_powder
+resource_magnesium_powder,마그네슘 분말,processed,마그네슘 분말은(는) equipment_grinder 장비의 recipe_crush_magnesium 공정에서 생산한다,equipment_grinder,추가 사용처 확인 필요,,resource_magnesium_ore;resource_magnesium_ingot
+resource_gold_ore,금광석,raw,금광석은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,관련 레시피 입력 재료로 사용,recipe_smelt_gold,resource_gold_ingot;resource_gold_powder
+resource_gold_ingot,금괴,processed,금괴은(는) equipment_smelter 장비의 recipe_smelt_gold 공정에서 생산한다,equipment_smelter,관련 레시피 입력 재료로 사용,recipe_crush_gold,resource_gold_ore;resource_gold_powder
+resource_gold_powder,금 분말,processed,금 분말은(는) equipment_grinder 장비의 recipe_crush_gold 공정에서 생산한다,equipment_grinder,추가 사용처 확인 필요,,resource_gold_ore;resource_gold_ingot
+resource_silver_ore,은광석,raw,은광석은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,관련 레시피 입력 재료로 사용,recipe_smelt_silver,resource_silver_ingot;resource_silver_powder
+resource_silver_ingot,은괴,processed,은괴은(는) equipment_smelter 장비의 recipe_smelt_silver 공정에서 생산한다,equipment_smelter,관련 레시피 입력 재료로 사용,recipe_crush_silver,resource_silver_ore;resource_silver_powder
+resource_silver_powder,은 분말,processed,은 분말은(는) equipment_grinder 장비의 recipe_crush_silver 공정에서 생산한다,equipment_grinder,추가 사용처 확인 필요,,resource_silver_ore;resource_silver_ingot
+resource_uranium,우라늄,raw,우라늄은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,추가 사용처 확인 필요,,
+resource_sulfur_ore,황광석,raw,황광석은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,관련 레시피 입력 재료로 사용,recipe_crush_sulfur,resource_sulfur_powder
+resource_sulfur_powder,황 분말,processed,황 분말은(는) equipment_grinder 장비의 recipe_crush_sulfur 공정에서 생산한다,equipment_grinder,추가 사용처 확인 필요,,resource_sulfur_ore
+resource_sand,모래,raw,모래은(는) 고체 자원 채집/채굴 지점에서 획득한다,equipment_miner,관련 레시피 입력 재료로 사용,recipe_make_glass,
+resource_glass,유리,processed,유리은(는) equipment_smelter 장비의 recipe_make_glass 공정에서 생산한다,equipment_smelter,추가 사용처 확인 필요,,
+resource_water,물,raw,물은(는) 액체 자원 지점에서 펌프로 획득한다,equipment_pump,추가 사용처 확인 필요,,
+resource_waste_water,폐수,raw,폐수은(는) 액체 자원 지점에서 펌프로 획득한다,equipment_pump,추가 사용처 확인 필요,,
+resource_acid,산,raw,산은(는) 액체 자원 지점에서 펌프로 획득한다,equipment_pump,추가 사용처 확인 필요,,
+resource_petrolium,석유,raw,석유은(는) 액체 자원 지점에서 펌프로 획득한다,equipment_pump,추가 사용처 확인 필요,,
+resource_mercury,수은,raw,수은은(는) 액체 자원 지점에서 펌프로 획득한다,equipment_pump,추가 사용처 확인 필요,,
+resource_oxygen,산소,raw,산소은(는) 기체 자원 지점에서 압축기로 획득한다,equipment_compressor,추가 사용처 확인 필요,,
+resource_hydrogen,수소,raw,수소은(는) 기체 자원 지점에서 압축기로 획득한다,equipment_compressor,추가 사용처 확인 필요,,
+resource_nitrogen,질소,raw,질소은(는) 기체 자원 지점에서 압축기로 획득한다,equipment_compressor,추가 사용처 확인 필요,,
+resource_helium,헬륨,raw,헬륨은(는) 기체 자원 지점에서 압축기로 획득한다,equipment_compressor,추가 사용처 확인 필요,,
+resource_power,전력,utility,발전기와 전력망을 통해 공급한다,equipment_generator,생산 장비와 물류 장비 가동에 사용,,resource_coal;resource_charcoal;resource_petrolium;resource_uranium
