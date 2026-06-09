@@ -198,3 +198,12 @@ worktree/
 # Keep environment templates tracked even though real env files are ignored.
 !.env.example
 !**/.env.example
+frontend/docs/presentation_images/README.md
+frontend/docs/presentation_images/questmanager_subsystem_diagram.svg
+frontend/docs/presentation_images/planetmanager_subsystem_diagram.svg
+frontend/docs/presentation_images/factorymanager_subsystem_diagram.svg
+frontend/docs/presentation_images/agentclient_subsystem_diagram.svg
+frontend/docs/presentation_images/questmanager_subsystem_diagram.png
+frontend/docs/presentation_images/planetmanager_subsystem_diagram.png
+frontend/docs/presentation_images/factorymanager_subsystem_diagram.png
+frontend/docs/presentation_images/agentclient_subsystem_diagram.png
