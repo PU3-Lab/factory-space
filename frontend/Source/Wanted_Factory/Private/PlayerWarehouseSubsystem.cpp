@@ -16,7 +16,9 @@ bool UPlayerWarehouseSubsystem::AddItem(FName ItemID, int32 Count)
 		return false;
 	}
 
-	StoredItems.FindOrAdd(ItemID) += Count;
+	int32& StoredCount = StoredItems.FindOrAdd(ItemID);
+	StoredCount += Count;
+	OnItemAdded.Broadcast(ItemID, Count, StoredCount);
 	return true;
 }
 
