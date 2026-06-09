@@ -20,3 +20,4 @@ MagneticShield_Lv1,MagneticShield,1,iron_ingot,100,10000,100,0,0,0,0,3,3,/Game/A
 Conveyor_Lv1,Conveyor,1,iron_ingot,10,1000,0,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/Conveyor.Conveyor
 Conveyor_Lv2,Conveyor,2,iron_ingot,10,1000,0,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/Conveyor.Conveyor
 Conveyor_Lv3,Conveyor,3,iron_ingot,10,1000,0,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/Conveyor.Conveyor
+Warehouse,Warehouse,1,iron_ingot,10,99999,0,1,1,1,1,1,2,
