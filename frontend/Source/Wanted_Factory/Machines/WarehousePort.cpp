@@ -9,7 +9,7 @@ AWarehousePort::AWarehousePort()
 
 	MachineType = TEXT("WarehousePort");
 	SelectedOutputItemID = TEXT("iron_ore");
-	GridSize = FIntPoint(2, 1);
+	GridSize = FIntPoint(4, 3);
 	InputPortCount = 1;
 	OutputPortCount = 1;
 	bNeedPower = false;

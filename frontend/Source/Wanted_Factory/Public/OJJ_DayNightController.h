@@ -64,6 +64,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Day Night")
 	float SunYaw = 0.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Day Night", meta = (ClampMin = "0.1"))
+	float RotationInterpSpeed = 1.0f;
+
 	// 디버그/미리보기용 진행률 오버라이드. -1 = 비활성(실제 시각 사용). 0~1이면 그 시각으로 태양을 고정
 	// (예: 0.25 정오, 0.5 일몰, 0.75 한밤). 에디터/PIE에서 특정 시각 라이팅 확인용.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Day Night|Debug", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
@@ -100,6 +103,8 @@ private:
 	float LastMoonPitch = TNumericLimits<float>::Max();
 	float LastMoonYaw = TNumericLimits<float>::Max();
 	float LastMoonIntensity = TNumericLimits<float>::Max();
+	float CurrentSunPitch = 0.0f;
+	bool bHasInitializedRotation = false;
 
 	// progress(0~1)를 태양 Pitch(도)로 변환. Pitch = -90 * sin(progress * 2π).
 	static float ProgressToSunPitch(float Progress01);
@@ -108,7 +113,7 @@ private:
 	bool ResolveProgress(float& OutProgress01) const;
 
 	// 태양 회전 적용(skip-if-unchanged 내장).
-	void ApplySunRotation(float SunPitch);
+	void ApplySunRotation(float TargetSunPitch, float DeltaSeconds);
 
 	// 달 회전+강도 적용. 태양과 반대 위상, 밤에만 점등. MoonLight 미지정이면 no-op.
 	void ApplyMoon(float SunPitch);
