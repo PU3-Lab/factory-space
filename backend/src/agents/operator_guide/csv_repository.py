@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import cached_property
@@ -73,13 +74,32 @@ def _project_root() -> Path:
 
 
 def _split_ids(value: str) -> list[str]:
-    if not value or value in {"none", "any"}:
+    if not value or value in {"none", "any", "없음"}:
         return []
-    return [item.strip() for item in value.split(";") if item.strip()]
+    return [_normalize_id_token(item) for item in value.split(";") if item.strip()]
 
 
 def _strip_quantity(value: str) -> str:
-    return value.split(":", 1)[0]
+    return _normalize_id_token(value).split(":", 1)[0]
+
+
+def _normalize_id_token(value: str) -> str:
+    stripped = value.strip()
+    id_match = re.search(r"\(([^()]+)\)", stripped)
+    if id_match is None:
+        return stripped
+    suffix = ""
+    tail = stripped[id_match.end() :].strip()
+    if tail.startswith(":"):
+        suffix = tail
+    return f"{id_match.group(1)}{suffix}"
+
+
+def _value(row: dict[str, str], *keys: str) -> str:
+    for key in keys:
+        if key in row:
+            return row[key]
+    return ""
 
 
 class CsvManualQARepository:
@@ -92,17 +112,19 @@ class CsvManualQARepository:
     def _equipment(self) -> dict[str, EquipmentRecord]:
         rows = self._read_rows("equipment.csv")
         return {
-            row["equipment_id"]: EquipmentRecord(
-                equipment_id=row["equipment_id"],
-                name=row["name"],
-                category=row["category"],
-                role=row["role"],
-                input_resources=_split_ids(row["input_resources"]),
-                output_resources=_split_ids(row["output_resources"]),
-                power_required=row["power_required"],
-                connectable_equipment=_split_ids(row["connectable_equipment"]),
-                related_recipes=_split_ids(row["related_recipes"]),
-                common_issues=_split_ids(row["common_issues"]),
+            _value(row, "equipment_id", "장비ID"): EquipmentRecord(
+                equipment_id=_value(row, "equipment_id", "장비ID"),
+                name=_value(row, "name", "장비명"),
+                category=_value(row, "category", "분류"),
+                role=_value(row, "role", "역할"),
+                input_resources=_split_ids(_value(row, "input_resources", "입력자원")),
+                output_resources=_split_ids(_value(row, "output_resources", "출력자원")),
+                power_required=_value(row, "power_required", "필요전력"),
+                connectable_equipment=_split_ids(
+                    _value(row, "connectable_equipment", "연결가능장비")
+                ),
+                related_recipes=_split_ids(_value(row, "related_recipes", "관련레시피")),
+                common_issues=_split_ids(_value(row, "common_issues", "자주발생문제")),
             )
             for row in rows
         }
@@ -111,15 +133,15 @@ class CsvManualQARepository:
     def _resources(self) -> dict[str, ResourceRecord]:
         rows = self._read_rows("resources.csv")
         return {
-            row["resource_id"]: ResourceRecord(
-                resource_id=row["resource_id"],
-                name=row["name"],
-                kind=row["kind"],
-                acquisition_method=row["acquisition_method"],
-                produced_by=row["produced_by"],
-                used_for=row["used_for"],
-                used_in_recipes=_split_ids(row["used_in_recipes"]),
-                related_resources=_split_ids(row["related_resources"]),
+            _value(row, "resource_id", "자원ID"): ResourceRecord(
+                resource_id=_value(row, "resource_id", "자원ID"),
+                name=_value(row, "name", "자원명"),
+                kind=_value(row, "kind", "종류"),
+                acquisition_method=_value(row, "acquisition_method", "획득방법"),
+                produced_by=_value(row, "produced_by", "생산장비"),
+                used_for=_value(row, "used_for", "사용처"),
+                used_in_recipes=_split_ids(_value(row, "used_in_recipes", "사용레시피")),
+                related_resources=_split_ids(_value(row, "related_resources", "관련자원")),
             )
             for row in rows
         }
@@ -128,16 +150,22 @@ class CsvManualQARepository:
     def _recipes(self) -> dict[str, RecipeRecord]:
         rows = self._read_rows("recipes.csv")
         return {
-            row["recipe_id"]: RecipeRecord(
-                recipe_id=row["recipe_id"],
-                name=row["name"],
-                input_resources=_split_ids(row["input_resources"]),
-                output_resource=_strip_quantity(row["output_resource"]),
-                required_equipment=row["required_equipment"],
-                stage=row["stage"],
-                prerequisite_recipes=_split_ids(row["prerequisite_recipes"]),
-                production_steps=row["production_steps"],
-                common_bottlenecks=_split_ids(row["common_bottlenecks"]),
+            _value(row, "recipe_id", "레시피ID"): RecipeRecord(
+                recipe_id=_value(row, "recipe_id", "레시피ID"),
+                name=_value(row, "name", "레시피명"),
+                input_resources=_split_ids(_value(row, "input_resources", "입력자원")),
+                output_resource=_strip_quantity(_value(row, "output_resource", "출력자원")),
+                required_equipment=_strip_quantity(
+                    _value(row, "required_equipment", "필요장비")
+                ),
+                stage=_value(row, "stage", "공정단계"),
+                prerequisite_recipes=_split_ids(
+                    _value(row, "prerequisite_recipes", "선행레시피")
+                ),
+                production_steps=_value(row, "production_steps", "생산순서"),
+                common_bottlenecks=_split_ids(
+                    _value(row, "common_bottlenecks", "자주발생문제")
+                ),
             )
             for row in rows
         }
@@ -146,16 +174,18 @@ class CsvManualQARepository:
     def _troubleshooting_rules(self) -> dict[str, TroubleshootingRuleRecord]:
         rows = self._read_rows("troubleshooting_rules.csv")
         return {
-            row["issue_id"]: TroubleshootingRuleRecord(
-                issue_id=row["issue_id"],
-                name=row["name"],
-                symptom=_split_ids(row["symptom"]),
-                possible_causes=_split_ids(row["possible_causes"]),
-                check_order=_split_ids(row["check_order"]),
-                recommended_action_ids=_split_ids(row["recommended_action_ids"]),
-                resolution=row["resolution"],
-                related_equipment=_split_ids(row["related_equipment"]),
-                related_resources=_split_ids(row["related_resources"]),
+            _value(row, "issue_id", "문제ID"): TroubleshootingRuleRecord(
+                issue_id=_value(row, "issue_id", "문제ID"),
+                name=_value(row, "name", "문제명"),
+                symptom=_split_ids(_value(row, "symptom", "증상")),
+                possible_causes=_split_ids(_value(row, "possible_causes", "가능원인")),
+                check_order=_split_ids(_value(row, "check_order", "확인순서")),
+                recommended_action_ids=_split_ids(
+                    _value(row, "recommended_action_ids", "추천행동ID")
+                ),
+                resolution=_value(row, "resolution", "해결방법"),
+                related_equipment=_split_ids(_value(row, "related_equipment", "관련장비")),
+                related_resources=_split_ids(_value(row, "related_resources", "관련자원")),
             )
             for row in rows
         }
@@ -164,10 +194,10 @@ class CsvManualQARepository:
     def _action_policies(self) -> dict[str, ActionPolicyRecord]:
         rows = self._read_rows("action_policy.csv")
         return {
-            row["action_id"]: ActionPolicyRecord(
-                action_id=row["action_id"],
-                label=row["label"],
-                description=row["description"],
+            _value(row, "action_id", "행동ID"): ActionPolicyRecord(
+                action_id=_value(row, "action_id", "행동ID"),
+                label=_value(row, "label", "행동명"),
+                description=_value(row, "description", "설명"),
             )
             for row in rows
         }

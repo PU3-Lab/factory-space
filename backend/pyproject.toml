@@ -5,12 +5,16 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.13,<2.0",
     "chromadb>=1.5.9",
     "fastapi>=0.136.3,<0.137.0",
     "google-genai>=1.33.0",
     "langgraph>=1.2.2",
     "openai>=1.0.0",
+    "pgvector>=0.3,<1.0",
+    "psycopg[binary]>=3.2,<4.0",
     "pydantic>=2.0,<3.0",
+    "sqlalchemy>=2.0,<3.0",
     "uvicorn[standard]>=0.30.0,<1.0",
 ]
 
