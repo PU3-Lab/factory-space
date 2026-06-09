@@ -14,6 +14,12 @@ struct FMachineTableRow : public FTableRowBase
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName MachineType;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 Level;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName CostType;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
