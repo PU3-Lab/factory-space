@@ -57,6 +57,11 @@ void UMachineSubsystem::BuildMachineIndex()
 
 		MachineNameToRowMap.Add(RowName, RowName);
 
+		if (!MachineData->MachineType.IsNone() && MachineData->Level == 2)
+		{
+			MachineNameToRowMap.Add(MachineData->MachineType, RowName);
+		}
+
 		LOG_SSR_W(
 			TEXT("Machine Indexed: %s -> %s"),
 			*RowName.ToString(),

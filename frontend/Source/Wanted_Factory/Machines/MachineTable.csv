@@ -15,14 +15,8 @@ AirCompressor_Lv1,AirCompressor,1,iron_ingot,10,1000,10,1,1,1,1,3,3,
 AirCompressor_Lv2,AirCompressor,2,iron_ingot,10,1000,10,1,1,1,1,3,3,
 AirCompressor_Lv3,AirCompressor,3,iron_ingot,10,1000,10,1,1,1,1,3,3,
 PowerPlant_Lv1,PowerPlant,1,iron_ingot,10,1000,30,0,0,0,0,3,3,/Game/Assets/UIImg/Machine/PowerPlant.PowerPlant
-PowerPlant_Lv2,PowerPlant,2,iron_ingot,10,1000,30,0,0,0,0,3,3,/Game/Assets/UIImg/Machine/PowerPlant.PowerPlant
-PowerPlant_Lv3,PowerPlant,3,iron_ingot,10,1000,30,0,0,0,0,3,3,/Game/Assets/UIImg/Machine/PowerPlant.PowerPlant
 PowerGridNode_Lv1,PowerGridNode,1,iron_ingot,10,1000,40,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/PowerGridNode.PowerGridNode
-PowerGridNode_Lv2,PowerGridNode,2,iron_ingot,10,1000,40,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/PowerGridNode.PowerGridNode
-PowerGridNode_Lv3,PowerGridNode,3,iron_ingot,10,1000,40,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/PowerGridNode.PowerGridNode
 MagneticShield_Lv1,MagneticShield,1,iron_ingot,100,10000,100,0,0,0,0,3,3,/Game/Assets/UIImg/Machine/MagneticShield.MagneticShield
-MagneticShield_Lv2,MagneticShield,2,iron_ingot,100,10000,100,0,0,0,0,3,3,/Game/Assets/UIImg/Machine/MagneticShield.MagneticShield
-MagneticShield_Lv3,MagneticShield,3,iron_ingot,100,10000,100,0,0,0,0,3,3,/Game/Assets/UIImg/Machine/MagneticShield.MagneticShield
 Conveyor_Lv1,Conveyor,1,iron_ingot,10,1000,0,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/Conveyor.Conveyor
 Conveyor_Lv2,Conveyor,2,iron_ingot,10,1000,0,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/Conveyor.Conveyor
 Conveyor_Lv3,Conveyor,3,iron_ingot,10,1000,0,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/Conveyor.Conveyor
