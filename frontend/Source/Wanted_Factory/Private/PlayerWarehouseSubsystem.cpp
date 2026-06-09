@@ -1,5 +1,14 @@
 #include "PlayerWarehouseSubsystem.h"
 
+void UPlayerWarehouseSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+
+	AddItem(TEXT("iron_ore"), 30);
+	AddItem(TEXT("copper_ore"), 30);
+	AddItem(TEXT("iron_ingot"), 20);
+}
+
 bool UPlayerWarehouseSubsystem::AddItem(FName ItemID, int32 Count)
 {
 	if (ItemID.IsNone() || Count <= 0)
