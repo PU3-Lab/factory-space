@@ -31,6 +31,7 @@ void AMinerMachine::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	// 그리드 RemoveMachine를 거치지 않는 소멸(레벨 전환/직접 Destroy)에서도 선점 해제를 보장.
 	// ClaimedBy가 weak라 자동 무효화되긴 하나, 명시 해제로 즉시 자유화 + LinkedResource 정리.
+	StopMining();
 	if (IsValid(LinkedResource))
 	{
 		LinkedResource->Release(this);
@@ -61,6 +62,7 @@ void AMinerMachine::OnPlacedOnGrid(AOJJ_Grid* Grid, FIntPoint Origin, int32 Rota
 	if (Ore->Claim(this))
 	{
 		SetLinkedResource(Ore);
+		StartMining();
 	}
 	else
 	{
@@ -72,6 +74,7 @@ void AMinerMachine::OnRemovedFromGrid()
 {
 	Super::OnRemovedFromGrid();
 
+	StopMining();
 	if (IsValid(LinkedResource))
 	{
 		LinkedResource->Release(this);
@@ -174,6 +177,11 @@ bool AMinerMachine::CanMine() const
 
 void AMinerMachine::StartMining()
 {
+	if (GetWorldTimerManager().IsTimerActive(MineTimerHandle))
+	{
+		return;
+	}
+
 	if (MineAmount <= 0 || MineInterval <= 0.f)
 	{
 		LOG_SSR_W(
@@ -186,7 +194,7 @@ void AMinerMachine::StartMining()
 
 	if (!CanMine())
 	{
-		LOG_SSR_W(TEXT("Cannot start mining."))
+		LOG_SSR_W(TEXT("Cannot start mining."));
 		return;
 	}
 
