@@ -175,17 +175,26 @@ class CsvManualQARepository:
     def get_equipment(self, equipment_id: str) -> EquipmentRecord | None:
         return self._equipment.get(equipment_id)
 
+    def list_equipment(self) -> list[EquipmentRecord]:
+        return list(self._equipment.values())
+
     def find_equipment_by_question(self, question: str) -> EquipmentRecord | None:
         return self._find_by_name(question, self._equipment.values())
 
     def get_resource(self, resource_id: str) -> ResourceRecord | None:
         return self._resources.get(resource_id)
 
+    def list_resources(self) -> list[ResourceRecord]:
+        return list(self._resources.values())
+
     def find_resource_by_question(self, question: str) -> ResourceRecord | None:
         return self._find_by_name(question, self._resources.values())
 
     def get_recipe(self, recipe_id: str) -> RecipeRecord | None:
         return self._recipes.get(recipe_id)
+
+    def list_recipes(self) -> list[RecipeRecord]:
+        return list(self._recipes.values())
 
     def find_recipe_by_question(self, question: str) -> RecipeRecord | None:
         resource = self.find_resource_by_question(question)
@@ -207,6 +216,9 @@ class CsvManualQARepository:
     ) -> TroubleshootingRuleRecord | None:
         return self._troubleshooting_rules.get(issue_id)
 
+    def list_troubleshooting_rules(self) -> list[TroubleshootingRuleRecord]:
+        return list(self._troubleshooting_rules.values())
+
     def find_troubleshooting_rule(
         self,
         question: str,
@@ -227,6 +239,9 @@ class CsvManualQARepository:
 
     def get_action_policy(self, action_id: str) -> ActionPolicyRecord | None:
         return self._action_policies.get(action_id)
+
+    def list_action_policies(self) -> list[ActionPolicyRecord]:
+        return list(self._action_policies.values())
 
     def get_action_policies(self, action_ids: list[str]) -> list[ActionPolicyRecord]:
         return [
