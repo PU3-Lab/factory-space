@@ -116,6 +116,51 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visualization", meta = (ClampMin = "0.0"))
 	float HoverExtraZLift = 30.0f;
 
+	// === 시각 위계: 오버레이(정보, 차분) vs 호버(현재 액션, 주인공) ===
+	// 문제(F1-c 후속): 오버레이와 호버가 같은 반투명 MI를 공유 → 호버가 빨강 오버레이 위에서 비쳐
+	// 주황으로 합성됨. 해결: 둘을 전용 MID로 분리(OJJ_EnsureTileMIDs)하고 색/불투명을 아래 프로퍼티로
+	// 구동. M_OJJ_GridFloor는 Unlit이라 색이 곧 발광(emissive) — 호버 색 채널을 1.0 초과로 주면 글로우.
+	// 전부 EditAnywhere → PIE 디테일 패널에서 실시간 튜닝(PostEditChangeProperty가 즉시 재적용).
+
+	// 바닥 분류 오버레이(빨강/초록/파랑) 공통 불투명도 — "정보는 주되 시끄럽지 않게". 낮게.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float OverlayOpacity = 0.30f;
+
+	// 오버레이 건설가능(초록) — 차분한 톤(저채도/저명도).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
+	FLinearColor OverlayBuildableColor = FLinearColor(0.10f, 0.45f, 0.13f);
+
+	// 오버레이 건설불가/blocked(빨강) — 차분한 톤.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
+	FLinearColor OverlayBlockedColor = FLinearColor(0.50f, 0.10f, 0.09f);
+
+	// 오버레이 물(파랑) — 차분한 톤.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
+	FLinearColor OverlayWaterColor = FLinearColor(0.10f, 0.35f, 0.60f);
+
+	// 호버 공통 불투명도 — "지금 액션이 주인공". 높게(아래 오버레이를 거의 가림 → 색 섞임 제거).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float HoverOpacity = 0.90f;
+
+	// 호버 가능(밝은 초록 + 살짝 에미시브) — Unlit이라 채널>1이 글로우.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
+	FLinearColor HoverValidColor = FLinearColor(0.10f, 1.50f, 0.22f);
+
+	// 호버 불가(밝은 빨강 + 살짝 에미시브).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
+	FLinearColor HoverInvalidColor = FLinearColor(1.60f, 0.12f, 0.10f);
+
+	// === 격자 선(셀 경계 = 스냅 기준선) — 채움과 독립. "선은 항상 선명." ===
+	// 보이는 격자선은 별도 요소가 아니라 분류/호버 타일 머티리얼(M_OJJ_GridFloor)이 WorldPosition 기반으로
+	// 그리는 셀 경계선이다(LineColor/LineOpacity). 채움(BaseColor/Opacity)을 0.30으로 낮춰도 선은 아래 값으로
+	// 선명 유지 — 모든 타일(오버레이+호버)이 같은 선을 공유해 스냅 격자가 일관되게 또렷.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
+	FLinearColor GridLineColor = FLinearColor(0.85f, 0.88f, 0.95f);
+
+	// 격자 선 불투명도 — 채움(Overlay/Hover Opacity)과 독립. 스냅 기준선이라 높게 유지.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float GridLineOpacity = 0.90f;
+
 	// === 지형 높낮이 건설 제약 (정적 지형 — BeginPlay 1회 베이크) ===
 	// BeginPlay에서 GridSize 전 셀 중심에서 ↓라인트레이스 → 지형 높이가 그리드 평면 Z와
 	// BuildableHeightTolerance를 넘게 차이나면 UnbuildableCells에 마킹. CanPlaceMachine/컨베이어 경로가 게이트로 참조.
@@ -221,10 +266,28 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Water")
 	TObjectPtr<UInstancedStaticMeshComponent> WaterCellISM;
 
-	// water 오버레이 파랑 틴트용 동적 머티리얼(BasicShapeMaterial 기반). RefreshGridVisual에서 최초 1회 생성(에디터/PIE 공용).
-	// ⚠️ 불투명 — 디버그용. 후속: 전용 translucent MI_OJJ_GridWater 에셋으로 교체.
+	// water 오버레이 파랑 틴트용 동적 머티리얼. OJJ_EnsureTileMIDs에서 최초 1회 생성(에디터/PIE 공용).
+	// 이제 다른 타일 MID와 동일하게 translucent M_OJJ_GridFloor(HoverValidBaseMaterial) 기반 — OverlayWaterColor/OverlayOpacity 구동.
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> WaterCellMID;
+
+	// === 타일 전용 동적 머티리얼(시각 위계 분리) ===
+	// 오버레이와 호버가 같은 MI를 공유하던 구조(색 섞임 원인)를 끊고 각 용도별 MID로 분리.
+	// 색/불투명은 위 Visual Hierarchy 프로퍼티로 구동. OJJ_EnsureTileMIDs에서 lazy 생성.
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> ValidHoverMID;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> InvalidHoverMID;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> BuildableCellMID;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> BlockedCellMID;
+
+	// MID 생성용 베이스 머티리얼(생성자에서 MI 에셋 캐싱). 호버/오버레이/물 MID가 이 둘에서 파생.
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> HoverValidBaseMaterial;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> HoverInvalidBaseMaterial;
 
 	// 디버그 토글(OJJ.Grid.ShowBlocked) — 빌드모드 밖에서도 오버레이 강제 표시.
 	UPROPERTY(Transient)
@@ -368,6 +431,23 @@ private:
 	// 호이스팅 버전 — GroundZ 유효성(시그니처 비교)은 셀 불변이라 호출자가 1회 계산해 전달.
 	// RefreshGridVisual의 90k셀 루프가 사용(Codex F1-c #5 — 셀당 시그니처 재검사 제거).
 	float OJJ_GetCellVisualBaseZInternal(FIntPoint Cell, bool bGroundZValid) const;
+
+	// === 타일 MID(시각 위계) 헬퍼 ===
+	// 호버/오버레이/물 ISM에 전용 MID를 lazy 생성·할당하고 현재 프로퍼티 값을 적용. 호버 진입점
+	// (ClearHoverPreview)·오버레이 갱신(RefreshGridVisual)·BeginPlay에서 호출 — 멱등(이미 있으면 재적용만).
+	void OJJ_EnsureTileMIDs();
+
+	// 현재 Visual Hierarchy 프로퍼티 값을 존재하는 MID들에 (재)적용. PIE 실시간 튜닝 경로 공용.
+	void OJJ_ApplyTileMIDParams();
+
+	// 단일 MID에 채움/선을 독립 세팅 — 채움(BaseColor/Opacity)=인자(분류색·연하게), 선(LineColor/LineOpacity)=
+	// 공유 GridLineColor/GridLineOpacity(스냅 기준선·선명). 채움 투명도가 선을 흐리지 않게 분리. MID==null/없는 파라미터는 무시.
+	void OJJ_SetTileParams(UMaterialInstanceDynamic* MID, const FLinearColor& FillColor, float FillOpacity) const;
+
+#if WITH_EDITOR
+	// 디테일 패널/PIE에서 Visual Hierarchy 값 변경 시 MID에 즉시 재적용 + 오버레이 갱신(실시간 튜닝).
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 
 public:
 	virtual void Tick(float DeltaTime) override;

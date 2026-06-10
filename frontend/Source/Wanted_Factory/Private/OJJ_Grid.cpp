@@ -412,14 +412,17 @@ AOJJ_Grid::AOJJ_Grid()
 		TEXT("/Game/OJJ/Materials/MI_OJJ_GridHoverValid.MI_OJJ_GridHoverValid"));
 	if (ValidHoverMat.Succeeded())
 	{
-		ValidHoverISM->SetMaterial(0, ValidHoverMat.Object);
+		// 베이스 캐싱 — 호버/오버레이/물 MID가 이 머티리얼(translucent Unlit M_OJJ_GridFloor 기반)에서 파생.
+		HoverValidBaseMaterial = ValidHoverMat.Object;
+		ValidHoverISM->SetMaterial(0, ValidHoverMat.Object);  // MID 생성 전 정적 폴백
 	}
 
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> InvalidHoverMat(
 		TEXT("/Game/OJJ/Materials/MI_OJJ_GridHoverInvalid.MI_OJJ_GridHoverInvalid"));
 	if (InvalidHoverMat.Succeeded())
 	{
-		InvalidHoverISM->SetMaterial(0, InvalidHoverMat.Object);
+		HoverInvalidBaseMaterial = InvalidHoverMat.Object;
+		InvalidHoverISM->SetMaterial(0, InvalidHoverMat.Object);  // MID 생성 전 정적 폴백
 	}
 
 	// 건설 가능(초록) per-cell 그리드 비주얼 — ValidHover와 동일 초록 재사용, void 제외해 바닥 모양 추종.
@@ -531,6 +534,9 @@ void AOJJ_Grid::BeginPlay()
 			if (HoverOutputArrowISM) HoverOutputArrowISM->SetMaterial(0, OutputArrowMID);
 		}
 	}
+
+	// 타일 전용 MID(호버/오버레이/물) lazy 생성 + 현재 시각 위계 값 적용 — 색 섞임 방지 위해 공유 MI 분리.
+	OJJ_EnsureTileMIDs();
 
 	// 정적 지형 높낮이 건설 제약 — 사전베이크 캐시가 유효하면 로드만(런타임 트레이스 0), 없으면/불일치면 트레이스 폴백.
 	// 오버레이는 빌드모드 진입 시 표시되므로 여기선 채우지 않음.
@@ -1030,17 +1036,9 @@ void AOJJ_Grid::RebakeAndCache()
 
 void AOJJ_Grid::RefreshGridVisual()
 {
-	// water 오버레이 파랑 머티리얼 lazy 생성(에디터 Rebake/PIE 공용 — BeginPlay에 의존하지 않음).
-	// BasicShapeMaterial(ArrowBaseMaterial) 기반 + "Color" 파랑. 동명 파라미터 없으면 기본색이지만 분류는 정상.
-	if (WaterCellISM && !WaterCellMID && ArrowBaseMaterial)
-	{
-		WaterCellMID = UMaterialInstanceDynamic::Create(ArrowBaseMaterial, this);
-		if (WaterCellMID)
-		{
-			WaterCellMID->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.1f, 0.5f, 1.0f));
-			WaterCellISM->SetMaterial(0, WaterCellMID);
-		}
-	}
+	// 타일 MID(오버레이 초록/빨강/파랑 + 호버) lazy 생성 + 현재 시각 위계 값 적용.
+	// 에디터 Rebake/PIE 공용(BeginPlay에 의존하지 않음). 호버와 분리된 전용 MID라 색 섞임 없음.
+	OJJ_EnsureTileMIDs();
 
 	// 클리어 후 재적재 — 빌드모드 진입/퇴장 반복에도 인스턴스 중복·잔존 방지(단일 진실원).
 	if (BuildableCellISM) { BuildableCellISM->ClearInstances(); }
@@ -1292,6 +1290,16 @@ bool AOJJ_Grid::OJJ_GetUniformSurfaceZ(const TArray<FIntPoint>& Cells, float& Ou
 	// 단일 건설면 규칙(F1-c §7-3): 전 셀이 같은 높이의 면이어야 Z 안착이 유일하게 정해진다.
 	// F1은 지형=평면이라 "전부 비-Foundation"은 항상 균일 → 기존 지형 직배치는 무조건 통과(비파괴).
 	// stale Foundation 셀은 GetFoundationSurfaceZ가 false라 비-Foundation 취급(점유 stale 의미와 일관).
+	//
+	// ⚠️ F2 백로그(지형 직배치 머신/컨베이어 뜨고 묻힘 — F1-c 검증 확인): 비-Foundation 경로는 OutZ를
+	//    그리드 평면 Z로 고정한다(아래). 실제 지형면은 평면 ± GroundZ델타(최대 ±BuildableHeightTolerance,
+	//    현재 50uu)라 액터가 그만큼 뜨거나 묻힌다. Foundation 위(상면=평탄 SurfaceZ)에선 발생하지 않음(검증됨).
+	//    F2 결정안(§5-2 일정과 함께 택일):
+	//      (a) 셀 대표높이 재정의: 분류·Z 기준을 "최악점(|델타|최대)"→"최고점(메시 위로 안착)"으로. 묻힘 제거,
+	//          뜸은 잔존하나 충돌 없음. CellGroundZQuant 양자화/분류 시그니처 영향 → 캐시 재베이크 필요.
+	//      (b) Foundation-only 배치: 지형 직배치를 막고 머신/컨베이어는 평탄 Foundation 상면에만 배치 →
+	//          뜸·묻힘·치직거림 모두 원천 회피(이 검증이 (b) 근거). IsCellConstructible를 Foundation 한정으로.
+	//    당장은 시각 치직거림만 VisualZLift로 완화(시각 전용, 액터 Z 미해결).
 	OutZ = GetActorLocation().Z;
 	if (Cells.Num() == 0)
 	{
@@ -2475,6 +2483,9 @@ void AOJJ_Grid::UpdateHoverPreview(AMachineBase* Machine, FIntPoint Origin, int3
 
 void AOJJ_Grid::ClearHoverPreview()
 {
+	// 호버 진입점 공통 chokepoint — 전용 호버 MID 보장(없으면 생성, 있으면 현재 값 재적용 → PIE 실시간 튜닝).
+	OJJ_EnsureTileMIDs();
+
 	if (ValidHoverISM)
 	{
 		ValidHoverISM->ClearInstances();
@@ -2487,6 +2498,71 @@ void AOJJ_Grid::ClearHoverPreview()
 	// 호버 셀 ISM과 동반 생멸 — 커서가 유효 셀을 떠나면(트레이스 실패/off-grid/퇴장) 호버 화살표도 사라짐.
 	ClearHoverMachineArrows();
 }
+
+void AOJJ_Grid::OJJ_SetTileParams(UMaterialInstanceDynamic* MID, const FLinearColor& FillColor, float FillOpacity) const
+{
+	if (!MID)
+	{
+		return;
+	}
+	// M_OJJ_GridFloor(Unlit) 노출 파라미터: 채움=BaseColor/Opacity, 선=LineColor/LineOpacity/LineWidth.
+	// 머티리얼이 WorldPosition 기반으로 셀 경계선(line)과 내부 채움(fill)을 분리해 합성하므로 둘을 독립 구동:
+	//  - 채움: 분류 의미(빨강/초록/파랑) — 연하게(FillOpacity).
+	//  - 선  : 스냅 기준선 — 공유 GridLineColor/GridLineOpacity로 항상 선명(채움 투명도와 무관).
+	// LineWidth는 베이스 MI 기본값 유지(미설정). 없는 파라미터 set은 안전 무시.
+	MID->SetVectorParameterValue(TEXT("BaseColor"), FillColor);
+	MID->SetScalarParameterValue(TEXT("Opacity"), FillOpacity);
+	MID->SetVectorParameterValue(TEXT("LineColor"), GridLineColor);
+	MID->SetScalarParameterValue(TEXT("LineOpacity"), GridLineOpacity);
+}
+
+void AOJJ_Grid::OJJ_ApplyTileMIDParams()
+{
+	// 호버(주인공): 높은 불투명 + 선명/에미시브.
+	OJJ_SetTileParams(ValidHoverMID, HoverValidColor, HoverOpacity);
+	OJJ_SetTileParams(InvalidHoverMID, HoverInvalidColor, HoverOpacity);
+	// 오버레이(정보): 낮은 불투명 + 차분.
+	OJJ_SetTileParams(BuildableCellMID, OverlayBuildableColor, OverlayOpacity);
+	OJJ_SetTileParams(BlockedCellMID, OverlayBlockedColor, OverlayOpacity);
+	OJJ_SetTileParams(WaterCellMID, OverlayWaterColor, OverlayOpacity);
+}
+
+void AOJJ_Grid::OJJ_EnsureTileMIDs()
+{
+	// 각 용도별 전용 MID를 lazy 생성하고 ISM에 할당 — 오버레이/호버 머티리얼 공유(색 섞임 원인) 차단.
+	// 모두 같은 translucent Unlit 베이스(M_OJJ_GridFloor 파생)라 색/불투명만 다르게 구동.
+	auto EnsureMID = [this](UInstancedStaticMeshComponent* ISM, TObjectPtr<UMaterialInstanceDynamic>& MID, UMaterialInterface* Base)
+	{
+		if (ISM && !MID && Base)
+		{
+			MID = UMaterialInstanceDynamic::Create(Base, this);
+			if (MID)
+			{
+				ISM->SetMaterial(0, MID);
+			}
+		}
+	};
+
+	EnsureMID(ValidHoverISM, ValidHoverMID, HoverValidBaseMaterial);
+	EnsureMID(InvalidHoverISM, InvalidHoverMID, HoverInvalidBaseMaterial);
+	EnsureMID(BuildableCellISM, BuildableCellMID, HoverValidBaseMaterial);
+	EnsureMID(BlockedCellISM, BlockedCellMID, HoverInvalidBaseMaterial);
+	// 물은 별도 색(파랑)을 OverlayWaterColor로 덮어쓰므로 어느 베이스든 무방 — Valid 베이스 재사용.
+	EnsureMID(WaterCellISM, WaterCellMID, HoverValidBaseMaterial);
+
+	// 생성 직후 + 매 호출 현재 값 재적용(멱등) → PIE에서 프로퍼티 바꾸면 다음 호버/갱신에 반영.
+	OJJ_ApplyTileMIDParams();
+}
+
+#if WITH_EDITOR
+void AOJJ_Grid::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+	// 디테일 패널/PIE에서 Visual Hierarchy 색·불투명을 만지면 즉시 MID에 재적용 + 오버레이 리빌드(실시간 튜닝).
+	OJJ_EnsureTileMIDs();
+	RefreshGridVisual();
+}
+#endif
 
 const TArray<FIntPoint>* AOJJ_Grid::GetActorCells(AActor* Actor) const
 {
