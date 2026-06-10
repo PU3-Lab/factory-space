@@ -29,6 +29,24 @@ enum class EOJJCellClass : uint8
 };
 
 /**
+ * Foundation 커버리지 셀 정보 (F1-a). 점유(OccupiedCells=차단)와 반대 의미의 "허가" 레이어 값.
+ * Foundation 참조는 AActor 약참조로 일반화 — AOJJ_Foundation 클래스는 F1-b 신규라 그리드가 몰라도
+ * 되게 한다(OJJ_RegisterActorCells(AActor*) 일반화와 동일 패턴). SurfaceZ는 상면 월드 Z — F1은
+ * footprint 전 셀 동일값이지만 F2(높이 스냅/경사) 대비 셀별 저장.
+ */
+USTRUCT()
+struct FOJJFoundationCellInfo
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TWeakObjectPtr<AActor> Foundation;
+
+	UPROPERTY()
+	float SurfaceZ = 0.0f;
+};
+
+/**
  * AOJJ_Grid is the source of truth for grid occupancy.
  * Machines not registered via TryPlaceMachine or RegisterExistingMachine
  * are invisible to this grid. CanPlaceMachine may return true for cells
@@ -268,6 +286,16 @@ protected:
 	// 비직사각형/등록 후 이동·회전에도 origin 식별 안정. GetMachineOrigin이 이 맵을 조회.
 	TMap<TWeakObjectPtr<AActor>, FIntPoint> OJJ_ActorToOrigin;
 
+	// === Foundation 커버리지 레이어 (F1-a — 데이터/질의만. 소비처 연결은 F1-c 게이트 교체) ===
+
+	// 셀 → 커버 Foundation + 상면 Z. OccupiedCells와 완전 독립(점유=차단 / 커버리지=허가 — 의미 반대).
+	// 불변식: F1-a 동안 기존 어떤 read/write 경로도 이 맵을 참조하지 않는다(회귀 0 보장).
+	UPROPERTY(Transient)
+	TMap<FIntPoint, FOJJFoundationCellInfo> FoundationCells;
+
+	// Foundation → 커버 셀 목록 (RemoveFoundation 일괄 해제용). OJJ_ActorToCells 패턴 미러(비-UPROPERTY, weak 키).
+	TMap<TWeakObjectPtr<AActor>, TArray<FIntPoint>> OJJ_FoundationToCells;
+
 private:
 	// Origin부터 머신 풋프린트가 차지하는 셀 좌표 목록. RotationSteps로 90° 회전 footprint 지원(기본 0).
 	TArray<FIntPoint> CalculateFootprint(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
@@ -291,6 +319,10 @@ private:
 	// GC/Destroy된 머신 엔트리를 양방향 맵에서 정리. write 경로 진입부에서 호출.
 	void SweepStaleEntries();
 
+	// GC/Destroy된 Foundation 엔트리를 커버리지 양방향 맵에서 정리. Foundation write 경로 진입부에서 호출.
+	// SweepStaleEntries의 커버리지판 — 점유 맵과 레이어 독립이라 별도 함수(서로 호출하지 않음).
+	void SweepStaleFoundationEntries();
+
 	// 양방향 맵에 머신 등록. 위치 갱신은 호출자가 별도 처리. 모든 write 검증을 포함.
 	// RotationSteps는 점유 footprint 계산(CanPlace/CalculateFootprint)에 전달(기본 0).
 	bool RegisterMachineInternal(AMachineBase* Machine, FIntPoint Origin, FString& OutReason, int32 RotationSteps = 0);
@@ -307,6 +339,14 @@ private:
 	// PackedCellClasses 2bit 접근자(인덱스 범위는 호출자 보장). Get은 범위 밖이면 Buildable 반환(안전 기본).
 	EOJJCellClass OJJ_GetPackedClass(int32 LinearIdx) const;
 	void OJJ_SetPackedClass(int32 LinearIdx, EOJJCellClass CellClass);
+
+	// 베이크 캐시 시그니처 비교 단일원 — TryLoadBakeCache(분류 로드)와 GroundZ 유효성 검사가 공유.
+	// struct=패킹 인덱싱 정확성(GridSize/CellSize/Origin), param=분류 결과 정확성(tol/waterZ/트레이스 등).
+	void OJJ_GetBakeCacheSignatureMatch(bool& bOutStructMatch, bool& bOutParamMatch) const;
+
+	// GroundZ 데이터 유효성 — 크기 정합 + 캐시 존재 + GroundZ 포함 + 시그니처 일치.
+	// 크기 정합만으론 시그니처 불일치 폴백 후 남는 같은 크기의 stale 직렬화 배열을 못 거름(Codex F1-a #4-1).
+	bool OJJ_HasValidGroundZData() const;
 
 public:
 	virtual void Tick(float DeltaTime) override;
@@ -379,6 +419,47 @@ public:
 
 	// 디버그(OJJ.Grid.ShowWater) — 빌드모드와 무관하게 물 오버레이 강제 표시 토글.
 	void SetForceShowWater(bool bShow);
+
+	// === Foundation 커버리지 (F1-a — 데이터 레이어/질의 전용. 게이트 연결은 F1-c, 액터 스폰/위치는 F1-b) ===
+
+	// Origin부터 Size(X×Y) 풋프린트가 Foundation 배치 가능한지. 전 셀을 끝까지 순회해 사유별 셀 수를
+	// 집계하고 OutReason에 기록(예: "water 9 / occupied 3") — water 43% 지형에서 분포 실측이
+	// F1-b 디버깅·§5-3 waterZ 재검토의 근거가 되도록 조기 종료 없이 센다.
+	// 게이트: off-grid·겹침(기존 Foundation)·void·water(§5-3 미결 — F1 기본 금지)·점유(머신/컨베이어/자원) 금지.
+	// blocked(높이 단차)는 의도적으로 허용 — 단차 흡수가 Foundation의 존재 이유.
+	// ※ 자원 점유 셀 거부는 F1 보수 기본값 — "광맥 위 Foundation+추출기" 시나리오는 §5-2 결정 후 재검토(F1-c).
+	UFUNCTION(BlueprintPure, Category = "Grid|Foundation")
+	bool CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& OutReason) const;
+
+	// Foundation 커버리지 등록 — 검증(CanPlaceFoundation) + 양방향 맵 등록만 수행. 액터 위치/비주얼은
+	// 건드리지 않음(F1-b BuildController 책임 — 그리드는 Foundation 메시/Thickness를 모름).
+	// SurfaceZ는 호출자 전달(F1: 그리드 평면 Z + Thickness 단일값). 서버 권위 전용, 중복 등록 거부.
+	UFUNCTION(BlueprintCallable, Category = "Grid|Foundation")
+	bool TryPlaceFoundation(AActor* Foundation, FIntPoint Origin, FIntPoint Size, float SurfaceZ, FString& OutReason);
+
+	// Foundation 커버리지 해제. 커버 셀 위에 유효 점유(머신/컨베이어)가 하나라도 있으면 거부 + 점유 셀 수
+	// 기록 — F1은 연쇄 철거 대신 거부가 안전. 서버 권위 전용.
+	UFUNCTION(BlueprintCallable, Category = "Grid|Foundation")
+	bool RemoveFoundation(AActor* Foundation, FString& OutReason);
+
+	// 셀이 유효한 Foundation에 커버되는지. 파괴된(stale) Foundation의 셀은 false(점유 stale 처리와 일관).
+	UFUNCTION(BlueprintPure, Category = "Grid|Foundation")
+	bool IsCellOnFoundation(FIntPoint Cell) const;
+
+	// 커버 셀의 Foundation 상면 월드 Z. 비커버/stale 셀이면 false + OutSurfaceZ=0.
+	UFUNCTION(BlueprintPure, Category = "Grid|Foundation")
+	bool GetFoundationSurfaceZ(FIntPoint Cell, float& OutSurfaceZ) const;
+
+	// === 지형 높이 캐시 접근 (F0 갭 해소 — CellGroundZQuant 소비처 첫 도입) ===
+
+	// 셀 지형 높이(그리드 평면 Z 상대 부호 델타, uu — 베이크 "최악점" 기준 저장값 그대로). 월드 Z는
+	// 호출자가 액터 Z를 더한다. 높이 캐시 미존재(GroundZ off 베이크/GridSize 불일치 잔존 배열)면 false.
+	UFUNCTION(BlueprintPure, Category = "Grid|Terrain")
+	bool GetCellGroundZ(FIntPoint Cell, float& OutGroundZDelta) const;
+
+	// GroundZ 캐시 리포트 — 요약(min/max/평균/비제로 + 10버킷 히스토그램) + Center/Radius 지정 시
+	// 셀별 덤프(캡 400줄 — 베이크 verbose와 동일). 콘솔 OJJ.Grid.GroundZReport가 호출. C++ 전용.
+	void DumpGroundZReport(FIntPoint Center = FIntPoint(-1, -1), int32 Radius = 0) const;
 
 	// === Grid Query (GridManager/컨베이어용 읽기 전용 조회) ===
 	// OccupiedCells / OJJ_ActorToCells를 노출만 함 — write 경로/데이터는 건드리지 않음.

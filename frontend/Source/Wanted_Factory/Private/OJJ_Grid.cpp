@@ -894,20 +894,15 @@ void AOJJ_Grid::OJJ_SetPackedClass(int32 LinearIdx, EOJJCellClass CellClass)
 	PackedCellClasses[ByteIdx] = (uint8)(Cleared | (((uint8)CellClass & 0x3u) << Shift));
 }
 
-bool AOJJ_Grid::TryLoadBakeCache()
+void AOJJ_Grid::OJJ_GetBakeCacheSignatureMatch(bool& bOutStructMatch, bool& bOutParamMatch) const
 {
-	if (!bHasBakeCache)
-	{
-		return false;
-	}
-
 	// 시그니처 정합 — 구조(GridSize/CellSize/Origin)는 패킹 인덱싱 정확성, 분류 파라미터(tol/waterZ/minWater)는 결과 정확성.
-	// 하나라도 불일치면 캐시 무효 → 트레이스 폴백. 에디터에서 Rebake 누르면 캐시 갱신.
-	const bool bStructMatch =
+	// TryLoadBakeCache(분류)와 OJJ_HasValidGroundZData(높이)가 공유하는 단일원 — 두 경로의 무효화 기준이 갈라지지 않게.
+	bOutStructMatch =
 		CacheGridSize == GridSize &&
 		FMath::IsNearlyEqual(CacheCellSize, CellSize) &&
 		GetActorLocation().Equals(CacheGridOrigin, 1.0f);
-	const bool bParamMatch =
+	bOutParamMatch =
 		FMath::IsNearlyEqual(CacheHeightTolerance, BuildableHeightTolerance) &&
 		FMath::IsNearlyEqual(CacheWaterSurfaceZ, WaterSurfaceZ) &&
 		CacheMinWaterCellCount == MinWaterCellCount &&
@@ -915,6 +910,19 @@ bool AOJJ_Grid::TryLoadBakeCache()
 		FMath::IsNearlyEqual(CacheTraceDepth, BuildableTraceDepth) &&
 		CacheTraceChannel.GetValue() == BuildableTraceChannel.GetValue() &&
 		bCacheBakeGroundHeights == bBakeGroundHeights;
+}
+
+bool AOJJ_Grid::TryLoadBakeCache()
+{
+	if (!bHasBakeCache)
+	{
+		return false;
+	}
+
+	// 하나라도 불일치면 캐시 무효 → 트레이스 폴백. 에디터에서 Rebake 누르면 캐시 갱신.
+	bool bStructMatch = false;
+	bool bParamMatch = false;
+	OJJ_GetBakeCacheSignatureMatch(bStructMatch, bParamMatch);
 
 	if (!bStructMatch || !bParamMatch)
 	{
@@ -1073,6 +1081,296 @@ void AOJJ_Grid::SetForceShowWater(bool bShow)
 	RefreshGridVisual();
 }
 
+// === Foundation 커버리지 레이어 (F1-a) ===
+// 점유(OccupiedCells=차단)와 의미가 반대인 "허가" 레이어. 기존 read/write 경로와 완전 독립 —
+// 이 블록의 함수들만 FoundationCells/OJJ_FoundationToCells를 만진다(소비처 연결은 F1-c).
+
+bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& OutReason) const
+{
+	OutReason.Reset();
+
+	if (Size.X < 1 || Size.Y < 1)
+	{
+		OutReason = FString::Printf(TEXT("Invalid foundation size %dx%d."), Size.X, Size.Y);
+		return false;
+	}
+
+	// 오버플로/거대 입력 방어(Codex F1-a #2): 끝 좌표는 int64로 계산하고, 순회는 그리드와의 교집합
+	// 사각형만 — off-grid 수는 산술 집계. (Origin+Size를 int32로 더하면 UB, 전수 순회는 INT_MAX 입력에서 폭주.)
+	const int64 EndX = (int64)Origin.X + Size.X;
+	const int64 EndY = (int64)Origin.Y + Size.Y;
+	const int32 IterMinX = FMath::Max(Origin.X, 0);
+	const int32 IterMinY = FMath::Max(Origin.Y, 0);
+	const int32 IterEndX = (int32)FMath::Min<int64>(EndX, (int64)GridSize.X);
+	const int32 IterEndY = (int32)FMath::Min<int64>(EndY, (int64)GridSize.Y);
+	const int64 TotalCells = (int64)Size.X * (int64)Size.Y;
+	const int64 InGridCells =
+		(int64)FMath::Max(0, IterEndX - IterMinX) * (int64)FMath::Max(0, IterEndY - IterMinY);
+
+	// 교집합 전 셀을 끝까지 순회해 사유별 집계(조기 종료 없음) — water 43% 지형에서 분포 실측이
+	// F1-b 디버깅·waterZ 재검토(§5-3) 근거. stale(파괴된 Foundation/점유 액터) 엔트리는 비차단 —
+	// IsCellOnFoundation/IsCellOccupied의 weak 유효 의미와 일관(const라 sweep은 write 경로에 위임).
+	const int64 OffGrid = TotalCells - InGridCells;
+	int32 Overlap = 0, VoidCount = 0, WaterCount = 0, Occupied = 0;
+	for (int32 X = IterMinX; X < IterEndX; ++X)
+	{
+		for (int32 Y = IterMinY; Y < IterEndY; ++Y)
+		{
+			const FIntPoint Cell(X, Y);  // 교집합 내부 — IsValidGridCell 보장
+			if (IsCellOnFoundation(Cell)) { ++Overlap; }
+			if (IsCellVoid(Cell)) { ++VoidCount; }
+			if (IsCellWater(Cell)) { ++WaterCount; }   // §5-3(물 위 Foundation) 허용 결정 시 이 게이트만 제거
+			if (IsCellOccupied(Cell)) { ++Occupied; }  // 머신/컨베이어/자원 점유 — 기존 건물과의 Z 충돌 방지
+		}
+	}
+
+	if (OffGrid + Overlap + VoidCount + WaterCount + Occupied == 0)
+	{
+		return true;
+	}
+
+	// 사유별 셀 수 — 한 셀이 복수 사유(예: water+occupied)면 중복 집계될 수 있음(사유 합 ≥ 불가 셀 수).
+	TArray<FString> Parts;
+	if (OffGrid > 0)    { Parts.Add(FString::Printf(TEXT("off-grid %lld"), OffGrid)); }
+	if (Overlap > 0)    { Parts.Add(FString::Printf(TEXT("foundation-overlap %d"), Overlap)); }
+	if (VoidCount > 0)  { Parts.Add(FString::Printf(TEXT("void %d"), VoidCount)); }
+	if (WaterCount > 0) { Parts.Add(FString::Printf(TEXT("water %d"), WaterCount)); }
+	if (Occupied > 0)   { Parts.Add(FString::Printf(TEXT("occupied %d"), Occupied)); }
+	OutReason = FString::Printf(TEXT("Foundation blocked (%dx%d=%lld cells): %s."),
+		Size.X, Size.Y, TotalCells, *FString::Join(Parts, TEXT(" / ")));
+	return false;
+}
+
+bool AOJJ_Grid::TryPlaceFoundation(AActor* Foundation, FIntPoint Origin, FIntPoint Size, float SurfaceZ, FString& OutReason)
+{
+	if (!HasAuthority())
+	{
+		ensureMsgf(false, TEXT("TryPlaceFoundation called on non-authority"));
+		OutReason = TEXT("Not authority");
+		return false;
+	}
+
+	SweepStaleFoundationEntries();
+
+	if (!IsValid(Foundation))
+	{
+		OutReason = TEXT("Invalid foundation actor");
+		return false;
+	}
+
+	if (OJJ_FoundationToCells.Contains(Foundation))
+	{
+		OutReason = TEXT("Foundation already placed.");
+		return false;
+	}
+
+	if (!CanPlaceFoundation(Origin, Size, OutReason))
+	{
+		return false;
+	}
+
+	// 검증 통과 후 일괄 커밋 — 부분 등록 없음. 액터 위치/비주얼은 호출자(F1-b BuildController) 책임.
+	// CanPlace 성공 = off-grid 0 = footprint 전체가 그리드 내부 → 아래 int32 덧셈은 오버플로 불가.
+	TArray<FIntPoint> Cells;
+	Cells.Reserve(Size.X * Size.Y);
+	FOJJFoundationCellInfo Info;
+	Info.Foundation = Foundation;
+	Info.SurfaceZ = SurfaceZ;
+	for (int32 X = Origin.X; X < Origin.X + Size.X; ++X)
+	{
+		for (int32 Y = Origin.Y; Y < Origin.Y + Size.Y; ++Y)
+		{
+			const FIntPoint Cell(X, Y);
+			FoundationCells.Add(Cell, Info);
+			Cells.Add(Cell);
+		}
+	}
+	OJJ_FoundationToCells.Add(Foundation, MoveTemp(Cells));
+
+	OutReason.Reset();
+	return true;
+}
+
+bool AOJJ_Grid::RemoveFoundation(AActor* Foundation, FString& OutReason)
+{
+	if (!HasAuthority())
+	{
+		ensureMsgf(false, TEXT("RemoveFoundation called on non-authority"));
+		OutReason = TEXT("Not authority");
+		return false;
+	}
+
+	SweepStaleFoundationEntries();
+
+	const TArray<FIntPoint>* Cells = Foundation ? OJJ_FoundationToCells.Find(Foundation) : nullptr;
+	if (!Cells)
+	{
+		OutReason = TEXT("Foundation not registered.");
+		return false;
+	}
+
+	// 위 건물 게이트: 커버 셀에 유효 점유(머신/컨베이어)가 있으면 거부 — F1은 연쇄 철거 대신 거부가 안전.
+	// stale 점유는 IsCellOccupied가 weak IsValid로 걸러 비차단(점유 레이어와 동일 의미).
+	int32 OccupiedOnTop = 0;
+	for (const FIntPoint& Cell : *Cells)
+	{
+		if (IsCellOccupied(Cell)) { ++OccupiedOnTop; }
+	}
+	if (OccupiedOnTop > 0)
+	{
+		OutReason = FString::Printf(TEXT("Foundation has %d occupied cell(s) on top — remove buildings first."), OccupiedOnTop);
+		return false;
+	}
+
+	// 양방향 대칭 해제. forward 엔트리는 본인 소유일 때만 제거(방어 — 겹침 금지라 정상 흐름에선 항상 본인).
+	for (const FIntPoint& Cell : *Cells)
+	{
+		const FOJJFoundationCellInfo* Found = FoundationCells.Find(Cell);
+		if (Found && Found->Foundation == Foundation)
+		{
+			FoundationCells.Remove(Cell);
+		}
+	}
+	OJJ_FoundationToCells.Remove(Foundation);
+
+	OutReason.Reset();
+	return true;
+}
+
+bool AOJJ_Grid::IsCellOnFoundation(FIntPoint Cell) const
+{
+	const FOJJFoundationCellInfo* Found = FoundationCells.Find(Cell);
+	return Found && Found->Foundation.IsValid();
+}
+
+bool AOJJ_Grid::GetFoundationSurfaceZ(FIntPoint Cell, float& OutSurfaceZ) const
+{
+	const FOJJFoundationCellInfo* Found = FoundationCells.Find(Cell);
+	if (Found && Found->Foundation.IsValid())
+	{
+		OutSurfaceZ = Found->SurfaceZ;
+		return true;
+	}
+	OutSurfaceZ = 0.0f;
+	return false;
+}
+
+void AOJJ_Grid::SweepStaleFoundationEntries()
+{
+	// SweepStaleEntries 미러(커버리지판). forward 셀은 weak 무효일 때만 제거 — 점유 sweep과 동일 방어.
+	for (auto It = OJJ_FoundationToCells.CreateIterator(); It; ++It)
+	{
+		if (!It.Key().IsValid())
+		{
+			for (const FIntPoint& Cell : It.Value())
+			{
+				const FOJJFoundationCellInfo* Found = FoundationCells.Find(Cell);
+				if (Found && !Found->Foundation.IsValid())
+				{
+					FoundationCells.Remove(Cell);
+				}
+			}
+			It.RemoveCurrent();
+		}
+	}
+}
+
+// === 지형 높이 캐시 접근 (F0 갭 해소) ===
+
+bool AOJJ_Grid::OJJ_HasValidGroundZData() const
+{
+	// 크기 정합만으론 부족(Codex F1-a #4-1): 시그니처 불일치 시 BeginPlay 폴백 베이크(bWriteCache=false)는
+	// 분류만 다시 굽고 직렬화된 CellGroundZQuant를 안 건드려, 같은 크기의 stale 배열이 남는다.
+	// 캐시 로드와 동일한 시그니처 검증을 공유해 차단. 보수적: 높이와 무관한 파라미터(waterZ 등)만 바뀌어도
+	// 무효 — "무효 기준 단일원" 유지 비용으로 수용(Rebake 한 번이면 해소).
+	const int32 NumCells = GridSize.X * GridSize.Y;
+	if (NumCells <= 0 || CellGroundZQuant.Num() != NumCells || !bHasBakeCache || !bCacheBakeGroundHeights)
+	{
+		return false;
+	}
+	bool bStructMatch = false;
+	bool bParamMatch = false;
+	OJJ_GetBakeCacheSignatureMatch(bStructMatch, bParamMatch);
+	return bStructMatch && bParamMatch;
+}
+
+bool AOJJ_Grid::GetCellGroundZ(FIntPoint Cell, float& OutGroundZDelta) const
+{
+	OutGroundZDelta = 0.0f;
+	if (!OJJ_HasValidGroundZData() || !IsValidGridCell(Cell))
+	{
+		return false;
+	}
+	OutGroundZDelta = (float)CellGroundZQuant[OJJ_CellLinearIndex(Cell, GridSize)];
+	return true;
+}
+
+void AOJJ_Grid::DumpGroundZReport(FIntPoint Center, int32 Radius) const
+{
+	const int32 NumCells = GridSize.X * GridSize.Y;
+	if (!OJJ_HasValidGroundZData())
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Grid] GroundZReport: 유효한 높이 캐시 없음(quant %d / cells %d / hasCache %d / cacheGroundZ %d) — bBakeGroundHeights=true로 RebakeAndCache + 레벨 저장 필요(시그니처 불일치 포함)."),
+			CellGroundZQuant.Num(), NumCells, bHasBakeCache ? 1 : 0, bCacheBakeGroundHeights ? 1 : 0);
+		return;
+	}
+
+	int32 MinV = TNumericLimits<int32>::Max();
+	int32 MaxV = TNumericLimits<int32>::Min();
+	int64 Sum = 0;
+	int32 NonZero = 0;
+	for (const int16 V : CellGroundZQuant)
+	{
+		MinV = FMath::Min(MinV, (int32)V);
+		MaxV = FMath::Max(MaxV, (int32)V);
+		Sum += V;
+		if (V != 0) { ++NonZero; }
+	}
+	UE_LOG(LogTemp, Log,
+		TEXT("[Grid] GroundZReport: %d셀, 델타(평면 상대 uu, 최악점) min %d / max %d / 평균 %.1f / 비제로 %d (%.1f%%)"),
+		NumCells, MinV, MaxV, (double)Sum / NumCells, NonZero, 100.0 * NonZero / NumCells);
+
+	// 10버킷 히스토그램 — 분포 모양 확인(waterZ/톨러런스 튜닝 근거). 범위 < 10uu면 정수 절단으로
+	// 라벨이 왜곡(빈 구간에 카운트)되므로 생략 — 그 정도 평탄함은 요약(min/max/평균)으로 충분(Codex F1-a #4-2).
+	if (MaxV - MinV >= 10)
+	{
+		int32 Buckets[10] = { 0 };
+		const float Range = float(MaxV - MinV);
+		for (const int16 V : CellGroundZQuant)
+		{
+			const int32 B = FMath::Clamp(int32((V - MinV) / Range * 10.0f), 0, 9);
+			++Buckets[B];
+		}
+		for (int32 B = 0; B < 10; ++B)
+		{
+			const int32 Lo = MinV + FMath::RoundToInt(Range * B / 10.0f);
+			const int32 Hi = (B == 9) ? MaxV : MinV + FMath::RoundToInt(Range * (B + 1) / 10.0f);
+			UE_LOG(LogTemp, Log, TEXT("[Grid]   [%+6d..%+6d%s %d셀"), Lo, Hi, (B == 9) ? TEXT("]") : TEXT(")"), Buckets[B]);
+		}
+	}
+
+	// 영역 덤프: Center 유효 + Radius>0일 때만. 캡 400줄(베이크 verbose와 동일).
+	if (Radius > 0 && IsValidGridCell(Center))
+	{
+		const int32 MaxLines = 400;
+		int32 Logged = 0;
+		for (int32 X = FMath::Max(0, Center.X - Radius); X <= FMath::Min(GridSize.X - 1, Center.X + Radius) && Logged < MaxLines; ++X)
+		{
+			for (int32 Y = FMath::Max(0, Center.Y - Radius); Y <= FMath::Min(GridSize.Y - 1, Center.Y + Radius) && Logged < MaxLines; ++Y)
+			{
+				const int16 V = CellGroundZQuant[OJJ_CellLinearIndex(FIntPoint(X, Y), GridSize)];
+				UE_LOG(LogTemp, Log, TEXT("[Grid]   cell(%d,%d) groundZ %+d"), X, Y, (int32)V);
+				++Logged;
+			}
+		}
+		if (Logged >= MaxLines)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[Grid]   ... 덤프 캡(%d줄) 도달 — Radius를 줄여 재시도."), MaxLines);
+		}
+	}
+}
+
 // === 디버그 콘솔 명령 (PIE에서 베이크 검증) ===
 namespace
 {
@@ -1133,6 +1431,41 @@ static FAutoConsoleCommandWithWorldAndArgs GOJJGridShowWater(
 		}
 		const bool bShow = (Args.Num() == 0) || (Args[0] != TEXT("0"));
 		Grid->SetForceShowWater(bShow);
+	}));
+
+static FAutoConsoleCommandWithWorldAndArgs GOJJGridGroundZReport(
+	TEXT("OJJ.Grid.GroundZReport"),
+	TEXT("지형 높이(GroundZ) 캐시 리포트: OJJ.Grid.GroundZReport [X Y [Radius=5]] — 요약+히스토그램, 좌표 지정 시 영역 셀별 덤프."),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+	{
+		AOJJ_Grid* Grid = OJJ_FindGridInWorld(World);
+		if (!Grid)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Grid] GroundZReport: 월드에 AOJJ_Grid 없음."));
+			return;
+		}
+		// 인자 검증(Codex F1-a #4-3): 0개(요약만) 또는 2~3개(X Y [Radius])만 허용, 비정수는 거부.
+		FIntPoint Center(-1, -1);
+		int32 Radius = 0;
+		if (Args.Num() == 1 || Args.Num() > 3)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Grid] GroundZReport 사용법: OJJ.Grid.GroundZReport [X Y [Radius=5]]"));
+			return;
+		}
+		if (Args.Num() >= 2)
+		{
+			int32 X = 0, Y = 0, R = 5;
+			if (!LexTryParseString(X, *Args[0]) || !LexTryParseString(Y, *Args[1])
+				|| (Args.Num() == 3 && !LexTryParseString(R, *Args[2])))
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("[Grid] GroundZReport: 잘못된 인자(정수 필요) — 사용법: OJJ.Grid.GroundZReport [X Y [Radius=5]]"));
+				return;
+			}
+			Center = FIntPoint(X, Y);
+			Radius = R;
+		}
+		Grid->DumpGroundZReport(Center, Radius);
 	}));
 
 // === Grid Query (GridManager/컨베이어용 읽기 전용 조회) — 순수 추가, write 경로 미변경 ===
