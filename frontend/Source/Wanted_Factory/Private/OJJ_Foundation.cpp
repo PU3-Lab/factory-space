@@ -16,11 +16,20 @@ AOJJ_Foundation::AOJJ_Foundation()
 	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	RootComponent = Root;
 
-	// 임시 비주얼: 엔진 Cube(100uu, 중심 피벗). NoCollision — 커서 트레이스(머신 호버의 bHitMachine
-	// 게이트)/베이크 ↓트레이스/배치 클릭에 간섭 0. 걷기 충돌은 F1-c에서 전용 메시와 함께.
+	// 임시 비주얼: 엔진 Cube(100uu, 중심 피벗). F1-c에서 충돌 활성화(결정점 ③ 해제):
+	//  - Pawn Block: 걷기 — 캐릭터 무브먼트는 쿼리 스윕이라 QueryOnly로 충분(WaterArea 차단 볼륨과 동일 근거).
+	//  - Visibility Block: 커서가 슬래브 상면에 스냅 → Foundation 위 머신 호버/배치 가능
+	//    (BuildController 표면 게이트가 bHitFoundation을 허용하도록 함께 확장됨).
+	//  - 베이크 ↓트레이스도 Visibility지만 BakeBuildableCells가 Foundation을 ignore(이중 안전).
+	//  - Camera Ignore: 빌드/줌 카메라 충돌 간섭 방지.
 	SlabMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("SlabMesh"));
 	SlabMesh->SetupAttachment(RootComponent);
-	SlabMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SlabMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	SlabMesh->SetCollisionObjectType(ECC_WorldStatic);
+	SlabMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+	SlabMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+	SlabMesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	SlabMesh->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 	SlabMesh->SetCanEverAffectNavigation(false);
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Engine/BasicShapes/Cube.Cube"));

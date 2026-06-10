@@ -14,6 +14,7 @@
 #include "HAL/IConsoleManager.h"
 #include "MachineBase.h"
 #include "Materials/MaterialInterface.h"
+#include "OJJ_Foundation.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Resource/ResourceBase.h"
 #include "UObject/ConstructorHelpers.h"
@@ -305,10 +306,10 @@ bool OJJ_CollectConveyorReservedCells(
 			return false;
 		}
 
-		// 지형 높낮이 게이트 — 컨베이어는 CanPlaceMachine을 안 거치므로 여기서 직접 차단(전선 노드는 머신 경로로 게이트됨).
-		if (!Grid->IsCellBuildable(Cell))
+		// 건설 게이트(F1-c: buildable OR Foundation) — 컨베이어는 CanPlaceMachine을 안 거치므로 여기서 직접 차단.
+		if (!Grid->IsCellConstructible(Cell))
 		{
-			OutReason = TEXT("Conveyor path crosses unbuildable terrain.");
+			OutReason = TEXT("Conveyor path crosses unbuildable terrain (no foundation).");
 			return false;
 		}
 
@@ -334,6 +335,15 @@ bool OJJ_CollectConveyorReservedCells(
 		}
 
 		OutReservedCells.AddUnique(Cell);
+	}
+
+	// 단일 건설면 규칙(F1-c §7-3, 경로판): 전 경로 셀(머신 끝점 포함)이 같은 높이여야 함.
+	// known limitation: Foundation 위 머신 ↔ 지형 머신 혼합 경로는 거부 — F3(컨베이어 높이 인지)에서 해소.
+	float UnusedUniformZ = 0.0f;
+	if (!Grid->OJJ_GetUniformSurfaceZ(PathCells, UnusedUniformZ))
+	{
+		OutReason = TEXT("Conveyor path must stay on a single surface height (terrain or one foundation level).");
+		return false;
 	}
 
 	if (OutSourceMachine)
@@ -610,7 +620,16 @@ FVector AOJJ_Grid::GetMachinePlacementLocation(AMachineBase* Machine, FIntPoint 
 		}
 	}
 
-	return FVector(LowerLeftCenter.X + OffsetX, LowerLeftCenter.Y + OffsetY, LowerLeftCenter.Z + ZOffset);
+	// F1-c: 바닥 기준면 = 풋프린트의 단일 건설면(Foundation 상면 또는 평면). 걸침은 CanPlaceMachine이
+	// 사전 거부하므로 여기 도달 시 균일 보장 — 그래도 실패하면 평면 폴백(방어, 기존 동작과 동일).
+	float BaseZ = LowerLeftCenter.Z;
+	float UniformZ = 0.0f;
+	if (OJJ_GetUniformSurfaceZ(CalculateFootprint(Machine, Origin, RotationSteps), UniformZ))
+	{
+		BaseZ = UniformZ;
+	}
+
+	return FVector(LowerLeftCenter.X + OffsetX, LowerLeftCenter.Y + OffsetY, BaseZ + ZOffset);
 }
 
 bool AOJJ_Grid::IsValidGridCell(FIntPoint Cell) const
@@ -624,6 +643,13 @@ bool AOJJ_Grid::IsCellBuildable(FIntPoint Cell) const
 	// blocked(높이초과)·void(바닥없음)·water(물) 중 하나라도면 불가. water 건설금지 불변식(§3) — 별도 태그지만 여기서 게이트.
 	// 베이크 전이면 세 집합 모두 비어 전부 가능(기존 흐름 무영향).
 	return !UnbuildableCells.Contains(Cell) && !VoidCells.Contains(Cell) && !WaterCells.Contains(Cell);
+}
+
+bool AOJJ_Grid::IsCellConstructible(FIntPoint Cell) const
+{
+	// OR 게이트(F1-c §7-3): 지형이 가능하거나 Foundation이 커버하면 건설 허용. OR은 허용 집합을
+	// 넓히기만 하므로 기존 지형 직배치(추출기 포함)는 전부 그대로 통과(§5-2 F1~F2 직배치 유지).
+	return IsCellBuildable(Cell) || IsCellOnFoundation(Cell);
 }
 
 bool AOJJ_Grid::IsCellVoid(FIntPoint Cell) const
@@ -683,6 +709,9 @@ void AOJJ_Grid::BakeBuildableCells(bool bVerbose, bool bWriteCache)
 	for (TActorIterator<AMachineBase> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
 	for (TActorIterator<AConveyor> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
 	for (TActorIterator<AResourceBase> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
+	// F1-c: Foundation 슬래브가 Visibility를 Block(커서 스냅용)하므로 베이크 ↓트레이스에서 제외 —
+	// 지형 분류가 슬래브 상면을 지형으로 오인하지 않게(향후 레벨 사전배치 대비 — WaterArea 이중 안전 패턴).
+	for (TActorIterator<AOJJ_Foundation> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
 
 	const double StartTime = FPlatformTime::Seconds();
 	for (int32 X = 0; X < GridSize.X; ++X)
@@ -1018,13 +1047,16 @@ void AOJJ_Grid::RefreshGridVisual()
 	if (BlockedCellISM) { BlockedCellISM->ClearInstances(); }
 	if (WaterCellISM) { WaterCellISM->ClearInstances(); }
 
-	// 셀 중심 → 인스턴스 트랜스폼. 그리드 평면 위 +3(호버 프리뷰 +2보다 위 — z-fighting 방지).
-	auto MakeCellXform = [this](const FIntPoint& Cell) -> FTransform
+	// 셀 중심 → 인스턴스 트랜스폼. 기준면 +3(호버 프리뷰 +2보다 위 — z-fighting 방지).
+	// F1-c: 기준면 = 셀 비주얼 Z(지형 GroundZ/Foundation 상면 추종) — 굴곡 지형 묻힘 해결.
+	// GroundZ 유효성(시그니처 비교)은 셀 불변 → 90k셀 루프 밖으로 호이스팅(Codex F1-c #5).
+	const bool bGroundZValid = OJJ_HasValidGroundZData();
+	auto MakeCellXform = [this, bGroundZValid](const FIntPoint& Cell) -> FTransform
 	{
 		const FVector C = GridToWorld(Cell);
 		return FTransform(
 			FRotator::ZeroRotator,
-			FVector(C.X, C.Y, C.Z + 3.0f),
+			FVector(C.X, C.Y, OJJ_GetCellVisualBaseZInternal(Cell, bGroundZValid) + 3.0f),
 			FVector(CellSize / 100.0f, CellSize / 100.0f, 1.0f));
 	};
 
@@ -1255,6 +1287,71 @@ bool AOJJ_Grid::GetFoundationSurfaceZ(FIntPoint Cell, float& OutSurfaceZ) const
 	return false;
 }
 
+bool AOJJ_Grid::OJJ_GetUniformSurfaceZ(const TArray<FIntPoint>& Cells, float& OutZ) const
+{
+	// 단일 건설면 규칙(F1-c §7-3): 전 셀이 같은 높이의 면이어야 Z 안착이 유일하게 정해진다.
+	// F1은 지형=평면이라 "전부 비-Foundation"은 항상 균일 → 기존 지형 직배치는 무조건 통과(비파괴).
+	// stale Foundation 셀은 GetFoundationSurfaceZ가 false라 비-Foundation 취급(점유 stale 의미와 일관).
+	OutZ = GetActorLocation().Z;
+	if (Cells.Num() == 0)
+	{
+		return true;
+	}
+
+	bool bFirst = true;
+	bool bOnFoundation = false;
+	float SurfaceZ = 0.0f;
+	for (const FIntPoint& Cell : Cells)
+	{
+		float CellSurfaceZ = 0.0f;
+		const bool bCellOnFoundation = GetFoundationSurfaceZ(Cell, CellSurfaceZ);
+		if (bFirst)
+		{
+			bFirst = false;
+			bOnFoundation = bCellOnFoundation;
+			SurfaceZ = CellSurfaceZ;
+			continue;
+		}
+		// 혼합(지형+Foundation) 또는 이높이 Foundation = 경계 걸침 → 거부.
+		if (bCellOnFoundation != bOnFoundation
+			|| (bCellOnFoundation && !FMath::IsNearlyEqual(CellSurfaceZ, SurfaceZ)))
+		{
+			return false;
+		}
+	}
+
+	if (bOnFoundation)
+	{
+		OutZ = SurfaceZ;
+	}
+	return true;
+}
+
+float AOJJ_Grid::OJJ_GetCellVisualBaseZ(FIntPoint Cell) const
+{
+	return OJJ_GetCellVisualBaseZInternal(Cell, OJJ_HasValidGroundZData());
+}
+
+float AOJJ_Grid::OJJ_GetCellVisualBaseZInternal(FIntPoint Cell, bool bGroundZValid) const
+{
+	// 우선순위: Foundation 상면 > 지형(GroundZ 추종) > 평면. GroundZ 무효(미베이크/시그니처 불일치) 맵은
+	// 평면 폴백 = 기존 동작(회귀 0). GroundZ는 "최악점(|델타| 최대)" 기준이라 급경사 셀은 극값에 붙음 —
+	// 분류와 동일 기준이라 일관(셀 대표 높이 재정의는 F2 스냅 설계 §6-2와 함께).
+	// ※ 의도된 유계 편차(Codex F1-c #1·#3 방향 기각 기록): 지형 직배치 머신 액터는 F1 동안 평면 Z 안착(§7-3)
+	//   이므로 셀 비주얼과 최대 ±BuildableHeightTolerance(50uu) 편차 — buildable 판정이 그 이상을 거부해
+	//   유계이고, 비주얼을 평면으로 되돌리면 d)의 목적(묻힘 해결)이 무효화된다. F2 지형 스냅에서 자연 해소.
+	float SurfaceZ = 0.0f;
+	if (GetFoundationSurfaceZ(Cell, SurfaceZ))
+	{
+		return SurfaceZ;
+	}
+	if (bGroundZValid && IsValidGridCell(Cell))
+	{
+		return GetActorLocation().Z + (float)CellGroundZQuant[OJJ_CellLinearIndex(Cell, GridSize)];
+	}
+	return GridToWorld(Cell).Z;
+}
+
 FVector AOJJ_Grid::GetFoundationPlacementLocation(FIntPoint Origin, FIntPoint Size) const
 {
 	// 머신 GetMachinePlacementLocation과 동일한 "lower-left 셀 중심 + (Size-1)/2" 수식 — 좌표 규약 공유.
@@ -1303,8 +1400,9 @@ void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Siz
 	{
 		for (int64 Y = Origin.Y; Y < EndY; ++Y)
 		{
-			const FVector CellCenter = GridToWorld(FIntPoint((int32)X, (int32)Y));
-			const FVector InstanceLocation(CellCenter.X, CellCenter.Y, CellCenter.Z + 2.0f);
+			const FIntPoint PreviewCell((int32)X, (int32)Y);
+			const FVector CellCenter = GridToWorld(PreviewCell);
+			const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(PreviewCell) + 2.0f);
 			const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
 			TargetISM->AddInstance(FTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale), /*bWorldSpace=*/true);
 		}
@@ -2054,7 +2152,14 @@ bool AOJJ_Grid::OJJ_TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint
 	// (belt 로컬 오프셋은 선형·centroid 상대라 앵커 평행이동만으로 전체 belt가 정확히 −half 시프트됨.)
 	// ※ 근본 해결은 belt가 Grid->GridToWorld를 쓰는 것 — belt 소유자(SSR/Chan) 리뷰 대상으로 태그.
 	const FVector HalfExtent(GridSize.X * CellSize * 0.5f, GridSize.Y * CellSize * 0.5f, 0.0f);
-	Conveyor->SetActorLocation(GetActorLocation() + Conveyor->GetActorRotation().RotateVector(Conveyor->GetPathCentroidLocal()) - HalfExtent);
+	FVector ConveyorLocation =
+		GetActorLocation() + Conveyor->GetActorRotation().RotateVector(Conveyor->GetPathCentroidLocal()) - HalfExtent;
+	// F1-c: 경로의 단일 건설면 Z 적용(§7-3 2지점 중 ②) — Foundation 위 경로면 상면 높이로 들어올림.
+	// 균일성은 OJJ_CollectConveyorReservedCells가 이미 검증(실패 시 여기 도달 안 함). 지형 경로면 델타 0.
+	float PathSurfaceZ = GetActorLocation().Z;
+	OJJ_GetUniformSurfaceZ(PlacementCells, PathSurfaceZ);
+	ConveyorLocation.Z += PathSurfaceZ - GetActorLocation().Z;
+	Conveyor->SetActorLocation(ConveyorLocation);
 	Conveyor->ConfigureTransport(ReservedCells, SourceMachine, TargetMachine);
 	return true;
 }
@@ -2085,7 +2190,7 @@ void AOJJ_Grid::OJJ_UpdateConveyorPathHoverPreview(const TArray<FIntPoint>& Path
 	for (const FIntPoint& Cell : PreviewCells)
 	{
 		const FVector CellCenter = GridToWorld(Cell);
-		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, CellCenter.Z + 2.0f);
+		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(Cell) + 2.0f);
 		const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
 		const FTransform InstanceTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale);
 		TargetISM->AddInstance(InstanceTransform, /*bWorldSpace=*/true);
@@ -2123,15 +2228,16 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 R
 
 	// 모든 placement entry point가 같은 invariant 따르도록 풋프린트 전체 셀에 대해
 	// bounds + 점유를 동시에 검사 (단일 패스).
-	for (const FIntPoint& Cell : CalculateFootprint(Machine, Origin, RotationSteps))
+	const TArray<FIntPoint> Footprint = CalculateFootprint(Machine, Origin, RotationSteps);
+	for (const FIntPoint& Cell : Footprint)
 	{
 		if (!IsValidGridCell(Cell))
 		{
 			return false;
 		}
 
-		// 지형 높낮이 게이트 — 베이크에서 불가로 마킹된 셀이면 배치 거부(호버도 같은 함수라 자동 빨강).
-		if (!IsCellBuildable(Cell))
+		// 건설 게이트(F1-c: buildable OR Foundation 커버) — 호버도 같은 함수라 자동 빨강.
+		if (!IsCellConstructible(Cell))
 		{
 			return false;
 		}
@@ -2142,6 +2248,14 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 R
 		{
 			return false;
 		}
+	}
+
+	// 단일 건설면 규칙(F1-c §7-3): 풋프린트가 Foundation 경계에 걸치거나 이높이 면에 걸치면 Z 안착이
+	// 모호 — 거부(호버 빨강 자동). 전부 지형이면 평면 Z로 항상 통과(기존 직배치 비파괴).
+	float UnusedUniformZ = 0.0f;
+	if (!OJJ_GetUniformSurfaceZ(Footprint, UnusedUniformZ))
+	{
+		return false;
 	}
 
 	// 머신별 추가 제약(인접 광맥/수원 등). 그리드는 머신 종류를 모른 채 위임만 — 머신이 오버라이드.
@@ -2344,9 +2458,9 @@ void AOJJ_Grid::UpdateHoverPreview(AMachineBase* Machine, FIntPoint Origin, int3
 	const TArray<FIntPoint> FootprintCells = CalculateFootprint(Machine, Origin, RotationSteps);
 	for (const FIntPoint& Cell : FootprintCells)
 	{
-		// 베이스 그리드 평면(Z=1)보다 위로 +2 오프셋 → 가림 방지
+		// 기준면(F1-c: GroundZ/Foundation 추종) +2 오프셋 → 가림 방지
 		const FVector CellCenter = GridToWorld(Cell);
-		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, CellCenter.Z + 2.0f);
+		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(Cell) + 2.0f);
 
 		// Plane(100x100) → CellSize 유닛으로 스케일
 		const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
@@ -2393,11 +2507,11 @@ void AOJJ_Grid::OJJ_HighlightCellsInvalid(const TArray<FIntPoint>& Cells)
 		return;
 	}
 
-	// 배치 호버(UpdateHoverPreview)와 동일한 셀→인스턴스 규칙(Z+2 가림 방지, Plane 100→CellSize 스케일, world-space).
+	// 배치 호버(UpdateHoverPreview)와 동일한 셀→인스턴스 규칙(기준면+2 가림 방지, Plane 100→CellSize 스케일, world-space).
 	for (const FIntPoint& Cell : Cells)
 	{
 		const FVector CellCenter = GridToWorld(Cell);
-		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, CellCenter.Z + 2.0f);
+		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(Cell) + 2.0f);
 		const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
 		const FTransform InstanceTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale);
 		TargetISM->AddInstance(InstanceTransform, /*bWorldSpace=*/true);
@@ -2443,7 +2557,8 @@ void AOJJ_Grid::OJJ_EmitPortArrows(
 		}
 
 		const FVector CellCenter = GridToWorld(Cell);
-		const FVector Location(CellCenter.X, CellCenter.Y, CellCenter.Z + PortArrowHeightOffset);
+		// F1-c: 기준면 추종 — Foundation 위 머신의 화살표가 평면 높이에 묻히지 않게(머신 Z 안착과 동일 데이터).
+		const FVector Location(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(Cell) + PortArrowHeightOffset);
 
 		// 콘 메시 apex(+Z)를 수평 FacingDir로 정렬.
 		const FRotator Rotation = FRotationMatrix::MakeFromZ(Dir3D).Rotator();

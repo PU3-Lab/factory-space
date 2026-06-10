@@ -496,7 +496,9 @@ void AOJJ_BuildController::UpdateMouseHover()
 	AActor* HitActor = Hit.GetActor();
 	const bool bHitFloor = (HitComp == TargetGrid->GetGridFloorMesh());
 	const bool bHitMachine = HitActor && HitActor->IsA<AMachineBase>();
-	if (!bHitFloor && !bHitMachine)
+	// F1-c: Foundation 슬래브 상면(Visibility Block)도 유효 호버 표면 — 없으면 Foundation 위 머신 배치 불가.
+	const bool bHitFoundation = HitActor && HitActor->IsA<AOJJ_Foundation>();
+	if (!bHitFloor && !bHitMachine && !bHitFoundation)
 	{
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
@@ -849,7 +851,9 @@ void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHi
 	AActor* HitActor = Hit.GetActor();
 	const bool bHitFloor = (HitComp == TargetGrid->GetGridFloorMesh());
 	const bool bHitMachine = HitActor && HitActor->IsA<AMachineBase>();
-	if (!bHitFloor && !bHitMachine)
+	// F1-c: 기존 슬래브 위 호버도 유효(겹침은 CanPlaceFoundation이 빨강으로 — 인접 확장 배치 UX).
+	const bool bHitFoundation = HitActor && HitActor->IsA<AOJJ_Foundation>();
+	if (!bHitFloor && !bHitMachine && !bHitFoundation)
 	{
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);

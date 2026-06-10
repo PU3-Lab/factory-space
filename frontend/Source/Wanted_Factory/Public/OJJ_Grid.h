@@ -348,6 +348,15 @@ private:
 	// 크기 정합만으론 시그니처 불일치 폴백 후 남는 같은 크기의 stale 직렬화 배열을 못 거름(Codex F1-a #4-1).
 	bool OJJ_HasValidGroundZData() const;
 
+	// 셀 비주얼 기준 Z(F1-c d): Foundation 커버 → 상면 SurfaceZ / 지형 → 평면 + GroundZ 델타(유효 시) /
+	// 폴백 → 평면(기존 동작 — 회귀 0). 오버레이·호버·철거 하이라이트·포트 화살표와 머신 Z 안착이
+	// 같은 높이 데이터를 소비(단일원) — 굴곡 지형 묻힘/뜸 해결.
+	float OJJ_GetCellVisualBaseZ(FIntPoint Cell) const;
+
+	// 호이스팅 버전 — GroundZ 유효성(시그니처 비교)은 셀 불변이라 호출자가 1회 계산해 전달.
+	// RefreshGridVisual의 90k셀 루프가 사용(Codex F1-c #5 — 셀당 시그니처 재검사 제거).
+	float OJJ_GetCellVisualBaseZInternal(FIntPoint Cell, bool bGroundZValid) const;
+
 public:
 	virtual void Tick(float DeltaTime) override;
 
@@ -387,8 +396,20 @@ public:
 	// === 지형 높낮이 건설 제약 ===
 
 	// 셀이 건설 가능한지(blocked·void 둘 다 아님). 베이크 전이면 항상 true.
+	// F1-c부터 "지형 분류 질의"로 의미 한정 — 배치 게이트는 IsCellConstructible(OR)이 담당.
 	UFUNCTION(BlueprintPure, Category = "Grid|Terrain")
 	bool IsCellBuildable(FIntPoint Cell) const;
+
+	// 건설 허용 게이트(F1-c §7-3) — 지형 가능(buildable) OR Foundation 커버. 머신/컨베이어 배치 소비처가
+	// IsCellBuildable 대신 이 함수를 사용. OR은 허용 집합을 넓히기만 — 기존 지형 직배치(추출기 포함)는
+	// 전부 그대로 통과(§5-2 F1~F2 직배치 유지).
+	UFUNCTION(BlueprintPure, Category = "Grid|Terrain")
+	bool IsCellConstructible(FIntPoint Cell) const;
+
+	// 단일 건설면 규칙(F1-c §7-3): 셀 집합이 전부 같은 SurfaceZ의 Foundation 위(→OutZ=SurfaceZ)거나
+	// 전부 비-Foundation(→OutZ=그리드 평면 Z — F1은 지형=평면이라 항상 균일)이면 true.
+	// 혼합/이높이(Foundation 경계 걸침)는 false — Z 안착 모호성 제거. 머신 풋프린트/컨베이어 경로 공용.
+	bool OJJ_GetUniformSurfaceZ(const TArray<FIntPoint>& Cells, float& OutZ) const;
 
 	// 셀이 그리드 외(void = 바닥 없음/트레이스 미히트)인지. 그리드 비주얼 셀 제외 판정용.
 	UFUNCTION(BlueprintPure, Category = "Grid|Terrain")
