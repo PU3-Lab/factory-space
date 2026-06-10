@@ -298,6 +298,8 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
 	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
+	// Foundation 모드(F1-b) — 직접 바인딩(M/J/I 패턴). IA/IMC 에셋 전환은 키 정리 백로그.
+	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AOJJ_Player::SetFoundationMode);
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -638,6 +640,17 @@ void AOJJ_Player::SetDemolishMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Demolish);
+}
+
+// Foundation(기초) 모드 진입(G키 — F1-b). 다른 모드 핸들러와 동일하게 BuildController 위임만 —
+// 빌드모드 밖 전환은 기존 모드들과 같은 무해 동작(호버/클릭이 bIsBuildMode로 게이트됨).
+void AOJJ_Player::SetFoundationMode()
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Foundation);
 }
 
 void AOJJ_Player::StartSprint(const FInputActionValue& Value)

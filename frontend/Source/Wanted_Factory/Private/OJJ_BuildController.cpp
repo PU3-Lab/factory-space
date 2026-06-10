@@ -23,6 +23,7 @@
 #include "Machines/Pump.h"
 #include "Machines/Smelter.h"
 #include "Machines/WarehousePort.h"
+#include "OJJ_Foundation.h"
 #include "OJJ_ProtectionTower.h"
 #include "QuestManagerSubsystem.h"
 #include "Resource/ResourceBase.h"
@@ -321,8 +322,14 @@ FIntPoint AOJJ_BuildController::ComputeOriginFromCursorCell(FIntPoint CursorCell
 	// 같은 size 가정에서 동작해야 호버/배치와 occupancy/메시 위치가 어긋나지 않음. step 0이면 기존과 동일.
 	const FIntPoint Size = AOJJ_Grid::EffectiveSize(Machine->GetMachineSize(), RotationSteps);
 
-	// (Size-1)/2 정수 나눗셈 → lower-left bias. 1x1 offset 0 (회귀 없음).
-	return FIntPoint(CursorCell.X - (Size.X - 1) / 2, CursorCell.Y - (Size.Y - 1) / 2);
+	return ComputeOriginFromCursorCellForSize(CursorCell, Size);
+}
+
+FIntPoint AOJJ_BuildController::ComputeOriginFromCursorCellForSize(FIntPoint CursorCell, FIntPoint EffSize)
+{
+	// (Size-1)/2 정수 나눗셈 → lower-left bias. 1x1 offset 0 (회귀 없음). 머신/Foundation 공통 수식 —
+	// 두 경로의 "마우스 = 풋프린트 중심" 정책이 갈라지지 않게 단일원으로 유지.
+	return FIntPoint(CursorCell.X - (EffSize.X - 1) / 2, CursorCell.Y - (EffSize.Y - 1) / 2);
 }
 
 TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
@@ -463,6 +470,13 @@ void AOJJ_BuildController::UpdateMouseHover()
 		// [옵션·미구현] 비드래그 상태에서 커서 아래 노드를 스피어로 강조하면 "선택 가능" 힌트가 되지만,
 		// 요청 범위(드래그 중 피드백)를 넘어 생략. 필요 시 위 if 바깥에 HoverNode 강조를 추가.
 #endif
+		return;
+	}
+
+	// Foundation 모드(F1-b): 머신 경로와 독립 분기(Conveyor/Demolish 패턴) — CDO FoundationSize 풋프린트 호버.
+	if (PlacementMode == EOJJ_BuildPlacementMode::Foundation)
+	{
+		UpdateFoundationHover(CursorCell, Hit);
 		return;
 	}
 
@@ -734,6 +748,15 @@ void AOJJ_BuildController::OnLeftClickPressed()
 		return;
 	}
 
+	// Foundation 모드(F1-b): 클릭 즉시 배치(드래그 없음). 머신 spawn-validate-destroy 패턴 미러 —
+	// 검증/등록은 F1-a TryPlaceFoundation(그리드는 데이터만), 액터 위치 세팅은 여기서.
+	// 머신 경로 도달 전 return → #164 퀘스트 훅(NotifyMainQuestMachinePlaced) 비경유(비간섭).
+	if (PlacementMode == EOJJ_BuildPlacementMode::Foundation)
+	{
+		PlaceFoundationAtCursor();
+		return;
+	}
+
 	// === Machine 모드 (기존 동작 무변경) ===
 	TSubclassOf<AMachineBase> ActiveMachineClass = GetActiveMachineClass();
 	if (!TargetGrid || !ActiveMachineClass)
@@ -815,6 +838,108 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 }
 
+// === Foundation 모드 (F1-b — 머신 경로와 독립, 커버리지 배치) ===
+
+void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHitResult& Hit)
+{
+	// 머신 호버와 동일한 표면 게이트: floor/머신 위에서만 유효(그 외 표면은 off-grid — 프리뷰 클리어).
+	// 머신 위 호버는 점유 셀로 매핑돼 CanPlaceFoundation occupied 게이트가 빨강 표시 — 의도된 피드백.
+	// (배치된 Foundation 슬래브는 NoCollision이라 트레이스가 통과해 floor에 닿음 → 겹침 빨강도 정상 동작.)
+	UPrimitiveComponent* HitComp = Hit.GetComponent();
+	AActor* HitActor = Hit.GetActor();
+	const bool bHitFloor = (HitComp == TargetGrid->GetGridFloorMesh());
+	const bool bHitMachine = HitActor && HitActor->IsA<AMachineBase>();
+	if (!bHitFloor && !bHitMachine)
+	{
+		TargetGrid->ClearHoverPreview();
+		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+		return;
+	}
+
+	// 머신 경로와 동일한 동일-셀 ISM 리빌드 스킵(Tick 경로 비용 절감).
+	if (CursorCell == CurrentHoverCell)
+	{
+		return;
+	}
+
+	const AOJJ_Foundation* DefaultFoundation = FoundationClass ? FoundationClass.GetDefaultObject() : nullptr;
+	if (!DefaultFoundation)
+	{
+		return;
+	}
+
+	// CDO에서 크기만 읽음(머신 CDO 풋프린트 조회와 동일 — spawn 부작용 없음). 회전은 F1 미지원(정사각 8×8).
+	const FIntPoint Size = DefaultFoundation->GetFoundationSize();
+	const FIntPoint Origin = ComputeOriginFromCursorCellForSize(CursorCell, Size);
+	TargetGrid->OJJ_UpdateFoundationHoverPreview(Origin, Size);
+	CurrentHoverCell = CursorCell;
+}
+
+void AOJJ_BuildController::PlaceFoundationAtCursor()
+{
+	if (!TargetGrid || !FoundationClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] TargetGrid 또는 FoundationClass 미설정"));
+		return;
+	}
+
+	// 마우스가 floor 밖이라 호버 갱신이 한 번도 안 됐으면 클릭 무시(머신 경로와 동일).
+	if (CurrentHoverCell.X == INT_MIN || CurrentHoverCell.Y == INT_MIN)
+	{
+		return;
+	}
+
+	const AOJJ_Foundation* DefaultFoundation = FoundationClass.GetDefaultObject();
+	if (!DefaultFoundation)
+	{
+		return;
+	}
+
+	// 호버와 같은 origin 변환을 사용해야 "미리보기 = 실제 배치" 정합(머신 경로의 핵심 계약과 동일).
+	const FIntPoint Size = DefaultFoundation->GetFoundationSize();
+	const FIntPoint Origin = ComputeOriginFromCursorCellForSize(CurrentHoverCell, Size);
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParams.Owner = this;
+
+	AOJJ_Foundation* NewFoundation = World->SpawnActor<AOJJ_Foundation>(
+		FoundationClass, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+	if (!NewFoundation)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] Foundation SpawnActor 실패"));
+		return;
+	}
+
+	// SurfaceZ = 그리드 평면 + Thickness(F1 1단 고정 — §7-1). 좌표는 그리드 헬퍼(결정점 ② — 데이터/좌표는
+	// 그리드, 액터 이동은 컨트롤러). 실패 시 머신 경로처럼 즉시 파기 — orphan 없음.
+	const FVector PlaceLocation = TargetGrid->GetFoundationPlacementLocation(Origin, Size);
+	FString OutReason;
+	if (!TargetGrid->TryPlaceFoundation(
+		NewFoundation, Origin, Size, PlaceLocation.Z + NewFoundation->GetThickness(), OutReason))
+	{
+		// OutReason에 사유별 셀 수(water/occupied/overlap 등) — F1-b 디버깅·waterZ 재검토 실측 데이터.
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation 배치 불가: %s"), *OutReason);
+		NewFoundation->Destroy();
+		return;
+	}
+
+	NewFoundation->SetActorLocation(PlaceLocation);
+	NewFoundation->OJJ_NotifyPlacedOnGrid(TargetGrid);
+
+	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s Foundation 배치 성공 (%dx%d)"),
+		*Origin.ToString(), Size.X, Size.Y);
+
+	// 직전 영역이 이제 커버됨(겹침 금지) → 다음 호버에서 빨강 재표시 강제(머신 경로와 동일).
+	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+}
+
 // === Conveyor 입력 (Step 6 — Dummy 원본 이식(parity)) ===
 
 void AOJJ_BuildController::OnLeftClickReleased()
@@ -855,6 +980,7 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::Smelter:   ModeName = TEXT("Smelter");    break;
 	case EOJJ_BuildPlacementMode::Warehouse: ModeName = TEXT("Warehouse");  break;
 	case EOJJ_BuildPlacementMode::Demolish:  ModeName = TEXT("Demolish");   break;
+	case EOJJ_BuildPlacementMode::Foundation: ModeName = TEXT("Foundation"); break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 

@@ -450,6 +450,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Foundation")
 	bool GetFoundationSurfaceZ(FIntPoint Cell, float& OutSurfaceZ) const;
 
+	// Foundation 풋프린트 중심 월드 좌표(F1-b 결정점 ② — 그리드는 좌표만, 액터 이동은 호출자).
+	// 머신 GetMachinePlacementLocation과 동형 수식(lower-left 셀 중심 + (Size-1)/2)이되 메시 AABB Z 보정은
+	// 없음 — Foundation이 자체 메시 오프셋(상면=평면+Thickness)을 책임진다. Z = 그리드 평면(F1 1단 고정).
+	UFUNCTION(BlueprintPure, Category = "Grid|Foundation")
+	FVector GetFoundationPlacementLocation(FIntPoint Origin, FIntPoint Size) const;
+
+	// Foundation 배치 호버 미리보기 — 풋프린트 전체를 단일색 녹(가능)/적(불가)으로 표시.
+	// 단일 진실원: 색 판정 = 클릭 시 판정(CanPlaceFoundation) — 머신 UpdateHoverPreview와 동일 정책
+	// (셀별 색은 실제 배치 판정과 어긋나는 "거짓말"이라 과거 회귀로 제거된 방식 — 재도입 금지).
+	UFUNCTION(BlueprintCallable, Category = "Grid|Hover")
+	void OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size);
+
 	// === 지형 높이 캐시 접근 (F0 갭 해소 — CellGroundZQuant 소비처 첫 도입) ===
 
 	// 셀 지형 높이(그리드 평면 Z 상대 부호 델타, uu — 베이크 "최악점" 기준 저장값 그대로). 월드 Z는

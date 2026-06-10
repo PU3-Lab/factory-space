@@ -1255,6 +1255,62 @@ bool AOJJ_Grid::GetFoundationSurfaceZ(FIntPoint Cell, float& OutSurfaceZ) const
 	return false;
 }
 
+FVector AOJJ_Grid::GetFoundationPlacementLocation(FIntPoint Origin, FIntPoint Size) const
+{
+	// 머신 GetMachinePlacementLocation과 동일한 "lower-left 셀 중심 + (Size-1)/2" 수식 — 좌표 규약 공유.
+	// 메시 AABB Z 보정 없음(Foundation이 상면=평면+Thickness 오프셋을 자체 처리). Z = 그리드 평면.
+	const FVector LowerLeftCenter = GridToWorld(Origin);
+	const float OffsetX = (Size.X - 1) * CellSize * 0.5f;
+	const float OffsetY = (Size.Y - 1) * CellSize * 0.5f;
+	return FVector(LowerLeftCenter.X + OffsetX, LowerLeftCenter.Y + OffsetY, LowerLeftCenter.Z);
+}
+
+void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size)
+{
+	ClearHoverPreview();
+
+	if (Size.X < 1 || Size.Y < 1)
+	{
+		return;
+	}
+
+	// 프리뷰 인스턴스 폭주 방어 — FoundationSize는 디자이너 프로퍼티라 거대값 실수 가능. 호버는 매 셀
+	// 이동마다 리빌드되므로 셀 수 상한(에디터 오버레이 OOM과 동일 교훈). 8×8 정상 케이스(64)에 충분한 여유.
+	constexpr int64 MaxPreviewCells = 4096;
+	const int64 EndX = (int64)Origin.X + Size.X;
+	const int64 EndY = (int64)Origin.Y + Size.Y;
+	if ((int64)Size.X * (int64)Size.Y > MaxPreviewCells)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Grid] FoundationHoverPreview: 풋프린트 %dx%d > 상한 %lld셀 — 프리뷰 생략(FoundationSize 확인)."),
+			Size.X, Size.Y, MaxPreviewCells);
+		return;
+	}
+
+	// 단일 진실원: 호버 색 = 클릭 시 판정(CanPlaceFoundation). 사유는 색에선 버림 — 클릭 실패 시
+	// BuildController가 같은 함수의 OutReason(사유별 셀 수)을 로그.
+	FString UnusedReason;
+	const bool bCanPlace = CanPlaceFoundation(Origin, Size, UnusedReason);
+	UInstancedStaticMeshComponent* TargetISM = bCanPlace ? ValidHoverISM.Get() : InvalidHoverISM.Get();
+	if (!TargetISM)
+	{
+		return;
+	}
+
+	// 셀→인스턴스 규칙은 머신 호버(UpdateHoverPreview)와 동일: Z+2 가림 방지, Plane 100→CellSize 스케일,
+	// world-space. off-grid 셀도 그려 경계 밖 빨강 피드백 유지(머신 CalculateFootprint도 off-grid 포함).
+	for (int64 X = Origin.X; X < EndX; ++X)
+	{
+		for (int64 Y = Origin.Y; Y < EndY; ++Y)
+		{
+			const FVector CellCenter = GridToWorld(FIntPoint((int32)X, (int32)Y));
+			const FVector InstanceLocation(CellCenter.X, CellCenter.Y, CellCenter.Z + 2.0f);
+			const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
+			TargetISM->AddInstance(FTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale), /*bWorldSpace=*/true);
+		}
+	}
+}
+
 void AOJJ_Grid::SweepStaleFoundationEntries()
 {
 	// SweepStaleEntries 미러(커버리지판). forward 셀은 weak 무효일 때만 제거 — 점유 sweep과 동일 방어.
