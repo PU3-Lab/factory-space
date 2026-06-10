@@ -107,6 +107,8 @@ ProductionDeliveryQuestAgent
 - `resource_` prefix 제거만으로 매핑 가능한 항목은 mapper에서 명시적으로 검증한다.
 - 매핑할 수 없는 CSV 자원은 퀘스트 후보에서 제외한다.
 
+CSV 기반 간이 RAG를 언제 PostgreSQL 전문검색 또는 `pgvector`로 확장할지는 `backend/docs/plans/quest_rag_scaling_criteria.md` 기준을 따른다.
+
 ## 생성 규칙
 
 기본 조합은 생산 3개, 납품 2개다.
