@@ -1,0 +1,24 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Blueprint/UserWidget.h"
+#include "UI_InventorySlot.generated.h"
+
+UCLASS()
+class WANTED_FACTORY_API UUI_InventorySlot : public UUserWidget
+{
+	GENERATED_BODY()
+
+protected:
+	// 아이콘 이미지
+	UPROPERTY(meta = (BindWidget))
+	class UImage* IMG_ItemIcon;
+
+	// 아이템 개수 텍스트
+	UPROPERTY(meta = (BindWidget))
+	class UTextBlock* TXT_ItemCount;
+
+public:
+	// 서브시스템 데이터를 받아 슬롯의 시각적 정보 갱신
+	void UpdateSlot(FName ItemID, int32 Count);
+};
