@@ -27,10 +27,7 @@ flowchart TD
     OperatorGuide --> Machine[operator_guide.machine_help]
     OperatorGuide --> Trouble[operator_guide.troubleshooter]
 
-    Quest --> Tutorial[quest_generator.tutorial_quest]
-    Quest --> Production[quest_generator.production_quest]
-    Quest --> Exploration[quest_generator.exploration_quest]
-    Quest --> Economy[quest_generator.economy_quest]
+    Quest --> ProductionDelivery[quest_generator.production_delivery_quest]
 ```
 
 ## 오케스트레이션 구분
@@ -115,8 +112,8 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 
 직접 서브 에이전트까지 분기하지 않는 이유:
 
-- `orchestrator.py`가 `operator_guide.recipe_explainer`, `quest_generator.production_quest` 같은 leaf Agent까지 직접 고르면 도메인별 세부 정책이 서버 전체 오케스트레이터로 새어 나온다.
-- 도메인별 서브 에이전트 선택 기준은 서로 다르다. 운영자 가이드는 질문 의도와 화면 context가 중요하고, 퀘스트 생성은 진행도, 최근 이벤트, 경제/생산/탐험 우선순위가 중요하다.
+- `orchestrator.py`가 `operator_guide.recipe_explainer`, `quest_generator.production_delivery_quest` 같은 leaf Agent까지 직접 고르면 도메인별 세부 정책이 서버 전체 오케스트레이터로 새어 나온다.
+- 도메인별 서브 에이전트 선택 기준은 서로 다르다. 운영자 가이드는 질문 의도와 화면 context가 중요하고, 퀘스트 생성은 PostgreSQL의 창고/진행/최근 퀘스트 상황과 생산/납품 후보 균형이 중요하다.
 - leaf Agent가 늘어날 때마다 서버 전체 오케스트레이터를 수정하게 되면 변경 범위가 커진다.
 - 따라서 `orchestrator.py`는 최상위 Agent만 선택하고, 세부 분기는 도메인 오케스트레이터가 맡는다.
 
@@ -326,10 +323,12 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 입력:
 
 - 플레이어 진행도
+- PostgreSQL에 저장된 현재 창고 상태
+- PostgreSQL에 저장된 최근 생성/완료 퀘스트
 - 현재 공장 상태
 - 최근 이벤트
-- 명시된 quest type
-- 경제/생산/탐험 우선순위
+- 명시된 quest type 또는 sub_agent
+- 생산/납품 후보 균형
 
 출력:
 
@@ -339,16 +338,13 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 
 선택 가능한 서브 에이전트:
 
-- `tutorial_quest`
-- `production_quest`
-- `exploration_quest`
-- `economy_quest`
+- `production_delivery_quest`
 
 주요 판단:
 
-- routing prompt는 지금 필요한 퀘스트가 온보딩인지, 생산 개선인지, 탐험 유도인지, 경제 균형인지 판단하도록 지시한다.
-- `quest_type`, 진행도, 최근 이벤트는 LLM router가 참고하는 입력 신호다.
-- 코드가 `quest_type`, 진행도, 최근 이벤트를 if/else로 분류해서 sub-agent를 선택하지 않는다.
+- 현재 허용 leaf는 통합 생산/납품 퀘스트 생성기 하나이므로, 도메인 오케스트레이터는 허용된 leaf id 검증과 prompt 계약을 얇게 유지한다.
+- `quest_type`, 진행도, 최근 이벤트는 LLM router가 참고할 수 있는 입력 신호지만, public 응답 타입은 `production`, `delivery`로 제한한다.
+- 코드가 `quest_type`, 진행도, 최근 이벤트를 if/else로 분류해서 제거된 경제/무역 leaf로 보내지 않는다.
 - 명시적으로 사용할 수 있는 값은 검증된 `sub_agent`뿐이며, `quest_type`은 직접 라우팅 값으로 사용하지 않는다.
 
 소유하지 않는 책임:
@@ -358,75 +354,55 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 - cache 정책
 - 최종 envelope 생성
 
-## `agents/quest_generator/tutorial_quest.py`
+## `agents/quest_generator/production_delivery_quest.py`
 
-역할: 온보딩과 기능 학습 목적의 퀘스트를 생성한다.
-
-입력:
-
-- 튜토리얼 진행도
-- 아직 사용하지 않은 핵심 기능
-- 현재 unlock 상태
-
-출력:
-
-- 학습 목표
-- 단계별 완료 조건
-- 보상 후보
-- 다음 튜토리얼 연결점
-
-## `agents/quest_generator/production_quest.py`
-
-역할: 생산량, 설비 운용, 병목 개선 목적의 퀘스트를 생성한다.
+역할: PostgreSQL의 현재 상황을 읽어 생산 퀘스트와 납품 퀘스트를 합산 5개 생성한다.
 
 입력:
 
-- 생산 지표
-- 병목 후보
-- 설비 상태
-- 레시피 unlock 상태
+- PostgreSQL 창고 보유량
+- PostgreSQL 최근 생성/완료 퀘스트 기록
+- 해금된 레시피와 사용 가능한 장비
+- CSV 기준 데이터인 `resources.csv`, `recipes.csv`, `equipment.csv`
+- 프론트 창고 item id와 CSV resource id 매핑 정보
 
 출력:
 
-- 생산 목표
-- 완료 조건
-- 측정 기준
-- 보상 후보
+- `production`, `delivery` 타입만 포함한 5개 퀘스트
+- 각 퀘스트의 완료 조건
+- `target_item_id`, `quantity` objective
+- 후보 생성과 fallback 여부를 설명하는 metadata
 
-## `agents/quest_generator/exploration_quest.py`
+주요 판단:
 
-역할: 신규 재료, 지역, 이벤트 탐색을 유도하는 퀘스트를 생성한다.
+- 생산 후보는 부족하거나 다음 생산 체인에 필요한 아이템을 우선한다.
+- 납품 후보는 PostgreSQL 창고에 충분히 쌓인 아이템을 우선한다.
+- 기본 조합은 생산 3개, 납품 2개로 하되 후보 부족 시 다른 타입으로 채운다.
+- 같은 응답 안에서 동일 `target_item_id`를 중복 생성하지 않는다.
+- PostgreSQL 조회 실패나 후보 부족 시 deterministic fallback으로 5개를 유지한다.
 
-입력:
+소유하지 않는 책임:
 
-- 탐험 unlock 상태
-- 발견하지 않은 재료나 지역
-- 최근 탐험 이벤트
+- PostgreSQL schema migration 자체
+- Unreal 창고 아이템 차감 실행
+- 보상 지급
+- 경제/무역 퀘스트 생성
 
-출력:
+## 제외된 퀘스트 타입
 
-- 탐험 목표
-- 발견 조건
-- 위험/제약 조건
-- 보상 후보
+현재 퀘스트 에이전트가 생성하는 public quest type은 `production`, `delivery`뿐이다.
 
-## `agents/quest_generator/economy_quest.py`
+제외 대상:
 
-역할: 비용, 수익, 재고, 거래 효율을 다루는 퀘스트를 생성한다.
+- `economy`: 재고/효율 개선은 납품 후보 점수에 일부 반영할 수 있지만 public quest type이나 leaf Agent로 노출하지 않는다.
+- `trade`: 무역 대상과 거래 규칙이 확정되지 않았으므로 현재 leaf Agent로 열지 않는다.
+- `tutorial`, `exploration`: 현재 퀘스트 에이전트 범위가 아니다.
 
-입력:
+현재 원칙:
 
-- 재고 상태
-- 비용/수익 지표
-- 거래 가능 항목
-- 생산 효율 지표
-
-출력:
-
-- 경제 목표
-- 완료 조건
-- 효율 개선 기준
-- 보상 후보
+- `quest_generator.economy_quest`, `quest_generator.trade_quest`, `quest_generator.tutorial_quest`, `quest_generator.exploration_quest`는 허용 leaf Agent가 아니다.
+- 제거된 leaf id가 명시 요청되면 `INVALID_SUB_AGENT`로 처리한다.
+- 경제/무역 관련 요청을 production/delivery로 조용히 흡수하지 않는다. 필요하면 별도 설계와 응답 계약을 문서화한 뒤 허용 목록에 추가한다.
 
 ## 실행 구성요소
 

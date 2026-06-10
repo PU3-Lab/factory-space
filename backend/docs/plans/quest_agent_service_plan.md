@@ -1,52 +1,23 @@
-# 퀘스트 에이전트 서비스 구현 계획
+# 퀘스트 에이전트 서비스 개편 계획
 
 ## 상태
 
-구현 완료 후 작성한 사후 계획 문서입니다. 실제 구현된 계약, 작업 순서, 검증 결과가 계획과 맞는지 확인하기 위해 작성했습니다.
+기존 퀘스트 에이전트는 서버 내부 예제 퀘스트 풀에서 생산 퀘스트 5개를 고르는 구조였다. 이후 방향은 PostgreSQL에 저장된 현재 게임 상황을 읽고, 생산 퀘스트와 납품 퀘스트를 합산 5개 생성하는 구조로 개편한다.
 
 ## 목표
 
-Unreal에서 퀘스트 버튼을 눌렀을 때 `agent: "quest_generator"`가 포함된 `agent.request` JSON을 보내면, backend가 서버 내부 예제 퀘스트 풀에서 5개를 랜덤으로 선택해 JSON으로 반환합니다.
+Unreal에서 `agent: "quest_generator"` 요청을 보내면 backend가 PostgreSQL의 현재 상황을 조회해 `production`, `delivery` 두 타입만 포함한 퀘스트 5개를 반환한다.
 
-이번 범위에서는 Unreal이 창고 상태나 `game_state`를 보내지 않습니다. 퀘스트 요청 신호는 JSON 요청 자체로 판단합니다.
+성공 기준:
 
-## 현재 퀘스트 leaf Agent 범위
+- 응답은 항상 `payload.quests` 배열에 5개 퀘스트를 담는다.
+- 퀘스트 타입은 `production`, `delivery`만 허용한다.
+- `economy`, `trade`, `tutorial`, `exploration` 타입은 퀘스트 에이전트 응답 계약에서 제거한다.
+- 같은 응답 안에서 동일 `target_item_id`를 중복으로 내보내지 않는다.
+- PostgreSQL 조회 실패나 후보 부족 상황에서도 fallback으로 5개를 반환한다.
+- Unreal 수신 계약인 `id`, `type`, `title`, `description`, `objectives[target_item_id, quantity]`는 유지한다.
 
-현재 실제 구현에서 유지하는 퀘스트 leaf Agent는 다음 2개입니다.
-
-- `quest_generator.production_quest`: 생산, 채굴, 제작 목표를 5개 퀘스트 응답으로 생성합니다.
-- `quest_generator.economy_quest`: 재고, 비용, 수익, 거래 효율 같은 경제 흐름 개선 퀘스트를 생성합니다.
-
-다음 leaf Agent는 구현과 문서에서 제거했습니다.
-
-- `quest_generator.tutorial_quest`: 튜토리얼은 퀘스트 에이전트 경로를 타지 않습니다.
-- `quest_generator.exploration_quest`: 탐험 퀘스트는 현재 예정된 기능 범위가 아닙니다.
-
-이에 따라 `QUEST_SUB_AGENT_IDS`, Agent connection manifest, default `AgentRouter` 등록 목록은 production/economy만 노출합니다. 제거된 `sub_agent`가 명시 요청되면 `INVALID_SUB_AGENT` 오류로 처리합니다.
-
-## 최종 요청 계약
-
-퀘스트 버튼 요청에서는 `payload`를 생략할 수 있습니다.
-
-```json
-{
-  "type": "agent.request",
-  "request_id": "request-quest",
-  "session_id": "session-1",
-  "client_id": "unreal-client",
-  "agent": "quest_generator"
-}
-```
-
-정리:
-
-- `payload` 필드는 다른 agent가 쓰는 공통 protocol 필드이므로 제거하지 않습니다.
-- 퀘스트 생성 요청에서는 `payload`가 없거나 비어 있으면 퀘스트 5개 요청으로 처리합니다.
-- Unreal이 mock `game_state`나 창고 상태를 보내지 않아도 됩니다.
-
-## 최종 응답 계약
-
-backend는 단일 `payload.quest`가 아니라 `payload.quests` 배열을 반환합니다.
+## 현재 유지할 응답 계약
 
 ```json
 {
@@ -60,47 +31,107 @@ backend는 단일 `payload.quest`가 아니라 `payload.quests` 배열을 반환
       {
         "id": 1,
         "type": "production",
-        "title": "철광석 10개 채굴",
-        "description": "기초 생산 라인을 준비하기 위해 철광석 10개를 채굴하세요.",
+        "title": "철괴 5개 생산",
+        "description": "제련기를 사용해 철괴 5개를 생산하세요.",
+        "objectives": [
+          {
+            "target_item_id": "iron_ingot",
+            "quantity": 5
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "type": "delivery",
+        "title": "철광석 8개 납품",
+        "description": "창고에 보관 중인 철광석 8개를 납품하세요.",
         "objectives": [
           {
             "target_item_id": "iron_ore",
-            "quantity": 10
+            "quantity": 8
           }
         ]
       }
     ],
     "metadata": {
-      "fallback": true,
-      "sub_agent": "quest_generator.production_quest",
       "selectedAgent": "quest_generator",
-      "selectedLeafAgent": "quest_generator.production_quest"
+      "selectedLeafAgent": "quest_generator.production_delivery_quest"
     }
   },
   "streams": []
 }
 ```
 
-## 예제 퀘스트 풀
+## leaf Agent 범위
 
-초기 예제 퀘스트는 CSV item id를 참고한 10개입니다.
+퀘스트 생성 도메인은 통합 leaf Agent 하나를 사용한다.
 
-- `1`: 철광석 10개 채굴
-- `2`: 구리광석 8개 채굴
-- `3`: 석탄 6개 확보
-- `4`: 목재 8개 확보
-- `5`: 철괴 5개 제련
-- `6`: 구리괴 5개 제련
-- `7`: 철가루 6개 분쇄
-- `8`: 구리가루 6개 분쇄
-- `9`: 목탄 4개 제작
-- `10`: 석탄가루 4개 분쇄
+- `quest_generator.production_delivery_quest`: PostgreSQL 상황과 CSV 기준 데이터를 함께 사용해 생산/납품 후보를 만들고, 총 5개의 퀘스트를 생성한다.
 
-서비스는 이 10개 중 중복 없이 5개를 랜덤으로 선택해 반환합니다.
+제거 대상:
+
+- `quest_generator.production_quest`: 단독 생산 leaf로는 유지하지 않는다.
+- `quest_generator.economy_quest`: 경제 퀘스트 타입을 제거하므로 유지하지 않는다.
+- `quest_generator.trade_quest`: 무역 퀘스트는 이번 범위가 아니다.
+- `quest_generator.tutorial_quest`, `quest_generator.exploration_quest`: 현재 퀘스트 에이전트 범위가 아니다.
+
+명시된 `sub_agent`가 제거된 leaf id를 가리키면 `INVALID_SUB_AGENT`로 처리한다.
+
+## PostgreSQL 상황 조회
+
+Agent가 직접 DB session을 다루지 않는다. 접근 경계는 다음처럼 둔다.
+
+```text
+ProductionDeliveryQuestAgent
+  -> QuestAgentService
+  -> QuestSituationRepository
+  -> PostgreSQL
+```
+
+`QuestSituationRepository`가 제공할 최소 데이터:
+
+- 창고 보유량: `item_id`, `quantity`
+- 최근 생성/완료된 퀘스트: `quest_type`, `target_item_id`, `created_at`, `completed_at`
+- 해금된 레시피: `recipe_id`
+- 사용 가능한 장비: `equipment_id`
+
+1차 구현에서 PostgreSQL 테이블명이 아직 확정되지 않았다면 repository interface와 fake repository 테스트를 먼저 만든다. 실제 PostgreSQL adapter는 같은 interface 뒤에 붙인다.
+
+## CSV 기준 데이터와 item id
+
+생산 후보는 `data/game/recipes.csv`, `resources.csv`, `equipment.csv`를 기준 데이터로 사용한다. 단, CSV의 `resource_iron_ingot` 같은 id와 Unreal 창고의 `iron_ingot` id가 다를 수 있으므로 mapper를 둔다.
+
+규칙:
+
+- backend 응답의 `target_item_id`는 Unreal 창고 id와 맞춘다.
+- `resource_` prefix 제거만으로 매핑 가능한 항목은 mapper에서 명시적으로 검증한다.
+- 매핑할 수 없는 CSV 자원은 퀘스트 후보에서 제외한다.
+
+## 생성 규칙
+
+기본 조합은 생산 3개, 납품 2개다.
+
+생산 후보:
+
+- 해금된 레시피와 사용 가능한 장비로 만들 수 있는 아이템만 후보로 둔다.
+- 보유량이 부족하거나 다음 생산 체인에 필요한 아이템의 점수를 높인다.
+- 최근 생성/완료된 같은 target item은 제외하거나 점수를 낮춘다.
+
+납품 후보:
+
+- PostgreSQL 창고 보유량이 충분한 아이템만 후보로 둔다.
+- 과잉 재고는 납품 후보 점수를 높인다.
+- 생산 체인의 핵심 중간재를 모두 소모하는 수량은 만들지 않는다.
+
+후보 부족 처리:
+
+- 납품 후보가 2개 미만이면 생산 후보로 채운다.
+- 생산 후보가 3개 미만이면 납품 후보로 채운다.
+- 전체 후보가 5개 미만이면 CSV 기반 deterministic fallback 후보로 채운다.
 
 ## 구현 계획
 
-### Task 1. 퀘스트 스키마 변경
+### Task 1. schema 정리
 
 대상 파일:
 
@@ -109,68 +140,118 @@ backend는 단일 `payload.quest`가 아니라 `payload.quests` 배열을 반환
 
 작업:
 
-- [x] 응답 payload를 `quest`에서 `quests`로 변경합니다.
-- [x] quest `id`를 문자열에서 양의 정수로 변경합니다.
-- [x] objective에서 `action`을 제거합니다.
-- [x] objective에서 `target_item_name`을 제거합니다.
-- [x] objective에는 `target_item_id`, `quantity`만 유지합니다.
-- [x] Pydantic으로 `quantity > 0`을 검증합니다.
+- [ ] `Quest.type`을 `Literal["production", "delivery"]`로 제한한다.
+- [ ] `economy`, `trade`, `tutorial`, `exploration` 타입 거부 테스트를 추가한다.
+- [ ] 기존 `quests` 배열 응답 계약은 유지한다.
 
 검증:
 
-- [x] `test_service_returns_five_random_quests_from_example_pool`
-- [x] `test_service_quest_objectives_keep_item_id_and_quantity_only`
-- [x] `test_quest_response_rejects_invalid_quantity`
+- [ ] `test_quest_response_rejects_removed_quest_types`
+- [ ] `test_quest_response_accepts_production_and_delivery`
 
-### Task 2. 퀘스트 서비스 변경
+### Task 2. PostgreSQL 상황 repository 경계 추가
+
+대상 파일:
+
+- `backend/src/agents/quest_generator/repository.py`
+- `backend/src/agents/quest_generator/models.py`
+- `backend/tests/test_quest_agent_repository.py`
+
+작업:
+
+- [ ] `QuestSituationRepository` interface를 추가한다.
+- [ ] repository가 PostgreSQL에서 창고, 최근 퀘스트, 해금 레시피, 사용 가능 장비를 읽도록 설계한다.
+- [ ] 테스트에서는 fake repository로 상황을 주입한다.
+
+검증:
+
+- [ ] fake repository로 `QuestSituation`을 구성하는 단위 테스트를 통과시킨다.
+- [ ] PostgreSQL adapter는 DB 연결 설정이 준비된 뒤 integration test로 분리한다.
+
+### Task 3. item id mapper 추가
+
+대상 파일:
+
+- `backend/src/agents/quest_generator/item_mapping.py`
+- `backend/tests/test_quest_agent_item_mapping.py`
+
+작업:
+
+- [ ] CSV resource id를 Unreal 창고 item id로 변환한다.
+- [ ] `resource_iron_ore -> iron_ore`, `resource_iron_ingot -> iron_ingot`, `resource_copper_ore -> copper_ore` 매핑을 테스트로 고정한다.
+- [ ] 매핑 실패 항목은 후보 생성에서 제외할 수 있게 한다.
+
+검증:
+
+- [ ] `test_maps_csv_resource_ids_to_unreal_item_ids`
+- [ ] `test_unknown_resource_id_is_not_mapped`
+
+### Task 4. 후보 생성기 추가
+
+대상 파일:
+
+- `backend/src/agents/quest_generator/candidates.py`
+- `backend/tests/test_quest_agent_candidates.py`
+
+작업:
+
+- [ ] 생산 후보를 레시피/장비/창고 상황으로 만든다.
+- [ ] 납품 후보를 창고 보유량으로 만든다.
+- [ ] 최근 퀘스트 중복 target item을 점수에서 불리하게 처리한다.
+
+검증:
+
+- [ ] `test_builds_production_candidates_from_unlocked_recipes`
+- [ ] `test_builds_delivery_candidates_from_warehouse_stock`
+- [ ] `test_recent_duplicate_targets_are_deprioritized`
+
+### Task 5. 서비스 생성 로직 개편
 
 대상 파일:
 
 - `backend/src/agents/quest_generator/service.py`
-- `backend/src/agents/quest_generator/production_quest.py`
+- `backend/tests/test_quest_agent_service.py`
 
 작업:
 
-- [x] 클라이언트가 보내는 `game_state` 의존을 제거합니다.
-- [x] 서버 내부 예제 퀘스트 풀을 추가합니다.
-- [x] 예제 10개 중 5개를 랜덤 선택합니다.
-- [x] 선택된 퀘스트를 Pydantic으로 검증합니다.
-- [x] `model_dump(mode="json")`으로 JSON 직렬화 가능한 dict를 반환합니다.
-- [x] `ProductionQuestAgent.fallback()`이 변경된 서비스를 호출하도록 연결합니다.
+- [ ] `QuestAgentService.generate_quest_json()`이 PostgreSQL 상황 기반 후보에서 총 5개를 고른다.
+- [ ] 기본 비율은 생산 3개, 납품 2개로 둔다.
+- [ ] 후보 부족 시에도 총 5개를 유지한다.
+- [ ] 중복 `target_item_id`를 제거한다.
 
 검증:
 
-- [x] `test_production_quest_fallback_returns_five_example_quests`
-- [x] production/economy quest leaf agent fallback 테스트 통과
+- [ ] `test_service_generates_five_production_delivery_quests_from_situation`
+- [ ] `test_service_prefers_delivery_for_overstocked_items`
+- [ ] `test_service_fills_with_production_when_delivery_candidates_are_insufficient`
+- [ ] `test_service_falls_back_when_postgresql_situation_is_unavailable`
 
-### Task 3. payload 없는 퀘스트 요청 라우팅
+### Task 6. agent/routing 정리
 
 대상 파일:
 
-- `backend/src/agents/pipeline/runtime.py`
-- `backend/src/agents/pipeline/graph_edges.py`
-- `backend/src/agents/pipeline/state.py`
-- `backend/tests/test_message_router.py`
+- `backend/src/agents/quest_generator/agent.py`
+- `backend/src/agents/quest_generator/production_delivery_quest.py`
+- `backend/src/agents/quest_generator/tools.py`
+- `backend/src/agents/router.py`
+- `backend/tests/test_agent_contracts.py`
+- `backend/tests/test_agent_leaf_behaviors.py`
 - `backend/tests/test_pipeline_edges.py`
 
 작업:
 
-- [x] `agent == "quest_generator"`이고 `payload`가 없거나 비어 있으면 직접 퀘스트 요청으로 처리합니다.
-- [x] 해당 요청은 `quest_generator.production_quest`로 라우팅합니다.
-- [x] `QUEST_SUB_AGENT_IDS`는 `quest_generator.production_quest`, `quest_generator.economy_quest`만 유지합니다.
-- [x] `quest_generator.tutorial_quest`, `quest_generator.exploration_quest`는 default `AgentRouter` 등록에서 제거합니다.
-- [x] 퀘스트 버튼 요청 경로에서는 top-level routing LLM을 호출하지 않습니다.
-- [x] 퀘스트 버튼 요청 경로에서는 generation LLM도 호출하지 않고 deterministic fallback을 사용합니다.
-- [x] 다른 agent 요청의 기존 prompt 기반 라우팅은 유지합니다.
+- [ ] `QUEST_SUB_AGENT_IDS`를 `quest_generator.production_delivery_quest` 하나로 정리한다.
+- [ ] economy leaf 등록을 제거한다.
+- [ ] 통합 leaf agent가 `quest_generator.generate_production_delivery_quests` tool을 노출한다.
+- [ ] LLM 응답이 tool을 호출하지 않으면 오류 또는 deterministic fallback으로 처리한다.
 
 검증:
 
-- [x] `test_pipeline_routes_empty_quest_request_without_llm`
-- [x] 기존 prompt-routed quest 테스트 통과
-- [x] 기존 invalid sub-agent 테스트 통과
-- [x] `test_removed_quest_sub_agents_are_rejected`
+- [ ] `test_default_agent_router_contains_production_delivery_quest_agent`
+- [ ] `test_removed_quest_sub_agents_are_rejected`
+- [ ] `test_pipeline_routes_production_delivery_quest`
 
-### Task 4. Smoke runner 변경
+### Task 7. smoke 검증
 
 대상 파일:
 
@@ -179,53 +260,22 @@ backend는 단일 `payload.quest`가 아니라 `payload.quests` 배열을 반환
 
 작업:
 
-- [x] quest smoke 요청에서 `payload.game_state`를 제거합니다.
-- [x] quest smoke 요청에서 `payload.sub_agent`를 제거합니다.
-- [x] 단일 quest id 대신 `payload.quests` 개수를 검증합니다.
-- [x] 기존 smoke profile과 provider opt-in 동작은 유지합니다.
+- [ ] quest smoke가 `quests` 5개를 검증한다.
+- [ ] 응답 타입이 `production`, `delivery` 외 값을 포함하지 않는지 검증한다.
 
 검증:
 
-- [x] `test_local_profile_exercises_all_agent_paths`
-- [x] `test_response_validation_rejects_wrong_quest_count`
-- [x] `scripts/smoke_agent_pipeline.py none --base-url http://127.0.0.1:8012`
-- [x] 직접 WebSocket 퀘스트 요청으로 5개 quest 응답 확인
+- [ ] `python -m pytest tests/test_smoke_agent_pipeline_script.py -v`
+- [ ] PostgreSQL이 연결된 개발 환경에서 WebSocket quest 요청 smoke를 수행한다.
 
-## 구현 결과 대조
+## 최종 검증 명령
 
-| 요구사항 | 결과 | 근거 |
-| --- | --- | --- |
-| Unreal 퀘스트 요청에서 payload가 필수가 아니어야 함 | 충족 | 빈 payload 요청 테스트, 직접 WebSocket smoke |
-| 공통 protocol의 payload는 유지해야 함 | 충족 | `AgentRequestEnvelope`는 유지 |
-| backend가 5개 퀘스트를 반환해야 함 | 충족 | service, pipeline, smoke 테스트 |
-| quest id는 정수형이어야 함 | 충족 | service 테스트, 직접 WebSocket smoke assertion |
-| objective에서 action 제거 | 충족 | schema, service 테스트 |
-| objective에서 이름 제거, id만 유지 | 충족 | schema, service 테스트 |
-| 예제 퀘스트 풀은 10개 | 충족 | `QuestAgentService` 예제 풀 |
-| 지원 quest leaf Agent는 production/economy만 노출해야 함 | 충족 | `QUEST_SUB_AGENT_IDS`, manifest, router contract 테스트 |
-| 제거된 tutorial/exploration sub-agent 요청은 거부해야 함 | 충족 | `test_removed_quest_sub_agents_are_rejected` |
-| 기존 라우팅 경로가 깨지지 않아야 함 | 충족 | 전체 backend 테스트 |
+```bash
+cd backend
+python -m pytest tests/test_quest_agent_service.py -v
+python -m pytest tests/test_agent_contracts.py tests/test_agent_leaf_behaviors.py tests/test_pipeline_edges.py -v
+python -m pytest tests/test_smoke_agent_pipeline_script.py -v
+python -m ruff check src tests scripts
+```
 
-## 최종 검증
-
-실행한 명령:
-
-- `python -m pytest tests`
-- `python -m ruff check src tests scripts`
-- `python scripts/smoke_agent_pipeline.py none --base-url http://127.0.0.1:8012`
-- `ws://127.0.0.1:8012/ws/agent`로 직접 WebSocket 퀘스트 요청
-
-결과:
-
-- `144 passed`
-- `All checks passed!`
-- `PASS none/health`
-- `PASS none/invalid_json`
-- `PASS none/invalid_envelope`
-- `PASS none/routing_unavailable`
-- 직접 WebSocket quest 응답에서 정수형 id를 가진 quest 5개 반환 확인
-
-## 관련 커밋
-
-- `d5f53a2 퀘스트 에이전트 서비스 추가`
-- `6dfe854 퀘스트 5개 랜덤 응답 계약 반영`
+PostgreSQL integration test는 DB 연결 환경 변수가 준비된 환경에서 별도 실행한다.

@@ -59,12 +59,12 @@
 
 ## 3. `operator_guide`, `quest_generator`를 서브 에이전트로 분리할 필요가 있는가?
 
-결정: `operator_guide`와 `quest_generator`를 서브 에이전트 구조로 분리한다.
+결정: `operator_guide`는 서브 에이전트 구조를 유지하고, `quest_generator`는 현재 범위에서 통합 생산/납품 leaf Agent 하나를 사용한다.
 
 이유:
 
 - `operator_guide`는 레시피 설명, 장비 도움말, 문제 해결이 서로 다른 prompt와 fallback 정책을 가질 가능성이 높다.
-- `quest_generator`는 튜토리얼, 생산, 탐험, 경제 퀘스트가 서로 다른 생성 정책과 테스트 기준을 가질 가능성이 높다.
+- `quest_generator`는 한 응답 안에서 생산과 납품 후보를 함께 점수화해야 하므로, 생산/납품을 별도 leaf로 나누지 않고 통합 leaf에서 조합한다.
 - 초기부터 패키지 구조를 분리하면 각 도메인별 prompt, schema, fallback을 독립적으로 키울 수 있다.
 - 도메인 오케스트레이터는 서브 에이전트 선택과 공통 응답 정규화만 맡고, 세부 생성 정책은 서브 에이전트가 맡는다.
 
@@ -75,10 +75,12 @@
 - `agents/operator_guide/machine_help.py`: 장비 도움말 서브 에이전트다.
 - `agents/operator_guide/troubleshooter.py`: 문제 해결 서브 에이전트다.
 - `agents/quest_generator/agent.py`: 퀘스트 생성 도메인 오케스트레이터다.
-- `agents/quest_generator/tutorial_quest.py`: 튜토리얼 퀘스트 서브 에이전트다.
-- `agents/quest_generator/production_quest.py`: 생산 퀘스트 서브 에이전트다.
-- `agents/quest_generator/exploration_quest.py`: 탐험 퀘스트 서브 에이전트다.
-- `agents/quest_generator/economy_quest.py`: 경제 퀘스트 서브 에이전트다.
+- `agents/quest_generator/production_delivery_quest.py`: PostgreSQL 상황을 읽어 생산/납품 퀘스트 5개를 생성하는 통합 leaf Agent다.
+
+현재 제외:
+
+- `quest_generator.economy_quest`: 경제 퀘스트 타입을 public 계약에서 제거한다.
+- `quest_generator.trade_quest`: 무역 대상과 방식이 정해지지 않아 현재 구현하지 않는다.
 
 책임 경계:
 
@@ -92,10 +94,7 @@
 - `operator_guide.recipe_explainer`
 - `operator_guide.machine_help`
 - `operator_guide.troubleshooter`
-- `quest_generator.tutorial_quest`
-- `quest_generator.production_quest`
-- `quest_generator.exploration_quest`
-- `quest_generator.economy_quest`
+- `quest_generator.production_delivery_quest`
 
 ## 4. LangGraph는 어디에 적용하는가?
 
@@ -164,10 +163,12 @@
 
 선택 가능한 서브 에이전트:
 
-- `tutorial_quest`: 초반 진행, 기능 안내, 온보딩 목적의 퀘스트
-- `production_quest`: 생산량, 병목, 레시피, 설비 운용 목표 퀘스트
-- `exploration_quest`: 신규 재료, 맵/지역, 탐색 이벤트 기반 퀘스트
-- `economy_quest`: 비용, 수익, 거래, 재고, 효율 기반 퀘스트
+- `production_delivery_quest`: PostgreSQL의 창고/진행/최근 퀘스트 상황을 읽어 생산 퀘스트와 납품 퀘스트를 합산 5개 생성하는 통합 leaf Agent
+
+제외된 서브 에이전트:
+
+- `economy_quest`: 경제 퀘스트 타입은 제거하고, 재고 상황은 납품 후보 점수에만 반영한다.
+- `trade_quest`: 무역 퀘스트는 큰 분류 후보지만 AI 무역인지 플레이어 간 무역인지 정해지지 않아 현재 허용 목록에 넣지 않는다.
 
 판단 입력:
 
@@ -175,8 +176,7 @@
 - 플레이어 진행도
 - 현재 공장 상태
 - 최근 이벤트
-- 튜토리얼 필요 여부
-- 경제/생산/탐험 중 현재 우선순위
+- 생산/납품 후보 균형
 
 구현 위치:
 
@@ -629,3 +629,35 @@ Pipeline 흐름:
 - routing output은 pipeline의 LangGraph conditional edge가 허용 id 문자열인지 검증한다.
 - generation output은 pipeline이 strict JSON object로 검증한다.
 - fallback 순서는 adapter가 아니라 LangGraph pipeline의 `default -> fallback1 -> fallback2` node/edge가 담당한다.
+
+## 23. 퀘스트 에이전트의 DB와 퀘스트 타입은 무엇으로 하는가?
+
+결정: 퀘스트 에이전트는 PostgreSQL에 저장된 현재 게임 상황을 읽고, public quest type은 `production`, `delivery` 두 가지만 생성한다.
+
+DB 결정:
+
+- 퀘스트 상황 저장소는 PostgreSQL을 사용한다.
+- Agent는 PostgreSQL session을 직접 다루지 않고 `QuestSituationRepository`를 통해 조회한다.
+- repository는 창고 보유량, 최근 생성/완료 퀘스트, 해금 레시피, 사용 가능한 장비를 제공한다.
+- PostgreSQL schema가 구현 시점에 완전히 고정되지 않았더라도 service와 agent는 repository interface 뒤에 둔다.
+
+퀘스트 타입 결정:
+
+- `production`: 부족하거나 다음 생산 체인에 필요한 아이템을 생산/확보하는 퀘스트다.
+- `delivery`: PostgreSQL 창고에 충분히 쌓인 아이템을 지정 수량 납품하는 퀘스트다.
+- 기본 조합은 생산 3개, 납품 2개다.
+- 후보가 부족하면 다른 타입으로 빈자리를 채우되 총 5개를 유지한다.
+
+leaf Agent 결정:
+
+- 허용 leaf Agent는 `quest_generator.production_delivery_quest` 하나로 둔다.
+- `quest_generator.production_quest` 단독 leaf는 통합 leaf로 대체한다.
+- `quest_generator.economy_quest`, `quest_generator.trade_quest`, `quest_generator.tutorial_quest`, `quest_generator.exploration_quest`는 허용하지 않는다.
+- 제거된 leaf id가 명시 요청되면 `INVALID_SUB_AGENT`로 처리한다.
+
+이유:
+
+- 생산과 납품은 한 응답 안에서 5개 조합 비율과 중복 target item을 함께 관리해야 한다.
+- 경제 퀘스트는 별도 public type으로 두지 않고, 재고 과잉 같은 경제적 상황을 납품 후보 점수에 반영하는 편이 단순하다.
+- 무역은 대상과 거래 규칙이 확정되지 않았으므로 현재 계약에 넣지 않는다.
+- PostgreSQL 접근을 repository로 숨기면 agent/service 테스트는 fake repository로 유지하고, 실제 PostgreSQL adapter는 얇게 교체할 수 있다.
