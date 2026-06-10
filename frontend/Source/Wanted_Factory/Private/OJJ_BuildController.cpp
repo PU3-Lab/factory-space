@@ -555,6 +555,12 @@ void AOJJ_BuildController::UpdateDemolishHover()
 
 	AActor* Target = TargetGrid->GetActorAtCell(CursorCell);
 
+	// F1-b': 점유(머신/컨베이어)가 없는 셀은 Foundation 역조회 — 건물이 있으면 건물 우선(위→아래 철거 순서 유도).
+	if (!Target)
+	{
+		Target = TargetGrid->GetFoundationAtCell(CursorCell);
+	}
+
 	// 빈 셀 또는 맵 고정물(광맥/WaterArea = AResourceBase)은 철거 대상 아님 → 하이라이트 없음.
 	if (!Target || Target->IsA<AResourceBase>())
 	{
@@ -562,8 +568,13 @@ void AOJJ_BuildController::UpdateDemolishHover()
 		return;
 	}
 
-	// 머신/컨베이어 등 제거 가능 대상 → 점유 셀 전체 빨강.
-	if (const TArray<FIntPoint>* Cells = TargetGrid->GetActorCells(Target))
+	// 머신/컨베이어는 점유 맵, Foundation은 커버리지 맵 — 어느 쪽이든 대상 셀 전체 빨강.
+	const TArray<FIntPoint>* Cells = TargetGrid->GetActorCells(Target);
+	if (!Cells)
+	{
+		Cells = TargetGrid->GetFoundationCells(Target);
+	}
+	if (Cells)
 	{
 		TargetGrid->OJJ_HighlightCellsInvalid(*Cells);
 	}
@@ -587,6 +598,11 @@ void AOJJ_BuildController::DemolishUnderCursor()
 	}
 
 	AActor* Target = TargetGrid->GetActorAtCell(CursorCell);
+	// F1-b': 점유가 없으면 Foundation 역조회 — 호버(UpdateDemolishHover)와 동일 우선순위.
+	if (!Target)
+	{
+		Target = TargetGrid->GetFoundationAtCell(CursorCell);
+	}
 	if (!Target)
 	{
 		return; // 빈 셀 무시.
@@ -639,6 +655,23 @@ void AOJJ_BuildController::DemolishUnderCursor()
 		{
 			Conveyor->Destroy();
 			bRemoved = true;
+		}
+	}
+	else if (AOJJ_Foundation* Foundation = Cast<AOJJ_Foundation>(Target))
+	{
+		// Foundation 철거(F1-b'): RemoveFoundation이 커버 셀 위 건물(점유)을 검사해 거부 + 사유 반환 —
+		// 성공 시에만 Destroy(머신의 RemoveMachineAt→Destroy 순서와 동일). Destroy 후 EndPlay의
+		// RemoveFoundation 재호출은 "not registered"로 끝나 이중 해제 안전(EndPlay 주석의 대칭 계약).
+		FString OutReason;
+		if (TargetGrid->RemoveFoundation(Foundation, OutReason))
+		{
+			Foundation->Destroy();
+			bRemoved = true;
+		}
+		else
+		{
+			// 거부 사유 표시 — 배치 거부(TryPlaceFoundation 실패)와 동일 채널(로그). 예: 위 건물 N셀.
+			UE_LOG(LogTemp, Warning, TEXT("[BuildController] Foundation 철거 거부: %s"), *OutReason);
 		}
 	}
 
@@ -743,7 +776,7 @@ void AOJJ_BuildController::OnLeftClickPressed()
 		return;
 	}
 
-	// Demolish 모드: 좌클릭 = 커서 셀 대상 제거(머신/컨베이어). 배치 경로(CanPlaceMachine 등)와 분리.
+	// Demolish 모드: 좌클릭 = 커서 셀 대상 제거(머신/컨베이어/Foundation). 배치 경로(CanPlaceMachine 등)와 분리.
 	if (PlacementMode == EOJJ_BuildPlacementMode::Demolish)
 	{
 		DemolishUnderCursor();

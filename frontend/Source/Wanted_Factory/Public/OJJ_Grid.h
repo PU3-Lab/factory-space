@@ -563,6 +563,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Foundation")
 	bool GetFoundationSurfaceZ(FIntPoint Cell, float& OutSurfaceZ) const;
 
+	// 셀을 커버하는 Foundation 액터(비커버/stale이면 nullptr) — Demolish(F1-b')의 셀→Foundation 역조회.
+	// Foundation은 점유(OccupiedCells)와 별개 레이어라 GetActorAtCell로는 안 보인다.
+	UFUNCTION(BlueprintPure, Category = "Grid|Foundation")
+	AActor* GetFoundationAtCell(FIntPoint Cell) const;
+
+	// Foundation의 커버 셀 목록(미등록이면 nullptr) — GetActorCells의 Foundation판(철거 호버 하이라이트용).
+	const TArray<FIntPoint>* GetFoundationCells(AActor* Foundation) const;
+
 	// Foundation 풋프린트 중심 월드 좌표(F1-b 결정점 ② — 그리드는 좌표만, 액터 이동은 호출자).
 	// 머신 GetMachinePlacementLocation과 동형 수식(lower-left 셀 중심 + (Size-1)/2)이되 메시 AABB Z 보정은
 	// 없음 — Foundation이 자체 메시 오프셋(상면=평면+Thickness)을 책임진다. Z = 그리드 평면(F1 1단 고정).

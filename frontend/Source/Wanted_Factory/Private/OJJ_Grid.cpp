@@ -1273,6 +1273,18 @@ bool AOJJ_Grid::IsCellOnFoundation(FIntPoint Cell) const
 	return Found && Found->Foundation.IsValid();
 }
 
+AActor* AOJJ_Grid::GetFoundationAtCell(FIntPoint Cell) const
+{
+	const FOJJFoundationCellInfo* Found = FoundationCells.Find(Cell);
+	// stale(파괴된) Foundation 셀은 nullptr — IsCellOnFoundation과 동일 의미.
+	return Found ? Found->Foundation.Get() : nullptr;
+}
+
+const TArray<FIntPoint>* AOJJ_Grid::GetFoundationCells(AActor* Foundation) const
+{
+	return Foundation ? OJJ_FoundationToCells.Find(Foundation) : nullptr;
+}
+
 bool AOJJ_Grid::GetFoundationSurfaceZ(FIntPoint Cell, float& OutSurfaceZ) const
 {
 	const FOJJFoundationCellInfo* Found = FoundationCells.Find(Cell);

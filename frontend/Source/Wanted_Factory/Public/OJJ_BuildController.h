@@ -29,7 +29,8 @@ enum class EOJJ_BuildPlacementMode : uint8
 	Smelter,
 	// 창고(Warehouse) 모드 — 1번 키(generic Machine 진입 키 대체)로 진입. WarehousePort 배치.
 	Warehouse,
-	// 철거(Demolish) 모드 — X키. 호버 대상 빨강 하이라이트 + 좌클릭 제거(머신/컨베이어). 광맥/WaterArea 제외.
+	// 철거(Demolish) 모드 — X키. 호버 대상 빨강 하이라이트 + 좌클릭 제거(머신/컨베이어/Foundation —
+	// 위 건물 있으면 거부, F1-b'). 광맥/WaterArea 제외.
 	Demolish,
 	// Foundation(기초) 모드 — G키. 커버리지(허가) 배치 — 머신 경로와 독립 분기(F1-b).
 	// ⚠️ 신규 모드는 항상 맨 끝에 append — BP가 enum 값을 직렬화하므로 중간 삽입(값 시프트) 금지.
