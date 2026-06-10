@@ -14,6 +14,14 @@ from agents.operator_guide.service import ManualQAService
 ROOT = Path(__file__).resolve().parents[2]
 GAME_DATA = ROOT / "data" / "game"
 
+ID_COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
+    "equipment_id": ("equipment_id", "장비ID"),
+    "resource_id": ("resource_id", "자원ID"),
+    "recipe_id": ("recipe_id", "레시피ID"),
+    "issue_id": ("issue_id", "문제ID"),
+    "action_id": ("action_id", "행동ID"),
+}
+
 
 SMOKE_CASES: list[dict[str, Any]] = [
     {
@@ -57,8 +65,14 @@ SMOKE_CASES: list[dict[str, Any]] = [
 
 
 def csv_ids(filename: str, id_column: str) -> set[str]:
+    id_columns = ID_COLUMN_ALIASES.get(id_column, (id_column,))
     with (GAME_DATA / filename).open(encoding="utf-8-sig", newline="") as csv_file:
-        return {row[id_column] for row in csv.DictReader(csv_file)}
+        return {
+            row[column]
+            for row in csv.DictReader(csv_file)
+            for column in id_columns
+            if column in row
+        }
 
 
 def answer_manual_qa(question: str) -> dict[str, Any]:
