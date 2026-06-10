@@ -104,6 +104,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visualization", meta = (ClampMin = "1"))
 	int32 VisualizationRange;
 
+	// 시각 타일 리프트(uu) — GroundZ 추종 셀에서 평탄 타일이 경사 지형면과 교차해 줄무늬로 썰리는 것 방지.
+	// GroundZ가 "최악점(|델타| 최대)" 기준이라 셀 안 경사가 타일을 뚫는 실기 현상(F1-c 검증 발견)의 시각 보정.
+	// 판정 무관(시각 전용). 급경사 셀에서 오프셋으로도 부족한 잔존 교차는 F2(지형 스냅 — 셀 대표높이
+	// 평균화/타일 기울임)에서 재검토.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visualization", meta = (ClampMin = "0.0"))
+	float VisualZLift = 20.0f;
+
+	// 호버 계열(머신/Foundation/컨베이어/철거 하이라이트) 추가 리프트(uu) — 분류 오버레이 위에 떠서 식별.
+	// 대안(호버 머티리얼 에미시브 강화) 중 에셋 작업이 없는 쪽 채택.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visualization", meta = (ClampMin = "0.0"))
+	float HoverExtraZLift = 30.0f;
+
 	// === 지형 높낮이 건설 제약 (정적 지형 — BeginPlay 1회 베이크) ===
 	// BeginPlay에서 GridSize 전 셀 중심에서 ↓라인트레이스 → 지형 높이가 그리드 평면 Z와
 	// BuildableHeightTolerance를 넘게 차이나면 UnbuildableCells에 마킹. CanPlaceMachine/컨베이어 경로가 게이트로 참조.

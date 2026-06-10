@@ -1343,13 +1343,15 @@ float AOJJ_Grid::OJJ_GetCellVisualBaseZInternal(FIntPoint Cell, bool bGroundZVal
 	float SurfaceZ = 0.0f;
 	if (GetFoundationSurfaceZ(Cell, SurfaceZ))
 	{
-		return SurfaceZ;
+		return SurfaceZ;  // 슬래브 상면은 평탄 — 교차 없음, 리프트 불요
 	}
 	if (bGroundZValid && IsValidGridCell(Cell))
 	{
-		return GetActorLocation().Z + (float)CellGroundZQuant[OJJ_CellLinearIndex(Cell, GridSize)];
+		// VisualZLift: 최악점 기준 평탄 타일이 셀 안 경사면과 교차(줄무늬)하지 않게 들어올림(시각 전용).
+		// 잔존 교차(리프트로도 부족한 급경사)는 F2 지형 스냅에서 셀 대표높이/타일 기울임으로 재검토.
+		return GetActorLocation().Z + (float)CellGroundZQuant[OJJ_CellLinearIndex(Cell, GridSize)] + VisualZLift;
 	}
-	return GridToWorld(Cell).Z;
+	return GridToWorld(Cell).Z;  // 평면 폴백 — 기존(F1-c 이전) 동작 그대로, 리프트 미적용
 }
 
 FVector AOJJ_Grid::GetFoundationPlacementLocation(FIntPoint Origin, FIntPoint Size) const
@@ -1402,7 +1404,7 @@ void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Siz
 		{
 			const FIntPoint PreviewCell((int32)X, (int32)Y);
 			const FVector CellCenter = GridToWorld(PreviewCell);
-			const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(PreviewCell) + 2.0f);
+			const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(PreviewCell) + 2.0f + HoverExtraZLift);
 			const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
 			TargetISM->AddInstance(FTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale), /*bWorldSpace=*/true);
 		}
@@ -2190,7 +2192,7 @@ void AOJJ_Grid::OJJ_UpdateConveyorPathHoverPreview(const TArray<FIntPoint>& Path
 	for (const FIntPoint& Cell : PreviewCells)
 	{
 		const FVector CellCenter = GridToWorld(Cell);
-		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(Cell) + 2.0f);
+		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(Cell) + 2.0f + HoverExtraZLift);
 		const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
 		const FTransform InstanceTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale);
 		TargetISM->AddInstance(InstanceTransform, /*bWorldSpace=*/true);
@@ -2458,9 +2460,9 @@ void AOJJ_Grid::UpdateHoverPreview(AMachineBase* Machine, FIntPoint Origin, int3
 	const TArray<FIntPoint> FootprintCells = CalculateFootprint(Machine, Origin, RotationSteps);
 	for (const FIntPoint& Cell : FootprintCells)
 	{
-		// 기준면(F1-c: GroundZ/Foundation 추종) +2 오프셋 → 가림 방지
+		// 기준면(F1-c: GroundZ/Foundation 추종) +2 + 호버 추가 리프트 → 분류 오버레이 위에서 식별
 		const FVector CellCenter = GridToWorld(Cell);
-		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(Cell) + 2.0f);
+		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(Cell) + 2.0f + HoverExtraZLift);
 
 		// Plane(100x100) → CellSize 유닛으로 스케일
 		const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
@@ -2507,11 +2509,11 @@ void AOJJ_Grid::OJJ_HighlightCellsInvalid(const TArray<FIntPoint>& Cells)
 		return;
 	}
 
-	// 배치 호버(UpdateHoverPreview)와 동일한 셀→인스턴스 규칙(기준면+2 가림 방지, Plane 100→CellSize 스케일, world-space).
+	// 배치 호버(UpdateHoverPreview)와 동일한 셀→인스턴스 규칙(기준면+2+호버 리프트, Plane 100→CellSize 스케일, world-space).
 	for (const FIntPoint& Cell : Cells)
 	{
 		const FVector CellCenter = GridToWorld(Cell);
-		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(Cell) + 2.0f);
+		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(Cell) + 2.0f + HoverExtraZLift);
 		const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
 		const FTransform InstanceTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale);
 		TargetISM->AddInstance(InstanceTransform, /*bWorldSpace=*/true);
