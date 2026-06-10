@@ -53,6 +53,15 @@ protected:
 	TSubclassOf<UUserWidget> MainHUDWidgetClass;
 	UPROPERTY()
 	UUserWidget* MainHUDWidgetInstance;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
+	TSubclassOf<class UUI_Inventory> InventoryWidgetClass;
+	UPROPERTY()
+	class UUI_Inventory* InventoryWidgetInstance;
+	FTimerHandle InventoryRefreshTimerHandle;
+	bool bIsInventoryOpen = false;
+	void TriggerInventoryToggle();
+	void UpdateInventoryRealtime();
 
 	// 머신 상호작용(F) 위젯 클래스. BP에서 WBP_MachineInteract(UUI_MachineInteract 자식)만 지정 가능하도록 타입 고정.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
@@ -242,6 +251,7 @@ protected:
 	void SendOperatorGuideRequest();
 	void TriggerHUDQuestRequest();
 	void TriggerHUDQuestWindowToggle();
+	void TriggerHUDAIGuideToggle();
 	// 머신 상호작용(F) — 로컬 전용. 카메라 트레이스로 머신을 찾아 UI_MachineInteract를 토글한다.
 	// 빌드모드 중에는 무시(상호배제). 이미 열려 있으면 닫고, 아니면 새로 생성·표시.
 	void OnInteract(const FInputActionValue& Value);

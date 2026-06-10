@@ -2,6 +2,7 @@
 
 #include "FactoryAgentJsonUtils.h"
 #include "FactoryAgentClientSubsystem.h"
+#include "PlayerWarehouseSubsystem.h"
 #include "Wanted_Factory.h"
 #include "Dom/JsonObject.h"
 
@@ -108,8 +109,11 @@ void UQuestManagerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	Super::Initialize(Collection);
 
 	Collection.InitializeDependency(UFactoryAgentClientSubsystem::StaticClass());
+	Collection.InitializeDependency(UPlayerWarehouseSubsystem::StaticClass());
 	AgentClient = GetGameInstance()->GetSubsystem<UFactoryAgentClientSubsystem>();
+	WarehouseSubsystem = GetGameInstance()->GetSubsystem<UPlayerWarehouseSubsystem>();
 	BindAgentClient();
+	BindWarehouse();
 	ActivateCurrentMainQuest();
 }
 
@@ -121,8 +125,14 @@ void UQuestManagerSubsystem::Deinitialize()
 		AgentClient->OnAgentErrorReceived.RemoveAll(this);
 	}
 
+	if (WarehouseSubsystem)
+	{
+		WarehouseSubsystem->OnItemAdded.RemoveAll(this);
+	}
+
 	PendingSubQuestRequestIds.Empty();
 	AgentClient = nullptr;
+	WarehouseSubsystem = nullptr;
 
 	Super::Deinitialize();
 }
@@ -258,6 +268,17 @@ void UQuestManagerSubsystem::BindAgentClient()
 	AgentClient->OnAgentErrorReceived.AddDynamic(this, &UQuestManagerSubsystem::HandleAgentError);
 }
 
+void UQuestManagerSubsystem::BindWarehouse()
+{
+	if (!WarehouseSubsystem)
+	{
+		LOG_LC_W(TEXT("Quest manager could not bind PlayerWarehouseSubsystem."));
+		return;
+	}
+
+	WarehouseSubsystem->OnItemAdded.AddDynamic(this, &UQuestManagerSubsystem::HandleWarehouseItemAdded);
+}
+
 FString UQuestManagerSubsystem::SendSubQuestRequest(const FString& PayloadJson)
 {
 	if (!AgentClient)
@@ -277,6 +298,54 @@ FString UQuestManagerSubsystem::SendSubQuestRequest(const FString& PayloadJson)
 	PendingSubQuestRequestIds.Add(RequestId);
 	OnSubQuestRequestStarted.Broadcast(RequestId, QuestManagerQuestGeneratorAgentId);
 	return RequestId;
+}
+
+void UQuestManagerSubsystem::RefreshSubQuestCompletion()
+{
+	bool bAnyQuestUpdated = false;
+
+	for (FQuestState& Quest : SubQuests)
+	{
+		if (Quest.Status == EQuestStatus::Completed)
+		{
+			continue;
+		}
+
+		if (IsQuestCompletedByWarehouse(Quest))
+		{
+			Quest.Status = EQuestStatus::Completed;
+			bAnyQuestUpdated = true;
+		}
+	}
+
+	if (bAnyQuestUpdated)
+	{
+		OnSubQuestsUpdated.Broadcast(SubQuests);
+	}
+}
+
+bool UQuestManagerSubsystem::IsQuestCompletedByWarehouse(const FQuestState& Quest) const
+{
+	if (!WarehouseSubsystem || Quest.Objectives.IsEmpty())
+	{
+		return false;
+	}
+
+	for (const FQuestObjective& Objective : Quest.Objectives)
+	{
+		const FName ItemId(*Objective.TargetItemId);
+		if (ItemId.IsNone() || WarehouseSubsystem->GetItemCount(ItemId) < Objective.Quantity)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+void UQuestManagerSubsystem::HandleWarehouseItemAdded(FName ItemID, int32 AddedCount, int32 NewTotalCount)
+{
+	RefreshSubQuestCompletion();
 }
 
 void UQuestManagerSubsystem::HandleAgentResponse(
@@ -326,7 +395,8 @@ void UQuestManagerSubsystem::HandleAgentResponse(
 
 	SubQuests = GeneratedQuests;
 	SubQuestTitles = GeneratedTitles;
-	OnSubQuestsGenerated.Broadcast(RequestId, GeneratedQuests);
+	RefreshSubQuestCompletion();
+	OnSubQuestsGenerated.Broadcast(RequestId, SubQuests);
 	OnSubQuestTitlesUpdated.Broadcast(RequestId, SubQuestTitles);
 }
 

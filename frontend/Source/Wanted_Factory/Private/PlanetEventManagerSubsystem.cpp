@@ -141,7 +141,22 @@ float UPlanetEventManagerSubsystem::GetDayProgress01() const
 		return 0.0f;
 	}
 
-	return FMath::Clamp(TimeState.DaySeconds / FullDaySeconds, 0.0f, 1.0f);
+	float VisualDaySeconds = TimeState.DaySeconds;
+	if (const UWorld* World = GetWorld())
+	{
+		const double CurrentWorldTimeSeconds = World->GetTimeSeconds();
+		const float InterpSeconds = FMath::Clamp(
+			static_cast<float>(CurrentWorldTimeSeconds - LastSimulationUpdateWorldTimeSeconds),
+			0.0f,
+			FMath::Max(0.0f, SimulationTickSeconds));
+		VisualDaySeconds += InterpSeconds;
+		if (VisualDaySeconds >= FullDaySeconds)
+		{
+			VisualDaySeconds = FMath::Fmod(VisualDaySeconds, FullDaySeconds);
+		}
+	}
+
+	return FMath::Clamp(VisualDaySeconds / FullDaySeconds, 0.0f, 1.0f);
 }
 
 int32 UPlanetEventManagerSubsystem::GetCurrentDayIndex() const
@@ -247,6 +262,7 @@ void UPlanetEventManagerSubsystem::StartSimulation(UWorld& InWorld)
 	WeatherTargetState = WeatherState;
 	EventState = FPlanetEventState();
 	WeatherBlendElapsedSeconds = 0.0f;
+	LastSimulationUpdateWorldTimeSeconds = InWorld.GetTimeSeconds();
 
 	InWorld.GetTimerManager().SetTimer(
 		SimulationTimerHandle,
@@ -290,6 +306,10 @@ void UPlanetEventManagerSubsystem::StopSimulation()
 void UPlanetEventManagerSubsystem::AdvanceSimulation()
 {
 	const float DeltaSeconds = FMath::Max(0.01f, SimulationTickSeconds);
+	if (const UWorld* World = GetWorld())
+	{
+		LastSimulationUpdateWorldTimeSeconds = World->GetTimeSeconds();
+	}
 
 	AdvanceTime(DeltaSeconds);
 	AdvanceWeather(DeltaSeconds);

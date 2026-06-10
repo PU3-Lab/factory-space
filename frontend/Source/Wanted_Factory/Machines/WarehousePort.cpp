@@ -8,7 +8,8 @@ AWarehousePort::AWarehousePort()
 	PrimaryActorTick.bCanEverTick = true;
 
 	MachineType = TEXT("WarehousePort");
-	GridSize = FIntPoint(2, 2);
+	SelectedOutputItemID = TEXT("iron_ore");
+	GridSize = FIntPoint(4, 3);
 	InputPortCount = 1;
 	OutputPortCount = 1;
 	bNeedPower = false;
@@ -48,6 +49,40 @@ bool AWarehousePort::AddItem(FName ItemID, int32 Count)
 		return false;
 	}
 
+	return StoreInputItem(ItemID, Count);
+}
+
+bool AWarehousePort::CanReceiveConveyorItem(FName ItemID, int32 Count) const
+{
+	return !(isBroken() && bDisableWhenBroken)
+		&& !ItemID.IsNone()
+		&& Count > 0
+		&& GetWarehouse();
+}
+
+bool AWarehousePort::ReceiveConveyorItem(FName ItemID, int32 Count)
+{
+	if (!CanReceiveConveyorItem(ItemID, Count))
+	{
+		LOG_SSR_W(TEXT("Warehouse rejected conveyor item: %s x%d"),
+			*ItemID.ToString(),
+			Count);
+		return false;
+	}
+
+	const bool bStored = StoreInputItem(ItemID, Count);
+	if (bStored)
+	{
+		LOG_SSR_W(TEXT("Warehouse received from conveyor: %s x%d"),
+			*ItemID.ToString(),
+			Count);
+	}
+
+	return bStored;
+}
+
+bool AWarehousePort::StoreInputItem(FName ItemID, int32 Count)
+{
 	UPlayerWarehouseSubsystem* Warehouse = GetWarehouse();
 	if (!Warehouse || !Warehouse->AddItem(ItemID, Count))
 	{
@@ -61,19 +96,6 @@ bool AWarehousePort::AddItem(FName ItemID, int32 Count)
 
 	UpdateDebugBufferText();
 	return true;
-}
-
-bool AWarehousePort::CanReceiveConveyorItem(FName ItemID, int32 Count) const
-{
-	return !(isBroken() && bDisableWhenBroken)
-		&& !ItemID.IsNone()
-		&& Count > 0
-		&& GetWarehouse();
-}
-
-bool AWarehousePort::ReceiveConveyorItem(FName ItemID, int32 Count)
-{
-	return AddItem(ItemID, Count);
 }
 
 bool AWarehousePort::PeekFirstOutputItem(FName& OutItemID) const

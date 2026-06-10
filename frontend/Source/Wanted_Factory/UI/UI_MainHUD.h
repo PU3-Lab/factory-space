@@ -18,8 +18,11 @@ public:
 	UFUNCTION() void OnRequestQuestsClicked();
 	UFUNCTION() void OnToggleGuideClicked();
 	UFUNCTION(BlueprintCallable, Category = "HUD | Quest")
+	
 	// 캐릭터가 J키를 눌렀을 때 호출해 줄 외부 함수
 	void ToggleQuestWindow();
+	// 캐릭터가 Tap키를 눌렀을 때 호출해 줄 외부 함수
+	void ToggleAIGuideWindow();
 protected:
 	// --- 퀘스트 창 전체 레이아웃 바인딩 ---
 	UPROPERTY(meta = (BindWidget))
@@ -44,6 +47,8 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	class UButton* BTN_ToggleGuide; // 항상 화면에 남아있을 접이식 버튼
+	
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 	UPROPERTY(meta = (BindWidget))
 	class UTextBlock* TXT_ToggleText; // 버튼의 글자 ("열기" / "닫기" 변경용)

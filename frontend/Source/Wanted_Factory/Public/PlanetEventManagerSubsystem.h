@@ -220,6 +220,7 @@ private:
 	FTimerHandle EventRollTimerHandle;
 
 	float WeatherBlendElapsedSeconds = 0.0f;
+	double LastSimulationUpdateWorldTimeSeconds = 0.0;
 	TArray<TWeakObjectPtr<AMachineBase>> RegisteredMachines;
 	TArray<TWeakObjectPtr<AOJJ_ProtectionTower>> RegisteredShields;
 

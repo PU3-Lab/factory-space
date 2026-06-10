@@ -4,12 +4,19 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "PlayerWarehouseSubsystem.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnWarehouseItemAdded, FName, ItemID, int32, AddedCount, int32, NewTotalCount);
+
 UCLASS()
 class WANTED_FACTORY_API UPlayerWarehouseSubsystem : public UGameInstanceSubsystem
 {
 	GENERATED_BODY()
 
 public:
+	UPROPERTY(BlueprintAssignable, Category = "Player Warehouse")
+	FOnWarehouseItemAdded OnItemAdded;
+
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+
 	UFUNCTION(BlueprintCallable, Category = "Player Warehouse")
 	bool AddItem(FName ItemID, int32 Count);
 
