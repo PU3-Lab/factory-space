@@ -233,6 +233,7 @@ protected:
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void Zoom(const FInputActionValue& Value);
+	void StartJumpAction(const FInputActionValue& Value);
 	void ToggleBuild(const FInputActionValue& Value);
 	void BuildPlace(const FInputActionValue& Value);
 	void BuildPan(const FInputActionValue& Value);
