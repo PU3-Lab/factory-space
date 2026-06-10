@@ -964,9 +964,22 @@ void AOJJ_Grid::RebakeAndCache()
 	// 에디터 버튼: 트레이스 1회 + 패킹 캐시 저장. 즉시 오버레이(blocked+water)로 분포 확인.
 	BakeBuildableCells(/*bVerbose=*/false, /*bWriteCache=*/true);
 
-	bForceShowBlocked = true;
-	bForceShowWater = true;
-	RefreshGridVisual();
+	// 대형 맵 가드: 오버레이(blocked+water) 인스턴스가 임계 초과면 표시 생략. 에디터에서 수만 개 ISM
+	// 인스턴스를 한 프레임에 올리면 게임스레드가 멈추고 가상메모리가 폭주해 OOM(Meadows 300²,
+	// 84,679개에서 2회 재현 — 페이징 파일 고갈). 분포 확인은 Bake 요약 로그로 대체.
+	// 플래그는 베이크마다 재계산되므로 작은 맵에선 기존처럼 즉시 표시(회귀 없음).
+	constexpr int32 MaxEditorOverlayInstances = 20000;
+	const int32 OverlayCount = UnbuildableCells.Num() + WaterCells.Num();
+	const bool bShowOverlay = OverlayCount <= MaxEditorOverlayInstances;
+	bForceShowBlocked = bShowOverlay;
+	bForceShowWater = bShowOverlay;
+	RefreshGridVisual();  // 생략 시에도 호출 — 이전 오버레이 잔존분 클리어(ClearInstances)
+	if (!bShowOverlay)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Grid] RebakeAndCache: 오버레이 %d개 > 임계 %d — 에디터 표시 생략(분포는 위 Bake 로그 참조)."),
+			OverlayCount, MaxEditorOverlayInstances);
+	}
 
 #if WITH_EDITOR
 	Modify();
