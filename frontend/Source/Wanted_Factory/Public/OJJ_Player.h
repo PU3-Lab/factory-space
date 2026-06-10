@@ -53,6 +53,15 @@ protected:
 	TSubclassOf<UUserWidget> MainHUDWidgetClass;
 	UPROPERTY()
 	UUserWidget* MainHUDWidgetInstance;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
+	TSubclassOf<class UUI_Inventory> InventoryWidgetClass;
+	UPROPERTY()
+	class UUI_Inventory* InventoryWidgetInstance;
+	FTimerHandle InventoryRefreshTimerHandle;
+	bool bIsInventoryOpen = false;
+	void TriggerInventoryToggle();
+	void UpdateInventoryRealtime();
 
 	// 머신 상호작용(F) 위젯 클래스. BP에서 WBP_MachineInteract(UUI_MachineInteract 자식)만 지정 가능하도록 타입 고정.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
@@ -233,6 +242,7 @@ protected:
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void Zoom(const FInputActionValue& Value);
+	void StartJumpAction(const FInputActionValue& Value);
 	void ToggleBuild(const FInputActionValue& Value);
 	void BuildPlace(const FInputActionValue& Value);
 	void BuildPan(const FInputActionValue& Value);

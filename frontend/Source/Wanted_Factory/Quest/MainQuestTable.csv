@@ -1,0 +1,13 @@
+RowName,Order,QuestId,Title,Description,ObjectiveType1,TargetId1,RequiredCount1,ObjectiveType2,TargetId2,RequiredCount2,RewardItemId1,RewardQuantity1
+MainQuest_001,1,main-001,WASD 조작,WASD로 캐릭터를 움직여 보세요.,InputAction,Move,1,,,0,,0
+MainQuest_002,2,main-002,Space 점프,Space 키로 점프해 보세요.,InputAction,Jump,1,,,0,,0
+MainQuest_003,3,main-003,Shift 달리기,Shift 키를 눌러 달리기를 사용해 보세요.,InputAction,Sprint,1,,,0,iron_ingot,10
+MainQuest_004,4,main-004,I 인벤토리,I 키를 눌러 인벤토리를 열어 보세요.,InputAction,Inventory,1,,,0,,0
+MainQuest_005,5,main-005,B 빌드모드,B 키를 눌러 빌드모드에 진입해 보세요.,BuildPlacementMode,BuildMode,1,,,0,,0
+MainQuest_006,6,main-006,채굴기 설치,채굴기를 설치해 생산을 시작하세요.,PlaceMachine,MinerMachine,1,,,0,iron_ingot,10
+MainQuest_007,7,main-007,발전소 설치,발전소를 설치해 전력을 공급하세요.,PlaceMachine,PowerPlant,1,,,0,iron_ingot,10
+MainQuest_008,8,main-008,송전탑 설치,송전탑을 설치해 전력망을 연결하세요.,PlaceMachine,PowerGridNode,1,,,0,iron_ingot,10
+MainQuest_009,9,main-009,용광로 설치,용광로를 설치해 제련 라인을 준비하세요.,PlaceMachine,Smelter,1,,,0,iron_ingot,10
+MainQuest_010,10,main-010,출력 창고 설치 후 철 광석 출력,출력 창고를 설치하고 철 광석이 창고로 들어오게 하세요.,PlaceMachine,WarehousePort,1,WarehouseStoreItem,iron_ore,1,iron_ingot,10
+MainQuest_011,11,main-011,컨베이어 설치,컨베이어를 설치해 설비를 연결하세요.,PlaceMachine,Conveyor,1,,,0,iron_ingot,10
+MainQuest_012,12,main-012,입력 창고 설치 후 철 주괴 입력,입력 창고를 설치하고 철 주괴를 창고에 넣어 보세요.,PlaceMachine,WarehousePort,1,WarehouseStoreItem,iron_ingot,1,iron_ingot,10

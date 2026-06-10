@@ -75,20 +75,31 @@ void AOJJ_DayNightController::Tick(float DeltaSeconds)
 	}
 
 	const float SunPitch = ProgressToSunPitch(Progress01);
-	ApplySunRotation(SunPitch);
-	ApplyMoon(SunPitch);
+	ApplySunRotation(SunPitch, DeltaSeconds);
+	ApplyMoon(CurrentSunPitch);
 }
 
-void AOJJ_DayNightController::ApplySunRotation(float SunPitch)
+void AOJJ_DayNightController::ApplySunRotation(float TargetSunPitch, float DeltaSeconds)
 {
 	// 실질 변화가 없으면 트랜스폼 갱신 생략(디버그 고정/정지 시각 등).
-	if (FMath::IsNearlyEqual(SunPitch, LastSunPitch) && FMath::IsNearlyEqual(SunYaw, LastSunYaw))
+	if (!bHasInitializedRotation)
+	{
+		CurrentSunPitch = TargetSunPitch;
+		bHasInitializedRotation = true;
+	}
+	else
+	{
+		CurrentSunPitch = FMath::FInterpTo(CurrentSunPitch, TargetSunPitch, DeltaSeconds, RotationInterpSpeed);
+	}
+
+	if (FMath::IsNearlyEqual(CurrentSunPitch, LastSunPitch, 0.01f) &&
+		FMath::IsNearlyEqual(SunYaw, LastSunYaw, 0.01f))
 	{
 		return;
 	}
 
-	SunLight->SetActorRotation(FRotator(SunPitch, SunYaw, 0.0f));
-	LastSunPitch = SunPitch;
+	SunLight->SetActorRotation(FRotator(CurrentSunPitch, SunYaw, 0.0f));
+	LastSunPitch = CurrentSunPitch;
 	LastSunYaw = SunYaw;
 }
 

@@ -4,6 +4,7 @@
 #include "OJJ_BuildController.h"
 
 #include "DrawDebugHelpers.h"
+#include "Engine/GameInstance.h"
 #include "Engine/HitResult.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
@@ -23,6 +24,7 @@
 #include "Machines/Smelter.h"
 #include "Machines/WarehousePort.h"
 #include "OJJ_ProtectionTower.h"
+#include "QuestManagerSubsystem.h"
 #include "Resource/ResourceBase.h"
 
 namespace
@@ -52,6 +54,48 @@ namespace
 		if (MachineSubsystem->FindMachineData(DefaultMachine->GetMachineType(), MachineData))
 		{
 			DefaultMachine->ApplyMachineData(MachineData);
+		}
+	}
+
+	FName GetQuestPlacementTargetId(EOJJ_BuildPlacementMode PlacementMode)
+	{
+		switch (PlacementMode)
+		{
+		case EOJJ_BuildPlacementMode::Miner:
+			return TEXT("MinerMachine");
+		case EOJJ_BuildPlacementMode::PowerPlant:
+			return TEXT("PowerPlant");
+		case EOJJ_BuildPlacementMode::PowerNode:
+			return TEXT("PowerGridNode");
+		case EOJJ_BuildPlacementMode::Smelter:
+			return TEXT("Smelter");
+		case EOJJ_BuildPlacementMode::Warehouse:
+			return TEXT("WarehousePort");
+		case EOJJ_BuildPlacementMode::Conveyor:
+			return TEXT("Conveyor");
+		default:
+			return NAME_None;
+		}
+	}
+
+	void NotifyMainQuestMachinePlaced(UObject* Context, FName MachineType)
+	{
+		if (!Context || MachineType.IsNone())
+		{
+			return;
+		}
+
+		UGameInstance* GameInstance = Context->GetWorld()
+			? Context->GetWorld()->GetGameInstance()
+			: nullptr;
+		if (!GameInstance)
+		{
+			return;
+		}
+
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyMainQuestMachinePlaced(MachineType);
 		}
 	}
 }
@@ -762,6 +806,7 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	// 액터를 놓았으므로, 그 중심을 기준으로 yaw만 돌리면 center-anchor 메시가 회전 footprint와 정렬.
 	// 시계방향 90°×step (R 방향). 부호가 R 의도와 반대면 -90.f로.
 	NewMachine->SetActorRotation(FRotator(0.f, 90.f * HoverRotationSteps, 0.f));
+	NotifyMainQuestMachinePlaced(this, GetQuestPlacementTargetId(PlacementMode));
 
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s 머신 배치 성공"),
 		*Origin.ToString());
@@ -947,6 +992,7 @@ void AOJJ_BuildController::CommitConveyorDrag()
 		return;
 	}
 
+	NotifyMainQuestMachinePlaced(this, GetQuestPlacementTargetId(EOJJ_BuildPlacementMode::Conveyor));
 	ConveyorDragCells.Reset();
 	TargetGrid->ClearHoverPreview();
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
