@@ -197,6 +197,8 @@ uv run --env-file .env python scripts/ingest_manual_rag.py
 
 플레이어 질문을 embedding하고 pgvector에서 관련 문서를 검색한다.
 
+상세 구현 계획은 `operator_guide_rag_retriever_runtime_plan.md`를 따른다.
+
 ### 포함 범위
 
 - 질문 embedding
