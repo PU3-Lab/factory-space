@@ -295,7 +295,7 @@ void AOJJ_BuildController::ToggleBuildMode()
 void AOJJ_BuildController::RotateHoverClockwise()
 {
 	// R은 IMC_Build 전용이라 빌드모드에서만 발동하지만, 방어적으로 가드.
-	// 회전은 머신 호버 전용 — 컨베이어 모드에서는 무시(Dummy parity).
+	// 회전은 머신 + Foundation(F3-0 ㉱ — 램프 방향성 대비) 호버 전용 — 컨베이어 모드에서는 무시(Dummy parity).
 	if (!bIsBuildMode
 		|| (PlacementMode != EOJJ_BuildPlacementMode::Machine
 			&& PlacementMode != EOJJ_BuildPlacementMode::PowerNode
@@ -305,7 +305,8 @@ void AOJJ_BuildController::RotateHoverClockwise()
 			&& PlacementMode != EOJJ_BuildPlacementMode::Miner
 			&& PlacementMode != EOJJ_BuildPlacementMode::Pump
 			&& PlacementMode != EOJJ_BuildPlacementMode::Smelter
-			&& PlacementMode != EOJJ_BuildPlacementMode::Warehouse))
+			&& PlacementMode != EOJJ_BuildPlacementMode::Warehouse
+			&& PlacementMode != EOJJ_BuildPlacementMode::Foundation))
 	{
 		return;
 	}
@@ -926,10 +927,13 @@ void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHi
 		return;
 	}
 
-	// CDO에서 크기만 읽음(머신 CDO 풋프린트 조회와 동일 — spawn 부작용 없음). 회전은 F1 미지원(정사각 8×8).
+	// CDO에서 크기만 읽음(머신 CDO 풋프린트 조회와 동일 — spawn 부작용 없음).
+	// F3-0(㉱) 회전 4방: 홀수 step이면 X/Y 스왑(머신 EffSize 규칙과 동일). 정사각 평판은 스왑
+	// 불변(회귀 0) — 비정사각(램프 F3-2)부터 의미를 가짐.
 	const FIntPoint Size = DefaultFoundation->GetFoundationSize();
-	const FIntPoint Origin = ComputeOriginFromCursorCellForSize(CursorCell, Size);
-	TargetGrid->OJJ_UpdateFoundationHoverPreview(Origin, Size);
+	const FIntPoint EffSize = (HoverRotationSteps % 2 != 0) ? FIntPoint(Size.Y, Size.X) : Size;
+	const FIntPoint Origin = ComputeOriginFromCursorCellForSize(CursorCell, EffSize);
+	TargetGrid->OJJ_UpdateFoundationHoverPreview(Origin, EffSize);
 	CurrentHoverCell = CursorCell;
 }
 
@@ -954,8 +958,10 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 	}
 
 	// 호버와 같은 origin 변환을 사용해야 "미리보기 = 실제 배치" 정합(머신 경로의 핵심 계약과 동일).
+	// F3-0(㉱): 회전 EffSize도 호버(UpdateFoundationHover)와 동일 규칙 — 홀수 step X/Y 스왑.
 	const FIntPoint Size = DefaultFoundation->GetFoundationSize();
-	const FIntPoint Origin = ComputeOriginFromCursorCellForSize(CurrentHoverCell, Size);
+	const FIntPoint EffSize = (HoverRotationSteps % 2 != 0) ? FIntPoint(Size.Y, Size.X) : Size;
+	const FIntPoint Origin = ComputeOriginFromCursorCellForSize(CurrentHoverCell, EffSize);
 
 	UWorld* World = GetWorld();
 	if (!World)
@@ -978,12 +984,12 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 	// SurfaceZ = 평면 + Thickness + 스냅 리프트(F2-4 §5-4 — 풋프린트 GroundZ 최고점의 N×100단, 평탄 N=0 =
 	// F1 동작). 좌표/리프트는 그리드 헬퍼(결정점 ② — 데이터/좌표는 그리드, 액터 이동은 컨트롤러).
 	// 액터는 통째로 리프트만큼 위 — 슬래브 상면(액터Z+Thickness)이 SurfaceZ와 자동 일치. 실패 시 즉시 파기.
-	const FVector PlaceLocation = TargetGrid->GetFoundationPlacementLocation(Origin, Size);
-	const float SnapLift = TargetGrid->OJJ_ComputeFoundationSnapLift(Origin, Size, NewFoundation->GetThickness());
+	const FVector PlaceLocation = TargetGrid->GetFoundationPlacementLocation(Origin, EffSize);
+	const float SnapLift = TargetGrid->OJJ_ComputeFoundationSnapLift(Origin, EffSize, NewFoundation->GetThickness());
 	const FVector SnappedLocation = PlaceLocation + FVector(0.0f, 0.0f, SnapLift);
 	FString OutReason;
 	if (!TargetGrid->TryPlaceFoundation(
-		NewFoundation, Origin, Size, SnappedLocation.Z + NewFoundation->GetThickness(), OutReason))
+		NewFoundation, Origin, EffSize, SnappedLocation.Z + NewFoundation->GetThickness(), OutReason))
 	{
 		// OutReason에 사유별 셀 수(water/occupied/overlap 등) — F1-b 디버깅·waterZ 재검토 실측 데이터.
 		UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation 배치 불가: %s"), *OutReason);
@@ -991,18 +997,21 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 		return;
 	}
 
-	NewFoundation->SetActorLocation(SnappedLocation);
+	// F3-0(㉱): 액터 yaw = 90°×step — 로컬 Size 메시가 월드에서 EffSize 풋프린트와 정렬(머신 :873 패턴).
+	// 정사각 평판 큐브는 시각 동일(회귀 0).
+	NewFoundation->SetActorLocationAndRotation(
+		SnappedLocation, FRotator(0.0f, 90.0f * HoverRotationSteps, 0.0f));
 	NewFoundation->OJJ_NotifyPlacedOnGrid(TargetGrid);
 
 	// N 기록(결정 ⑤ 보강) — 단 분포 실측으로 상한 재검토 근거 축적.
-	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s Foundation 배치 성공 (%dx%d, N=%d단)"),
-		*Origin.ToString(), Size.X, Size.Y,
+	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s Foundation 배치 성공 (%dx%d, R=%d, N=%d단)"),
+		*Origin.ToString(), EffSize.X, EffSize.Y, HoverRotationSteps,
 		FMath::RoundToInt(SnapLift / AOJJ_Grid::OJJ_FoundationSnapStep));
 
 	// F2-4 후속 ①: 풋프린트에 깔린 Pawn을 상면으로 올려태움. 후속 ② 캐시도 리셋 — 셀은 그대로여도
 	// 비주얼 Z가 슬래브 상면으로 바뀌므로 다음 Tick에 강제 재적재.
 	OJJ_LiftPawnsOntoFoundation(
-		Origin, Size, SnappedLocation.Z + NewFoundation->GetThickness(), NewFoundation->GetThickness());
+		Origin, EffSize, SnappedLocation.Z + NewFoundation->GetThickness(), NewFoundation->GetThickness());
 	CharacterOverlayCells.Reset();
 
 	// 직전 영역이 이제 커버됨(겹침 금지) → 다음 호버에서 빨강 재표시 강제(머신 경로와 동일).
