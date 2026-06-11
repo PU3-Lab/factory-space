@@ -9,25 +9,8 @@ AWarehousePort::AWarehousePort()
 
 	MachineType = TEXT("WarehousePort");
 	SelectedOutputItemID = TEXT("iron_ore");
-	GridSize = FIntPoint(4, 3);
-	InputPortCount = 1;
-	OutputPortCount = 1;
 	bNeedPower = false;
-	MaxDurability = 1000.f;
-	CurrentDurability = MaxDurability;
 	bDisableWhenBroken = true;
-
-	InputPorts.Reset();
-	FMachinePortData InputPort;
-	InputPort.PortIndex = 0;
-	InputPort.PortType = EPortType::Input;
-	InputPorts.Add(InputPort);
-
-	OutputPorts.Reset();
-	FMachinePortData OutputPort;
-	OutputPort.PortIndex = 0;
-	OutputPort.PortType = EPortType::Output;
-	OutputPorts.Add(OutputPort);
 }
 
 void AWarehousePort::SetSelectedOutputItem(FName ItemID)

@@ -4,7 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataTable.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
+#include "Materials/MaterialInterface.h"
 #include "UObject/Object.h"
 #include "MachineTable.generated.h"
 
@@ -51,4 +53,10 @@ struct FMachineTableRow : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TSoftObjectPtr<UTexture2D> ImgAsset;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TSoftObjectPtr<UStaticMesh> StaticMeshAsset;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TSoftObjectPtr<UMaterialInterface> MaterialAsset;
 };
