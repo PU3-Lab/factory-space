@@ -572,6 +572,13 @@ void AOJJ_BuildController::UpdateDemolishHover()
 	const TArray<FIntPoint>* Cells = TargetGrid->GetActorCells(Target);
 	if (!Cells)
 	{
+		// F2-0(Codex F1-b' #4): 위 건물이 있는 Foundation은 클릭(RemoveFoundation)이 거부하므로 호버도
+		// 표시 생략 — 단일 진실원(호버 = 클릭 판정)을 철거 모드에도 적용. 거부 사유 화면 표시는 UI 백로그.
+		if (TargetGrid->OJJ_CountOccupiedFoundationCells(Target) > 0)
+		{
+			TargetGrid->ClearHoverPreview();
+			return;
+		}
 		Cells = TargetGrid->GetFoundationCells(Target);
 	}
 	if (Cells)

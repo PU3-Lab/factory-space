@@ -523,12 +523,14 @@ void AOJJ_Grid::BeginPlay()
 		OutputArrowMID = UMaterialInstanceDynamic::Create(ArrowBaseMaterial, this);
 		if (InputArrowMID)
 		{
+			InputArrowMID->SetFlags(RF_Transient); // 레벨 dirty(가짜 diff) 차단 — EnsureTileMIDs와 동일(F2-0)
 			InputArrowMID->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.1f, 0.4f, 1.0f));
 			if (PlacedInputArrowISM) PlacedInputArrowISM->SetMaterial(0, InputArrowMID);
 			if (HoverInputArrowISM) HoverInputArrowISM->SetMaterial(0, InputArrowMID);
 		}
 		if (OutputArrowMID)
 		{
+			OutputArrowMID->SetFlags(RF_Transient);
 			OutputArrowMID->SetVectorParameterValue(TEXT("Color"), FLinearColor(1.0f, 0.45f, 0.05f));
 			if (PlacedOutputArrowISM) PlacedOutputArrowISM->SetMaterial(0, OutputArrowMID);
 			if (HoverOutputArrowISM) HoverOutputArrowISM->SetMaterial(0, OutputArrowMID);
@@ -1240,12 +1242,8 @@ bool AOJJ_Grid::RemoveFoundation(AActor* Foundation, FString& OutReason)
 	}
 
 	// 위 건물 게이트: 커버 셀에 유효 점유(머신/컨베이어)가 있으면 거부 — F1은 연쇄 철거 대신 거부가 안전.
-	// stale 점유는 IsCellOccupied가 weak IsValid로 걸러 비차단(점유 레이어와 동일 의미).
-	int32 OccupiedOnTop = 0;
-	for (const FIntPoint& Cell : *Cells)
-	{
-		if (IsCellOccupied(Cell)) { ++OccupiedOnTop; }
-	}
+	// 판정식은 OJJ_CountOccupiedFoundationCells와 공유(F2-0) — 철거 호버와 단일 진실원.
+	const int32 OccupiedOnTop = OJJ_CountOccupiedFoundationCells(Foundation);
 	if (OccupiedOnTop > 0)
 	{
 		OutReason = FString::Printf(TEXT("Foundation has %d occupied cell(s) on top — remove buildings first."), OccupiedOnTop);
@@ -1265,6 +1263,23 @@ bool AOJJ_Grid::RemoveFoundation(AActor* Foundation, FString& OutReason)
 
 	OutReason.Reset();
 	return true;
+}
+
+int32 AOJJ_Grid::OJJ_CountOccupiedFoundationCells(AActor* Foundation) const
+{
+	// stale 점유는 IsCellOccupied가 weak IsValid로 걸러 비차단(점유 레이어와 동일 의미).
+	// const라 sweep은 write 경로(RemoveFoundation)에 위임 — CanPlaceFoundation과 동일 방어.
+	const TArray<FIntPoint>* Cells = Foundation ? OJJ_FoundationToCells.Find(Foundation) : nullptr;
+	if (!Cells)
+	{
+		return INDEX_NONE;
+	}
+	int32 Occupied = 0;
+	for (const FIntPoint& Cell : *Cells)
+	{
+		if (IsCellOccupied(Cell)) { ++Occupied; }
+	}
+	return Occupied;
 }
 
 bool AOJJ_Grid::IsCellOnFoundation(FIntPoint Cell) const
@@ -2550,6 +2565,8 @@ void AOJJ_Grid::OJJ_EnsureTileMIDs()
 			MID = UMaterialInstanceDynamic::Create(Base, this);
 			if (MID)
 			{
+				// 런타임 전용 — outer가 레벨 액터라 저장 대상이 되면 레벨 dirty(가짜 diff) 유발(F2-0).
+				MID->SetFlags(RF_Transient);
 				ISM->SetMaterial(0, MID);
 			}
 		}
