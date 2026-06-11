@@ -30,6 +30,14 @@ class ManualRagIngestionRecord:
     embedding: list[float]
 
 
+@dataclass(frozen=True)
+class ManualRagIngestionBatch:
+    """Prepared ingestion payload with hashes for every source document."""
+
+    records: list[ManualRagIngestionRecord]
+    content_hashes: dict[str, str]
+
+
 class ManualRagIngestionService:
     """Build storage-ready ingestion records from normalized RAG documents."""
 
@@ -37,6 +45,32 @@ class ManualRagIngestionService:
         self._embedding_provider = embedding_provider
 
     def build_records(
+        self,
+        documents: list[ManualRagDocument],
+    ) -> list[ManualRagIngestionRecord]:
+        return self._build_records_for_documents(documents)
+
+    def build_batch(
+        self,
+        documents: list[ManualRagDocument],
+        *,
+        existing_content_hashes: dict[str, str],
+        dry_run: bool = False,
+        force: bool = False,
+    ) -> ManualRagIngestionBatch:
+        content_hashes = {
+            document.doc_id: _content_hash(document.content) for document in documents
+        }
+        documents_to_embed = [
+            document
+            for document in documents
+            if force
+            or existing_content_hashes.get(document.doc_id) != content_hashes[document.doc_id]
+        ]
+        records = [] if dry_run else self._build_records_for_documents(documents_to_embed)
+        return ManualRagIngestionBatch(records=records, content_hashes=content_hashes)
+
+    def _build_records_for_documents(
         self,
         documents: list[ManualRagDocument],
     ) -> list[ManualRagIngestionRecord]:
