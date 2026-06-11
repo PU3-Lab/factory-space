@@ -109,13 +109,14 @@
 
 ---
 
-## 4. 톨러런스 50→100 재검토 — (a) 적용 후 실측과 묶음
+## 4. 톨러런스 50→100 — ✅ 결정 완료 (2026-06-11): 100 확정
 
-- `BuildableHeightTolerance`(OJJ_Grid.h:168) 50→100: blocked 완화 → buildable 비율 증가.
-  `CacheHeightTolerance`가 시그니처라 변경 시 캐시 자동 무효 — **항목 1 재베이크와 같은 사이클로 묶음**.
-- 부작용: 직배치 뜸 상한 ~50→~100(최고점 기준이라 묻힘은 계속 0), VisualZLift 재튜닝 폭 증가. water 판정 무관.
-- 절차: ① 항목 1 적용 베이크(tol 50)에서 비율 실측(베이크 로그+GroundZReport) → ② tol 100 재베이크
-  실측 → 두 수치를 근거로 채택. 에디터 베이크 2회라 변인 분리 비용 낮음.
+- **실측(L_Planet, F2-1 최고점 베이크)**: tol 50 → buildable 8,149셀(9.1%) / tol 100 → 16,484셀(18.3%)
+  — **2.02배**. PIE에서 뜸(최대 ~100uu) 체감 수용 가능 확인.
+- 적용: `BuildableHeightTolerance` 클래스 기본값 50→100 (레벨 인스턴스 오버라이드 아님 — 기본값과
+  동일했던 인스턴스는 새 기본값 자동 승계). `CacheHeightTolerance` 시그니처 불일치로 옛 캐시 자동
+  무효 → 재베이크 1회 필요.
+- 잔여 관찰: VisualZLift 재튜닝 폭(뜸 상한 ~100), 묻힘은 최고점 기준이라 계속 0.
 
 ---
 
@@ -125,8 +126,8 @@
 |---|---|---|---|
 | 1 | F2-0 | 0-a 호버 게이트 BUG + 0-b RF_Transient | OJJ_Grid.h/.cpp, OJJ_BuildController.cpp |
 | 2 | F2-1 | 베이크 최고점(+버전 시그니처) + GetUniformSurfaceZ 지형 GroundZ 소비 + 재베이크·실측 | OJJ_Grid.h/.cpp, 레벨 재베이크 |
-| 3 | F2-2 | tol 100 채택 여부(실측 근거) | OJJ_Grid.h(기본값), 재베이크 |
-| 4 | F2-3 | Thickness 45 적용(✅ 결정 완료 — PIE 걷기는 확인 절차만) | OJJ_Foundation.h |
+| 3 | F2-2 ✅ | tol 100 확정(실측 9.1%→18.3%, 2배) — 재베이크 1회 필요 | OJJ_Grid.h(기본값) |
+| 4 | F2-3 ✅ | Thickness 45 적용(PIE 걷기는 확인 절차만) | OJJ_Foundation.h |
 | 5 | F2-4 | 높이 스냅 — SnapLift 헬퍼 + 컨트롤러 적용 | OJJ_Grid.h/.cpp, OJJ_BuildController.cpp |
 
 결정점 현황 (2026-06-11 전부 확정 — 추천안 일괄 승인):

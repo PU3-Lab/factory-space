@@ -165,8 +165,9 @@ protected:
 	// === 지형 높낮이 건설 제약 (정적 지형 — BeginPlay 1회 베이크) ===
 	// BeginPlay에서 GridSize 전 셀 중심에서 ↓라인트레이스 → 지형 높이가 그리드 평면 Z와
 	// BuildableHeightTolerance를 넘게 차이나면 UnbuildableCells에 마킹. CanPlaceMachine/컨베이어 경로가 게이트로 참조.
+	// 100 = F2-2 확정(L_Planet 실측: 50→8,149셀 9.1% / 100→16,484셀 18.3%, PIE 뜸 체감 수용).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Terrain", meta = (ClampMin = "0.0"))
-	float BuildableHeightTolerance = 50.0f;
+	float BuildableHeightTolerance = 100.0f;
 
 	// 베이크 ↓트레이스 시작 높이(그리드 평면 Z 상대, uu). 예상 지형 최고점보다 높게.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Terrain", meta = (ClampMin = "1.0"))
