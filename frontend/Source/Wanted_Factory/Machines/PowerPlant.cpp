@@ -10,16 +10,8 @@ APowerPlant::APowerPlant()
 	PrimaryActorTick.bCanEverTick = true;
 
 	MachineType = TEXT("PowerPlant");
-	InputPortCount = 0;
-	OutputPortCount = 0;
 	bNeedPower = false;
-	PowerConsumption = 0.f;
-	MaxDurability = 1000.f;
-	CurrentDurability = MaxDurability;
 	bDisableWhenBroken = true;
-
-	InputPorts.Reset();
-	OutputPorts.Reset();
 }
 
 void APowerPlant::ApplyMachineData(const FMachineTableRow& MachineData)

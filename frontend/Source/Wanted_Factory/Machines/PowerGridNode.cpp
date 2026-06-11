@@ -11,17 +11,9 @@ APowerGridNode::APowerGridNode()
 	PrimaryActorTick.bCanEverTick = true;
 
 	MachineType = TEXT("PowerGridNode");
-	InputPortCount = 0;
-	OutputPortCount = 0;
 	bNeedPower = false;
-	PowerConsumption = 0.f;
-	MaxDurability = 1000.f;
-	CurrentDurability = MaxDurability;
 	bDisableWhenBroken = true;
 	MeshScaleMultiplier = FVector(1.0f, 1.0f, 3.0f);
-
-	InputPorts.Reset();
-	OutputPorts.Reset();
 }
 
 void APowerGridNode::ApplyMachineData(const FMachineTableRow& MachineData)

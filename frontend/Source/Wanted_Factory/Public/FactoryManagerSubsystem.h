@@ -148,6 +148,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Factory Manager|Power")
 	TArray<FPowerConnectionEdge> GetPowerConnectionEdges();
 
+	UFUNCTION(BlueprintPure, Category = "Factory Manager|Power")
+	bool IsPowerLineEnergized(const APowerLine* PowerLine);
+
 	UFUNCTION(BlueprintPure, Category = "Factory Manager")
 	bool IsGraphDirty() const { return bGraphDirty; }
 

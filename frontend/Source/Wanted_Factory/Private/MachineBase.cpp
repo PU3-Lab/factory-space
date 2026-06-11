@@ -8,6 +8,7 @@
 #include "FactoryManagerSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "Machines/MachineSubsystem.h"
+#include "Materials/MaterialInterface.h"
 #include "PlanetEventManagerSubsystem.h"
 #include "RecipeManagerSubsystem.h"
 #include "Wanted_Factory.h"
@@ -65,6 +66,45 @@ namespace
 		}
 
 		return Result.IsEmpty() ? FString(TEXT("None")) : Result;
+	}
+
+	void FitMeshToGrid(UStaticMeshComponent* MeshComponent, FIntPoint GridSize, FVector MeshScaleMultiplier)
+	{
+		if (!MeshComponent)
+		{
+			return;
+		}
+
+		static constexpr float MeshFitCellWorld = 100.0f;
+		FVector Scale(GridSize.X, GridSize.Y, 1.0f);
+		if (const UStaticMesh* StaticMeshAsset = MeshComponent->GetStaticMesh())
+		{
+			const FVector MeshSize = StaticMeshAsset->GetBoundingBox().GetSize();
+			if (MeshSize.X > KINDA_SMALL_NUMBER && MeshSize.Y > KINDA_SMALL_NUMBER)
+			{
+				const float SX = (GridSize.X * MeshFitCellWorld) / MeshSize.X;
+				const float SY = (GridSize.Y * MeshFitCellWorld) / MeshSize.Y;
+				Scale = FVector(SX, SY, FMath::Min(SX, SY));
+			}
+		}
+
+		MeshComponent->SetWorldScale3D(Scale * MeshScaleMultiplier);
+	}
+
+	void RequestPowerGridRefresh(AMachineBase* Machine)
+	{
+		if (!Machine)
+		{
+			return;
+		}
+
+		if (UGameInstance* GameInstance = Machine->GetGameInstance())
+		{
+			if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
+			{
+				FactoryManager->UpdatePowerGrid();
+			}
+		}
 	}
 }
 
@@ -124,6 +164,27 @@ void AMachineBase::ApplyMachineData(const FMachineTableRow& MachineData)
 	MaxDurability = FMath::Max(1.f, MachineData.Durability);
 	CurrentDurability = FMath::Clamp(CurrentDurability, 0.f, MaxDurability);
 	PowerConsumption = FMath::Max(0.f, MachineData.Power);
+
+	if (MeshComponent)
+	{
+		if (!MachineData.StaticMeshAsset.IsNull())
+		{
+			if (UStaticMesh* StaticMeshAsset = MachineData.StaticMeshAsset.LoadSynchronous())
+			{
+				MeshComponent->SetStaticMesh(StaticMeshAsset);
+			}
+		}
+
+		if (!MachineData.MaterialAsset.IsNull())
+		{
+			if (UMaterialInterface* MaterialAsset = MachineData.MaterialAsset.LoadSynchronous())
+			{
+				MeshComponent->SetMaterial(0, MaterialAsset);
+			}
+		}
+
+		FitMeshToGrid(MeshComponent, GridSize, MeshScaleMultiplier);
+	}
 
 	InputPorts.Reset();
 	for (int32 PortIndex = 0; PortIndex < InputPortCount; ++PortIndex)
@@ -960,6 +1021,7 @@ void AMachineBase::DamageDurability(float DamageAmount)
 	
 	OnDurabilityChanged.Broadcast(CurrentDurability, MaxDurability);
 	RefreshMachineState();
+	RequestPowerGridRefresh(this);
 }
 
 void AMachineBase::RepairDurability(float RepairAmount)
@@ -978,6 +1040,7 @@ void AMachineBase::RepairDurability(float RepairAmount)
 	
 	OnDurabilityChanged.Broadcast(CurrentDurability, MaxDurability);
 	RefreshMachineState();
+	RequestPowerGridRefresh(this);
 }
 
 void AMachineBase::ApplyDurabilityDamage(float DamageAmount)
@@ -987,6 +1050,7 @@ void AMachineBase::ApplyDurabilityDamage(float DamageAmount)
 
 void AMachineBase::SetProvidedPower(float NewPower)
 {
+	const bool bHadEnoughPower = HasEnoughPower();
 	CurrentProvidedPower = FMath::Max(0.f, NewPower);
 	
 	LOG_SSR_W(TEXT("Power Updated : %.1f / %.1f"),
@@ -995,6 +1059,10 @@ void AMachineBase::SetProvidedPower(float NewPower)
 	);
 	
 	RefreshMachineState();
+	if (!bHadEnoughPower && HasEnoughPower() && MachineState == EMachineState::Idle)
+	{
+		TryStartProcess();
+	}
 }
 
 bool AMachineBase::HasEnoughPower() const
