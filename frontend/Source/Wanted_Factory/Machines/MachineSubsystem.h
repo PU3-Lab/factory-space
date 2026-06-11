@@ -24,11 +24,30 @@ public:
 	bool FindMachineData(FName MachineName, FMachineTableRow& OutMachineData) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Machine")
+	bool FindMachineDataForLevel(FName MachineType, int32 Level, FMachineTableRow& OutMachineData) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Machine")
 	bool FindMachineDataByRowName(FName RowName, FMachineTableRow& OutMachineData) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Machine")
 	void GetAllMachineData(TArray<FMachineTableRow>& OutMachineData) const;
 
+	UFUNCTION(BlueprintPure, Category = "Machine")
+	int32 GetMachineLevel(FName MachineType) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Machine")
+	bool SetMachineLevel(FName MachineType, int32 NewLevel);
+
+	UFUNCTION(BlueprintPure, Category = "Machine")
+	bool CanUpgradeMachineType(FName MachineType) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Machine")
+	bool UpgradeMachineType(FName MachineType);
+
 private:
 	TMap<FName, FName> MachineNameToRowMap;
+	TMap<FName, TMap<int32, FName>> MachineTypeLevelToRowMap;
+	TMap<FName, int32> MachineTypeToCurrentLevel;
+
+	void ApplyMachineDataToExistingMachines(FName MachineType, const FMachineTableRow& MachineData) const;
 };
