@@ -124,11 +124,29 @@
 
 | 순서 | 커밋 | 내용 | 파일 |
 |---|---|---|---|
-| 1 | F2-0 | 0-a 호버 게이트 BUG + 0-b RF_Transient | OJJ_Grid.h/.cpp, OJJ_BuildController.cpp |
-| 2 | F2-1 | 베이크 최고점(+버전 시그니처) + GetUniformSurfaceZ 지형 GroundZ 소비 + 재베이크·실측 | OJJ_Grid.h/.cpp, 레벨 재베이크 |
-| 3 | F2-2 ✅ | tol 100 확정(실측 9.1%→18.3%, 2배) — 재베이크 1회 필요 | OJJ_Grid.h(기본값) |
-| 4 | F2-3 ✅ | Thickness 45 적용(PIE 걷기는 확인 절차만) | OJJ_Foundation.h |
-| 5 | F2-4 ✅ | 높이 스냅 — OJJ_ComputeFoundationSnapLift + 컨트롤러 적용 + N 로그 | OJJ_Grid.h/.cpp, OJJ_BuildController.cpp, OJJ_Foundation.h(주석) |
+| 1 | F2-0 ✅ `2abb9e9` | 0-a 호버 게이트 BUG + 0-b RF_Transient | OJJ_Grid.h/.cpp, OJJ_BuildController.cpp |
+| 2 | F2-1 ✅ `7305f5c`+`e07c6fc` | 베이크 최고점(+버전 시그니처) + GetUniformSurfaceZ 지형 GroundZ 소비 + Landscape 호버 게이트(F2-1') | OJJ_Grid.h/.cpp, OJJ_BuildController.cpp, Build.cs |
+| 3 | F2-2 ✅ `377896d` | tol 100 확정(실측 9.1%→18.3%, 2배) | OJJ_Grid.h(기본값) |
+| 4 | F2-3 ✅ `131a97d` | Thickness 45 적용 | OJJ_Foundation.h |
+| — | 재베이크 ✅ `9bb84c4` | L_Planet 캐시(버전 2 + tol 100) — 헤드리스 -game 검증(트레이스 0 로드, 16,484셀) | L_Planet.umap |
+| 5 | F2-4 ✅ `a711386` | 높이 스냅 — OJJ_ComputeFoundationSnapLift + 컨트롤러 적용 + N 로그 | OJJ_Grid.h/.cpp, OJJ_BuildController.cpp, OJJ_Foundation.h(주석) |
+| 6 | 후속 ✅ `7dcf84b` | 캐릭터 올려태우기("깔면 올라탐") + 빌드모드 캐릭터 셀 표시(시각 전용) | OJJ_Grid.h/.cpp, OJJ_BuildController.h/.cpp |
+
+## PIE 최종 검증 (2026-06-11) — 전부 통과, F2 종결 ✅
+
+- 계단식 스냅: 경사 지대 Foundation이 N단 격자(평면+45+N×100)로 안착 — 묻힘 0
+- 같은 단 인접 Foundation 위 컨베이어 연결 정상
+- 단차 걸침 거부 정상(기존 OJJ_GetUniformSurfaceZ 규칙) — 단차 연결은 F3로 확정
+- 캐릭터 위에 배치 → 올라타기 동작 + N 로그
+- 빌드모드 캐릭터 점유 셀 노랑 타일 표시·이동 추종 정상
+
+## F3 백로그 (F2 검증에서 확정된 우선순위)
+
+1. **[1순위] 단차 컨베이어 연결(경사/램프)** — PIE 검증에서 단차 걸침 거부가 의도대로 동작함을 확인,
+   단(段) 사이 물류 연결 수단이 없는 것이 다음 병목. 경사 컨베이어 세그먼트 or 램프 Foundation 중 택일 설계.
+2. §5-2 지형 직배치 단계적 은퇴(Foundation-only 배치 전환) — 직배치 뜸(≤100uu) 잔존 해소
+3. 계단/램프 도보 단차 이동(캐릭터) — 1과 묶음 검토
+4. VisualZLift 0 축소 재검토(F2-1 잔존 관찰), N 분포 실측 기반 상한 재검토(결정 ⑤)
 
 결정점 현황 (2026-06-11 전부 확정 — 추천안 일괄 승인):
 ⓐ 철거불가 호버 생략(+거부 사유 화면 표시는 UI 백로그) · ⓑ ArrowMID 동봉 · ① 분류 최악점 유지 ·
