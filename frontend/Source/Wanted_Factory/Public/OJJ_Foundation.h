@@ -45,8 +45,10 @@ protected:
 	FIntPoint FoundationSize = FIntPoint(8, 8);
 
 	// 슬래브 두께(uu) — 상면 Z = 그리드 평면 Z + Thickness. TryPlaceFoundation의 SurfaceZ 산출에 사용.
+	// 45 = F2-3 확정: 캐릭터 MaxStepHeight 기본값(45) 이하라 평지→Foundation 도보 진입 성립
+	// (50은 불가). F2-4 높이 스냅의 BaseLift로도 쓰임(상면 = 평면 + Thickness + N×100).
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Foundation", meta = (ClampMin = "1.0"))
-	float Thickness = 50.0f;
+	float Thickness = 45.0f;
 
 	// 임시 비주얼 — 엔진 Cube 스케일(F1-b 결정점 ③). NoCollision: 커서/베이크/머신 호버 트레이스 간섭 0.
 	// 걷기 충돌·전용 메시/머티리얼은 F1-c(머신 Z 안착)와 함께.
