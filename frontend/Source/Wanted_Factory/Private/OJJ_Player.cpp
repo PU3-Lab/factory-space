@@ -5,6 +5,7 @@
 
 #include "Camera/CameraComponent.h"
 #include "FactoryAgentClientSubsystem.h"
+#include "QuestManagerSubsystem.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
@@ -188,7 +189,7 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	if (IA_Jump)
 	{
 		// ACharacter 내장 Jump/StopJumping 사용
-		EnhancedInput->BindAction(IA_Jump, ETriggerEvent::Started, this, &ACharacter::Jump);
+		EnhancedInput->BindAction(IA_Jump, ETriggerEvent::Started, this, &AOJJ_Player::StartJumpAction);
 		EnhancedInput->BindAction(IA_Jump, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
 	}
 	if (IA_Interact)
@@ -314,6 +315,14 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 
 	AddMovementInput(Forward, Axis.Y); // W/S
 	AddMovementInput(Right, Axis.X);   // D/A
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyMainQuestInputAction(TEXT("Move"));
+		}
+	}
 }
 
 void AOJJ_Player::Look(const FInputActionValue& Value)
@@ -338,6 +347,19 @@ void AOJJ_Player::Zoom(const FInputActionValue& Value)
 	SpringArm->TargetArmLength = FMath::Clamp(NewLength, MinArmLength, MaxArmLength);
 }
 
+void AOJJ_Player::StartJumpAction(const FInputActionValue& Value)
+{
+	Jump();
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyMainQuestInputAction(TEXT("Jump"));
+		}
+	}
+}
+
 void AOJJ_Player::ToggleBuild(const FInputActionValue& Value)
 {
 	if (!BuildController)
@@ -350,6 +372,17 @@ void AOJJ_Player::ToggleBuild(const FInputActionValue& Value)
 	// BuildController가 단일 진실원 — 실제 전환 결과(early-return 시 미전환)에 맞춰 플레이어측 적용.
 	// 이로써 TargetGrid 미설정 등으로 Enter가 무산되면 카메라/가시성도 안 바뀜(half-state 방지).
 	ApplyBuildModeView(BuildController->IsInBuildMode());
+
+	if (BuildController->IsInBuildMode())
+	{
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+			{
+				QuestManager->NotifyMainQuestBuildModeEntered();
+			}
+		}
+	}
 }
 
 void AOJJ_Player::ApplyBuildModeView(bool bEntering)
@@ -612,6 +645,14 @@ void AOJJ_Player::StartSprint(const FInputActionValue& Value)
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		Movement->MaxWalkSpeed = SprintSpeed;
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyMainQuestInputAction(TEXT("Sprint"));
+		}
 	}
 }
 

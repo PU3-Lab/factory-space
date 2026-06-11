@@ -1,10 +1,15 @@
 #include "QuestManagerSubsystem.h"
 
+#include "Engine/DataTable.h"
 #include "FactoryAgentJsonUtils.h"
 #include "FactoryAgentClientSubsystem.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "Wanted_Factory.h"
 #include "Dom/JsonObject.h"
+
+#include "Algo/Sort.h"
 
 namespace
 {
@@ -13,6 +18,7 @@ constexpr TCHAR ProductionQuestSubAgentId[] = TEXT("quest_generator.production_q
 constexpr TCHAR QuestManagerQuestSampleRequestId[] = TEXT("request-quest-sample");
 constexpr TCHAR QuestManagerQuestSampleSessionId[] = TEXT("smoke-session");
 constexpr TCHAR QuestManagerQuestSampleClientId[] = TEXT("smoke-client");
+constexpr TCHAR MainQuestCsvRelativePath[] = TEXT("Source/Wanted_Factory/Quest/MainQuestTable.csv");
 
 TSharedPtr<FJsonObject> CreateProductionPayload(const FString& Question)
 {
@@ -36,7 +42,10 @@ bool ReadQuestObjective(const TSharedPtr<FJsonObject>& ObjectiveObject, FQuestOb
 	}
 
 	OutObjective.TargetItemId = FactoryAgentJsonUtils::GetStringField(ObjectiveObject, TEXT("target_item_id"));
+	OutObjective.TargetId = FName(*OutObjective.TargetItemId);
+	OutObjective.ObjectiveType = EQuestObjectiveType::WarehouseStoreItem;
 	OutObjective.Quantity = FactoryAgentJsonUtils::GetIntegerField(ObjectiveObject, TEXT("quantity"), 1);
+	OutObjective.CurrentCount = 0;
 	return !OutObjective.TargetItemId.IsEmpty() && OutObjective.Quantity > 0;
 }
 
@@ -74,34 +83,6 @@ bool ReadQuestState(const TSharedPtr<FJsonObject>& QuestObject, FQuestState& Out
 
 UQuestManagerSubsystem::UQuestManagerSubsystem()
 {
-	FQuestState FirstQuest;
-	FirstQuest.QuestId = TEXT("main-001");
-	FirstQuest.Kind = EQuestKind::Main;
-	FirstQuest.QuestType = TEXT("main");
-	FirstQuest.Title = FText::FromString(TEXT("Factory Startup"));
-	FirstQuest.Description = FText::FromString(TEXT("Build the first production line."));
-	FirstQuest.Status = EQuestStatus::Active;
-
-	FQuestObjective FirstObjective;
-	FirstObjective.TargetItemId = TEXT("iron_ore");
-	FirstObjective.Quantity = 10;
-	FirstQuest.Objectives.Add(FirstObjective);
-
-	FQuestState SecondQuest;
-	SecondQuest.QuestId = TEXT("main-002");
-	SecondQuest.Kind = EQuestKind::Main;
-	SecondQuest.QuestType = TEXT("main");
-	SecondQuest.Title = FText::FromString(TEXT("Expand Production"));
-	SecondQuest.Description = FText::FromString(TEXT("Increase resource throughput for the next factory stage."));
-	SecondQuest.Status = EQuestStatus::Inactive;
-
-	FQuestObjective SecondObjective;
-	SecondObjective.TargetItemId = TEXT("iron_ingot");
-	SecondObjective.Quantity = 10;
-	SecondQuest.Objectives.Add(SecondObjective);
-
-	MainQuestSequence.Add(FirstQuest);
-	MainQuestSequence.Add(SecondQuest);
 }
 
 void UQuestManagerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -112,6 +93,7 @@ void UQuestManagerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	Collection.InitializeDependency(UPlayerWarehouseSubsystem::StaticClass());
 	AgentClient = GetGameInstance()->GetSubsystem<UFactoryAgentClientSubsystem>();
 	WarehouseSubsystem = GetGameInstance()->GetSubsystem<UPlayerWarehouseSubsystem>();
+	LoadMainQuestSequence();
 	BindAgentClient();
 	BindWarehouse();
 	ActivateCurrentMainQuest();
@@ -176,9 +158,29 @@ void UQuestManagerSubsystem::ResetMainQuestProgress()
 	for (FQuestState& Quest : MainQuestSequence)
 	{
 		Quest.Status = EQuestStatus::Inactive;
+		for (FQuestObjective& Objective : Quest.Objectives)
+		{
+			Objective.CurrentCount = 0;
+		}
 	}
 
 	ActivateCurrentMainQuest();
+	RefreshMainQuestCompletion();
+}
+
+void UQuestManagerSubsystem::NotifyMainQuestInputAction(FName ActionId)
+{
+	ApplyMainQuestObjectiveEvent(EQuestObjectiveType::InputAction, ActionId, 1);
+}
+
+void UQuestManagerSubsystem::NotifyMainQuestBuildModeEntered()
+{
+	ApplyMainQuestObjectiveEvent(EQuestObjectiveType::BuildPlacementMode, TEXT("BuildMode"), 1);
+}
+
+void UQuestManagerSubsystem::NotifyMainQuestMachinePlaced(FName MachineType)
+{
+	ApplyMainQuestObjectiveEvent(EQuestObjectiveType::PlaceMachine, MachineType, 1);
 }
 
 void UQuestManagerSubsystem::ClearSubQuests()
@@ -279,6 +281,109 @@ void UQuestManagerSubsystem::BindWarehouse()
 	WarehouseSubsystem->OnItemAdded.AddDynamic(this, &UQuestManagerSubsystem::HandleWarehouseItemAdded);
 }
 
+void UQuestManagerSubsystem::LoadMainQuestSequence()
+{
+	MainQuestSequence.Empty();
+	CurrentMainQuestIndex = 0;
+
+	if (!MainQuestTable)
+	{
+		MainQuestTable = NewObject<UDataTable>(this, TEXT("MainQuestTable"));
+		if (MainQuestTable)
+		{
+			MainQuestTable->RowStruct = FMainQuestTableRow::StaticStruct();
+		}
+	}
+
+	if (!MainQuestTable)
+	{
+		LOG_LC_W(TEXT("Quest manager could not create main quest table."));
+		return;
+	}
+
+	const FString CsvPath = FPaths::Combine(FPaths::ProjectDir(), MainQuestCsvRelativePath);
+	FString CsvContent;
+	if (!FFileHelper::LoadFileToString(CsvContent, *CsvPath))
+	{
+		LOG_LC_W(TEXT("Quest manager could not load main quest CSV: %s"), *CsvPath);
+		return;
+	}
+
+	MainQuestTable->EmptyTable();
+	const TArray<FString> ImportProblems = MainQuestTable->CreateTableFromCSVString(CsvContent);
+	for (const FString& Problem : ImportProblems)
+	{
+		LOG_LC_W(TEXT("Main quest CSV import warning: %s"), *Problem);
+	}
+
+	TArray<FMainQuestTableRow*> Rows;
+	MainQuestTable->GetAllRows(TEXT("MainQuestTable"), Rows);
+	Algo::Sort(
+		Rows,
+		[](const FMainQuestTableRow* Left, const FMainQuestTableRow* Right)
+		{
+			return Left && Right ? Left->Order < Right->Order : Left != nullptr;
+		});
+
+	for (const FMainQuestTableRow* Row : Rows)
+	{
+		if (!Row)
+		{
+			continue;
+		}
+
+		FQuestState Quest;
+		Quest.QuestId = Row->QuestId;
+		Quest.Kind = EQuestKind::Main;
+		Quest.QuestType = TEXT("main");
+		Quest.Title = Row->Title;
+		Quest.Description = Row->Description;
+		Quest.Status = EQuestStatus::Inactive;
+
+		AppendMainQuestObjective(Quest.Objectives, Row->ObjectiveType1, Row->TargetId1, Row->RequiredCount1);
+		AppendMainQuestObjective(Quest.Objectives, Row->ObjectiveType2, Row->TargetId2, Row->RequiredCount2);
+		AppendMainQuestReward(Quest.Rewards, Row->RewardItemId1, Row->RewardQuantity1);
+
+		if (!Quest.QuestId.IsEmpty() && !Quest.Objectives.IsEmpty())
+		{
+			MainQuestSequence.Add(Quest);
+		}
+	}
+}
+
+void UQuestManagerSubsystem::AppendMainQuestObjective(
+	TArray<FQuestObjective>& Objectives,
+	EQuestObjectiveType ObjectiveType,
+	FName TargetId,
+	int32 RequiredCount) const
+{
+	if (ObjectiveType == EQuestObjectiveType::None || TargetId.IsNone() || RequiredCount <= 0)
+	{
+		return;
+	}
+
+	FQuestObjective Objective;
+	Objective.ObjectiveType = ObjectiveType;
+	Objective.TargetId = TargetId;
+	Objective.TargetItemId = TargetId.ToString();
+	Objective.Quantity = RequiredCount;
+	Objective.CurrentCount = 0;
+	Objectives.Add(Objective);
+}
+
+void UQuestManagerSubsystem::AppendMainQuestReward(TArray<FQuestRewardItem>& Rewards, FName ItemId, int32 Quantity) const
+{
+	if (ItemId.IsNone() || Quantity <= 0)
+	{
+		return;
+	}
+
+	FQuestRewardItem Reward;
+	Reward.ItemId = ItemId;
+	Reward.Quantity = Quantity;
+	Rewards.Add(Reward);
+}
+
 FString UQuestManagerSubsystem::SendSubQuestRequest(const FString& PayloadJson)
 {
 	if (!AgentClient)
@@ -324,6 +429,109 @@ void UQuestManagerSubsystem::RefreshSubQuestCompletion()
 	}
 }
 
+void UQuestManagerSubsystem::RefreshMainQuestCompletion()
+{
+	if (!MainQuestSequence.IsValidIndex(CurrentMainQuestIndex))
+	{
+		return;
+	}
+
+	FQuestState& CurrentQuest = MainQuestSequence[CurrentMainQuestIndex];
+	if (CurrentQuest.Status != EQuestStatus::Active || !IsMainQuestCompleted(CurrentQuest))
+	{
+		return;
+	}
+
+	CurrentQuest.Status = EQuestStatus::Completed;
+	GrantQuestRewards(CurrentQuest);
+	AdvanceMainQuest();
+}
+
+void UQuestManagerSubsystem::GrantQuestRewards(const FQuestState& Quest)
+{
+	if (!WarehouseSubsystem)
+	{
+		return;
+	}
+
+	for (const FQuestRewardItem& Reward : Quest.Rewards)
+	{
+		if (!Reward.ItemId.IsNone() && Reward.Quantity > 0)
+		{
+			WarehouseSubsystem->AddItem(Reward.ItemId, Reward.Quantity);
+		}
+	}
+}
+
+bool UQuestManagerSubsystem::IsMainQuestCompleted(const FQuestState& Quest) const
+{
+	if (Quest.Objectives.IsEmpty())
+	{
+		return false;
+	}
+
+	for (const FQuestObjective& Objective : Quest.Objectives)
+	{
+		if (Objective.ObjectiveType == EQuestObjectiveType::WarehouseStoreItem)
+		{
+			if (!WarehouseSubsystem || WarehouseSubsystem->GetItemCount(Objective.TargetId) < Objective.Quantity)
+			{
+				return false;
+			}
+			continue;
+		}
+
+		if (Objective.CurrentCount < Objective.Quantity)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+void UQuestManagerSubsystem::ApplyMainQuestObjectiveEvent(EQuestObjectiveType ObjectiveType, FName TargetId, int32 DeltaCount)
+{
+	if (!MainQuestSequence.IsValidIndex(CurrentMainQuestIndex) || DeltaCount <= 0)
+	{
+		return;
+	}
+
+	FQuestState& CurrentQuest = MainQuestSequence[CurrentMainQuestIndex];
+	if (CurrentQuest.Status != EQuestStatus::Active)
+	{
+		return;
+	}
+
+	bool bQuestUpdated = false;
+	for (FQuestObjective& Objective : CurrentQuest.Objectives)
+	{
+		if (Objective.ObjectiveType != ObjectiveType || Objective.TargetId != TargetId)
+		{
+			continue;
+		}
+
+		const int32 NewCount = FMath::Min(Objective.Quantity, Objective.CurrentCount + DeltaCount);
+		if (NewCount != Objective.CurrentCount)
+		{
+			Objective.CurrentCount = NewCount;
+			bQuestUpdated = true;
+		}
+	}
+
+	if (!bQuestUpdated)
+	{
+		return;
+	}
+
+	RefreshMainQuestCompletion();
+	if (MainQuestSequence.IsValidIndex(CurrentMainQuestIndex))
+	{
+		OnMainQuestChanged.Broadcast(MainQuestSequence[CurrentMainQuestIndex]);
+		RefreshMainQuestCompletion();
+	}
+}
+
 bool UQuestManagerSubsystem::IsQuestCompletedByWarehouse(const FQuestState& Quest) const
 {
 	if (!WarehouseSubsystem || Quest.Objectives.IsEmpty())
@@ -346,6 +554,7 @@ bool UQuestManagerSubsystem::IsQuestCompletedByWarehouse(const FQuestState& Ques
 void UQuestManagerSubsystem::HandleWarehouseItemAdded(FName ItemID, int32 AddedCount, int32 NewTotalCount)
 {
 	RefreshSubQuestCompletion();
+	RefreshMainQuestCompletion();
 }
 
 void UQuestManagerSubsystem::HandleAgentResponse(

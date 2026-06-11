@@ -127,6 +127,20 @@ manual_rag_documents
 - pgvector extension이 활성화된다.
 - migration 또는 schema script가 재실행 가능하다.
 
+### 현재 상태
+
+진행 완료 수준.
+
+구현된 항목:
+
+- `alembic.ini`
+- `migrations/env.py`
+- `migrations/versions/0001_create_manual_rag_documents.py`
+- `agents.operator_guide.rag_schema`
+- `manual_rag_documents` SQLAlchemy metadata
+- pgvector `Vector(1536)` column
+- `content_hash`, `is_active`, `metadata_json`, `embedding` index
+
 ## Sprint 5. Ingestion Script + Upsert
 
 ### 목표
