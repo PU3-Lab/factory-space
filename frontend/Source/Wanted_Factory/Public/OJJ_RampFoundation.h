@@ -34,10 +34,11 @@ public:
 	virtual bool OJJ_BuildPerCellSurfaceZ(FIntPoint EffSize, int32 RotationSteps, float BaseSurfaceZ,
 		TArray<float>& OutCellZs) const override;
 
-	// Z_low 스냅 기준 = 낮은 끝(r=0) 행 지형만(F3-2 Codex ② 수정) — 풋프린트 전체 max로 잡으면
-	// 단차 지형(주 사용처)에서 낮은 끝이 높은 단 기준으로 떠 양 끝 턱 0 계약이 깨짐.
+	// Z_low 결정(F3.5 ③): 낮은 끝 바깥 인접 라인의 이웃 SurfaceZ에 엣지 스냅(낮은 끝 = 이웃,
+	// 높은 끝 = +100 — 단 간격 고정이라 높은 쪽 이웃과도 자동 일치). 이웃 없으면 낮은 끝(r=0) 행
+	// 지형 씨앗 폴백(F3-2 Codex ② 유지 — 고립 램프 = 지형 오르기 용도).
 	virtual float OJJ_ComputeSnapLift(const AOJJ_Grid& Grid, FIntPoint Origin, FIntPoint EffSize,
-		int32 RotationSteps) const override;
+		int32 RotationSteps, FString* OutHeightSource = nullptr) const override;
 
 protected:
 	// 베이스 슬래브 숨기고 행당 1박스 계단을 적재(상면 = 해당 행 SurfaceZ — 등록 데이터와 동일 산식).

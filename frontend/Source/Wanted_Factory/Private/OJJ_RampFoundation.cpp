@@ -66,21 +66,53 @@ bool AOJJ_RampFoundation::OJJ_BuildPerCellSurfaceZ(FIntPoint EffSize, int32 Rota
 }
 
 float AOJJ_RampFoundation::OJJ_ComputeSnapLift(const AOJJ_Grid& Grid, FIntPoint Origin, FIntPoint EffSize,
-	int32 RotationSteps) const
+	int32 RotationSteps, FString* OutHeightSource) const
 {
-	// 낮은 끝(r=0) 행만 스냅 기준(Codex F3-2 ②): 단차 지형 위 배치(주 사용처)에서 풋프린트 전체 max를
-	// 쓰면 낮은 끝이 높은 단으로 떠 양 끝 턱 0이 깨짐. 기존 그리드 헬퍼를 1행 서브렉트로 재사용 —
-	// off-grid/무효 폴백(0) 규약 동일. 중간 행 지형이 보간 계단 위로 솟는 묻힘 가능성은 F3-3 PIE
-	// 관찰 항목(후속 후보: 행별 묻힘 검증 거부).
+	// 낮은 끝(r=0) 기준 좌표: 행(풋프린트 안 — 씨앗 폴백용)과 바깥 인접 라인(엣지 스냅용)을 함께 산출.
 	const int32 Step = ((RotationSteps % 4) + 4) % 4;
-	FIntPoint RowOrigin = Origin;
+	FIntPoint RowOrigin = Origin;   // 낮은 끝 행(풋프린트 안)
 	FIntPoint RowSize = EffSize;
+	FIntPoint LineOrigin = Origin;  // 낮은 끝 바깥 인접 라인(이웃 판)
+	FIntPoint LineSize = EffSize;
 	switch (Step)
 	{
-	case 0: RowSize = FIntPoint(1, EffSize.Y); break;                                            // r=0 행 = 서쪽 변
-	case 1: RowSize = FIntPoint(EffSize.X, 1); break;                                            // 남쪽 변
-	case 2: RowOrigin.X = Origin.X + EffSize.X - 1; RowSize = FIntPoint(1, EffSize.Y); break;    // 동쪽 변
-	case 3: RowOrigin.Y = Origin.Y + EffSize.Y - 1; RowSize = FIntPoint(EffSize.X, 1); break;    // 북쪽 변
+	case 0: // 낮은 끝 = 서쪽 변
+		RowSize = FIntPoint(1, EffSize.Y);
+		LineOrigin.X = Origin.X - 1;             LineSize = FIntPoint(1, EffSize.Y);
+		break;
+	case 1: // 남쪽 변
+		RowSize = FIntPoint(EffSize.X, 1);
+		LineOrigin.Y = Origin.Y - 1;             LineSize = FIntPoint(EffSize.X, 1);
+		break;
+	case 2: // 동쪽 변
+		RowOrigin.X = Origin.X + EffSize.X - 1;  RowSize = FIntPoint(1, EffSize.Y);
+		LineOrigin.X = Origin.X + EffSize.X;     LineSize = FIntPoint(1, EffSize.Y);
+		break;
+	case 3: // 북쪽 변
+		RowOrigin.Y = Origin.Y + EffSize.Y - 1;  RowSize = FIntPoint(EffSize.X, 1);
+		LineOrigin.Y = Origin.Y + EffSize.Y;     LineSize = FIntPoint(EffSize.X, 1);
+		break;
+	}
+
+	// F3.5 ③: 이웃 엣지 스냅 — 낮은 끝이 이웃 판과 같은 단(턱 0), 높은 끝은 +100이라 높은 쪽
+	// 이웃과도 자동 일치(단 간격 고정). stale 이웃은 그리드 조회의 weak 검증이 거름.
+	const float SnapGridOriginZ = Grid.GetActorLocation().Z + Thickness;
+	float NeighborZ = 0.0f;
+	int32 ContactCells = 0;
+	if (Grid.OJJ_GetDominantFoundationSurfaceZInRect(LineOrigin, LineSize, SnapGridOriginZ, NeighborZ, ContactCells))
+	{
+		if (OutHeightSource)
+		{
+			*OutHeightSource = FString::Printf(TEXT("상속-엣지(이웃 접촉 %d셀)"), ContactCells);
+		}
+		return NeighborZ - Thickness - Grid.GetActorLocation().Z;
+	}
+
+	// 씨앗 폴백(고립 램프 = 지형 오르기): 낮은 끝 행 지형 스냅(F3-2 Codex ② — 풋프린트 전체 max를
+	// 쓰면 단차 지형에서 낮은 끝이 떠 턱 0이 깨짐). 중간 행 지형 묻힘 가능성은 PIE 관찰 항목.
+	if (OutHeightSource)
+	{
+		*OutHeightSource = TEXT("씨앗(지형, 낮은 끝 행)");
 	}
 	return Grid.OJJ_ComputeFoundationSnapLift(RowOrigin, RowSize, Thickness);
 }

@@ -48,11 +48,12 @@ public:
 		return false;
 	}
 
-	// 스냅 리프트 산출 훅(F3-2 Codex ② 수정): 어떤 셀들의 지형이 단(N) 산정 기준인지는 형상의 일 —
-	// 평탄은 풋프린트 전체 max(기존 F2-4), 램프는 낮은 끝(r=0) 행만(양 끝 턱 0 계약이 우선).
-	// 반환 = N×100 리프트(그리드 OJJ_ComputeFoundationSnapLift 규약 동일).
+	// 높이 산출 훅(F3.5 — 높이 결정 우선순위의 단일 진입점, 반환 = 평면 기준 리프트):
+	// ① 인접 Foundation 있으면 높이 상속(평면 확장 — 지형 무시·클리핑 허용, 새티스팩토리 정합)
+	// ② 고립 첫 장이면 지형 씨앗(F2-4 산식 존속). 램프는 ③ 낮은 끝 엣지 스냅(오버라이드).
+	// OutHeightSource: 배치 로그용 출처 문자열("상속(이웃 접촉 y셀)"/"씨앗(지형)" — 결정 ㉷ 보강).
 	virtual float OJJ_ComputeSnapLift(const AOJJ_Grid& Grid, FIntPoint Origin, FIntPoint EffSize,
-		int32 RotationSteps) const;
+		int32 RotationSteps, FString* OutHeightSource = nullptr) const;
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

@@ -985,8 +985,11 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 	// F1 동작). 좌표/리프트는 그리드 헬퍼(결정점 ② — 데이터/좌표는 그리드, 액터 이동은 컨트롤러).
 	// 액터는 통째로 리프트만큼 위 — 슬래브 상면(액터Z+Thickness)이 SurfaceZ와 자동 일치. 실패 시 즉시 파기.
 	const FVector PlaceLocation = TargetGrid->GetFoundationPlacementLocation(Origin, EffSize);
-	// 스냅 기준 셀은 형상의 일(F3-2 Codex ② — 평탄: 풋프린트 전체 / 램프: 낮은 끝 행) → 클래스 훅 경유.
-	const float SnapLift = NewFoundation->OJJ_ComputeSnapLift(*TargetGrid, Origin, EffSize, HoverRotationSteps);
+	// 높이 결정은 클래스 훅(F3.5 우선순위: ① 이웃 상속 → ② 지형 씨앗 / 램프 ③ 엣지 스냅 → 폴백).
+	// HeightSource는 배치 로그용 출처(결정 ㉷ 보강 — 정책 동작 실측).
+	FString HeightSource;
+	const float SnapLift = NewFoundation->OJJ_ComputeSnapLift(
+		*TargetGrid, Origin, EffSize, HoverRotationSteps, &HeightSource);
 	const FVector SnappedLocation = PlaceLocation + FVector(0.0f, 0.0f, SnapLift);
 	const float BaseSurfaceZ = SnappedLocation.Z + NewFoundation->GetThickness();
 
@@ -1011,10 +1014,10 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 		SnappedLocation, FRotator(0.0f, 90.0f * HoverRotationSteps, 0.0f));
 	NewFoundation->OJJ_NotifyPlacedOnGrid(TargetGrid);
 
-	// N 기록(결정 ⑤ 보강) — 단 분포 실측으로 상한 재검토 근거 축적.
-	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s Foundation 배치 성공 (%dx%d, R=%d, N=%d단)"),
+	// N + 높이 출처 기록(결정 ⑤·㉷ 보강) — 단 분포/상속 정책 동작 실측.
+	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s Foundation 배치 성공 (%dx%d, R=%d, N=%d단, %s)"),
 		*Origin.ToString(), EffSize.X, EffSize.Y, HoverRotationSteps,
-		FMath::RoundToInt(SnapLift / AOJJ_Grid::OJJ_FoundationSnapStep));
+		FMath::RoundToInt(SnapLift / AOJJ_Grid::OJJ_FoundationSnapStep), *HeightSource);
 
 	// F2-4 후속 ①: 풋프린트에 깔린 Pawn을 상면으로 올려태움(F3-2부터 셀별 SurfaceZ — 등록 데이터를
 	// 그리드에서 읽음). 후속 ② 캐시도 리셋 — 셀은 그대로여도 비주얼 Z가 상면으로 바뀌므로 강제 재적재.

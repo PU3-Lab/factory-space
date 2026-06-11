@@ -89,9 +89,29 @@ void AOJJ_Foundation::UpdateSlabVisual()
 }
 
 float AOJJ_Foundation::OJJ_ComputeSnapLift(const AOJJ_Grid& Grid, FIntPoint Origin, FIntPoint EffSize,
-	int32 RotationSteps) const
+	int32 RotationSteps, FString* OutHeightSource) const
 {
-	// 평탄: 풋프린트 전체 max GroundZ 기준(F2-4 기존 동작 그대로). 회전은 평탄에 무의미 — 미사용.
+	// F3.5 ①: 이웃 상속 — 평면 확장이 기본(지형 클리핑 허용). 상속값은 이웃 SurfaceZ =
+	// 평면+Thickness+N×100 이라 자동으로 단 격자 위 — 리프트(평면 기준)로 환산만 하면 됨.
+	// stale 이웃은 그리드 조회가 weak 검증으로 거름(유령 단 차단).
+	// 단 격자 원점(평면+Thickness)은 Thickness를 아는 클래스가 산출해 전달 — 그리드는 기계적 필터만.
+	const float SnapGridOriginZ = Grid.GetActorLocation().Z + Thickness;
+	float NeighborZ = 0.0f;
+	int32 ContactCells = 0;
+	if (Grid.OJJ_GetNeighborFoundationSurfaceZ(Origin, EffSize, SnapGridOriginZ, NeighborZ, ContactCells))
+	{
+		if (OutHeightSource)
+		{
+			*OutHeightSource = FString::Printf(TEXT("상속(이웃 접촉 %d셀)"), ContactCells);
+		}
+		return NeighborZ - Thickness - Grid.GetActorLocation().Z;
+	}
+
+	// ② 고립 첫 장 = 씨앗: 지형 스냅(F2-4 산식 — 풋프린트 전체 max GroundZ). 회전은 평탄에 무의미.
+	if (OutHeightSource)
+	{
+		*OutHeightSource = TEXT("씨앗(지형)");
+	}
 	return Grid.OJJ_ComputeFoundationSnapLift(Origin, EffSize, Thickness);
 }
 

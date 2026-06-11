@@ -1342,6 +1342,89 @@ bool AOJJ_Grid::RemoveFoundation(AActor* Foundation, FString& OutReason)
 	return true;
 }
 
+// 지배 SurfaceZ 선출(결정 ㉷): 접촉 셀 수 최다, 동률이면 낮은 단(아래에서 위로 짓는 흐름).
+static bool OJJ_PickDominantSurfaceZ(const TArray<TPair<float, int32>>& Groups, float& OutSurfaceZ, int32& OutContactCells)
+{
+	OutSurfaceZ = 0.0f;
+	OutContactCells = 0;
+	for (const TPair<float, int32>& Group : Groups)
+	{
+		if (Group.Value > OutContactCells
+			|| (Group.Value == OutContactCells && OutContactCells > 0 && Group.Key < OutSurfaceZ))
+		{
+			OutSurfaceZ = Group.Key;
+			OutContactCells = Group.Value;
+		}
+	}
+	return OutContactCells > 0;
+}
+
+void AOJJ_Grid::OJJ_AccumulateFoundationSurfaceZ(FIntPoint RectOrigin, FIntPoint RectSize,
+	float SnapGridOriginZ, TArray<TPair<float, int32>>& InOutGroups) const
+{
+	// 그리드 교집합만 순회(int64 끝좌표 — CanPlaceFoundation 거대 입력 방어 미러). stale 셀은
+	// GetFoundationSurfaceZ가 weak IsValid로 false — 파괴된 Foundation의 유령 단 상속 차단(F3.5 계약).
+	const int32 IterMinX = FMath::Max(RectOrigin.X, 0);
+	const int32 IterMinY = FMath::Max(RectOrigin.Y, 0);
+	const int32 IterEndX = (int32)FMath::Min<int64>((int64)RectOrigin.X + RectSize.X, (int64)GridSize.X);
+	const int32 IterEndY = (int32)FMath::Min<int64>((int64)RectOrigin.Y + RectSize.Y, (int64)GridSize.Y);
+	for (int32 X = IterMinX; X < IterEndX; ++X)
+	{
+		for (int32 Y = IterMinY; Y < IterEndY; ++Y)
+		{
+			float SurfaceZ = 0.0f;
+			if (!GetFoundationSurfaceZ(FIntPoint(X, Y), SurfaceZ))
+			{
+				continue;
+			}
+			// 비격자 단 제외(Codex F3.5 C): 램프 중간 행(행당 100/(R−1)uu) 등 단 격자 밖 SurfaceZ를
+			// 상속하면 평판이 비정수 단에 떠서 단 격자 전제(걸침 균일·㉲ 불변식)가 무너진다.
+			// 램프 양 끝 행은 격자 위라 정상 후보로 남음(엣지 확장 허용 — 의도).
+			const float StepRemainder = FMath::Fmod(SurfaceZ - SnapGridOriginZ, OJJ_FoundationSnapStep);
+			if (!FMath::IsNearlyZero(StepRemainder, 0.1f)
+				&& !FMath::IsNearlyEqual(FMath::Abs(StepRemainder), OJJ_FoundationSnapStep, 0.1f))
+			{
+				continue;
+			}
+			bool bGrouped = false;
+			for (TPair<float, int32>& Group : InOutGroups)
+			{
+				// 같은 단은 상속/씨앗 모두 단 격자 산출이라 사실상 동일 float — IsNearlyEqual은 여유 방어.
+				if (FMath::IsNearlyEqual(Group.Key, SurfaceZ))
+				{
+					++Group.Value;
+					bGrouped = true;
+					break;
+				}
+			}
+			if (!bGrouped)
+			{
+				InOutGroups.Emplace(SurfaceZ, 1);
+			}
+		}
+	}
+}
+
+bool AOJJ_Grid::OJJ_GetDominantFoundationSurfaceZInRect(FIntPoint RectOrigin, FIntPoint RectSize,
+	float SnapGridOriginZ, float& OutSurfaceZ, int32& OutContactCells) const
+{
+	TArray<TPair<float, int32>> Groups;
+	OJJ_AccumulateFoundationSurfaceZ(RectOrigin, RectSize, SnapGridOriginZ, Groups);
+	return OJJ_PickDominantSurfaceZ(Groups, OutSurfaceZ, OutContactCells);
+}
+
+bool AOJJ_Grid::OJJ_GetNeighborFoundationSurfaceZ(FIntPoint Origin, FIntPoint Size,
+	float SnapGridOriginZ, float& OutSurfaceZ, int32& OutContactCells) const
+{
+	// 면접촉 둘레 4변(결정 ㉶ — 대각 모서리 셀 미포함): 서/동 세로 라인 + 남/북 가로 라인 합산 집계.
+	TArray<TPair<float, int32>> Groups;
+	OJJ_AccumulateFoundationSurfaceZ(FIntPoint(Origin.X - 1, Origin.Y), FIntPoint(1, Size.Y), SnapGridOriginZ, Groups);
+	OJJ_AccumulateFoundationSurfaceZ(FIntPoint(Origin.X + Size.X, Origin.Y), FIntPoint(1, Size.Y), SnapGridOriginZ, Groups);
+	OJJ_AccumulateFoundationSurfaceZ(FIntPoint(Origin.X, Origin.Y - 1), FIntPoint(Size.X, 1), SnapGridOriginZ, Groups);
+	OJJ_AccumulateFoundationSurfaceZ(FIntPoint(Origin.X, Origin.Y + Size.Y), FIntPoint(Size.X, 1), SnapGridOriginZ, Groups);
+	return OJJ_PickDominantSurfaceZ(Groups, OutSurfaceZ, OutContactCells);
+}
+
 int32 AOJJ_Grid::OJJ_CountOccupiedFoundationCells(AActor* Foundation) const
 {
 	// stale 점유는 IsCellOccupied가 weak IsValid로 걸러 비차단(점유 레이어와 동일 의미).

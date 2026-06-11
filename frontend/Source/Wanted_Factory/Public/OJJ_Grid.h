@@ -424,6 +424,12 @@ private:
 	bool OJJ_TryPlaceFoundationInternal(AActor* Foundation, FIntPoint Origin, FIntPoint Size,
 		TFunctionRef<float(FIntPoint Cell)> SurfaceZForCell, FString& OutReason);
 
+	// 영역 셀들의 Foundation SurfaceZ 집계(IsNearlyEqual 그룹 누산) — 지배 SurfaceZ 조회 2종의 공용
+	// 누산기. SnapGridOriginZ 기준 단 격자(±0.1uu) 위 후보만 누산(램프 중간 행 제외 — Codex F3.5 C).
+	// 그리드 교집합만 순회(int64 끝좌표 — 거대 입력 방어 미러).
+	void OJJ_AccumulateFoundationSurfaceZ(FIntPoint RectOrigin, FIntPoint RectSize,
+		float SnapGridOriginZ, TArray<TPair<float, int32>>& InOutGroups) const;
+
 	// 양방향 맵에 머신 등록. 위치 갱신은 호출자가 별도 처리. 모든 write 검증을 포함.
 	// RotationSteps는 점유 footprint 계산(CanPlace/CalculateFootprint)에 전달(기본 0).
 	bool RegisterMachineInternal(AMachineBase* Machine, FIntPoint Origin, FString& OutReason, int32 RotationSteps = 0);
@@ -610,6 +616,20 @@ public:
 	// Codex F1-b' #4): RemoveFoundation(클릭 거부)과 철거 호버(UpdateDemolishHover)가 같은 식을 공유해
 	// "호버 빨강인데 클릭 거부" 불일치 차단. 미등록 Foundation이면 INDEX_NONE.
 	int32 OJJ_CountOccupiedFoundationCells(AActor* Foundation) const;
+
+	// 사각 영역 내 셀들의 지배 Foundation SurfaceZ(F3.5) — 접촉 셀 수 최다, 동률이면 낮은 단(결정 ㉷).
+	// stale Foundation은 GetFoundationSurfaceZ의 weak IsValid가 걸러 비후보(유령 단 상속 차단).
+	// SnapGridOriginZ(호출 클래스가 평면+Thickness로 산출 — 그리드는 Thickness를 모름): 이 원점 기준
+	// 단 간격(100) 정수배가 아닌 SurfaceZ(램프 중간 행 등)는 집계에서 제외 — 비격자 단 상속 차단
+	// (Codex F3.5 C). off-grid 셀 스킵, 후보 없으면 false. 램프 엣지 스냅(F3.5 ③)이 직접 소비.
+	bool OJJ_GetDominantFoundationSurfaceZInRect(FIntPoint RectOrigin, FIntPoint RectSize,
+		float SnapGridOriginZ, float& OutSurfaceZ, int32& OutContactCells) const;
+
+	// 풋프린트 둘레(면접촉 4방 변 — 결정 ㉶, 대각 모서리 제외)의 지배 이웃 SurfaceZ — F3.5 ① 높이
+	// 상속(평면 확장)용. 4변 라인을 합산 집계 후 ㉷ 규칙으로 선출. 비격자 단 필터는 위와 동일.
+	// 이웃 없으면 false(씨앗 경로).
+	bool OJJ_GetNeighborFoundationSurfaceZ(FIntPoint Origin, FIntPoint Size,
+		float SnapGridOriginZ, float& OutSurfaceZ, int32& OutContactCells) const;
 
 	// Foundation 풋프린트 중심 월드 좌표(F1-b 결정점 ② — 그리드는 좌표만, 액터 이동은 호출자).
 	// 머신 GetMachinePlacementLocation과 동형 수식(lower-left 셀 중심 + (Size-1)/2)이되 메시 AABB Z 보정은
