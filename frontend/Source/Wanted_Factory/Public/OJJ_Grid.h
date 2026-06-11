@@ -276,6 +276,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Terrain")
 	TObjectPtr<UInstancedStaticMeshComponent> BlockedCellISM;
 
+	// Foundation 커버 셀(초록 — constructible 기준, F3.5') per-cell 비주얼 ISM. 오버레이 색의 의미를
+	// 분류(지형)가 아니라 건설 가능성으로: blocked 셀이라도 커버되면 초록(깔면 초록, 철거하면 빨강 복귀).
+	// 머티리얼은 BuildableCellMID 공유(의미 동일 — 같은 초록).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Terrain")
+	TObjectPtr<UInstancedStaticMeshComponent> CoveredCellISM;
+
 	// 물(파랑) 셀 per-cell 비주얼 ISM — water 분류만. ShowBlocked 패턴 미러. 머티리얼은 RefreshGridVisual에서 lazy MID(파랑).
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Water")
 	TObjectPtr<UInstancedStaticMeshComponent> WaterCellISM;
@@ -321,6 +327,13 @@ protected:
 	// 베이크 완료 여부 — "불가 0개"와 "아직 베이크 안 됨"을 구분(진단/콘솔 리포트용).
 	UPROPERTY(Transient)
 	bool bBuildableBaked = false;
+
+	// 오버레이 부분 갱신 장부(F3.5' — 커버 전환을 90k 전체 리빌드 없이 셀 단위로): 셀→인스턴스 인덱스.
+	// 인스턴스는 제거 대신 zero-scale 숨김(UpdateInstanceTransform — 인덱스 불변)이라 RemoveInstance의
+	// 인덱스 시프트 시맨틱(Codex F3.5' ①) 의존이 없음. 빌드모드 오버레이(RefreshGridVisual의
+	// bVisualizationActive 경로)가 재구축, ShowBlocked 디버그는 미사용(원 분류 표시).
+	TMap<FIntPoint, int32> BlockedCellToInstance;
+	TMap<FIntPoint, int32> CoveredCellToInstance;
 
 	// 빌드모드 시각화 활성 상태 — bForceShowBlocked 토글이 빌드모드 오버레이를 끄지 않도록 참조.
 	UPROPERTY(Transient)
@@ -429,6 +442,24 @@ private:
 	// 그리드 교집합만 순회(int64 끝좌표 — 거대 입력 방어 미러).
 	void OJJ_AccumulateFoundationSurfaceZ(FIntPoint RectOrigin, FIntPoint RectSize,
 		float SnapGridOriginZ, TArray<TPair<float, int32>>& InOutGroups) const;
+
+	// 오버레이 셀 트랜스폼(기준면 +3 — RefreshGridVisual과 부분 갱신이 공유하는 단일원).
+	FTransform OJJ_MakeOverlayCellTransform(FIntPoint Cell, bool bGroundZValid) const;
+
+	// 장부 동반 표시/숨김(F3.5' 부분 갱신). 숨김 = zero-scale 트랜스폼(UpdateInstanceTransform, O(1)) —
+	// 인덱스가 불변이라 RemoveInstance의 시프트/스왑 시맨틱에 비의존(Codex F3.5' ① 해소). 표시는
+	// 장부에 있으면 트랜스폼 복원, 없으면 append(인덱스 안정). 숨김 잔존분은 다음 RefreshGridVisual의
+	// ClearInstances가 정리(세션 내 상한 = blocked 셀 수).
+	void OJJ_ShowOverlayInstance(UInstancedStaticMeshComponent* ISM, TMap<FIntPoint, int32>& CellToInstance,
+		FIntPoint Cell, bool bGroundZValid);
+	void OJJ_HideOverlayInstance(UInstancedStaticMeshComponent* ISM,
+		const TMap<FIntPoint, int32>& CellToInstance, FIntPoint Cell);
+
+	// Foundation 커버 변경의 오버레이 부분 갱신(F3.5' — 이벤트 구동, 전체 RefreshGridVisual 금지).
+	// bCovered=true: 커버된 blocked 셀 빨강→초록(슬래브 상면 Z). false: 초록→빨강(지형 Z) 복귀.
+	// 커버 상태 반영 "후" 호출 전제(Z 단일원이 올바른 면을 읽도록). 빌드모드 오버레이 비활성이면 no-op
+	// (다음 RefreshGridVisual 전체 재적재가 정합 복원).
+	void OJJ_OnFoundationCoverageVisualChanged(const TArray<FIntPoint>& Cells, bool bCovered);
 
 	// 양방향 맵에 머신 등록. 위치 갱신은 호출자가 별도 처리. 모든 write 검증을 포함.
 	// RotationSteps는 점유 footprint 계산(CanPlace/CalculateFootprint)에 전달(기본 0).

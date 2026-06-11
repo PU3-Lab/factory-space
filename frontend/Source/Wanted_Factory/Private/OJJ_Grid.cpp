@@ -453,6 +453,21 @@ AOJJ_Grid::AOJJ_Grid()
 		BlockedCellISM->SetMaterial(0, InvalidHoverMat.Object);
 	}
 
+	// Foundation 커버 셀(초록 — constructible 기준, F3.5') per-cell 비주얼. 머티리얼은 EnsureTileMIDs에서
+	// BuildableCellMID 공유(의미 동일 초록 — MID 1종 추가 없이).
+	CoveredCellISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("CoveredCellISM"));
+	CoveredCellISM->SetupAttachment(RootComponent);
+	CoveredCellISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CoveredCellISM->SetCastShadow(false);
+	if (PlaneMesh.Succeeded())
+	{
+		CoveredCellISM->SetStaticMesh(PlaneMesh.Object);
+	}
+	if (ValidHoverMat.Succeeded())
+	{
+		CoveredCellISM->SetMaterial(0, ValidHoverMat.Object);
+	}
+
 	// 캐릭터 점유 셀(노랑) per-cell 비주얼(F2-4 후속 ②) — 빌드모드 중 BuildController가 구동. 시각 전용.
 	CharacterCellISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("CharacterCellISM"));
 	CharacterCellISM->SetupAttachment(RootComponent);
@@ -1064,9 +1079,13 @@ void AOJJ_Grid::RefreshGridVisual()
 	OJJ_EnsureTileMIDs();
 
 	// 클리어 후 재적재 — 빌드모드 진입/퇴장 반복에도 인스턴스 중복·잔존 방지(단일 진실원).
+	// 부분 갱신 장부(F3.5')도 함께 리셋 — bVisualizationActive 경로가 재구축, 그 외엔 빈 장부 = 이벤트 no-op.
 	if (BuildableCellISM) { BuildableCellISM->ClearInstances(); }
 	if (BlockedCellISM) { BlockedCellISM->ClearInstances(); }
 	if (WaterCellISM) { WaterCellISM->ClearInstances(); }
+	if (CoveredCellISM) { CoveredCellISM->ClearInstances(); }
+	BlockedCellToInstance.Reset();
+	CoveredCellToInstance.Reset();
 
 	// 셀 중심 → 인스턴스 트랜스폼. 기준면 +3(호버 프리뷰 +2보다 위 — z-fighting 방지).
 	// F1-c: 기준면 = 셀 비주얼 Z(지형 GroundZ/Foundation 상면 추종) — 굴곡 지형 묻힘 해결.
@@ -1074,20 +1093,21 @@ void AOJJ_Grid::RefreshGridVisual()
 	const bool bGroundZValid = OJJ_HasValidGroundZData();
 	auto MakeCellXform = [this, bGroundZValid](const FIntPoint& Cell) -> FTransform
 	{
-		const FVector C = GridToWorld(Cell);
-		return FTransform(
-			FRotator::ZeroRotator,
-			FVector(C.X, C.Y, OJJ_GetCellVisualBaseZInternal(Cell, bGroundZValid) + 3.0f),
-			FVector(CellSize / 100.0f, CellSize / 100.0f, 1.0f));
+		return OJJ_MakeOverlayCellTransform(Cell, bGroundZValid);
 	};
 
 	if (bVisualizationActive)
 	{
 		// 빌드모드: 전 셀을 water(파랑)/blocked(빨강)/가능(초록)으로 채움. void는 모두 제외 → 그리드가 바닥 모양만 따라 보임.
 		// 우선순위 water > blocked: water도 건설 불가지만 파랑으로 구분 표시(분류 우선순위와 일치).
+		// F3.5': 커버된 blocked는 초록(CoveredCellISM — constructible 기준, 색=의미). blocked/covered는
+		// 부분 갱신 대상이라 장부(셀↔인스턴스)를 적재 순서로 병행 구축.
 		TArray<FTransform> GreenXforms;
 		TArray<FTransform> RedXforms;
 		TArray<FTransform> BlueXforms;
+		TArray<FTransform> CoveredXforms;
+		TArray<FIntPoint> BlockedCellsInOrder;
+		TArray<FIntPoint> CoveredCellsInOrder;
 		for (int32 X = 0; X < GridSize.X; ++X)
 		{
 			for (int32 Y = 0; Y < GridSize.Y; ++Y)
@@ -1095,13 +1115,29 @@ void AOJJ_Grid::RefreshGridVisual()
 				const FIntPoint Cell(X, Y);
 				if (VoidCells.Contains(Cell)) { continue; }                  // void → 아무것도 안 그림
 				if (WaterCells.Contains(Cell)) { BlueXforms.Add(MakeCellXform(Cell)); }
-				else if (UnbuildableCells.Contains(Cell)) { RedXforms.Add(MakeCellXform(Cell)); }
+				else if (UnbuildableCells.Contains(Cell))
+				{
+					if (IsCellOnFoundation(Cell))
+					{
+						CoveredXforms.Add(MakeCellXform(Cell));
+						CoveredCellsInOrder.Add(Cell);
+					}
+					else
+					{
+						RedXforms.Add(MakeCellXform(Cell));
+						BlockedCellsInOrder.Add(Cell);
+					}
+				}
 				else { GreenXforms.Add(MakeCellXform(Cell)); }
 			}
 		}
 		if (BuildableCellISM && GreenXforms.Num() > 0) { BuildableCellISM->AddInstances(GreenXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
 		if (BlockedCellISM && RedXforms.Num() > 0) { BlockedCellISM->AddInstances(RedXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
 		if (WaterCellISM && BlueXforms.Num() > 0) { WaterCellISM->AddInstances(BlueXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
+		if (CoveredCellISM && CoveredXforms.Num() > 0) { CoveredCellISM->AddInstances(CoveredXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
+		// 배치 적재는 배열 순서 = 인스턴스 인덱스 — 적재 순서 배열에서 장부 구축(이후 인덱스 불변 — 숨김 방식).
+		for (int32 Idx = 0; Idx < BlockedCellsInOrder.Num(); ++Idx) { BlockedCellToInstance.Add(BlockedCellsInOrder[Idx], Idx); }
+		for (int32 Idx = 0; Idx < CoveredCellsInOrder.Num(); ++Idx) { CoveredCellToInstance.Add(CoveredCellsInOrder[Idx], Idx); }
 	}
 	else
 	{
@@ -1117,6 +1153,84 @@ void AOJJ_Grid::RefreshGridVisual()
 			TArray<FTransform> BlueXforms;
 			for (const FIntPoint& Cell : WaterCells) { BlueXforms.Add(MakeCellXform(Cell)); }
 			if (WaterCellISM && BlueXforms.Num() > 0) { WaterCellISM->AddInstances(BlueXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
+		}
+	}
+}
+
+FTransform AOJJ_Grid::OJJ_MakeOverlayCellTransform(FIntPoint Cell, bool bGroundZValid) const
+{
+	const FVector C = GridToWorld(Cell);
+	return FTransform(
+		FRotator::ZeroRotator,
+		FVector(C.X, C.Y, OJJ_GetCellVisualBaseZInternal(Cell, bGroundZValid) + 3.0f),
+		FVector(CellSize / 100.0f, CellSize / 100.0f, 1.0f));
+}
+
+void AOJJ_Grid::OJJ_ShowOverlayInstance(UInstancedStaticMeshComponent* ISM, TMap<FIntPoint, int32>& CellToInstance,
+	FIntPoint Cell, bool bGroundZValid)
+{
+	if (!ISM)
+	{
+		return;
+	}
+	const FTransform Xform = OJJ_MakeOverlayCellTransform(Cell, bGroundZValid);
+	if (const int32* FoundIdx = CellToInstance.Find(Cell))
+	{
+		// 숨김(zero-scale) 인스턴스 재활용 — 인덱스 불변이라 장부 무수정, 트랜스폼만 복원.
+		const bool bUpdated = ISM->UpdateInstanceTransform(*FoundIdx, Xform, /*bWorldSpace=*/true, /*bMarkRenderStateDirty=*/true);
+		ensureMsgf(bUpdated, TEXT("[Grid] 오버레이 장부 어긋남(show): idx %d / 인스턴스 %d개"), *FoundIdx, ISM->GetInstanceCount());
+		return;
+	}
+	const int32 InstanceIdx = ISM->AddInstance(Xform, /*bWorldSpace=*/true);
+	CellToInstance.Add(Cell, InstanceIdx);
+	ensureMsgf(ISM->GetInstanceCount() == CellToInstance.Num(),
+		TEXT("[Grid] 오버레이 장부 어긋남(add): 인스턴스 %d != 장부 %d"), ISM->GetInstanceCount(), CellToInstance.Num());
+}
+
+void AOJJ_Grid::OJJ_HideOverlayInstance(UInstancedStaticMeshComponent* ISM,
+	const TMap<FIntPoint, int32>& CellToInstance, FIntPoint Cell)
+{
+	const int32* FoundIdx = CellToInstance.Find(Cell);
+	if (!ISM || !FoundIdx)
+	{
+		return; // 장부 없음 = 오버레이 미적재 상태(디버그 모드 등) — no-op.
+	}
+	// 제거 대신 zero-scale 숨김 — RemoveInstance의 인덱스 시프트 시맨틱(Codex F3.5' ①)에 비의존.
+	// 장부 엔트리는 유지(재커버 시 OJJ_ShowOverlayInstance가 재활용), 잔존분은 ClearInstances가 정리.
+	FTransform Hidden = FTransform::Identity;
+	Hidden.SetScale3D(FVector::ZeroVector);
+	const bool bUpdated = ISM->UpdateInstanceTransform(*FoundIdx, Hidden, /*bWorldSpace=*/true, /*bMarkRenderStateDirty=*/true);
+	ensureMsgf(bUpdated, TEXT("[Grid] 오버레이 장부 어긋남(hide): idx %d / 인스턴스 %d개"), *FoundIdx, ISM->GetInstanceCount());
+}
+
+void AOJJ_Grid::OJJ_OnFoundationCoverageVisualChanged(const TArray<FIntPoint>& Cells, bool bCovered)
+{
+	// F3.5' 부분 갱신: 빌드모드 오버레이가 채워진 상태에서만(밖이면 장부 비어 사실상 no-op이지만
+	// 명시 가드 — ShowBlocked 디버그는 원 분류 표시 유지 의도). 커버 가능 셀은 blocked뿐:
+	// water/void는 CanPlaceFoundation이 거부, buildable은 이미 초록(전환 불요).
+	if (!bVisualizationActive)
+	{
+		return;
+	}
+
+	const bool bGroundZValid = OJJ_HasValidGroundZData();
+	for (const FIntPoint& Cell : Cells)
+	{
+		if (!UnbuildableCells.Contains(Cell))
+		{
+			continue;
+		}
+		if (bCovered)
+		{
+			// 커버 등록 "후" 호출 전제 — 트랜스폼 Z가 슬래브 상면(OJJ_GetCellVisualBaseZ 단일원)을 읽음.
+			OJJ_HideOverlayInstance(BlockedCellISM, BlockedCellToInstance, Cell);
+			OJJ_ShowOverlayInstance(CoveredCellISM, CoveredCellToInstance, Cell, bGroundZValid);
+		}
+		else
+		{
+			// 커버 해제 "후" 호출 전제 — Z가 지형으로 복귀, 원 분류(빨강) 복원.
+			OJJ_HideOverlayInstance(CoveredCellISM, CoveredCellToInstance, Cell);
+			OJJ_ShowOverlayInstance(BlockedCellISM, BlockedCellToInstance, Cell, bGroundZValid);
 		}
 	}
 }
@@ -1294,6 +1408,9 @@ bool AOJJ_Grid::OJJ_TryPlaceFoundationInternal(AActor* Foundation, FIntPoint Ori
 			Cells.Add(Cell);
 		}
 	}
+	// 오버레이 부분 갱신(F3.5' — 커버 등록 완료 후라 Z 단일원이 슬래브 상면을 읽음). MoveTemp 전에 호출.
+	OJJ_OnFoundationCoverageVisualChanged(Cells, /*bCovered=*/true);
+
 	OJJ_FoundationToCells.Add(Foundation, MoveTemp(Cells));
 
 	OutReason.Reset();
@@ -1328,7 +1445,9 @@ bool AOJJ_Grid::RemoveFoundation(AActor* Foundation, FString& OutReason)
 	}
 
 	// 양방향 대칭 해제. forward 엔트리는 본인 소유일 때만 제거(방어 — 겹침 금지라 정상 흐름에선 항상 본인).
-	for (const FIntPoint& Cell : *Cells)
+	// 셀 목록은 맵 제거 전에 복사 — 오버레이 복원(아래)이 커버 해제 "후" Z(지형)를 읽어야 해서 순서 고정.
+	const TArray<FIntPoint> RemovedCells = *Cells;
+	for (const FIntPoint& Cell : RemovedCells)
 	{
 		const FOJJFoundationCellInfo* Found = FoundationCells.Find(Cell);
 		if (Found && Found->Foundation == Foundation)
@@ -1337,6 +1456,9 @@ bool AOJJ_Grid::RemoveFoundation(AActor* Foundation, FString& OutReason)
 		}
 	}
 	OJJ_FoundationToCells.Remove(Foundation);
+
+	// 오버레이 부분 갱신(F3.5') — 원 분류(빨강) 복원, Z는 지형 기준으로 복귀.
+	OJJ_OnFoundationCoverageVisualChanged(RemovedCells, /*bCovered=*/false);
 
 	OutReason.Reset();
 	return true;
@@ -1689,6 +1811,8 @@ void AOJJ_Grid::OJJ_UpdateCharacterCellOverlay(const TArray<FIntPoint>& Cells)
 void AOJJ_Grid::SweepStaleFoundationEntries()
 {
 	// SweepStaleEntries 미러(커버리지판). forward 셀은 weak 무효일 때만 제거 — 점유 sweep과 동일 방어.
+	// 제거 셀은 모아서 오버레이 복원(Codex F3.5' ③) — 외부 파괴된 Foundation의 초록 잔존 차단.
+	TArray<FIntPoint> StaleCells;
 	for (auto It = OJJ_FoundationToCells.CreateIterator(); It; ++It)
 	{
 		if (!It.Key().IsValid())
@@ -1699,10 +1823,16 @@ void AOJJ_Grid::SweepStaleFoundationEntries()
 				if (Found && !Found->Foundation.IsValid())
 				{
 					FoundationCells.Remove(Cell);
+					StaleCells.Add(Cell);
 				}
 			}
 			It.RemoveCurrent();
 		}
+	}
+	if (StaleCells.Num() > 0)
+	{
+		// 커버 해제 후 호출(정상 철거와 동일 순서) — 원 분류(빨강) 복원, Z는 지형 복귀.
+		OJJ_OnFoundationCoverageVisualChanged(StaleCells, /*bCovered=*/false);
 	}
 }
 
@@ -2821,6 +2951,11 @@ void AOJJ_Grid::OJJ_EnsureTileMIDs()
 	// 물은 별도 색(파랑)을 OverlayWaterColor로 덮어쓰므로 어느 베이스든 무방 — Valid 베이스 재사용.
 	EnsureMID(WaterCellISM, WaterCellMID, HoverValidBaseMaterial);
 	EnsureMID(CharacterCellISM, CharacterCellMID, HoverValidBaseMaterial);
+	// 커버 셀(F3.5')은 buildable과 의미 동일(초록) — MID 공유(멱등 SetMaterial).
+	if (CoveredCellISM && BuildableCellMID)
+	{
+		CoveredCellISM->SetMaterial(0, BuildableCellMID);
+	}
 
 	// 생성 직후 + 매 호출 현재 값 재적용(멱등) → PIE에서 프로퍼티 바꾸면 다음 호버/갱신에 반영.
 	OJJ_ApplyTileMIDParams();
