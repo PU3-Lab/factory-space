@@ -11,6 +11,7 @@
 #include "FactoryManagerSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "LandscapeProxy.h"
 #include "MachineBase.h"
 #include "OJJ_Grid.h"
 #include "Conveyor.h"
@@ -498,7 +499,11 @@ void AOJJ_BuildController::UpdateMouseHover()
 	const bool bHitMachine = HitActor && HitActor->IsA<AMachineBase>();
 	// F1-c: Foundation 슬래브 상면(Visibility Block)도 유효 호버 표면 — 없으면 Foundation 위 머신 배치 불가.
 	const bool bHitFoundation = HitActor && HitActor->IsA<AOJJ_Foundation>();
-	if (!bHitFloor && !bHitMachine && !bHitFoundation)
+	// F2-1' 사각지대 해소: 평면 위(+델타) 지형은 Landscape가 커서 플레인보다 먼저 히트 — buildable 셀인데
+	// 호버 사망. 셀 매핑은 WorldToGrid가 XY만 쓰므로(Z 무관) 플로어 히트와 동일하게 통과시킨다.
+	// 배치 가능 여부는 기존처럼 CanPlace 경로가 판정(게이트는 표면 식별만).
+	const bool bHitLandscape = HitActor && HitActor->IsA<ALandscapeProxy>();
+	if (!bHitFloor && !bHitMachine && !bHitFoundation && !bHitLandscape)
 	{
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
@@ -893,7 +898,9 @@ void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHi
 	const bool bHitMachine = HitActor && HitActor->IsA<AMachineBase>();
 	// F1-c: 기존 슬래브 위 호버도 유효(겹침은 CanPlaceFoundation이 빨강으로 — 인접 확장 배치 UX).
 	const bool bHitFoundation = HitActor && HitActor->IsA<AOJJ_Foundation>();
-	if (!bHitFloor && !bHitMachine && !bHitFoundation)
+	// F2-1' 사각지대 해소: 평면 위(+델타) 지형의 Landscape 선히트 허용 — 머신 게이트와 동일 사유/처리.
+	const bool bHitLandscape = HitActor && HitActor->IsA<ALandscapeProxy>();
+	if (!bHitFloor && !bHitMachine && !bHitFoundation && !bHitLandscape)
 	{
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
