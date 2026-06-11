@@ -737,8 +737,9 @@ void AOJJ_Grid::BakeBuildableCells(bool bVerbose, bool bWriteCache)
 
 			bool bAnyHit = false;
 			float WorstAbsDelta = 0.0f;
-			float WorstSignedDelta = 0.0f;                          // verbose/groundZ — 최악점의 부호 델타
+			float WorstSignedDelta = 0.0f;                          // verbose/분류 — 최악점의 부호 델타
 			float WorstHitZ = 0.0f;                                 // verbose
+			float HighestSignedDelta = -TNumericLimits<float>::Max(); // groundZ 대표값 — 5점 중 최고점(F2-1 결정 ①)
 			float LowestSignedDelta = TNumericLimits<float>::Max(); // water 판정 — 5점 중 최저(가장 깊은) 평면대비 델타
 			for (const FVector2D& Off : SampleOffsets)
 			{
@@ -755,6 +756,7 @@ void AOJJ_Grid::BakeBuildableCells(bool bVerbose, bool bWriteCache)
 						WorstSignedDelta = Delta;
 						WorstHitZ = Hit.ImpactPoint.Z;
 					}
+					HighestSignedDelta = FMath::Max(HighestSignedDelta, Delta);
 					LowestSignedDelta = FMath::Min(LowestSignedDelta, Delta);
 				}
 			}
@@ -773,8 +775,10 @@ void AOJJ_Grid::BakeBuildableCells(bool bVerbose, bool bWriteCache)
 			WouldBlockTmp[Idx] = bWouldBlock ? 1 : 0;
 			if (bBakeGroundHeights)
 			{
-				// 평면 대비 최대편차(uu) 양자화. 절대높이 = ActorLocation.Z + 값. 평탄셀=0.
-				GroundZTmp[Idx] = (int16)FMath::Clamp(FMath::RoundToInt(WorstSignedDelta), -32768, 32767);
+				// 셀 대표높이 = 5점 최고점(F2-1 결정 ① — 직배치가 메시 위에 안착, 묻힘 0). 분류(blocked)는
+				// 계속 최악점(|델타| 최대) — 구덩이/절벽 셀이 buildable로 풀리지 않게 분리 유지.
+				// 절대높이 = ActorLocation.Z + 값. 평탄셀=0, 미히트(void)=0.
+				GroundZTmp[Idx] = (int16)FMath::Clamp(FMath::RoundToInt(bAnyHit ? HighestSignedDelta : 0.0f), -32768, 32767);
 			}
 
 			// verbose: 평탄 바닥(델타≈0) 외 셀만 출력 — 5점 중 최악/최저값 기준.
@@ -783,9 +787,9 @@ void AOJJ_Grid::BakeBuildableCells(bool bVerbose, bool bWriteCache)
 				const TCHAR* Cls = !bAnyHit ? TEXT("void")
 					: (bWater ? TEXT("WATER") : (bWouldBlock ? TEXT("BLOCKED") : TEXT("buildable")));
 				UE_LOG(LogTemp, Log,
-					TEXT("[Grid]   cell(%d,%d) anyHit=%d worstZ=%.1f worstDelta=%+.1f lowDelta=%+.1f (5pt) -> %s"),
+					TEXT("[Grid]   cell(%d,%d) anyHit=%d worstZ=%.1f worstDelta=%+.1f hiDelta=%+.1f lowDelta=%+.1f (5pt) -> %s"),
 					X, Y, bAnyHit ? 1 : 0, bAnyHit ? WorstHitZ : 0.0f, WorstSignedDelta,
-					bAnyHit ? LowestSignedDelta : 0.0f, Cls);
+					bAnyHit ? HighestSignedDelta : 0.0f, bAnyHit ? LowestSignedDelta : 0.0f, Cls);
 				++VerboseLogged;
 			}
 		}
@@ -869,6 +873,7 @@ void AOJJ_Grid::BakeBuildableCells(bool bVerbose, bool bWriteCache)
 		CacheHeightTolerance = BuildableHeightTolerance;
 		CacheWaterSurfaceZ = WaterSurfaceZ;
 		CacheMinWaterCellCount = MinWaterCellCount;
+		CacheBakeVersion = OJJ_CurrentBakeVersion;
 		CacheTraceStartHeight = BuildableTraceStartHeight;
 		CacheTraceDepth = BuildableTraceDepth;
 		CacheTraceChannel = BuildableTraceChannel;
@@ -946,7 +951,9 @@ void AOJJ_Grid::OJJ_GetBakeCacheSignatureMatch(bool& bOutStructMatch, bool& bOut
 		FMath::IsNearlyEqual(CacheTraceStartHeight, BuildableTraceStartHeight) &&
 		FMath::IsNearlyEqual(CacheTraceDepth, BuildableTraceDepth) &&
 		CacheTraceChannel.GetValue() == BuildableTraceChannel.GetValue() &&
-		bCacheBakeGroundHeights == bBakeGroundHeights;
+		bCacheBakeGroundHeights == bBakeGroundHeights &&
+		// 산식 버전(F2-1 결정 ②): 파라미터 동일해도 베이크 의미가 바뀐 옛 캐시(0/1) 자동 무효화.
+		CacheBakeVersion == OJJ_CurrentBakeVersion;
 }
 
 bool AOJJ_Grid::TryLoadBakeCache()
@@ -1315,18 +1322,10 @@ bool AOJJ_Grid::GetFoundationSurfaceZ(FIntPoint Cell, float& OutSurfaceZ) const
 bool AOJJ_Grid::OJJ_GetUniformSurfaceZ(const TArray<FIntPoint>& Cells, float& OutZ) const
 {
 	// 단일 건설면 규칙(F1-c §7-3): 전 셀이 같은 높이의 면이어야 Z 안착이 유일하게 정해진다.
-	// F1은 지형=평면이라 "전부 비-Foundation"은 항상 균일 → 기존 지형 직배치는 무조건 통과(비파괴).
+	// 지형(비-Foundation)은 균일 취급 유지 — §5-2 직배치는 F3까지 비파괴(셀 간 GroundZ 차로 거부하지 않음).
+	// F2-1(결정 (a)/③)부터 지형 OutZ는 평면 고정이 아니라 풋프린트 GroundZ 최고점(함수 말미) —
+	// 베이크 대표값(셀 최고점)과 한 쌍으로 직배치 묻힘 해소. 뜸은 ≤ tol+셀간차로 유계(충돌 없음).
 	// stale Foundation 셀은 GetFoundationSurfaceZ가 false라 비-Foundation 취급(점유 stale 의미와 일관).
-	//
-	// ⚠️ F2 백로그(지형 직배치 머신/컨베이어 뜨고 묻힘 — F1-c 검증 확인): 비-Foundation 경로는 OutZ를
-	//    그리드 평면 Z로 고정한다(아래). 실제 지형면은 평면 ± GroundZ델타(최대 ±BuildableHeightTolerance,
-	//    현재 50uu)라 액터가 그만큼 뜨거나 묻힌다. Foundation 위(상면=평탄 SurfaceZ)에선 발생하지 않음(검증됨).
-	//    F2 결정안(§5-2 일정과 함께 택일):
-	//      (a) 셀 대표높이 재정의: 분류·Z 기준을 "최악점(|델타|최대)"→"최고점(메시 위로 안착)"으로. 묻힘 제거,
-	//          뜸은 잔존하나 충돌 없음. CellGroundZQuant 양자화/분류 시그니처 영향 → 캐시 재베이크 필요.
-	//      (b) Foundation-only 배치: 지형 직배치를 막고 머신/컨베이어는 평탄 Foundation 상면에만 배치 →
-	//          뜸·묻힘·치직거림 모두 원천 회피(이 검증이 (b) 근거). IsCellConstructible를 Foundation 한정으로.
-	//    당장은 시각 치직거림만 VisualZLift로 완화(시각 전용, 액터 Z 미해결).
 	OutZ = GetActorLocation().Z;
 	if (Cells.Num() == 0)
 	{
@@ -1358,6 +1357,28 @@ bool AOJJ_Grid::OJJ_GetUniformSurfaceZ(const TArray<FIntPoint>& Cells, float& Ou
 	if (bOnFoundation)
 	{
 		OutZ = SurfaceZ;
+		return true;
+	}
+
+	// 지형 경로(F2-1): GroundZ 유효 시 풋프린트 최고 셀에 안착. 무효(미베이크/시그니처 불일치)면 평면
+	// 폴백 = 기존(F1) 동작 그대로(회귀 0). 유효성은 셀 불변이라 1회만 검사(비주얼 경로 호이스팅과 동일).
+	if (OJJ_HasValidGroundZData())
+	{
+		float MaxDelta = -TNumericLimits<float>::Max();
+		bool bAllCellsInGrid = true; // off-grid 셀 포함 풋프린트는 평면 폴백(방어 — 호출자 사전 거부가 정상).
+		for (const FIntPoint& Cell : Cells)
+		{
+			if (!IsValidGridCell(Cell))
+			{
+				bAllCellsInGrid = false;
+				break;
+			}
+			MaxDelta = FMath::Max(MaxDelta, (float)CellGroundZQuant[OJJ_CellLinearIndex(Cell, GridSize)]);
+		}
+		if (bAllCellsInGrid)
+		{
+			OutZ = GetActorLocation().Z + MaxDelta;
+		}
 	}
 	return true;
 }
@@ -1370,11 +1391,9 @@ float AOJJ_Grid::OJJ_GetCellVisualBaseZ(FIntPoint Cell) const
 float AOJJ_Grid::OJJ_GetCellVisualBaseZInternal(FIntPoint Cell, bool bGroundZValid) const
 {
 	// 우선순위: Foundation 상면 > 지형(GroundZ 추종) > 평면. GroundZ 무효(미베이크/시그니처 불일치) 맵은
-	// 평면 폴백 = 기존 동작(회귀 0). GroundZ는 "최악점(|델타| 최대)" 기준이라 급경사 셀은 극값에 붙음 —
-	// 분류와 동일 기준이라 일관(셀 대표 높이 재정의는 F2 스냅 설계 §6-2와 함께).
-	// ※ 의도된 유계 편차(Codex F1-c #1·#3 방향 기각 기록): 지형 직배치 머신 액터는 F1 동안 평면 Z 안착(§7-3)
-	//   이므로 셀 비주얼과 최대 ±BuildableHeightTolerance(50uu) 편차 — buildable 판정이 그 이상을 거부해
-	//   유계이고, 비주얼을 평면으로 되돌리면 d)의 목적(묻힘 해결)이 무효화된다. F2 지형 스냅에서 자연 해소.
+	// 평면 폴백 = 기존 동작(회귀 0). GroundZ는 셀 최고점 기준(F2-1) — 타일이 셀 안 지형면 위에 위치.
+	// 직배치 액터 Z도 풋프린트 최고점(OJJ_GetUniformSurfaceZ)이라 비주얼-액터 편차는 풋프린트 내
+	// 셀간 GroundZ 차이로 유계(F1의 평면 안착 ±tol 편차는 F2-1로 해소 — Codex F1-c #1·#3 기각 기록 대체).
 	float SurfaceZ = 0.0f;
 	if (GetFoundationSurfaceZ(Cell, SurfaceZ))
 	{
@@ -1382,8 +1401,8 @@ float AOJJ_Grid::OJJ_GetCellVisualBaseZInternal(FIntPoint Cell, bool bGroundZVal
 	}
 	if (bGroundZValid && IsValidGridCell(Cell))
 	{
-		// VisualZLift: 최악점 기준 평탄 타일이 셀 안 경사면과 교차(줄무늬)하지 않게 들어올림(시각 전용).
-		// 잔존 교차(리프트로도 부족한 급경사)는 F2 지형 스냅에서 셀 대표높이/타일 기울임으로 재검토.
+		// VisualZLift: 가장자리 미샘플(5점=±0.4셀) 잔존 교차 대비 들어올림(시각 전용). 최고점 기준(F2-1)
+		// 전환으로 셀 내 교차는 구조 해소 — PIE 실측 후 0 축소 재검토(F2 계획 §1).
 		return GetActorLocation().Z + (float)CellGroundZQuant[OJJ_CellLinearIndex(Cell, GridSize)] + VisualZLift;
 	}
 	return GridToWorld(Cell).Z;  // 평면 폴백 — 기존(F1-c 이전) 동작 그대로, 리프트 미적용
@@ -1519,7 +1538,7 @@ void AOJJ_Grid::DumpGroundZReport(FIntPoint Center, int32 Radius) const
 		if (V != 0) { ++NonZero; }
 	}
 	UE_LOG(LogTemp, Log,
-		TEXT("[Grid] GroundZReport: %d셀, 델타(평면 상대 uu, 최악점) min %d / max %d / 평균 %.1f / 비제로 %d (%.1f%%)"),
+		TEXT("[Grid] GroundZReport: %d셀, 델타(평면 상대 uu, 최고점) min %d / max %d / 평균 %.1f / 비제로 %d (%.1f%%)"),
 		NumCells, MinV, MaxV, (double)Sum / NumCells, NonZero, 100.0 * NonZero / NumCells);
 
 	// 10버킷 히스토그램 — 분포 모양 확인(waterZ/톨러런스 튜닝 근거). 범위 < 10uu면 정수 절단으로

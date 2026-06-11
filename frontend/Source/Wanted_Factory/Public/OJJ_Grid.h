@@ -105,7 +105,8 @@ protected:
 	int32 VisualizationRange;
 
 	// 시각 타일 리프트(uu) — GroundZ 추종 셀에서 평탄 타일이 경사 지형면과 교차해 줄무늬로 썰리는 것 방지.
-	// GroundZ가 "최악점(|델타| 최대)" 기준이라 셀 안 경사가 타일을 뚫는 실기 현상(F1-c 검증 발견)의 시각 보정.
+	// F2-1부터 GroundZ가 최고점 기준이라 셀 내 교차는 구조적으로 해소 — 단 5점 샘플이 ±0.4셀이라
+	// 가장자리 미샘플 잔존 교차 가능. 리프트는 PIE 실측 후 0 축소 재검토(F2 계획 §1).
 	// 판정 무관(시각 전용). 급경사 셀에서 오프셋으로도 부족한 잔존 교차는 F2(지형 스냅 — 셀 대표높이
 	// 평균화/타일 기울임)에서 재검토.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visualization", meta = (ClampMin = "0.0"))
@@ -222,7 +223,8 @@ protected:
 	UPROPERTY()
 	TArray<uint8> PackedCellClasses;
 
-	// 셀별 지형 높이(평면 Z 상대 uu, int16 양자화 클램프 ±32767). bBakeGroundHeights일 때만 채움. 빈 배열=미저장.
+	// 셀별 지형 높이(평면 Z 상대 uu, int16 양자화 클램프 ±32767). 대표값 = 5점 샘플 최고점(F2-1 결정 ① —
+	// 직배치 안착 기준, 묻힘 0). 분류(blocked)는 별도로 최악점 유지. bBakeGroundHeights일 때만 채움. 빈 배열=미저장.
 	UPROPERTY()
 	TArray<int16> CellGroundZQuant;
 
@@ -253,6 +255,12 @@ protected:
 	// GroundZ 저장 토글 — off→on 시 캐시에 높이가 없으므로 무효화(Phase B 진입 시 자동 재트레이스 유도).
 	UPROPERTY()
 	bool bCacheBakeGroundHeights = false;
+	// 베이크 산식 버전 — 파라미터가 같아도 산식 자체가 바뀌면 옛 캐시를 자동 무효화(F2-1 결정 ②).
+	// 옛 맵은 필드 부재로 0 로드 → 불일치 → 재베이크 유도. 산식 변경 시 OJJ_CurrentBakeVersion 상향.
+	UPROPERTY()
+	int32 CacheBakeVersion = 0;
+	// 현재 산식 버전: 2 = GroundZ 대표값 최고점(F2-1). 0/1(필드 도입 전 — 최악점 시절)은 자동 무효.
+	static constexpr int32 OJJ_CurrentBakeVersion = 2;
 
 	// 건설 가능(초록) 셀 per-cell 비주얼 ISM — 빌드모드 진입 시 표시. void 셀 제외 → 바닥 모양 자동 추종.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Terrain")
