@@ -419,6 +419,11 @@ private:
 	// SweepStaleEntries의 커버리지판 — 점유 맵과 레이어 독립이라 별도 함수(서로 호출하지 않음).
 	void SweepStaleFoundationEntries();
 
+	// Foundation 등록의 검증/커밋 단일원(F3-1) — 단일값(TryPlaceFoundation)과 셀별(PerCell) 공용.
+	// SurfaceZForCell은 검증 통과 셀에만 호출(배열 없는 단일값 경로의 할당 0 유지).
+	bool OJJ_TryPlaceFoundationInternal(AActor* Foundation, FIntPoint Origin, FIntPoint Size,
+		TFunctionRef<float(FIntPoint Cell)> SurfaceZForCell, FString& OutReason);
+
 	// 양방향 맵에 머신 등록. 위치 갱신은 호출자가 별도 처리. 모든 write 검증을 포함.
 	// RotationSteps는 점유 footprint 계산(CanPlace/CalculateFootprint)에 전달(기본 0).
 	bool RegisterMachineInternal(AMachineBase* Machine, FIntPoint Origin, FString& OutReason, int32 RotationSteps = 0);
@@ -568,9 +573,17 @@ public:
 	// Foundation 커버리지 등록 — 검증(CanPlaceFoundation) + 양방향 맵 등록만 수행. 액터 위치/비주얼은
 	// 건드리지 않음(F1-b BuildController 책임 — 그리드는 Foundation 메시/Thickness를 모름).
 	// SurfaceZ는 호출자 전달(F2-4: 평면 + Thickness + 스냅 리프트 — 컨트롤러가 OJJ_ComputeFoundationSnapLift로
-	// 산출). 서버 권위 전용, 중복 등록 거부.
+	// 산출). 전 셀 동일값 — 셀별은 OJJ_TryPlaceFoundationPerCell(F3-1). 서버 권위 전용, 중복 등록 거부.
 	UFUNCTION(BlueprintCallable, Category = "Grid|Foundation")
 	bool TryPlaceFoundation(AActor* Foundation, FIntPoint Origin, FIntPoint Size, float SurfaceZ, FString& OutReason);
+
+	// 셀별 SurfaceZ 등록(F3-1, 결정 ㉲ — 램프 등 비평탄 Foundation용). CellSurfaceZs 인덱싱:
+	// (X−Origin.X)×Size.Y + (Y−Origin.Y) (OJJ_CellLinearIndex와 동일 row-major). 산식은 액터(클래스) 책임,
+	// 그리드는 배열 불변식 검증(액터 신뢰 금지): ① 크기 = Size.X×Size.Y ② 전 값 유한 ③ (max−min)이
+	// 단 간격(OJJ_FoundationSnapStep)의 정수배 — 절대 단 격자 정합은 그리드가 Thickness를 모르는 계약상
+	// 상대 검증(턱 0 산식의 양 끝 정합이 이를 보장). 위반 시 거부 + OutReason. UFUNCTION 오버로드 불가(UHT)라 별도 이름.
+	bool OJJ_TryPlaceFoundationPerCell(AActor* Foundation, FIntPoint Origin, FIntPoint Size,
+		const TArray<float>& CellSurfaceZs, FString& OutReason);
 
 	// Foundation 커버리지 해제. 커버 셀 위에 유효 점유(머신/컨베이어)가 하나라도 있으면 거부 + 점유 셀 수
 	// 기록 — F1은 연쇄 철거 대신 거부가 안전. 서버 권위 전용.

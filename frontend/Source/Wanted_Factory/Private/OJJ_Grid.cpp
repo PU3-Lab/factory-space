@@ -1196,6 +1196,62 @@ bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& Ou
 
 bool AOJJ_Grid::TryPlaceFoundation(AActor* Foundation, FIntPoint Origin, FIntPoint Size, float SurfaceZ, FString& OutReason)
 {
+	// 단일값 = 전 셀 동일 — 검증/커밋은 내부 단일원에 위임(F3-1). 배열 미경유라 할당 0(기존과 동일).
+	return OJJ_TryPlaceFoundationInternal(
+		Foundation, Origin, Size,
+		[SurfaceZ](FIntPoint) { return SurfaceZ; },
+		OutReason);
+}
+
+bool AOJJ_Grid::OJJ_TryPlaceFoundationPerCell(AActor* Foundation, FIntPoint Origin, FIntPoint Size,
+	const TArray<float>& CellSurfaceZs, FString& OutReason)
+{
+	// 배열 불변식(결정 ㉲ — 액터 신뢰 금지). 크기 비교는 int64(거대 Size 곱 오버플로 방어 — CanPlace 미러).
+	const int64 ExpectedNum = (int64)Size.X * (int64)Size.Y;
+	if (Size.X < 1 || Size.Y < 1 || (int64)CellSurfaceZs.Num() != ExpectedNum)
+	{
+		OutReason = FString::Printf(TEXT("Per-cell SurfaceZ count mismatch (%d != %lld for %dx%d)."),
+			CellSurfaceZs.Num(), ExpectedNum, Size.X, Size.Y);
+		return false;
+	}
+
+	float MinZ = TNumericLimits<float>::Max();
+	float MaxZ = -TNumericLimits<float>::Max();
+	for (const float Z : CellSurfaceZs)
+	{
+		if (!FMath::IsFinite(Z))
+		{
+			OutReason = TEXT("Per-cell SurfaceZ contains a non-finite value.");
+			return false;
+		}
+		MinZ = FMath::Min(MinZ, Z);
+		MaxZ = FMath::Max(MaxZ, Z);
+	}
+
+	// (max−min)이 단 간격의 정수배 — 절대 단 격자 정합은 그리드가 Thickness를 모르는 계약(F1-b)상
+	// 상대 검증. 양 끝 정합 산식(f3 계획 §보강 — r/(R−1) 보간)이 절대 정합을 클래스 측에서 보장.
+	const float Span = MaxZ - MinZ;
+	const float StepRemainder = FMath::Fmod(Span, OJJ_FoundationSnapStep);
+	if (!FMath::IsNearlyZero(StepRemainder, 0.1f)
+		&& !FMath::IsNearlyEqual(StepRemainder, OJJ_FoundationSnapStep, 0.1f))
+	{
+		OutReason = FString::Printf(
+			TEXT("Per-cell SurfaceZ span %.2f is not a multiple of snap step %.0f."), Span, OJJ_FoundationSnapStep);
+		return false;
+	}
+
+	return OJJ_TryPlaceFoundationInternal(
+		Foundation, Origin, Size,
+		[&CellSurfaceZs, Origin, Size](FIntPoint Cell)
+		{
+			return CellSurfaceZs[(Cell.X - Origin.X) * Size.Y + (Cell.Y - Origin.Y)];
+		},
+		OutReason);
+}
+
+bool AOJJ_Grid::OJJ_TryPlaceFoundationInternal(AActor* Foundation, FIntPoint Origin, FIntPoint Size,
+	TFunctionRef<float(FIntPoint Cell)> SurfaceZForCell, FString& OutReason)
+{
 	if (!HasAuthority())
 	{
 		ensureMsgf(false, TEXT("TryPlaceFoundation called on non-authority"));
@@ -1226,14 +1282,14 @@ bool AOJJ_Grid::TryPlaceFoundation(AActor* Foundation, FIntPoint Origin, FIntPoi
 	// CanPlace 성공 = off-grid 0 = footprint 전체가 그리드 내부 → 아래 int32 덧셈은 오버플로 불가.
 	TArray<FIntPoint> Cells;
 	Cells.Reserve(Size.X * Size.Y);
-	FOJJFoundationCellInfo Info;
-	Info.Foundation = Foundation;
-	Info.SurfaceZ = SurfaceZ;
 	for (int32 X = Origin.X; X < Origin.X + Size.X; ++X)
 	{
 		for (int32 Y = Origin.Y; Y < Origin.Y + Size.Y; ++Y)
 		{
 			const FIntPoint Cell(X, Y);
+			FOJJFoundationCellInfo Info;
+			Info.Foundation = Foundation;
+			Info.SurfaceZ = SurfaceZForCell(Cell);
 			FoundationCells.Add(Cell, Info);
 			Cells.Add(Cell);
 		}

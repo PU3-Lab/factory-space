@@ -106,10 +106,12 @@
   (행당 계단: 8행 ≈14.3uu / 4행 ≈33.3uu — 둘 다 MaxStepHeight 45 미만)
 - **㉰ ✅** 계단 근사(셀별 SurfaceZ + 계단 박스 비주얼) — wedge 메시는 비주얼 폴리시로 이연
 - **㉱ ✅** Foundation 회전 4방 도입(머신 HoverRotationSteps 패턴 재사용) — 평판은 회전 불변(회귀 0)
-- **㉲ ✅(보강)** TryPlaceFoundation 셀별 SurfaceZ 오버로드 = (i) 셀→Z 배열 전달.
-  **그리드가 배열 불변식 검증 — 액터 신뢰 금지**: ① 배열 크기 = Size.X×Size.Y ② 전 셀 Z 유한값
-  ③ min/max Z가 단 격자 값(평면+Thickness+k×100)과 정합(IsNearlyEqual) ④ 전 셀 Z ∈ [min, max].
-  위반 시 배치 거부 + OutReason(이중 방어 — 산식은 램프 클래스 책임, 검증은 그리드 책임).
+- **㉲ ✅(보강)** 셀별 SurfaceZ 등록 = (i) 셀→Z 배열 전달(`OJJ_TryPlaceFoundationPerCell` —
+  TryPlaceFoundation은 UFUNCTION이라 UHT 오버로드 불가, 별도 이름).
+  **그리드가 배열 불변식 검증 — 액터 신뢰 금지**: ① 배열 크기 = Size.X×Size.Y(int64 비교)
+  ② 전 셀 Z 유한값 ③ (max−min)이 단 간격(100)의 정수배 — *절대* 단 격자 정합(평면+Thickness 기준)은
+  그리드가 Thickness를 모르는 F1-b 계약상 **상대 검증**으로 구현, 절대 정합은 양 끝 정합 산식(아래)이
+  클래스 측에서 보장. 위반 시 배치 거부 + OutReason(이중 방어 — 산식은 램프 클래스, 검증은 그리드).
 - **㉳ ✅** 올려태우기 — Pawn이 걸친 셀들의 SurfaceZ max
 - **㉴ ✅** §5-2 은퇴 F4 분리
 - **㉵ ✅** 컨베이어 단차((가)-lite) F3 범위 밖 — 램프 규격 확정 후 SSR/Chan 협업 안건 발제
