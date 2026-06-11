@@ -166,10 +166,10 @@ Smelter + copper_ingot x1 + iron_ingot x1
 예시:
 
 ```text
-Smelter + iron_ingot + copper_ingot
+Synthesizer + iron_ingot + copper_ingot
 → iron_copper_alloy
 
-Smelter + iron_powder + copper_powder
+Synthesizer + iron_powder + copper_powder
 → iron_copper_alloy
 ```
 
@@ -268,6 +268,10 @@ Grinder|ssr_ingot:3|ssr_ore:2|ssr_test:1
 8. material_hash 중복 검사
 9. DB 저장
 ```
+
+장비 정책상 합금/복합재/신물질 후보 판단은 주로 `Synthesizer`에서 발생한다.  
+`Smelter`와 `Grinder`는 기존 Recipe Table 기반의 기초 가공 또는 중간재 생성에 집중한다.
+
 
 ---
 
@@ -422,11 +426,11 @@ Recipe Table 기반으로 결정적 검증을 수행한다.
 
 ```text
 기존 기록:
-Smelter + iron_ingot + copper_ingot
+Synthesizer + iron_ingot + copper_ingot
 → iron_copper_alloy
 
 새 조합:
-Smelter + iron_powder + copper_powder
+Synthesizer + iron_powder + copper_powder
 
 판단 참고:
 기존 iron_copper_alloy의 분말 기반 변형 후보
@@ -453,7 +457,7 @@ Smelter + iron_powder + copper_powder
 {
   "proposal_type": "new_material",
   "confidence": 0.82,
-  "reason": "Smelter에서 철과 구리 ingot을 함께 용융하는 조합이므로 합금 물질로 보는 것이 자연스럽다.",
+  "reason": "Synthesizer에서 철과 구리 ingot을 조합하는 합성 공정이므로 합금 물질로 보는 것이 자연스럽다.",
   "result": {
     "id_hint": "iron_copper_alloy",
     "name": "철동 합금",
@@ -546,12 +550,49 @@ MaterialCreated
 
 ## 11. 장비별 판단 정책
 
+합금, 복합재, 신물질 생성은 `Smelter`가 아니라 `Synthesizer`에서 수행한다.
+
+`Smelter`는 기초 열처리 장비로 제한한다.  
+`Grinder`는 재료를 분말화하여 `Synthesizer`에 투입 가능한 중간재를 만드는 역할이다.  
+`Synthesizer`는 2개 이상의 재료를 조합하여 합금, 복합재, 신물질을 생성하는 핵심 장비이다.
+
 | MachineType | 기본 역할 | 신물질 생성 적합도 | 정책 |
 |---|---|---:|---|
-| `Smelter` | 제련, 용융, 유리 제작 | 높음 | 금속/분말/유리 조합은 신물질 후보 가능 |
-| `Grinder` | 분쇄, 가루화 | 낮음~중간 | 기본적으로 혼합 분말/중간재 처리 |
-| 특수 `Grinder` 조합 | 실험 공정 | 중간 | 다중 입력 특수 조합은 ambiguous 가능 |
-| `Synthesizer` 추가 시 | 합성 | 매우 높음 | 신물질 생성 전용 장비로 사용 가능 |
+| `Smelter` | 광석 제련, 유리 제작, 탄화 | 낮음 | 기존 Recipe Table 기반의 기초 열처리만 수행 |
+| `Grinder` | 분쇄, 가루화 | 낮음 | 분말/가루/혼합 중간재 생성 |
+| `Synthesizer` | 합성, 조합, 안정화 | 매우 높음 | 합금, 복합재, 신물질 생성 담당 |
+| 특수 합성 장비 | 고급 합성/실험 | 높음 | 후반부 희귀 신물질 생성 |
+
+중요 정책:
+
+```text
+기존 Recipe Table에 없는 2개 이상의 재료 조합이더라도
+MachineType이 Synthesizer가 아니면 신물질 후보로 바로 판단하지 않는다.
+```
+
+추천 공정 흐름:
+
+```text
+iron_ore
+→ Smelter
+→ iron_ingot
+→ Grinder
+→ iron_powder
+→ Synthesizer
+→ iron_copper_alloy
+```
+
+장비별 예시:
+
+| 입력 | 처리 |
+|---|---|
+| `Smelter + iron_ore x2` | 기존 제련 레시피 |
+| `Smelter + iron_ingot x1 + copper_ingot x1` | 장비 부적합 / 실패 / 실험 불가 |
+| `Grinder + iron_ingot x1` | `iron_powder` 생성 |
+| `Grinder + iron_ingot x1 + copper_ingot x1` | 혼합 금속 분말 또는 실패 |
+| `Synthesizer + iron_ingot x1 + copper_ingot x1` | 합금 신물질 후보 |
+| `Synthesizer + iron_powder x1 + copper_powder x1` | 합금/복합재 신물질 후보 |
+| `Synthesizer + glass x1 + copper_powder x1` | 전도성 유리 후보 |
 
 ---
 
@@ -561,11 +602,14 @@ MaterialCreated
 |---|---|---|
 | `Smelter + iron_ore x2` | 기존 레시피 | `iron_ingot x1` |
 | `Smelter + iron_ore x1` | 단순 변형 | 불완전 제련물/실패 |
-| `Smelter + iron_ingot x1 + copper_ingot x1` | 신물질 후보 | LLM 제안 후 검증 |
-| `Grinder + iron_ingot x1 + copper_ingot x1` | 중간재 | 혼합 금속 분말 |
-| `Smelter + sand x1 + copper_powder x1` | 신물질 후보 | 전도성 유리 후보 |
+| `Smelter + iron_ingot x1 + copper_ingot x1` | 장비 부적합 | 합금 생성 불가 / 실패 |
+| `Grinder + iron_ingot x1` | 기존 레시피 | `iron_powder x2` |
+| `Grinder + iron_ingot x1 + copper_ingot x1` | 중간재 또는 실패 | 혼합 금속 분말 |
+| `Synthesizer + iron_ingot x1 + copper_ingot x1` | 신물질 후보 | 철동 합금 후보 |
+| `Synthesizer + iron_powder x1 + copper_powder x1` | 신물질 후보 | 분말 기반 철동 합금 후보 |
+| `Synthesizer + glass x1 + copper_powder x1` | 신물질 후보 | 전도성 유리 후보 |
 | `Grinder + ssr_ingot x3 + ssr_ore x2 + ssr_test x1` | 기존 레시피 | `ssr_result + ssr_trash` |
-| `Grinder + ssr_ingot x3 + ssr_ore x2 + iron_powder x1` | 애매한 실험 | LLM 제안 후 검증 |
+| `Synthesizer + ssr_result x1 + titanium_powder x1` | 애매한 실험 | LLM 제안 후 검증 |
 
 ---
 
@@ -669,7 +713,7 @@ POST /experiments/material-creation
 
 ```json
 {
-  "machine_type": "Smelter",
+  "machine_type": "Synthesizer",
   "inputs": [
     {
       "item_id": "iron_ingot",
