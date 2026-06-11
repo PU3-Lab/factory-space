@@ -139,6 +139,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
 	FLinearColor OverlayWaterColor = FLinearColor(0.10f, 0.35f, 0.60f);
 
+	// 캐릭터 점유 셀(노랑) — 빌드모드 중 플레이어 캡슐이 걸친 셀 표시(F2-4 후속 ② — 시각 전용, 점유 비등록).
+	// 정보 계층이라 OverlayOpacity 공유, 색은 오버레이 3색과 구분되는 밝은 노랑.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
+	FLinearColor CharacterCellColor = FLinearColor(0.95f, 0.80f, 0.10f);
+
 	// 호버 공통 불투명도 — "지금 액션이 주인공". 높게(아래 오버레이를 거의 가림 → 색 섞임 제거).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float HoverOpacity = 0.90f;
@@ -275,6 +280,11 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Water")
 	TObjectPtr<UInstancedStaticMeshComponent> WaterCellISM;
 
+	// 캐릭터 점유 셀 비주얼 ISM(F2-4 후속 ②) — 빌드모드 중 BuildController가 OJJ_UpdateCharacterCellOverlay로
+	// 구동. 시각 전용 — OccupiedCells 비등록(캐릭터 위치 Foundation 배치 허용, 깔리면 올려태우기가 받음).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Terrain")
+	TObjectPtr<UInstancedStaticMeshComponent> CharacterCellISM;
+
 	// water 오버레이 파랑 틴트용 동적 머티리얼. OJJ_EnsureTileMIDs에서 최초 1회 생성(에디터/PIE 공용).
 	// 이제 다른 타일 MID와 동일하게 translucent M_OJJ_GridFloor(HoverValidBaseMaterial) 기반 — OverlayWaterColor/OverlayOpacity 구동.
 	UPROPERTY(Transient)
@@ -291,6 +301,8 @@ protected:
 	TObjectPtr<UMaterialInstanceDynamic> BuildableCellMID;
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> BlockedCellMID;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> CharacterCellMID;
 
 	// MID 생성용 베이스 머티리얼(생성자에서 MI 에셋 캐싱). 호버/오버레이/물 MID가 이 둘에서 파생.
 	UPROPERTY(Transient)
@@ -608,6 +620,11 @@ public:
 	// (셀별 색은 실제 배치 판정과 어긋나는 "거짓말"이라 과거 회귀로 제거된 방식 — 재도입 금지).
 	UFUNCTION(BlueprintCallable, Category = "Grid|Hover")
 	void OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size);
+
+	// 캐릭터 점유 셀 표시 갱신(F2-4 후속 ② — 시각 전용). 빈 배열 = 클리어. 셀 변경 시에만 호출하는
+	// 책임은 호출자(BuildController가 이전 셀 비교) — 여기는 ClearInstances+재적재만. Z는
+	// OJJ_GetCellVisualBaseZ 단일원(Foundation 위에 서 있으면 상면에 표시) + 호버보다 1uu 위(겹침 시 식별).
+	void OJJ_UpdateCharacterCellOverlay(const TArray<FIntPoint>& Cells);
 
 	// === 지형 높이 캐시 접근 (F0 갭 해소 — CellGroundZQuant 소비처 첫 도입) ===
 

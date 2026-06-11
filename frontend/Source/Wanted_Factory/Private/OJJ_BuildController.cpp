@@ -9,6 +9,7 @@
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "FactoryManagerSubsystem.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "LandscapeProxy.h"
@@ -130,6 +131,7 @@ void AOJJ_BuildController::Tick(float DeltaSeconds)
 	if (bIsBuildMode)
 	{
 		UpdateMouseHover();
+		UpdateCharacterCellOverlay();
 	}
 }
 
@@ -226,6 +228,9 @@ void AOJJ_BuildController::EnterBuildMode()
 
 	// 첫 UpdateMouseHover 호출이 무조건 갱신을 트리거하도록 sentinel로 초기화
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+
+	// 캐릭터 셀 표시(F2-4 후속 ②) — 빈 캐시로 시작해 첫 Tick이 무조건 적재.
+	CharacterOverlayCells.Reset();
 }
 
 void AOJJ_BuildController::ExitBuildMode()
@@ -240,7 +245,9 @@ void AOJJ_BuildController::ExitBuildMode()
 		TargetGrid->SetVisualizationVisible(false);
 		TargetGrid->ClearHoverPreview();         // 호버 셀 + 호버 화살표 제거
 		TargetGrid->ClearPlacedMachineArrows();  // 배치 머신 화살표 제거 (진입 RefreshPlacedMachineArrows와 대칭)
+		TargetGrid->OJJ_UpdateCharacterCellOverlay(TArray<FIntPoint>());  // 캐릭터 셀 표시 제거(F2-4 후속 ②)
 	}
+	CharacterOverlayCells.Reset();
 
 	bIsBuildMode = false;
 
@@ -992,8 +999,111 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 		*Origin.ToString(), Size.X, Size.Y,
 		FMath::RoundToInt(SnapLift / AOJJ_Grid::OJJ_FoundationSnapStep));
 
+	// F2-4 후속 ①: 풋프린트에 깔린 Pawn을 상면으로 올려태움. 후속 ② 캐시도 리셋 — 셀은 그대로여도
+	// 비주얼 Z가 슬래브 상면으로 바뀌므로 다음 Tick에 강제 재적재.
+	OJJ_LiftPawnsOntoFoundation(
+		Origin, Size, SnappedLocation.Z + NewFoundation->GetThickness(), NewFoundation->GetThickness());
+	CharacterOverlayCells.Reset();
+
 	// 직전 영역이 이제 커버됨(겹침 금지) → 다음 호버에서 빨강 재표시 강제(머신 경로와 동일).
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+}
+
+void AOJJ_BuildController::OJJ_LiftPawnsOntoFoundation(FIntPoint Origin, FIntPoint Size, float SurfaceZ, float SlabThickness)
+{
+	// 서버 권위 — 배치(TryPlaceFoundation의 HasAuthority)와 같은 흐름. 모든 Pawn 대상(멀티 대비).
+	if (!HasAuthority() || !TargetGrid)
+	{
+		return;
+	}
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const float SlabBottomZ = SurfaceZ - SlabThickness;
+	for (TActorIterator<APawn> It(World); It; ++It)
+	{
+		APawn* Pawn = *It;
+		if (!IsValid(Pawn))
+		{
+			continue;
+		}
+		float Radius = 0.0f;
+		float HalfHeight = 0.0f;
+		Pawn->GetSimpleCollisionCylinder(Radius, HalfHeight);
+		const FVector Loc = Pawn->GetActorLocation();
+
+		// XY: 캡슐이 걸친 셀 범위(WorldToGrid — XY 전용, 셀 반올림 규칙 공유)와 풋프린트 사각형 교차.
+		const FIntPoint MinCell = TargetGrid->WorldToGrid(Loc - FVector(Radius, Radius, 0.0f));
+		const FIntPoint MaxCell = TargetGrid->WorldToGrid(Loc + FVector(Radius, Radius, 0.0f));
+		const bool bOverlapsXY =
+			MaxCell.X >= Origin.X && MinCell.X < Origin.X + Size.X &&
+			MaxCell.Y >= Origin.Y && MinCell.Y < Origin.Y + Size.Y;
+		if (!bOverlapsXY)
+		{
+			continue;
+		}
+
+		// Z: 캡슐이 슬래브 구간 [상면−두께, 상면]과 겹칠 때만 — 발이 이미 상면 이상이면 no-op,
+		// 머리가 슬래브 바닥 아래면(높은 단 밑 갭 보행 — 결정 ⑥) 간섭 없음.
+		const float Feet = Loc.Z - HalfHeight;
+		const float Head = Loc.Z + HalfHeight;
+		if (Feet >= SurfaceZ || Head <= SlabBottomZ)
+		{
+			continue;
+		}
+
+		// 상면 + 캡슐 반높이(+2 초기 침투 방지 — 착지는 중력이 정리). XY 유지("깔면 올라탐").
+		// 위 공간이 다른 액터로 막힌 경우의 정교한 처리는 백로그 — 일단 올리고 로그로 추적.
+		const FVector NewLoc(Loc.X, Loc.Y, SurfaceZ + HalfHeight + 2.0f);
+		Pawn->SetActorLocation(NewLoc, /*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation 배치 — Pawn 올려태움: %s Z %.1f→%.1f (상면 %.1f)"),
+			*Pawn->GetName(), Loc.Z, NewLoc.Z, SurfaceZ);
+	}
+}
+
+void AOJJ_BuildController::UpdateCharacterCellOverlay()
+{
+	if (!TargetGrid)
+	{
+		return;
+	}
+
+	// 로컬 플레이어만(F2-4 후속 ② — 타 플레이어 표시는 백로그). Pawn 없음(관전 등)이면 표시 제거 경로.
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+
+	TArray<FIntPoint> Cells;
+	if (Pawn)
+	{
+		float Radius = 0.0f;
+		float HalfHeight = 0.0f;
+		Pawn->GetSimpleCollisionCylinder(Radius, HalfHeight);
+		const FVector Loc = Pawn->GetActorLocation();
+		// 캡슐 풋프린트가 걸친 셀(보통 1~2, 최대 4) — WorldToGrid가 XY만 쓰므로 Z 무관. off-grid는 제외.
+		const FIntPoint MinCell = TargetGrid->WorldToGrid(Loc - FVector(Radius, Radius, 0.0f));
+		const FIntPoint MaxCell = TargetGrid->WorldToGrid(Loc + FVector(Radius, Radius, 0.0f));
+		for (int32 X = MinCell.X; X <= MaxCell.X; ++X)
+		{
+			for (int32 Y = MinCell.Y; Y <= MaxCell.Y; ++Y)
+			{
+				const FIntPoint Cell(X, Y);
+				if (TargetGrid->IsValidGridCell(Cell))
+				{
+					Cells.Add(Cell);
+				}
+			}
+		}
+	}
+
+	// 셀 좌표 변경 시에만 ISM 재빌드(계약 — 비교는 ≤4원소라 틱 비용 무시 가능).
+	if (Cells != CharacterOverlayCells)
+	{
+		CharacterOverlayCells = Cells;
+		TargetGrid->OJJ_UpdateCharacterCellOverlay(Cells);
+	}
 }
 
 // === Conveyor 입력 (Step 6 — Dummy 원본 이식(parity)) ===

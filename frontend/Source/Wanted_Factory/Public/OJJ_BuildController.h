@@ -241,6 +241,17 @@ private:
 	void UpdateFoundationHover(FIntPoint CursorCell, const FHitResult& Hit);
 	void PlaceFoundationAtCursor();
 
+	// [F2-4 후속 ①] 배치 성공 직후 풋프린트 XY + 슬래브 높이 구간의 Pawn을 상면 위로 올림("깔면 올라탐").
+	// 서버 권위 전용(배치와 같은 흐름), 모든 Pawn 대상(멀티 대비). 위 공간 막힘 감지는 백로그 — 일단 올리고 로그.
+	void OJJ_LiftPawnsOntoFoundation(FIntPoint Origin, FIntPoint Size, float SurfaceZ, float SlabThickness);
+
+	// [F2-4 후속 ②] 빌드모드 Tick — 로컬 플레이어 캡슐이 걸친 셀 표시 갱신(셀 변경 시에만 그리드 호출).
+	void UpdateCharacterCellOverlay();
+
+	// 직전 표시 셀 캐시(틱마다 ISM 재빌드 방지). Foundation 배치 직후 Reset — 같은 셀이라도 비주얼 Z가
+	// 상면으로 바뀌므로 강제 재적재 유도.
+	TArray<FIntPoint> CharacterOverlayCells;
+
 	// 마우스 커서 아래 그리드 셀 조회(라인 트레이스 → WorldToGrid). 실패 시 false.
 	bool GetCursorCell(FIntPoint& OutCell) const;
 

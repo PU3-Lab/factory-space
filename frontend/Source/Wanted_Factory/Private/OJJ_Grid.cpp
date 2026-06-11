@@ -453,6 +453,20 @@ AOJJ_Grid::AOJJ_Grid()
 		BlockedCellISM->SetMaterial(0, InvalidHoverMat.Object);
 	}
 
+	// 캐릭터 점유 셀(노랑) per-cell 비주얼(F2-4 후속 ②) — 빌드모드 중 BuildController가 구동. 시각 전용.
+	CharacterCellISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("CharacterCellISM"));
+	CharacterCellISM->SetupAttachment(RootComponent);
+	CharacterCellISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CharacterCellISM->SetCastShadow(false);
+	if (PlaneMesh.Succeeded())
+	{
+		CharacterCellISM->SetStaticMesh(PlaneMesh.Object);
+	}
+	if (ValidHoverMat.Succeeded())
+	{
+		CharacterCellISM->SetMaterial(0, ValidHoverMat.Object);  // MID 생성 전 정적 폴백 — 색은 MID가 덮어씀
+	}
+
 	// 물(파랑) per-cell 비주얼 — ShowWater 디버그/빌드모드 오버레이. 머티리얼(파랑 MID)은 RefreshGridVisual에서 lazy 부여.
 	WaterCellISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("WaterCellISM"));
 	WaterCellISM->SetupAttachment(RootComponent);
@@ -1508,6 +1522,28 @@ void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Siz
 			const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
 			TargetISM->AddInstance(FTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale), /*bWorldSpace=*/true);
 		}
+	}
+}
+
+void AOJJ_Grid::OJJ_UpdateCharacterCellOverlay(const TArray<FIntPoint>& Cells)
+{
+	OJJ_EnsureTileMIDs();
+
+	UInstancedStaticMeshComponent* TargetISM = CharacterCellISM.Get();
+	if (!TargetISM)
+	{
+		return;
+	}
+
+	// 캡슐 풋프린트는 1~4셀 — ClearInstances+재적재가 가장 단순(셀 변경 시에만 호출되는 계약은 호출자 책임).
+	TargetISM->ClearInstances();
+	for (const FIntPoint& Cell : Cells)
+	{
+		const FVector CellCenter = GridToWorld(Cell);
+		// 호버 타일(+2+HoverExtraZLift)보다 1uu 위 — 캐릭터 표시는 경고 성격이라 호버 풋프린트와 겹쳐도 식별.
+		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(Cell) + 3.0f + HoverExtraZLift);
+		const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
+		TargetISM->AddInstance(FTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale), /*bWorldSpace=*/true);
 	}
 }
 
@@ -2617,6 +2653,8 @@ void AOJJ_Grid::OJJ_ApplyTileMIDParams()
 	OJJ_SetTileParams(BuildableCellMID, OverlayBuildableColor, OverlayOpacity);
 	OJJ_SetTileParams(BlockedCellMID, OverlayBlockedColor, OverlayOpacity);
 	OJJ_SetTileParams(WaterCellMID, OverlayWaterColor, OverlayOpacity);
+	// 캐릭터 셀(정보 계층 — 오버레이 불투명 공유, 색으로 구분).
+	OJJ_SetTileParams(CharacterCellMID, CharacterCellColor, OverlayOpacity);
 }
 
 void AOJJ_Grid::OJJ_EnsureTileMIDs()
@@ -2643,6 +2681,7 @@ void AOJJ_Grid::OJJ_EnsureTileMIDs()
 	EnsureMID(BlockedCellISM, BlockedCellMID, HoverInvalidBaseMaterial);
 	// 물은 별도 색(파랑)을 OverlayWaterColor로 덮어쓰므로 어느 베이스든 무방 — Valid 베이스 재사용.
 	EnsureMID(WaterCellISM, WaterCellMID, HoverValidBaseMaterial);
+	EnsureMID(CharacterCellISM, CharacterCellMID, HoverValidBaseMaterial);
 
 	// 생성 직후 + 매 호출 현재 값 재적용(멱등) → PIE에서 프로퍼티 바꾸면 다음 호버/갱신에 반영.
 	OJJ_ApplyTileMIDParams();
