@@ -45,13 +45,8 @@ void AOJJ_Foundation::OnConstruction(const FTransform& Transform)
 	UpdateSlabVisual();
 }
 
-void AOJJ_Foundation::UpdateSlabVisual()
+float AOJJ_Foundation::OJJ_ResolveCellSize() const
 {
-	if (!SlabMesh)
-	{
-		return;
-	}
-
 	// 그리드 CellSize는 protected — WaterArea와 동일하게 public GridToWorld로 역산. 단 등록된 그리드를
 	// 우선 사용(Codex F1-b #2: 멀티 그리드에서 GetActorOfClass가 다른 그리드를 집어 CellSize가 어긋나는
 	// 것 방지). 미등록(스폰 직후/에디터 프리뷰)일 때만 월드 첫 그리드 폴백, 그것도 없으면 기본 100.
@@ -72,7 +67,17 @@ void AOJJ_Foundation::UpdateSlabVisual()
 			CellSize = Derived;
 		}
 	}
+	return CellSize;
+}
 
+void AOJJ_Foundation::UpdateSlabVisual()
+{
+	if (!SlabMesh)
+	{
+		return;
+	}
+
+	const float CellSize = OJJ_ResolveCellSize();
 	const int32 SizeX = FMath::Max(1, FoundationSize.X);
 	const int32 SizeY = FMath::Max(1, FoundationSize.Y);
 	const float SlabThickness = FMath::Max(1.0f, Thickness);
@@ -81,6 +86,13 @@ void AOJJ_Foundation::UpdateSlabVisual()
 	// Cube(100uu, 중심 피벗): Z중심 = Thickness/2 → 상면이 정확히 평면 + Thickness.
 	SlabMesh->SetRelativeScale3D(FVector(SizeX * CellSize / 100.0f, SizeY * CellSize / 100.0f, SlabThickness / 100.0f));
 	SlabMesh->SetRelativeLocation(FVector(0.0f, 0.0f, SlabThickness * 0.5f));
+}
+
+float AOJJ_Foundation::OJJ_ComputeSnapLift(const AOJJ_Grid& Grid, FIntPoint Origin, FIntPoint EffSize,
+	int32 RotationSteps) const
+{
+	// 평탄: 풋프린트 전체 max GroundZ 기준(F2-4 기존 동작 그대로). 회전은 평탄에 무의미 — 미사용.
+	return Grid.OJJ_ComputeFoundationSnapLift(Origin, EffSize, Thickness);
 }
 
 void AOJJ_Foundation::OJJ_NotifyPlacedOnGrid(AOJJ_Grid* Grid)

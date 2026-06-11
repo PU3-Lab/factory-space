@@ -38,6 +38,22 @@ public:
 	// 배치 확정 직후 BuildController가 호출 — EndPlay 대칭 해제용 그리드 보관 + 비주얼 확정 갱신.
 	void OJJ_NotifyPlacedOnGrid(AOJJ_Grid* Grid);
 
+	// 셀별 SurfaceZ 산식 훅(F3-2, 결정 ㉲ — 산식은 클래스 책임). false = 평탄(전 셀 동일 — 단일값 등록
+	// 경로 사용, 배열 미생성). 램프 등 비평탄 파생이 override해 EffSize×회전 기준 배열을 채우면
+	// 컨트롤러가 OJJ_TryPlaceFoundationPerCell로 등록(그리드가 불변식 검증).
+	// BaseSurfaceZ = 낮은 단 상면(평면 + Thickness + 스냅 리프트). 인덱싱 = (LX×EffSize.Y + LY).
+	virtual bool OJJ_BuildPerCellSurfaceZ(FIntPoint EffSize, int32 RotationSteps, float BaseSurfaceZ,
+		TArray<float>& OutCellZs) const
+	{
+		return false;
+	}
+
+	// 스냅 리프트 산출 훅(F3-2 Codex ② 수정): 어떤 셀들의 지형이 단(N) 산정 기준인지는 형상의 일 —
+	// 평탄은 풋프린트 전체 max(기존 F2-4), 램프는 낮은 끝(r=0) 행만(양 끝 턱 0 계약이 우선).
+	// 반환 = N×100 리프트(그리드 OJJ_ComputeFoundationSnapLift 규약 동일).
+	virtual float OJJ_ComputeSnapLift(const AOJJ_Grid& Grid, FIntPoint Origin, FIntPoint EffSize,
+		int32 RotationSteps) const;
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -56,12 +72,17 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Foundation")
 	TObjectPtr<UStaticMeshComponent> SlabMesh;
 
-private:
 	// FoundationSize/Thickness/그리드 CellSize에 맞춰 슬래브 스케일·위치 갱신.
 	// 액터 원점 = 풋프린트 중심(GetFoundationPlacementLocation 계약) → XY 오프셋 0, 상면 = 액터 Z + Thickness
 	// (액터 상대라 F2-4 스냅 리프트에도 수식 불변 — 컨트롤러가 액터째 들어 올림).
-	void UpdateSlabVisual();
+	// F3-2: virtual — 램프 등 비평탄 파생이 계단 비주얼로 교체(OnConstruction/NotifyPlacedOnGrid가 디스패치).
+	virtual void UpdateSlabVisual();
 
+	// 그리드 CellSize 역산(public GridToWorld 경유 — 등록 그리드 우선, 폴백 월드 첫 그리드, 기본 100).
+	// UpdateSlabVisual에서 추출(F3-2) — 파생 비주얼도 동일 규칙 공유.
+	float OJJ_ResolveCellSize() const;
+
+private:
 	// EndPlay 대칭 해제용(TryPlaceFoundation 성공 시 OJJ_NotifyPlacedOnGrid로 세팅). 미등록이면 무효.
 	TWeakObjectPtr<AOJJ_Grid> RegisteredGrid;
 };

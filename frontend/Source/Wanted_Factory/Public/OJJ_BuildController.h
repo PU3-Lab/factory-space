@@ -243,7 +243,8 @@ private:
 
 	// [F2-4 후속 ①] 배치 성공 직후 풋프린트 XY + 슬래브 높이 구간의 Pawn을 상면 위로 올림("깔면 올라탐").
 	// 서버 권위 전용(배치와 같은 흐름), 모든 Pawn 대상(멀티 대비). 위 공간 막힘 감지는 백로그 — 일단 올리고 로그.
-	void OJJ_LiftPawnsOntoFoundation(FIntPoint Origin, FIntPoint Size, float SurfaceZ, float SlabThickness);
+	// F3-2(㉳): 셀별 SurfaceZ는 그리드 등록 데이터가 진실원 — 배치 성공 후 호출 전제. 평판/램프 공용.
+	void OJJ_LiftPawnsOntoFoundation(FIntPoint Origin, FIntPoint Size, float SlabThickness);
 
 	// [F2-4 후속 ②] 빌드모드 Tick — 로컬 플레이어 캡슐이 걸친 셀 표시 갱신(셀 변경 시에만 그리드 호출).
 	void UpdateCharacterCellOverlay();

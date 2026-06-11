@@ -985,11 +985,19 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 	// F1 동작). 좌표/리프트는 그리드 헬퍼(결정점 ② — 데이터/좌표는 그리드, 액터 이동은 컨트롤러).
 	// 액터는 통째로 리프트만큼 위 — 슬래브 상면(액터Z+Thickness)이 SurfaceZ와 자동 일치. 실패 시 즉시 파기.
 	const FVector PlaceLocation = TargetGrid->GetFoundationPlacementLocation(Origin, EffSize);
-	const float SnapLift = TargetGrid->OJJ_ComputeFoundationSnapLift(Origin, EffSize, NewFoundation->GetThickness());
+	// 스냅 기준 셀은 형상의 일(F3-2 Codex ② — 평탄: 풋프린트 전체 / 램프: 낮은 끝 행) → 클래스 훅 경유.
+	const float SnapLift = NewFoundation->OJJ_ComputeSnapLift(*TargetGrid, Origin, EffSize, HoverRotationSteps);
 	const FVector SnappedLocation = PlaceLocation + FVector(0.0f, 0.0f, SnapLift);
+	const float BaseSurfaceZ = SnappedLocation.Z + NewFoundation->GetThickness();
+
+	// F3-2: 비평탄(램프) Foundation은 셀별 SurfaceZ — 산식은 클래스 책임(결정 ㉲), 등록은 PerCell 경유
+	// (그리드가 불변식 검증). 평탄은 기존 단일값 경로 그대로(배열 미생성).
 	FString OutReason;
-	if (!TargetGrid->TryPlaceFoundation(
-		NewFoundation, Origin, EffSize, SnappedLocation.Z + NewFoundation->GetThickness(), OutReason))
+	TArray<float> CellZs;
+	const bool bPlaced = NewFoundation->OJJ_BuildPerCellSurfaceZ(EffSize, HoverRotationSteps, BaseSurfaceZ, CellZs)
+		? TargetGrid->OJJ_TryPlaceFoundationPerCell(NewFoundation, Origin, EffSize, CellZs, OutReason)
+		: TargetGrid->TryPlaceFoundation(NewFoundation, Origin, EffSize, BaseSurfaceZ, OutReason);
+	if (!bPlaced)
 	{
 		// OutReason에 사유별 셀 수(water/occupied/overlap 등) — F1-b 디버깅·waterZ 재검토 실측 데이터.
 		UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation 배치 불가: %s"), *OutReason);
@@ -1008,19 +1016,20 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 		*Origin.ToString(), EffSize.X, EffSize.Y, HoverRotationSteps,
 		FMath::RoundToInt(SnapLift / AOJJ_Grid::OJJ_FoundationSnapStep));
 
-	// F2-4 후속 ①: 풋프린트에 깔린 Pawn을 상면으로 올려태움. 후속 ② 캐시도 리셋 — 셀은 그대로여도
-	// 비주얼 Z가 슬래브 상면으로 바뀌므로 다음 Tick에 강제 재적재.
-	OJJ_LiftPawnsOntoFoundation(
-		Origin, EffSize, SnappedLocation.Z + NewFoundation->GetThickness(), NewFoundation->GetThickness());
+	// F2-4 후속 ①: 풋프린트에 깔린 Pawn을 상면으로 올려태움(F3-2부터 셀별 SurfaceZ — 등록 데이터를
+	// 그리드에서 읽음). 후속 ② 캐시도 리셋 — 셀은 그대로여도 비주얼 Z가 상면으로 바뀌므로 강제 재적재.
+	OJJ_LiftPawnsOntoFoundation(Origin, EffSize, NewFoundation->GetThickness());
 	CharacterOverlayCells.Reset();
 
 	// 직전 영역이 이제 커버됨(겹침 금지) → 다음 호버에서 빨강 재표시 강제(머신 경로와 동일).
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 }
 
-void AOJJ_BuildController::OJJ_LiftPawnsOntoFoundation(FIntPoint Origin, FIntPoint Size, float SurfaceZ, float SlabThickness)
+void AOJJ_BuildController::OJJ_LiftPawnsOntoFoundation(FIntPoint Origin, FIntPoint Size, float SlabThickness)
 {
 	// 서버 권위 — 배치(TryPlaceFoundation의 HasAuthority)와 같은 흐름. 모든 Pawn 대상(멀티 대비).
+	// 배치 성공 직후 호출되므로 셀별 SurfaceZ는 그리드 등록 데이터(GetFoundationSurfaceZ)가 진실원 —
+	// 평판(전 셀 동일)과 램프(F3-2 계단)를 같은 코드로 처리(㉳).
 	if (!HasAuthority() || !TargetGrid)
 	{
 		return;
@@ -1031,7 +1040,6 @@ void AOJJ_BuildController::OJJ_LiftPawnsOntoFoundation(FIntPoint Origin, FIntPoi
 		return;
 	}
 
-	const float SlabBottomZ = SurfaceZ - SlabThickness;
 	for (TActorIterator<APawn> It(World); It; ++It)
 	{
 		APawn* Pawn = *It;
@@ -1043,33 +1051,49 @@ void AOJJ_BuildController::OJJ_LiftPawnsOntoFoundation(FIntPoint Origin, FIntPoi
 		float HalfHeight = 0.0f;
 		Pawn->GetSimpleCollisionCylinder(Radius, HalfHeight);
 		const FVector Loc = Pawn->GetActorLocation();
-
-		// XY: 캡슐이 걸친 셀 범위(WorldToGrid — XY 전용, 셀 반올림 규칙 공유)와 풋프린트 사각형 교차.
-		const FIntPoint MinCell = TargetGrid->WorldToGrid(Loc - FVector(Radius, Radius, 0.0f));
-		const FIntPoint MaxCell = TargetGrid->WorldToGrid(Loc + FVector(Radius, Radius, 0.0f));
-		const bool bOverlapsXY =
-			MaxCell.X >= Origin.X && MinCell.X < Origin.X + Size.X &&
-			MaxCell.Y >= Origin.Y && MinCell.Y < Origin.Y + Size.Y;
-		if (!bOverlapsXY)
-		{
-			continue;
-		}
-
-		// Z: 캡슐이 슬래브 구간 [상면−두께, 상면]과 겹칠 때만 — 발이 이미 상면 이상이면 no-op,
-		// 머리가 슬래브 바닥 아래면(높은 단 밑 갭 보행 — 결정 ⑥) 간섭 없음.
 		const float Feet = Loc.Z - HalfHeight;
 		const float Head = Loc.Z + HalfHeight;
-		if (Feet >= SurfaceZ || Head <= SlabBottomZ)
+
+		// 캡슐이 걸친 셀 범위(WorldToGrid — XY 전용, 셀 반올림 규칙 공유) ∩ 풋프린트.
+		const FIntPoint MinCell = TargetGrid->WorldToGrid(Loc - FVector(Radius, Radius, 0.0f));
+		const FIntPoint MaxCell = TargetGrid->WorldToGrid(Loc + FVector(Radius, Radius, 0.0f));
+		const int32 IterMinX = FMath::Max(MinCell.X, Origin.X);
+		const int32 IterMaxX = FMath::Min(MaxCell.X, Origin.X + Size.X - 1);
+		const int32 IterMinY = FMath::Max(MinCell.Y, Origin.Y);
+		const int32 IterMaxY = FMath::Min(MaxCell.Y, Origin.Y + Size.Y - 1);
+
+		// 셀별 판정: 캡슐이 그 셀 슬래브 구간 [상면−두께, 상면]과 겹칠 때만 — 발이 이미 상면 이상이면
+		// no-op, 머리가 슬래브 바닥 아래면(높은 단 밑 갭 보행 — 결정 ⑥) 간섭 없음. 올림 목표는
+		// 걸린 셀 상면의 max(램프 위면 더 높은 행 기준 — 재끼임 방지).
+		float LiftToZ = 0.0f;
+		bool bLift = false;
+		for (int32 X = IterMinX; X <= IterMaxX; ++X)
+		{
+			for (int32 Y = IterMinY; Y <= IterMaxY; ++Y)
+			{
+				float CellSurfaceZ = 0.0f;
+				if (!TargetGrid->GetFoundationSurfaceZ(FIntPoint(X, Y), CellSurfaceZ))
+				{
+					continue;
+				}
+				if (Feet < CellSurfaceZ && Head > CellSurfaceZ - SlabThickness)
+				{
+					LiftToZ = bLift ? FMath::Max(LiftToZ, CellSurfaceZ) : CellSurfaceZ;
+					bLift = true;
+				}
+			}
+		}
+		if (!bLift)
 		{
 			continue;
 		}
 
 		// 상면 + 캡슐 반높이(+2 초기 침투 방지 — 착지는 중력이 정리). XY 유지("깔면 올라탐").
 		// 위 공간이 다른 액터로 막힌 경우의 정교한 처리는 백로그 — 일단 올리고 로그로 추적.
-		const FVector NewLoc(Loc.X, Loc.Y, SurfaceZ + HalfHeight + 2.0f);
+		const FVector NewLoc(Loc.X, Loc.Y, LiftToZ + HalfHeight + 2.0f);
 		Pawn->SetActorLocation(NewLoc, /*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
 		UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation 배치 — Pawn 올려태움: %s Z %.1f→%.1f (상면 %.1f)"),
-			*Pawn->GetName(), Loc.Z, NewLoc.Z, SurfaceZ);
+			*Pawn->GetName(), Loc.Z, NewLoc.Z, LiftToZ);
 	}
 }
 
