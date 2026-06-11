@@ -8,6 +8,8 @@
 
 class AMachineBase;
 class APowerGridNode;
+class UMaterialInstanceDynamic;
+class UMaterialInterface;
 
 UCLASS()
 class WANTED_FACTORY_API APowerLine : public AActor
@@ -55,7 +57,25 @@ protected:
 	float EndpointHeightOffset = 20.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line", meta = (ClampMin = "0.1"))
-	float LineThickness = 8.0f;
+	float LineThickness = 4.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material")
+	TObjectPtr<UMaterialInterface> LineMaterialBase;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material")
+	TObjectPtr<UMaterialInterface> ConnectedLineMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material")
+	TObjectPtr<UMaterialInterface> DisconnectedLineMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material")
+	FLinearColor ConnectedLineColor = FLinearColor(1.0f, 0.72f, 0.05f, 0.45f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material")
+	FLinearColor DisconnectedLineColor = FLinearColor::Black;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material", meta = (ClampMin = "0.0"))
+	float ConnectedEmissiveStrength = 2.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Sag", meta = (ClampMin = "0.0"))
 	float SagRatio = 0.035f;
@@ -79,10 +99,20 @@ protected:
 	TWeakObjectPtr<AMachineBase> TargetMachine;
 
 private:
+	bool IsElectricallyConnected() const;
 	FVector GetSagPoint(const FVector& SourceLocation, const FVector& TargetLocation, float Alpha, float SagDepth) const;
 	UStaticMeshComponent* GetOrCreateLineSegment(int32 SegmentIndex);
 	void HideUnusedLineSegments(int32 UsedSegmentCount);
 	void UpdateLineSegment(UStaticMeshComponent* Segment, const FVector& StartLocation, const FVector& EndLocation);
+	UMaterialInterface* GetPowerLineMaterial(bool bElectricallyConnected);
+	void ConfigureMaterialInstance(UMaterialInstanceDynamic* MaterialInstance, bool bElectricallyConnected) const;
+	void ApplyMaterialToSegment(UStaticMeshComponent* Segment, bool bElectricallyConnected);
 	void RegisterToFactoryManager();
 	void UnregisterFromFactoryManager();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> ConnectedMaterialInstance;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> DisconnectedMaterialInstance;
 };

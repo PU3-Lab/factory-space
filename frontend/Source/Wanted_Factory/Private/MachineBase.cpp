@@ -66,6 +66,22 @@ namespace
 
 		return Result.IsEmpty() ? FString(TEXT("None")) : Result;
 	}
+
+	void RequestPowerGridRefresh(AMachineBase* Machine)
+	{
+		if (!Machine)
+		{
+			return;
+		}
+
+		if (UGameInstance* GameInstance = Machine->GetGameInstance())
+		{
+			if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
+			{
+				FactoryManager->UpdatePowerGrid();
+			}
+		}
+	}
 }
 
 AMachineBase::AMachineBase()
@@ -960,6 +976,7 @@ void AMachineBase::DamageDurability(float DamageAmount)
 	
 	OnDurabilityChanged.Broadcast(CurrentDurability, MaxDurability);
 	RefreshMachineState();
+	RequestPowerGridRefresh(this);
 }
 
 void AMachineBase::RepairDurability(float RepairAmount)
@@ -978,6 +995,7 @@ void AMachineBase::RepairDurability(float RepairAmount)
 	
 	OnDurabilityChanged.Broadcast(CurrentDurability, MaxDurability);
 	RefreshMachineState();
+	RequestPowerGridRefresh(this);
 }
 
 void AMachineBase::ApplyDurabilityDamage(float DamageAmount)
@@ -987,6 +1005,7 @@ void AMachineBase::ApplyDurabilityDamage(float DamageAmount)
 
 void AMachineBase::SetProvidedPower(float NewPower)
 {
+	const bool bHadEnoughPower = HasEnoughPower();
 	CurrentProvidedPower = FMath::Max(0.f, NewPower);
 	
 	LOG_SSR_W(TEXT("Power Updated : %.1f / %.1f"),
@@ -995,6 +1014,10 @@ void AMachineBase::SetProvidedPower(float NewPower)
 	);
 	
 	RefreshMachineState();
+	if (!bHadEnoughPower && HasEnoughPower() && MachineState == EMachineState::Idle)
+	{
+		TryStartProcess();
+	}
 }
 
 bool AMachineBase::HasEnoughPower() const

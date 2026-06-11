@@ -1147,10 +1147,8 @@ void AOJJ_BuildController::CommitPowerLineDrag()
 	}
 
 	PowerLine->ConfigurePowerLine(SourceMachine, TargetMachine);
-	if (!FactoryManager->AddPowerConnection(SourceMachine, TargetMachine, PowerLine))
-	{
-		PowerLine->Destroy();
-	}
+	FactoryManager->UpdatePowerGrid();
+	PowerLine->UpdateLineVisual();
 }
 
 void AOJJ_BuildController::AppendConveyorPathTo(FIntPoint TargetCell)
