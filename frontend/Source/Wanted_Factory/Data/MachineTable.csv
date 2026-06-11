@@ -14,6 +14,9 @@ Pump_Lv3,Pump,3,iron_ingot,10,1000,10,1,1,1,1,3,3,
 AirCompressor_Lv1,AirCompressor,1,iron_ingot,10,1000,10,1,1,1,1,3,3,
 AirCompressor_Lv2,AirCompressor,2,iron_ingot,10,1000,10,1,1,1,1,3,3,
 AirCompressor_Lv3,AirCompressor,3,iron_ingot,10,1000,10,1,1,1,1,3,3,
+Synthesizer_Lv1,Synthesizer,1,iron_ingot,10,1000,10,2,1,2,1,3,3,
+Synthesizer_Lv2,Synthesizer,2,iron_ingot,10,1000,10,2,1,2,1,3,3,
+Synthesizer_Lv3,Synthesizer,3,iron_ingot,10,1000,10,2,1,2,1,3,3,
 PowerPlant_Lv1,PowerPlant,1,iron_ingot,10,1000,30,0,0,0,0,3,3,/Game/Assets/UIImg/Machine/PowerPlant.PowerPlant
 PowerGridNode_Lv1,PowerGridNode,1,iron_ingot,10,1000,40,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/PowerGridNode.PowerGridNode
 MagneticShield_Lv1,MagneticShield,1,iron_ingot,100,10000,100,0,0,0,0,3,3,/Game/Assets/UIImg/Machine/MagneticShield.MagneticShield
