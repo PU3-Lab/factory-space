@@ -297,6 +297,8 @@ Player Question
 → Final Answer
 ```
 
+State와 node의 상세 정의는 `operator_guide_state_node_definition.md`를 기준으로 한다.
+
 ### Question Guide 역할
 
 ```text

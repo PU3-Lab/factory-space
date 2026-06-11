@@ -123,6 +123,12 @@ Do not answer questions outside the game manual, current game state, or supporte
 Do not invent mechanics, recipes, equipment, resources, or quest steps without evidence.
 ```
 
+### State/Node Definition
+
+operator_guide runtime은 같은 state를 여러 node가 이어받아 갱신하는 구조로 설계한다. `state`는 플레이어 질문 처리 중 들고 다니는 데이터 묶음이고, `node`는 그 state를 읽고 갱신하는 실행 단계다.
+
+상세 필드, node별 읽기/쓰기 책임, 로그 기준은 `operator_guide_state_node_definition.md`를 따른다.
+
 정책 강도:
 
 ```text
