@@ -8,6 +8,18 @@
 #include "Machines/PowerGridNode.h"
 #include "Machines/PowerPlant.h"
 
+namespace
+{
+	bool IsPowerRelevantMachine(const AMachineBase* Machine)
+	{
+		return Machine &&
+			(Machine->NeedsPower() ||
+			 Machine->IsA<APowerGridNode>() ||
+			 Machine->IsA<APowerPlant>() ||
+			 Machine->GetMachineType() == FName(TEXT("BasicGenerator")));
+	}
+}
+
 void UFactoryManagerSubsystem::Deinitialize()
 {
 	ResetConsumerPower();
@@ -36,6 +48,10 @@ void UFactoryManagerSubsystem::RegisterMachine(AMachineBase* Machine)
 		});
 	RegisteredMachines.Add(Machine);
 	MarkGraphDirty();
+	if (IsPowerRelevantMachine(Machine))
+	{
+		UpdatePowerGrid();
+	}
 }
 
 void UFactoryManagerSubsystem::UnregisterMachine(AMachineBase* Machine)
@@ -53,6 +69,10 @@ void UFactoryManagerSubsystem::UnregisterMachine(AMachineBase* Machine)
 		});
 	RemoveConnectionsForMachine(MakeMachineID(Machine));
 	MarkGraphDirty();
+	if (IsPowerRelevantMachine(Machine))
+	{
+		UpdatePowerGrid();
+	}
 }
 
 void UFactoryManagerSubsystem::NotifyMachineChanged(AMachineBase* Machine)
@@ -133,6 +153,7 @@ void UFactoryManagerSubsystem::RegisterPowerLine(APowerLine* PowerLine)
 		});
 	RegisteredPowerLines.Add(PowerLine);
 	MarkGraphDirty();
+	UpdatePowerGrid();
 }
 
 void UFactoryManagerSubsystem::UnregisterPowerLine(APowerLine* PowerLine)
@@ -144,6 +165,7 @@ void UFactoryManagerSubsystem::UnregisterPowerLine(APowerLine* PowerLine)
 		});
 	RemovePowerConnectionsForLine(PowerLine);
 	MarkGraphDirty();
+	UpdatePowerGrid();
 }
 
 bool UFactoryManagerSubsystem::AddPowerConnection(
@@ -358,6 +380,14 @@ void UFactoryManagerSubsystem::UpdatePowerGrid()
 		BuildPowerGridComponent(Node, VisitedNodes, ComponentNodes);
 		SupplyPowerToComponent(ComponentNodes, SuppliedConsumers, UsedGenerators);
 	}
+
+	for (const TWeakObjectPtr<APowerLine>& WeakPowerLine : RegisteredPowerLines)
+	{
+		if (APowerLine* PowerLine = WeakPowerLine.Get())
+		{
+			PowerLine->UpdateLineVisual();
+		}
+	}
 }
 
 TArray<AMachineBase*> UFactoryManagerSubsystem::GetConnectedMachines(AMachineBase* Machine)
@@ -414,6 +444,83 @@ TArray<FPowerConnectionEdge> UFactoryManagerSubsystem::GetPowerConnectionEdges()
 	TArray<FPowerConnectionEdge> Result;
 	PowerConnections.GenerateValueArray(Result);
 	return Result;
+}
+
+bool UFactoryManagerSubsystem::IsPowerLineEnergized(const APowerLine* PowerLine)
+{
+	EnsureCachedData();
+
+	if (!PowerLine)
+	{
+		return false;
+	}
+
+	const FPowerConnectionEdge* MatchingEdge = nullptr;
+	for (const TPair<FName, FPowerConnectionEdge>& ConnectionPair : PowerConnections)
+	{
+		if (ConnectionPair.Value.PowerLineActor.Get() == PowerLine)
+		{
+			MatchingEdge = &ConnectionPair.Value;
+			break;
+		}
+	}
+
+	if (!MatchingEdge)
+	{
+		return false;
+	}
+
+	AMachineBase* SourceMachine = nullptr;
+	AMachineBase* TargetMachine = nullptr;
+	if (const FMachineNode* SourceNode = Machines.Find(MatchingEdge->SourceMachine))
+	{
+		SourceMachine = SourceNode->MachineActor.Get();
+	}
+	if (const FMachineNode* TargetNode = Machines.Find(MatchingEdge->TargetMachine))
+	{
+		TargetMachine = TargetNode->MachineActor.Get();
+	}
+
+	APowerGridNode* SourceGridNode = Cast<APowerGridNode>(SourceMachine);
+	APowerGridNode* TargetGridNode = Cast<APowerGridNode>(TargetMachine);
+	APowerPlant* SourcePowerPlant = Cast<APowerPlant>(SourceMachine);
+	APowerPlant* TargetPowerPlant = Cast<APowerPlant>(TargetMachine);
+
+	if (SourcePowerPlant && TargetGridNode)
+	{
+		return SourcePowerPlant->CanGeneratePower() && TargetGridNode->IsPowerGridActive();
+	}
+
+	if (TargetPowerPlant && SourceGridNode)
+	{
+		return TargetPowerPlant->CanGeneratePower() && SourceGridNode->IsPowerGridActive();
+	}
+
+	if (!SourceGridNode || !TargetGridNode ||
+		!SourceGridNode->IsPowerGridActive() || !TargetGridNode->IsPowerGridActive())
+	{
+		return false;
+	}
+
+	TSet<APowerGridNode*> VisitedNodes;
+	TArray<APowerGridNode*> ComponentNodes;
+	BuildPowerGridComponent(SourceGridNode, VisitedNodes, ComponentNodes);
+
+	for (const TWeakObjectPtr<AMachineBase>& WeakMachine : RegisteredMachines)
+	{
+		APowerPlant* PowerPlant = Cast<APowerPlant>(WeakMachine.Get());
+		if (!PowerPlant || !PowerPlant->CanGeneratePower())
+		{
+			continue;
+		}
+
+		if (IsMachineConnectedToComponent(PowerPlant, ComponentNodes))
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 void UFactoryManagerSubsystem::EnsureCachedData()
@@ -620,10 +727,20 @@ void UFactoryManagerSubsystem::SupplyPowerToComponent(
 		return;
 	}
 
-	const float SupplyRatio = FMath::Clamp(ComponentGeneratedPower / ComponentDemandPower, 0.0f, 1.0f);
+	float RemainingPower = ComponentGeneratedPower;
 	for (AMachineBase* Consumer : ComponentConsumers)
 	{
-		SetMachinePowerIfChanged(Consumer, Consumer->GetPowerConsumption() * SupplyRatio);
+		const float RequiredPower = FMath::Max(0.0f, Consumer->GetPowerConsumption());
+		if (RequiredPower <= 0.0f)
+		{
+			continue;
+		}
+
+		if (RemainingPower + 0.01f >= RequiredPower)
+		{
+			SetMachinePowerIfChanged(Consumer, RequiredPower);
+			RemainingPower -= RequiredPower;
+		}
 	}
 }
 
