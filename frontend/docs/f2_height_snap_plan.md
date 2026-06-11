@@ -128,7 +128,7 @@
 | 2 | F2-1 | 베이크 최고점(+버전 시그니처) + GetUniformSurfaceZ 지형 GroundZ 소비 + 재베이크·실측 | OJJ_Grid.h/.cpp, 레벨 재베이크 |
 | 3 | F2-2 ✅ | tol 100 확정(실측 9.1%→18.3%, 2배) — 재베이크 1회 필요 | OJJ_Grid.h(기본값) |
 | 4 | F2-3 ✅ | Thickness 45 적용(PIE 걷기는 확인 절차만) | OJJ_Foundation.h |
-| 5 | F2-4 | 높이 스냅 — SnapLift 헬퍼 + 컨트롤러 적용 | OJJ_Grid.h/.cpp, OJJ_BuildController.cpp |
+| 5 | F2-4 ✅ | 높이 스냅 — OJJ_ComputeFoundationSnapLift + 컨트롤러 적용 + N 로그 | OJJ_Grid.h/.cpp, OJJ_BuildController.cpp, OJJ_Foundation.h(주석) |
 
 결정점 현황 (2026-06-11 전부 확정 — 추천안 일괄 승인):
 ⓐ 철거불가 호버 생략(+거부 사유 화면 표시는 UI 백로그) · ⓑ ArrowMID 동봉 · ① 분류 최악점 유지 ·

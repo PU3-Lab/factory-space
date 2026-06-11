@@ -968,12 +968,15 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 		return;
 	}
 
-	// SurfaceZ = 그리드 평면 + Thickness(F1 1단 고정 — §7-1). 좌표는 그리드 헬퍼(결정점 ② — 데이터/좌표는
-	// 그리드, 액터 이동은 컨트롤러). 실패 시 머신 경로처럼 즉시 파기 — orphan 없음.
+	// SurfaceZ = 평면 + Thickness + 스냅 리프트(F2-4 §5-4 — 풋프린트 GroundZ 최고점의 N×100단, 평탄 N=0 =
+	// F1 동작). 좌표/리프트는 그리드 헬퍼(결정점 ② — 데이터/좌표는 그리드, 액터 이동은 컨트롤러).
+	// 액터는 통째로 리프트만큼 위 — 슬래브 상면(액터Z+Thickness)이 SurfaceZ와 자동 일치. 실패 시 즉시 파기.
 	const FVector PlaceLocation = TargetGrid->GetFoundationPlacementLocation(Origin, Size);
+	const float SnapLift = TargetGrid->OJJ_ComputeFoundationSnapLift(Origin, Size, NewFoundation->GetThickness());
+	const FVector SnappedLocation = PlaceLocation + FVector(0.0f, 0.0f, SnapLift);
 	FString OutReason;
 	if (!TargetGrid->TryPlaceFoundation(
-		NewFoundation, Origin, Size, PlaceLocation.Z + NewFoundation->GetThickness(), OutReason))
+		NewFoundation, Origin, Size, SnappedLocation.Z + NewFoundation->GetThickness(), OutReason))
 	{
 		// OutReason에 사유별 셀 수(water/occupied/overlap 등) — F1-b 디버깅·waterZ 재검토 실측 데이터.
 		UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation 배치 불가: %s"), *OutReason);
@@ -981,11 +984,13 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 		return;
 	}
 
-	NewFoundation->SetActorLocation(PlaceLocation);
+	NewFoundation->SetActorLocation(SnappedLocation);
 	NewFoundation->OJJ_NotifyPlacedOnGrid(TargetGrid);
 
-	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s Foundation 배치 성공 (%dx%d)"),
-		*Origin.ToString(), Size.X, Size.Y);
+	// N 기록(결정 ⑤ 보강) — 단 분포 실측으로 상한 재검토 근거 축적.
+	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s Foundation 배치 성공 (%dx%d, N=%d단)"),
+		*Origin.ToString(), Size.X, Size.Y,
+		FMath::RoundToInt(SnapLift / AOJJ_Grid::OJJ_FoundationSnapStep));
 
 	// 직전 영역이 이제 커버됨(겹침 금지) → 다음 호버에서 빨강 재표시 강제(머신 경로와 동일).
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);

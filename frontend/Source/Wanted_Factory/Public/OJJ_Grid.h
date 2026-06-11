@@ -555,7 +555,8 @@ public:
 
 	// Foundation 커버리지 등록 — 검증(CanPlaceFoundation) + 양방향 맵 등록만 수행. 액터 위치/비주얼은
 	// 건드리지 않음(F1-b BuildController 책임 — 그리드는 Foundation 메시/Thickness를 모름).
-	// SurfaceZ는 호출자 전달(F1: 그리드 평면 Z + Thickness 단일값). 서버 권위 전용, 중복 등록 거부.
+	// SurfaceZ는 호출자 전달(F2-4: 평면 + Thickness + 스냅 리프트 — 컨트롤러가 OJJ_ComputeFoundationSnapLift로
+	// 산출). 서버 권위 전용, 중복 등록 거부.
 	UFUNCTION(BlueprintCallable, Category = "Grid|Foundation")
 	bool TryPlaceFoundation(AActor* Foundation, FIntPoint Origin, FIntPoint Size, float SurfaceZ, FString& OutReason);
 
@@ -587,9 +588,20 @@ public:
 
 	// Foundation 풋프린트 중심 월드 좌표(F1-b 결정점 ② — 그리드는 좌표만, 액터 이동은 호출자).
 	// 머신 GetMachinePlacementLocation과 동형 수식(lower-left 셀 중심 + (Size-1)/2)이되 메시 AABB Z 보정은
-	// 없음 — Foundation이 자체 메시 오프셋(상면=평면+Thickness)을 책임진다. Z = 그리드 평면(F1 1단 고정).
+	// 없음 — Foundation이 자체 메시 오프셋(상면=액터Z+Thickness)을 책임진다. Z = 그리드 평면 —
+	// 높이 스냅(F2-4)은 호출자가 OJJ_ComputeFoundationSnapLift 반환값을 Z에 더해 적용.
 	UFUNCTION(BlueprintPure, Category = "Grid|Foundation")
 	FVector GetFoundationPlacementLocation(FIntPoint Origin, FIntPoint Size) const;
+
+	// Foundation 높이 스냅 리프트(F2-4 §5-4): 풋프린트 GroundZ 최고점에 맞춘 단(段) 오프셋 N×100uu 반환.
+	// N = ceil((max GroundZ − Thickness) / 100) clamp ≥0 → 상면(평면+Thickness+반환값)이 항상 지형 최고점
+	// 이상(묻힘 0)이고 초과 < 100. 평탄 지대 N=0 = F1 동작 그대로. GroundZ 무효(미베이크/시그니처 불일치)
+	// 또는 풋프린트가 그리드 밖이면 0 — 평면 폴백(회귀 0). N 상한 없음(결정 ⑤) — 분포는 배치 로그 N으로 실측.
+	float OJJ_ComputeFoundationSnapLift(FIntPoint Origin, FIntPoint Size, float Thickness) const;
+
+	// 단 간격(1m). 고정 상수 — "같은 단 = 같은 SurfaceZ"가 걸침 허용/거부(OJJ_GetUniformSurfaceZ)의
+	// 기준이라 디자이너 튜닝 비노출(단 간격이 갈라지면 동일성 판정이 무의미해짐).
+	static constexpr float OJJ_FoundationSnapStep = 100.0f;
 
 	// Foundation 배치 호버 미리보기 — 풋프린트 전체를 단일색 녹(가능)/적(불가)으로 표시.
 	// 단일 진실원: 색 판정 = 클릭 시 판정(CanPlaceFoundation) — 머신 UpdateHoverPreview와 동일 정책

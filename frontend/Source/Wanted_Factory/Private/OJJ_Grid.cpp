@@ -1418,6 +1418,52 @@ FVector AOJJ_Grid::GetFoundationPlacementLocation(FIntPoint Origin, FIntPoint Si
 	return FVector(LowerLeftCenter.X + OffsetX, LowerLeftCenter.Y + OffsetY, LowerLeftCenter.Z);
 }
 
+float AOJJ_Grid::OJJ_ComputeFoundationSnapLift(FIntPoint Origin, FIntPoint Size, float Thickness) const
+{
+	// GetCellGroundZ 소비처 — 셀 불변 유효성은 1회 호이스팅(비주얼/GetUniformSurfaceZ 경로와 동일 패턴).
+	if (!OJJ_HasValidGroundZData() || Size.X < 1 || Size.Y < 1)
+	{
+		return 0.0f;
+	}
+
+	// 끝 좌표 int64 + 그리드 교집합 계산(CanPlaceFoundation의 거대 입력 방어 미러). 풋프린트가 하나라도
+	// 그리드 밖이면 0(계약 — Codex F2-4 ①): 그런 배치는 CanPlaceFoundation이 어차피 거부하므로 리프트는
+	// 평면 폴백이 일관(부분 교집합 max로 non-zero를 돌려주면 계약 위반 + 호출자 오해 소지).
+	const int32 IterMinX = FMath::Max(Origin.X, 0);
+	const int32 IterMinY = FMath::Max(Origin.Y, 0);
+	const int32 IterEndX = (int32)FMath::Min<int64>((int64)Origin.X + Size.X, (int64)GridSize.X);
+	const int32 IterEndY = (int32)FMath::Min<int64>((int64)Origin.Y + Size.Y, (int64)GridSize.Y);
+	const int64 TotalCells = (int64)Size.X * (int64)Size.Y;
+	const int64 InGridCells =
+		(int64)FMath::Max(0, IterEndX - IterMinX) * (int64)FMath::Max(0, IterEndY - IterMinY);
+	if (InGridCells != TotalCells)
+	{
+		return 0.0f;
+	}
+
+	float MaxGroundZ = -TNumericLimits<float>::Max();
+	for (int32 X = IterMinX; X < IterEndX; ++X)
+	{
+		for (int32 Y = IterMinY; Y < IterEndY; ++Y)
+		{
+			float Delta = 0.0f;
+			if (GetCellGroundZ(FIntPoint(X, Y), Delta))
+			{
+				MaxGroundZ = FMath::Max(MaxGroundZ, Delta);
+			}
+		}
+	}
+	if (MaxGroundZ == -TNumericLimits<float>::Max())
+	{
+		return 0.0f; // 도달 불가(유효 데이터 + 전 셀 in-grid면 항상 채워짐) — CeilToInt 극값 방어선만.
+	}
+
+	// N = ceil((max GroundZ − Thickness) / 100) clamp ≥0. 경계: max == Thickness+k×100이면 상면이 지형
+	// 최고점에 정확히 접함(N=k) — "이상" 조건 충족이라 다음 단으로 올리지 않음.
+	const int32 SnapSteps = FMath::Max(0, FMath::CeilToInt((MaxGroundZ - Thickness) / OJJ_FoundationSnapStep));
+	return SnapSteps * OJJ_FoundationSnapStep;
+}
+
 void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size)
 {
 	ClearHoverPreview();

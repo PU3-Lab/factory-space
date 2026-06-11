@@ -18,7 +18,8 @@ class UStaticMeshComponent;
  * 배치는 BuildController의 Foundation 빌드 모드가 수행한다. WaterArea(BeginPlay 자가 등록)와 달리
  * 자가 등록하지 않음: 빌드 모드 스폰 전용이라 등록 주체가 항상 컨트롤러(레벨 사전 배치는 후속 결정).
  *
- * F1은 높이 1단 고정: 상면 Z = 그리드 평면 Z + Thickness. 지형/엣지 높이 스냅은 F2.
+ * 높이는 F2-4 스냅: 컨트롤러가 액터를 N×100uu(그리드 OJJ_ComputeFoundationSnapLift) 들어 올려 배치 —
+ * 상면 Z = 액터 Z + Thickness = 평면 + Thickness + N×100. 평탄 지대 N=0(F1 동작과 동일).
  */
 UCLASS()
 class WANTED_FACTORY_API AOJJ_Foundation : public AActor
@@ -57,7 +58,8 @@ protected:
 
 private:
 	// FoundationSize/Thickness/그리드 CellSize에 맞춰 슬래브 스케일·위치 갱신.
-	// 액터 원점 = 풋프린트 중심(GetFoundationPlacementLocation 계약) → XY 오프셋 0, 상면 = 평면 + Thickness.
+	// 액터 원점 = 풋프린트 중심(GetFoundationPlacementLocation 계약) → XY 오프셋 0, 상면 = 액터 Z + Thickness
+	// (액터 상대라 F2-4 스냅 리프트에도 수식 불변 — 컨트롤러가 액터째 들어 올림).
 	void UpdateSlabVisual();
 
 	// EndPlay 대칭 해제용(TryPlaceFoundation 성공 시 OJJ_NotifyPlacedOnGrid로 세팅). 미등록이면 무효.
