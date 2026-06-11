@@ -304,6 +304,9 @@ Player-facing guide
 - 게임 안 UI 도움말, 튜토리얼/초반 안내, 문서/포트폴리오 설명에 사용한다.
 - 톤은 튜토리얼 NPC와 실용적인 도움말을 섞는다.
 - 질문 예시는 장비 설명, 자원 설명, 제작법/레시피, 전력/물류/저장, 현재 상태 문제 해결, 진행 방향/다음 목표로 나눈다.
+- Unreal UI에서는 `[질문하기] [질문 가이드]` 탭을 나누고, `질문하기` 탭 안에 작은 `질문 예시 보기` 진입점을 둔다.
+- 예시 질문 버튼은 기본적으로 즉시 전송하지 않고 질문 입력창에 채운다.
+- 상세 UI 계약과 action type은 `operator_guide_unreal_question_guide_ui_contract.md`를 따른다.
 
 Agent policy
 - operator_guide가 답할 수 있는 질문 범위를 정의한다.
