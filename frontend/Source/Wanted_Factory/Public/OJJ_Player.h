@@ -287,6 +287,9 @@ protected:
 	// Foundation(기초) 모드 진입(G키 — M/J/I와 같은 BindKey 직접 바인딩이라 무인자. 정식 IA 전환은 백로그).
 	void SetFoundationMode();
 
+	// Foundation 종류 전환(T키 — F3-2.5, 평판↔램프. G키와 같은 BindKey 임시, 정식 IA 전환은 백로그).
+	void ToggleFoundationKind();
+
 	// 스프린트 — Started=달리기 속도, Completed=걷기 속도로 복귀.
 	void StartSprint(const FInputActionValue& Value);
 	void StopSprint(const FInputActionValue& Value);

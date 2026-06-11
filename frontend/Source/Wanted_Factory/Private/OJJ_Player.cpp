@@ -300,6 +300,7 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
 	// Foundation 모드(F1-b) — 직접 바인딩(M/J/I 패턴). IA/IMC 에셋 전환은 키 정리 백로그.
 	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AOJJ_Player::SetFoundationMode);
+	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &AOJJ_Player::ToggleFoundationKind);
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -651,6 +652,17 @@ void AOJJ_Player::SetFoundationMode()
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Foundation);
+}
+
+// Foundation 종류 전환(T키 — F3-2.5). 빌드모드/Foundation 모드 게이트는 BuildController가 소유
+// (회전 R키 BuildRotateMachine과 동일한 위임-only 패턴 — 다른 모드에선 no-op라 비간섭).
+void AOJJ_Player::ToggleFoundationKind()
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->ToggleFoundationKind();
 }
 
 void AOJJ_Player::StartSprint(const FInputActionValue& Value)

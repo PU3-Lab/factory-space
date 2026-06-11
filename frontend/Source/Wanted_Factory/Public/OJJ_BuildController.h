@@ -124,10 +124,17 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
 	TSubclassOf<AMachineBase> WarehouseClass;
 
-	// Foundation 모드에서 배치할 클래스(AOJJ_Foundation 파생 BP 지정 가능). 머신이 아니므로
+	// Foundation 모드에서 배치할 평판 클래스(AOJJ_Foundation 파생 BP 지정 가능). 머신이 아니므로
 	// GetActiveMachineClass/머신 배치 경로 비경유 — Conveyor/Demolish처럼 독립 분기(F1-b).
+	// F3-2.5: 구 FoundationClass에서 개명 — 기존 BP/레벨 인스턴스 지정은 DefaultEngine.ini
+	// [CoreRedirects] PropertyRedirects가 이관(미적용 에셋은 에디터 재저장 시 확정).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
-	TSubclassOf<AOJJ_Foundation> FoundationClass;
+	TSubclassOf<AOJJ_Foundation> FlatFoundationClass;
+
+	// Foundation 모드에서 배치할 램프 클래스(F3-2.5 — AOJJ_RampFoundation 또는 파생 BP).
+	// 미지정이면 종류 전환(ToggleFoundationKind)이 거부되고 평판만 사용 가능.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AOJJ_Foundation> RampFoundationClass;
 
 	// 현재 배치 모드. Machine(기본)/Conveyor. 플레이어가 SetPlacementMode로 전환.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
@@ -159,6 +166,11 @@ protected:
 	// CDO에 못 담으므로 회전 상태는 이 컨트롤러가 소유. EnterBuildMode에서 0으로 초기화.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
 	int32 HoverRotationSteps = 0;
+
+	// Foundation 모드의 현재 종류(F3-2.5): false=평판(Flat), true=램프(Ramp). 회전 상태와 동일
+	// 라이프사이클 — Enter/ExitBuildMode에서 평판으로 리셋, 모드 전환(SetPlacementMode)은 유지.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
+	bool bRampFoundationSelected = false;
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
@@ -218,6 +230,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void RotateHoverClockwise();
 
+	// Foundation 종류 전환(F3-2.5): 평판 ↔ 램프. 빌드모드 + Foundation 모드에서만 동작 —
+	// 플레이어 T키(임시 BindKey)가 위임. 전환 즉시 호버 강제 갱신(CDO 풋프린트 차이 반영).
+	UFUNCTION(BlueprintCallable, Category = "BuildController")
+	void ToggleFoundationKind();
+
 private:
 	// cursor cell → lower-left origin 변환. 마우스 = 풋프린트 중심 정책.
 	// (Size-1)/2 정수 나눗셈 → lower-left bias:
@@ -235,6 +252,10 @@ private:
 	static FIntPoint ComputeOriginFromCursorCellForSize(FIntPoint CursorCell, FIntPoint EffSize);
 
 	TSubclassOf<AMachineBase> GetActiveMachineClass() const;
+
+	// Foundation 모드의 활성 클래스(F3-2.5) — 종류 상태에 따라 Flat/Ramp 선택. 호버/배치가
+	// 같은 함수를 쓰므로 "미리보기 = 실제 배치" 클래스 정합이 한 곳에서 보장된다.
+	TSubclassOf<AOJJ_Foundation> GetActiveFoundationClass() const;
 
 	// Foundation 모드 호버/배치(F1-b) — 머신 경로와 독립. CDO FoundationSize 풋프린트,
 	// 판정은 그리드 CanPlaceFoundation 단일 진실원, spawn-validate-destroy 패턴(머신 배치 미러).

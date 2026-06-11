@@ -210,6 +210,9 @@ void AOJJ_BuildController::EnterBuildMode()
 	// 빌드 세션은 항상 회전 0(미회전)으로 시작 — 예측 가능한 기본 방향.
 	HoverRotationSteps = 0;
 
+	// Foundation 종류도 평판으로 시작(F3-2.5) — 회전과 동일한 "예측 가능한 기본값" 정책.
+	bRampFoundationSelected = false;
+
 	// 컨베이어 드래그 상태 초기화(이전 세션 잔여 방지).
 	bIsDraggingConveyor = false;
 	ConveyorDragCells.Reset();
@@ -271,6 +274,9 @@ void AOJJ_BuildController::ExitBuildMode()
 	// 회전 상태도 리셋 — 다음 진입은 미회전(0)으로 시작(EnterBuildMode 초기화와 일관).
 	HoverRotationSteps = 0;
 
+	// Foundation 종류도 평판으로 리셋(F3-2.5 — EnterBuildMode 초기화와 대칭).
+	bRampFoundationSelected = false;
+
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
@@ -315,6 +321,38 @@ void AOJJ_BuildController::RotateHoverClockwise()
 
 	// 마우스가 같은 셀에 멈춰 있어도 회전이 즉시 미리보기에 반영되도록 sentinel 리셋 후 강제 갱신.
 	// (UpdateMouseHover는 CursorCell==CurrentHoverCell이면 rebuild를 스킵하므로 sentinel이 필요.)
+	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+	UpdateMouseHover();
+}
+
+void AOJJ_BuildController::ToggleFoundationKind()
+{
+	// Foundation 모드 전용(F3-2.5) — 머신/컨베이어 등 다른 모드 비간섭(T키가 눌려도 no-op).
+	if (!bIsBuildMode || PlacementMode != EOJJ_BuildPlacementMode::Foundation)
+	{
+		return;
+	}
+
+	// 램프 미지정이면 전환 거부 — 사용처(호버/배치)의 silent 폴백보다 전환 시점 1회 경고가 명확.
+	if (!bRampFoundationSelected && !RampFoundationClass)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[BuildController] RampFoundationClass 미지정 — Foundation 종류 전환 무시(평판 유지)"));
+		return;
+	}
+
+	bRampFoundationSelected = !bRampFoundationSelected;
+	UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation: %s"),
+		bRampFoundationSelected ? TEXT("Ramp") : TEXT("Flat"));
+
+	// 종류가 바뀌면 CDO 풋프린트(평판 8×8 vs 램프 비정사각)가 달라짐 — 회전(RotateHoverClockwise)과
+	// 동일하게 sentinel 리셋 후 강제 갱신. 단 커서가 유효 표면 밖이면 UpdateMouseHover의 Foundation
+	// 분기가 리빌드 없이 끝날 수 있으므로, 이전 종류 타일 잔존 금지를 위해 먼저 명시적으로 클리어
+	// (유효 표면 위라면 OJJ_UpdateFoundationHoverPreview가 어차피 클리어 후 재적재 — 이중 클리어 무해).
+	if (TargetGrid)
+	{
+		TargetGrid->ClearHoverPreview();
+	}
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 	UpdateMouseHover();
 }
@@ -895,6 +933,14 @@ void AOJJ_BuildController::OnLeftClickPressed()
 
 // === Foundation 모드 (F1-b — 머신 경로와 독립, 커버리지 배치) ===
 
+TSubclassOf<AOJJ_Foundation> AOJJ_BuildController::GetActiveFoundationClass() const
+{
+	// F3-2.5: 종류 상태에 따라 평판/램프 선택. 램프 선택 상태인데 클래스가 비어 있는 경우는
+	// ToggleFoundationKind 게이트가 차단하므로 정상 흐름에선 도달 불가 — 그래도 null이면
+	// 사용처(호버/배치)의 기존 null 가드가 동작한다.
+	return bRampFoundationSelected ? RampFoundationClass : FlatFoundationClass;
+}
+
 void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHitResult& Hit)
 {
 	// 머신 호버와 동일한 표면 게이트: floor/머신 위에서만 유효(그 외 표면은 off-grid — 프리뷰 클리어).
@@ -921,9 +967,14 @@ void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHi
 		return;
 	}
 
-	const AOJJ_Foundation* DefaultFoundation = FoundationClass ? FoundationClass.GetDefaultObject() : nullptr;
+	const TSubclassOf<AOJJ_Foundation> ActiveClass = GetActiveFoundationClass();
+	const AOJJ_Foundation* DefaultFoundation = ActiveClass ? ActiveClass.GetDefaultObject() : nullptr;
 	if (!DefaultFoundation)
 	{
+		// 활성 클래스가 비어 있으면(예: 램프 선택 상태에서 PIE 중 에디터로 클래스 비움) 이전 종류
+		// 프리뷰가 stale로 남지 않게 정리 후 반환(Codex F3-2.5 ④ RISK 방어).
+		TargetGrid->ClearHoverPreview();
+		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 		return;
 	}
 
@@ -939,9 +990,14 @@ void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHi
 
 void AOJJ_BuildController::PlaceFoundationAtCursor()
 {
-	if (!TargetGrid || !FoundationClass)
+	const TSubclassOf<AOJJ_Foundation> ActiveClass = GetActiveFoundationClass();
+	if (!TargetGrid || !ActiveClass)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[BuildController] TargetGrid 또는 FoundationClass 미설정"));
+		// F3-2.5 마이그레이션 안내: 구 FoundationClass 지정은 CoreRedirects가 FlatFoundationClass로
+		// 이관 — 그래도 비어 있으면 BP/레벨 인스턴스에서 재지정 필요.
+		UE_LOG(LogTemp, Warning,
+			TEXT("[BuildController] TargetGrid 또는 %s 미설정 — BP/레벨 인스턴스에서 지정 확인(구 FoundationClass는 FlatFoundationClass로 개명됨)"),
+			bRampFoundationSelected ? TEXT("RampFoundationClass") : TEXT("FlatFoundationClass"));
 		return;
 	}
 
@@ -951,7 +1007,7 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 		return;
 	}
 
-	const AOJJ_Foundation* DefaultFoundation = FoundationClass.GetDefaultObject();
+	const AOJJ_Foundation* DefaultFoundation = ActiveClass.GetDefaultObject();
 	if (!DefaultFoundation)
 	{
 		return;
@@ -974,7 +1030,7 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 	SpawnParams.Owner = this;
 
 	AOJJ_Foundation* NewFoundation = World->SpawnActor<AOJJ_Foundation>(
-		FoundationClass, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+		ActiveClass, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
 	if (!NewFoundation)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] Foundation SpawnActor 실패"));
