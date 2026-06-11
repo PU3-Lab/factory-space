@@ -6,6 +6,8 @@
 #include "FactoryManagerSubsystem.h"
 #include "MachineBase.h"
 #include "Machines/PowerGridNode.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
 
 APowerLine::APowerLine()
@@ -24,6 +26,14 @@ APowerLine::APowerLine()
 	if (CylinderMesh.Succeeded())
 	{
 		LineMesh->SetStaticMesh(CylinderMesh.Object);
+	}
+
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BasicShapeMaterial(
+		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	if (BasicShapeMaterial.Succeeded())
+	{
+		LineMaterialBase = BasicShapeMaterial.Object;
+		LineMesh->SetMaterial(0, LineMaterialBase);
 	}
 }
 
@@ -117,6 +127,7 @@ void APowerLine::UpdateLineVisual()
 		FMath::CeilToInt(Length / FMath::Max(SegmentTargetLength, 1.0f)),
 		MinSagSegments,
 		MaxSagSegments);
+	const bool bElectricallyConnected = IsElectricallyConnected();
 
 	for (int32 SegmentIndex = 0; SegmentIndex < SegmentCount; ++SegmentIndex)
 	{
@@ -127,9 +138,28 @@ void APowerLine::UpdateLineVisual()
 			Segment,
 			GetSagPoint(SourceLocation, TargetLocation, StartAlpha, SagDepth),
 			GetSagPoint(SourceLocation, TargetLocation, EndAlpha, SagDepth));
+		ApplyMaterialToSegment(Segment, bElectricallyConnected);
 	}
 
 	HideUnusedLineSegments(SegmentCount);
+}
+
+bool APowerLine::IsElectricallyConnected() const
+{
+	if (!SourceMachine.IsValid() || !TargetMachine.IsValid())
+	{
+		return false;
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
+		{
+			return FactoryManager->IsPowerLineEnergized(this);
+		}
+	}
+
+	return false;
 }
 
 FVector APowerLine::GetSagPoint(
@@ -190,10 +220,14 @@ void APowerLine::UpdateLineSegment(
 
 	const FVector Direction = Delta / Length;
 	const FQuat ConnectionRotation = FQuat::FindBetweenNormals(FVector::UpVector, Direction);
+	const FVector ActorLocation = GetActorLocation();
+	const FVector LocalStart = StartLocation - ActorLocation;
+	const FVector LocalEnd = EndLocation - ActorLocation;
+	const FVector LocalDelta = LocalEnd - LocalStart;
 
 	Segment->SetVisibility(true);
-	Segment->SetWorldLocation(StartLocation + (Delta * 0.5f));
-	Segment->SetWorldRotation(ConnectionRotation);
+	Segment->SetRelativeLocation(LocalStart + (LocalDelta * 0.5f));
+	Segment->SetRelativeRotation(ConnectionRotation);
 
 	const FBoxSphereBounds MeshBounds = Segment->GetStaticMesh()
 		? Segment->GetStaticMesh()->GetBounds()
@@ -207,8 +241,66 @@ void APowerLine::UpdateLineSegment(
 		LineThickness / MeshDiameterY,
 		Length / MeshLength);
 
-	Segment->SetWorldScale3D(MeshScale);
-	Segment->AddWorldOffset(ConnectionRotation.RotateVector(-(MeshBounds.Origin * MeshScale)));
+	Segment->SetRelativeScale3D(MeshScale);
+	Segment->AddLocalOffset(-(MeshBounds.Origin * MeshScale));
+}
+
+UMaterialInterface* APowerLine::GetPowerLineMaterial(bool bElectricallyConnected)
+{
+	if (bElectricallyConnected && ConnectedLineMaterial)
+	{
+		return ConnectedLineMaterial;
+	}
+
+	if (!bElectricallyConnected && DisconnectedLineMaterial)
+	{
+		return DisconnectedLineMaterial;
+	}
+
+	UMaterialInterface* BaseMaterial = LineMaterialBase
+		? LineMaterialBase.Get()
+		: UMaterial::GetDefaultMaterial(MD_Surface);
+	TObjectPtr<UMaterialInstanceDynamic>& MaterialInstance = bElectricallyConnected
+		? ConnectedMaterialInstance
+		: DisconnectedMaterialInstance;
+
+	if (!MaterialInstance)
+	{
+		MaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
+	}
+	ConfigureMaterialInstance(MaterialInstance, bElectricallyConnected);
+
+	return MaterialInstance.Get();
+}
+
+void APowerLine::ConfigureMaterialInstance(
+	UMaterialInstanceDynamic* MaterialInstance,
+	bool bElectricallyConnected) const
+{
+	if (!MaterialInstance)
+	{
+		return;
+	}
+
+	const FLinearColor LineColor = bElectricallyConnected ? ConnectedLineColor : DisconnectedLineColor;
+	const float EmissiveStrength = bElectricallyConnected ? ConnectedEmissiveStrength : 0.0f;
+	const FLinearColor EmissiveColor = LineColor * EmissiveStrength;
+
+	MaterialInstance->SetVectorParameterValue(TEXT("Color"), LineColor);
+	MaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), LineColor);
+	MaterialInstance->SetVectorParameterValue(TEXT("Tint"), LineColor);
+	MaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), EmissiveColor);
+	MaterialInstance->SetScalarParameterValue(TEXT("Opacity"), LineColor.A);
+	MaterialInstance->SetScalarParameterValue(TEXT("Alpha"), LineColor.A);
+	MaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), EmissiveStrength);
+}
+
+void APowerLine::ApplyMaterialToSegment(UStaticMeshComponent* Segment, bool bElectricallyConnected)
+{
+	if (Segment)
+	{
+		Segment->SetMaterial(0, GetPowerLineMaterial(bElectricallyConnected));
+	}
 }
 
 void APowerLine::RegisterToFactoryManager()
