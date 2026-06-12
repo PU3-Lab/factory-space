@@ -1,6 +1,7 @@
 #include "Machines/LiquidTank.h"
 
 #include "Engine/DataTable.h"
+#include "Engine/StaticMesh.h"
 #include "Resource/ResourceData.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -16,6 +17,13 @@ ALiquidTank::ALiquidTank()
 	InputBufferCount = 0;
 	OutputBufferCount = 1;
 	MaxBufferPerItem = Capacity;
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMesh(
+		TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (CylinderMesh.Succeeded() && MeshComponent)
+	{
+		MeshComponent->SetStaticMesh(CylinderMesh.Object);
+	}
 
 	static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
 		TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData"));
