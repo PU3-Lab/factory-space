@@ -245,6 +245,65 @@ bool OJJ_FindInputMachineAtPathEnd(
 	return false;
 }
 
+// F3.7-1(f3_7 계획 ㊆): 균일 SurfaceZ 실패 경로의 경사 허용 검사 — 단일 높이 규칙의 램프 경로
+// 예외 게이트. 조건: ① 전 셀 Foundation 커버(혼합 지형 경사는 F1-c 규칙대로 계속 거부 — 경사는
+// 램프/평판 위만) ② 인접 셀 |ΔZ| ≤ 45uu(램프 행간 계단 한계와 동일 근거 — F2-3 MaxStepHeight 45,
+// AOJJ_RampFoundation::OJJ_MaxAutoFitStepPerRow와 같은 상수) ③ 방향 전환(코너) 셀은 양옆 ΔZ=0
+// (㊅ — 벨트 코너 세그먼트가 평면 전제라 경사 코너 금지). 성공 시 OutCellZs = 셀별 절대 SurfaceZ
+// (PathCells와 1:1) — OJJ_TryPlaceConveyor가 시작 셀 기준 로컬화(㊇) 후 벨트에 주입(㊃).
+// ※ 의도(Codex F3.7-1 ②④): 검사는 **형태 기반**(㊆(a) 채택 — 액터가 램프인지는 안 봄. 단 간격
+// 100 고정이라 정상 평판 간 ΔZ는 항상 45 초과 — 45 이하 비격자 면은 램프 중간 행만 생성).
+// 끝점 머신 셀 포함 순회도 의도 — 기존 균일 검사와 동일 범위("전 경로 셀, 머신 끝점 포함"),
+// 지형 직배치 머신과의 혼합 경로는 기존 정책대로 거부.
+bool OJJ_ValidateConveyorSlopePath(
+	const AOJJ_Grid* Grid,
+	const TArray<FIntPoint>& PathCells,
+	TArray<float>& OutCellZs,
+	FString& OutReason)
+{
+	constexpr float MaxSlopeStepZ = 45.0f;
+
+	OutCellZs.Reset();
+	OutCellZs.Reserve(PathCells.Num());
+	for (const FIntPoint& Cell : PathCells)
+	{
+		float CellSurfaceZ = 0.0f;
+		if (!Grid->GetFoundationSurfaceZ(Cell, CellSurfaceZ))
+		{
+			OutReason = TEXT("Conveyor slope path must stay on foundations (mixed terrain/foundation path is not allowed).");
+			return false;
+		}
+		OutCellZs.Add(CellSurfaceZ);
+	}
+
+	for (int32 Index = 1; Index < OutCellZs.Num(); ++Index)
+	{
+		if (FMath::Abs(OutCellZs[Index] - OutCellZs[Index - 1]) > MaxSlopeStepZ + KINDA_SMALL_NUMBER)
+		{
+			OutReason = FString::Printf(
+				TEXT("Conveyor slope between adjacent cells exceeds %.0fuu (use a ramp path)."),
+				MaxSlopeStepZ);
+			return false;
+		}
+	}
+
+	for (int32 Index = 1; Index + 1 < PathCells.Num(); ++Index)
+	{
+		const FIntPoint PrevDir = PathCells[Index] - PathCells[Index - 1];
+		const FIntPoint NextDir = PathCells[Index + 1] - PathCells[Index];
+		if (PrevDir != NextDir
+			&& (!FMath::IsNearlyEqual(OutCellZs[Index], OutCellZs[Index - 1])
+				|| !FMath::IsNearlyEqual(OutCellZs[Index + 1], OutCellZs[Index])))
+		{
+			OutReason = TEXT("Conveyor cannot turn on a slope (corner cells must be on flat surface).");
+			return false;
+		}
+	}
+
+	OutReason.Reset();
+	return true;
+}
+
 bool OJJ_CollectConveyorReservedCells(
 	const AOJJ_Grid* Grid,
 	const TMap<FIntPoint, TWeakObjectPtr<AActor>>& OccupiedCells,
@@ -338,12 +397,16 @@ bool OJJ_CollectConveyorReservedCells(
 	}
 
 	// 단일 건설면 규칙(F1-c §7-3, 경로판): 전 경로 셀(머신 끝점 포함)이 같은 높이여야 함.
-	// known limitation: Foundation 위 머신 ↔ 지형 머신 혼합 경로는 거부 — F3(컨베이어 높이 인지)에서 해소.
+	// F3.7-1(㊆): 균일 **실패 시에만** 경사 검사 — 기존 평면/지형 경로(균일 통과)는 이 분기에
+	// 진입조차 안 해 회귀 0(f3_7 계획 §3-1). 경사 통과 = 램프 경로 예외 허용("F3에서 해소" 태그 이행).
 	float UnusedUniformZ = 0.0f;
 	if (!Grid->OJJ_GetUniformSurfaceZ(PathCells, UnusedUniformZ))
 	{
-		OutReason = TEXT("Conveyor path must stay on a single surface height (terrain or one foundation level).");
-		return false;
+		TArray<float> UnusedCellZs;
+		if (!OJJ_ValidateConveyorSlopePath(Grid, PathCells, UnusedCellZs, OutReason))
+		{
+			return false; // OutReason은 경사 검사가 구체 사유로 세팅(한계 초과/혼합/경사 코너).
+		}
 	}
 
 	if (OutSourceMachine)
@@ -2570,11 +2633,40 @@ bool AOJJ_Grid::OJJ_TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint
 	FVector ConveyorLocation =
 		GetActorLocation() + Conveyor->GetActorRotation().RotateVector(Conveyor->GetPathCentroidLocal()) - HalfExtent;
 	// F1-c: 경로의 단일 건설면 Z 적용(§7-3 2지점 중 ②) — Foundation 위 경로면 상면 높이로 들어올림.
-	// 균일성은 OJJ_CollectConveyorReservedCells가 이미 검증(실패 시 여기 도달 안 함). 지형 경로면 델타 0.
+	// 균일/경사는 OJJ_CollectConveyorReservedCells가 이미 검증(실패 시 여기 도달 안 함).
 	float PathSurfaceZ = GetActorLocation().Z;
-	OJJ_GetUniformSurfaceZ(PlacementCells, PathSurfaceZ);
-	ConveyorLocation.Z += PathSurfaceZ - GetActorLocation().Z;
-	Conveyor->SetActorLocation(ConveyorLocation);
+	if (OJJ_GetUniformSurfaceZ(PlacementCells, PathSurfaceZ))
+	{
+		// 평면 경로(기존 전부) — 기존 코드 그대로(F3.7 회귀 0 §3-1). 지형 경로면 델타 0.
+		ConveyorLocation.Z += PathSurfaceZ - GetActorLocation().Z;
+		Conveyor->SetActorLocation(ConveyorLocation);
+	}
+	else
+	{
+		// F3.7-1: 경사 경로 — 기준 = 시작 셀 SurfaceZ(㊇, 소스 머신 포트 정합), 셀별 델타는 벨트
+		// 로컬 Z로 주입(㊃). 배열은 SetPath **이후의 최종 PathCells** 기준 1:1(SetPath가 연속 중복을
+		// 제거하므로 — Codex F3.7-0 ByCell -1 무음 폴백 불변식). 재검증 실패는 도달 불가지만
+		// 방어적으로 평면 폴백(주입 생략 — 벨트는 빈 배열 = 평면).
+		const TArray<FIntPoint> FinalPathCells = Conveyor->GetPathCells();
+		TArray<float> CellZs;
+		FString UnusedSlopeReason;
+		if (OJJ_ValidateConveyorSlopePath(this, FinalPathCells, CellZs, UnusedSlopeReason)
+			&& CellZs.Num() > 0)
+		{
+			const float BaseZ = CellZs[0];
+			for (float& CellZ : CellZs)
+			{
+				CellZ -= BaseZ;
+			}
+			ConveyorLocation.Z += BaseZ - GetActorLocation().Z;
+			Conveyor->SetActorLocation(ConveyorLocation);
+			Conveyor->OJJ_SetPathCellLocalZs(CellZs);
+		}
+		else
+		{
+			Conveyor->SetActorLocation(ConveyorLocation);
+		}
+	}
 	Conveyor->ConfigureTransport(ReservedCells, SourceMachine, TargetMachine);
 	return true;
 }
