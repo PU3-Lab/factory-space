@@ -29,6 +29,17 @@ class WANTED_FACTORY_API AOJJ_RampFoundation : public AOJJ_Foundation
 public:
 	AOJJ_RampFoundation();
 
+	// 자동 맞춤 풋프린트(F3.6-1, 계획 §1·§4 — f3_6_autofit_ramp_plan.md): 회전 축(R키 — 축만, ㊁)
+	// 양방향으로 이웃 Foundation 라인을 스캔해 ① 양쪽 발견 → 틈 D칸 × 폭 W(㊀ — CDO FoundationSize.Y)
+	// 풋프린트 + ΔZ=k단 자동 산출(부호 = 이웃 낮→높 자동), 행간 계단 ≤ 45uu 검증(미달 시
+	// bValid=false + 최소 칸수 사유) ② 한쪽/무이웃 → 베이스 폴백(고정 램프 — R이 축+부호, F3.5 ③
+	// 엣지 스냅/씨앗은 기존 그대로). ΔZ=0은 평지 브리지(㉿ — RiseSteps 0).
+	virtual FOJJFoundationFitResult OJJ_ComputeHoverFootprint(const AOJJ_Grid& Grid, FIntPoint CursorCell,
+		int32 RotationSteps) const override;
+
+	// 배치 확정 풋프린트 저장(F3.6-1) — 자동 맞춤의 동적 길이/상승 단수를 계단 비주얼이 쓰도록.
+	virtual void OJJ_NotifyFitResult(const FOJJFoundationFitResult& Fit) override;
+
 	// 계단 근사 셀별 SurfaceZ(결정 ㉲ — 산식은 클래스 책임, 그리드는 불변식만 검증).
 	// R<2(경사 불능) 또는 RiseSteps<1(상승 없음 — ㉿ 평지 퇴화)면 false — 평판 단일값 경로 폴백.
 	// F3.6-0: R = EffSize의 오르는 방향 축(고정 램프에선 FoundationSize.X와 동치 — 스왑 규칙),
@@ -45,6 +56,20 @@ public:
 protected:
 	// 베이스 슬래브 숨기고 행당 1박스 계단을 적재(상면 = 해당 행 SurfaceZ — 등록 데이터와 동일 산식).
 	virtual void UpdateSlabVisual() override;
+
+	// 자동 맞춤 이웃 스캔 한계(㉾ — 축 방향 한쪽당 최대 라인 수). 초과 틈은 미검출 → 고정 램프 폴백.
+	// 프리뷰 셀 수 최악(2×32−1)×8 = 504 < 그리드 가드 4096 — 폭주 없음.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Foundation", meta = (ClampMin = "1"))
+	int32 MaxAutoFitScanCells = 32;
+
+	// 행간 계단 한계(uu) — 캐릭터 MaxStepHeight 기본 45와 동일 근거(F2-3 Thickness 45와 같은 상수).
+	// 동일성 판정 기준이라 비노출(OJJ_FoundationSnapStep과 같은 취지).
+	static constexpr float OJJ_MaxAutoFitStepPerRow = 45.0f;
+
+	// 배치 확정값(OJJ_NotifyFitResult — 자동 맞춤 동적 비주얼용). 0 = 미확정(CDO 고정 램프 규격 사용:
+	// 길이 FoundationSize.X / 1단) — 에디터 프리뷰(OnConstruction)와 기존 고정 램프 경로 회귀 0.
+	int32 PlacedClimbLengthCells = 0;
+	int32 PlacedRiseSteps = 1;
 
 	// 계단 박스 비주얼/충돌 — SlabMesh와 동일 충돌 프로파일(Pawn/Visibility Block, Camera Ignore).
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Foundation")

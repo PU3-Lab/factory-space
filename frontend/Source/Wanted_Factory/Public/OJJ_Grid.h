@@ -688,8 +688,10 @@ public:
 	// Foundation 배치 호버 미리보기 — 풋프린트 전체를 단일색 녹(가능)/적(불가)으로 표시.
 	// 단일 진실원: 색 판정 = 클릭 시 판정(CanPlaceFoundation) — 머신 UpdateHoverPreview와 동일 정책
 	// (셀별 색은 실제 배치 판정과 어긋나는 "거짓말"이라 과거 회귀로 제거된 방식 — 재도입 금지).
+	// bForceInvalid(F3.6-1): 풋프린트 자체가 구성 불가(자동 맞춤 경사 한계 — 클릭도 같은 훅 bValid로
+	// 거부되므로 단일 진실원 유지)일 때 호출자가 빨강을 강제.
 	UFUNCTION(BlueprintCallable, Category = "Grid|Hover")
-	void OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size);
+	void OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size, bool bForceInvalid = false);
 
 	// 캐릭터 점유 셀 표시 갱신(F2-4 후속 ② — 시각 전용). 빈 배열 = 클리어. 셀 변경 시에만 호출하는
 	// 책임은 호출자(BuildController가 이전 셀 비교) — 여기는 ClearInstances+재적재만. Z는

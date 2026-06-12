@@ -1746,7 +1746,7 @@ float AOJJ_Grid::OJJ_ComputeFoundationSnapLift(FIntPoint Origin, FIntPoint Size,
 	return SnapSteps * OJJ_FoundationSnapStep;
 }
 
-void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size)
+void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size, bool bForceInvalid)
 {
 	ClearHoverPreview();
 
@@ -1770,8 +1770,9 @@ void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Siz
 
 	// 단일 진실원: 호버 색 = 클릭 시 판정(CanPlaceFoundation). 사유는 색에선 버림 — 클릭 실패 시
 	// BuildController가 같은 함수의 OutReason(사유별 셀 수)을 로그.
+	// bForceInvalid(F3.6-1)는 클릭 측도 같은 게이트(풋프린트 훅 bValid)로 거부하므로 단일원 유지.
 	FString UnusedReason;
-	const bool bCanPlace = CanPlaceFoundation(Origin, Size, UnusedReason);
+	const bool bCanPlace = !bForceInvalid && CanPlaceFoundation(Origin, Size, UnusedReason);
 	UInstancedStaticMeshComponent* TargetISM = bCanPlace ? ValidHoverISM.Get() : InvalidHoverISM.Get();
 	if (!TargetISM)
 	{

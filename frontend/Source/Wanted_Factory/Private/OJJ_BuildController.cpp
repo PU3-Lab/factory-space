@@ -983,7 +983,18 @@ void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHi
 	// override로 들어온다(CDO 호출 — spawn 부작용 없음은 종전과 동일).
 	const FOJJFoundationFitResult Fit = DefaultFoundation->OJJ_ComputeHoverFootprint(
 		*TargetGrid, CursorCell, HoverRotationSteps);
-	TargetGrid->OJJ_UpdateFoundationHoverPreview(Fit.Origin, Fit.EffSize);
+	// F3.6-1(㊂): 풋프린트 구성 불가(자동 맞춤 경사 한계)는 클릭도 같은 훅 bValid로 거부 — 빨강 강제로
+	// 색 단일 진실원 유지. 사유 텍스트는 클릭 시 로그(아래 호버 로그에도 동반 — 셀 변경 시만이라 저빈도).
+	TargetGrid->OJJ_UpdateFoundationHoverPreview(Fit.Origin, Fit.EffSize, !Fit.bValid);
+	// ㊁ 보강: 방향 출처 표시 — 자동(이웃 낮→높) vs 수동(R) 이원화의 UX 방어. 평판은 출처가 비어
+	// 있어 무로그(스팸 0), 램프만 셀 변경 시 1줄.
+	if (!Fit.DirectionSource.IsEmpty())
+	{
+		const FString InvalidSuffix = Fit.bValid
+			? FString()
+			: FString::Printf(TEXT(" — 구성 불가: %s"), *Fit.FailReason);
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] 램프 풋프린트 %s%s"), *Fit.DirectionSource, *InvalidSuffix);
+	}
 	CurrentHoverCell = CursorCell;
 }
 
@@ -1043,15 +1054,21 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 		return;
 	}
 
+	// F3.6-1: 동적 풋프린트 확정값(자동 맞춤 길이/단수)을 액터에 통지 — 등록 전에 저장해
+	// 비주얼(OJJ_NotifyPlacedOnGrid → UpdateSlabVisual)이 등록 데이터와 같은 규격으로 그린다.
+	NewFoundation->OJJ_NotifyFitResult(Fit);
+
 	// SurfaceZ = 평면 + Thickness + 스냅 리프트(F2-4 §5-4 — 풋프린트 GroundZ 최고점의 N×100단, 평탄 N=0 =
 	// F1 동작). 좌표/리프트는 그리드 헬퍼(결정점 ② — 데이터/좌표는 그리드, 액터 이동은 컨트롤러).
 	// 액터는 통째로 리프트만큼 위 — 슬래브 상면(액터Z+Thickness)이 SurfaceZ와 자동 일치. 실패 시 즉시 파기.
 	const FVector PlaceLocation = TargetGrid->GetFoundationPlacementLocation(Origin, EffSize);
 	// 높이 결정은 클래스 훅(F3.5 우선순위: ① 이웃 상속 → ② 지형 씨앗 / 램프 ③ 엣지 스냅 → 폴백).
 	// HeightSource는 배치 로그용 출처(결정 ㉷ 보강 — 정책 동작 실측).
+	// F3.6-1(㊁): 회전은 훅이 확정한 유효 step — 자동 맞춤은 부호(낮→높)가 이웃에서 자동, 그 외는
+	// 입력 step 그대로. 스냅/퍼셀 산식/액터 yaw가 전부 같은 값을 써야 낮은 끝 판정이 안 어긋난다.
 	FString HeightSource;
 	const float SnapLift = NewFoundation->OJJ_ComputeSnapLift(
-		*TargetGrid, Origin, EffSize, HoverRotationSteps, &HeightSource);
+		*TargetGrid, Origin, EffSize, Fit.EffectiveRotationSteps, &HeightSource);
 	const FVector SnappedLocation = PlaceLocation + FVector(0.0f, 0.0f, SnapLift);
 	const float BaseSurfaceZ = SnappedLocation.Z + NewFoundation->GetThickness();
 
@@ -1059,7 +1076,7 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 	// (그리드가 불변식 검증). 평탄은 기존 단일값 경로 그대로(배열 미생성).
 	FString OutReason;
 	TArray<float> CellZs;
-	const bool bPlaced = NewFoundation->OJJ_BuildPerCellSurfaceZ(EffSize, HoverRotationSteps, BaseSurfaceZ, Fit.RiseSteps, CellZs)
+	const bool bPlaced = NewFoundation->OJJ_BuildPerCellSurfaceZ(EffSize, Fit.EffectiveRotationSteps, BaseSurfaceZ, Fit.RiseSteps, CellZs)
 		? TargetGrid->OJJ_TryPlaceFoundationPerCell(NewFoundation, Origin, EffSize, CellZs, OutReason)
 		: TargetGrid->TryPlaceFoundation(NewFoundation, Origin, EffSize, BaseSurfaceZ, OutReason);
 	if (!bPlaced)
@@ -1071,15 +1088,16 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 	}
 
 	// F3-0(㉱): 액터 yaw = 90°×step — 로컬 Size 메시가 월드에서 EffSize 풋프린트와 정렬(머신 :873 패턴).
-	// 정사각 평판 큐브는 시각 동일(회귀 0).
+	// 정사각 평판 큐브는 시각 동일(회귀 0). step은 훅 확정값(F3.6-1 ㊁ — 산식과 동일 회전 규약).
 	NewFoundation->SetActorLocationAndRotation(
-		SnappedLocation, FRotator(0.0f, 90.0f * HoverRotationSteps, 0.0f));
+		SnappedLocation, FRotator(0.0f, 90.0f * Fit.EffectiveRotationSteps, 0.0f));
 	NewFoundation->OJJ_NotifyPlacedOnGrid(TargetGrid);
 
-	// N + 높이 출처 기록(결정 ⑤·㉷ 보강) — 단 분포/상속 정책 동작 실측.
-	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s Foundation 배치 성공 (%dx%d, R=%d, N=%d단, %s)"),
-		*Origin.ToString(), EffSize.X, EffSize.Y, HoverRotationSteps,
-		FMath::RoundToInt(SnapLift / AOJJ_Grid::OJJ_FoundationSnapStep), *HeightSource);
+	// N + 높이 출처(결정 ⑤·㉷ 보강) + 방향 출처(㊁ 보강 — 자동/수동) 기록 — 정책 동작 실측.
+	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s Foundation 배치 성공 (%dx%d, R=%d, N=%d단, %s%s%s)"),
+		*Origin.ToString(), EffSize.X, EffSize.Y, Fit.EffectiveRotationSteps,
+		FMath::RoundToInt(SnapLift / AOJJ_Grid::OJJ_FoundationSnapStep), *HeightSource,
+		Fit.DirectionSource.IsEmpty() ? TEXT("") : TEXT(", "), *Fit.DirectionSource);
 
 	// F2-4 후속 ①: 풋프린트에 깔린 Pawn을 상면으로 올려태움(F3-2부터 셀별 SurfaceZ — 등록 데이터를
 	// 그리드에서 읽음). 후속 ② 캐시도 리셋 — 셀은 그대로여도 비주얼 Z가 상면으로 바뀌므로 강제 재적재.

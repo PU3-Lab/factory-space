@@ -19,11 +19,20 @@ struct FOJJFoundationFitResult
 	FIntPoint EffSize = FIntPoint(1, 1);
 
 	// 총 상승 단수 k(셀별 SurfaceZ 산식의 상승 = k×100uu). 고정 램프 = 1(평판은 미사용),
-	// 자동 맞춤(F3.6-1)이 이웃 ΔZ로 채움.
+	// 자동 맞춤(F3.6-1)이 이웃 ΔZ로 채움. 0 = 평지 브리지(㉿ — 퍼셀 훅이 false로 평판 경로 퇴화).
 	int32 RiseSteps = 1;
 
-	// 양쪽 이웃 스캔으로 산출된 자동 맞춤 풋프린트 여부 — F3.6-1 전까지 항상 false.
+	// 배치에 실제 적용할 회전 step(F3.6-1, 결정 ㊁) — 스냅/퍼셀 산식/액터 yaw가 이 값을 쓴다.
+	// 베이스/고정 램프 = 입력 step 그대로(수동 — R이 축+부호). 자동 맞춤 = 축은 입력에서,
+	// 부호(낮→높 방향)는 양쪽 이웃 Z 비교로 자동 결정해 덮어씀.
+	int32 EffectiveRotationSteps = 0;
+
+	// 양쪽 이웃 스캔으로 산출된 자동 맞춤 풋프린트 여부(F3.6-1).
 	bool bAutoFit = false;
+
+	// 방향 출처(㊁ 보강 — 자동/수동 이원화 UX 방어): "방향 자동(이웃 낮→높)…" vs "방향 수동(R)".
+	// 비어 있으면 방향 무의미(평판) — 컨트롤러가 호버/배치 로그에 표시.
+	FString DirectionSource;
 
 	// false = 풋프린트 구성 불가(자동 맞춤 경사 한계 미달 등) — 배치 거부 + FailReason 로그.
 	// 호버 프리뷰 빨강 강제는 F3.6-1에서 연결. 베이스/고정 램프는 항상 true(회귀 0).
@@ -66,6 +75,11 @@ public:
 	// 호버(UpdateFoundationHover)와 배치(PlaceFoundationAtCursor)가 같은 훅을 호출해야 함.
 	virtual FOJJFoundationFitResult OJJ_ComputeHoverFootprint(const AOJJ_Grid& Grid, FIntPoint CursorCell,
 		int32 RotationSteps) const;
+
+	// 배치 확정 풋프린트 통지(F3.6-1) — 컨트롤러가 spawn 직후(등록 전) 호출. CDO 고정 크기와 다른
+	// 동적 풋프린트(자동 맞춤 길이/상승 단수)를 비주얼이 쓸 수 있게 액터에 저장하는 용도.
+	// 베이스 no-op(평판 비주얼은 FoundationSize로 충분 — 회귀 0).
+	virtual void OJJ_NotifyFitResult(const FOJJFoundationFitResult& Fit) {}
 
 	// 셀별 SurfaceZ 산식 훅(F3-2, 결정 ㉲ — 산식은 클래스 책임). false = 평탄(전 셀 동일 — 단일값 등록
 	// 경로 사용, 배열 미생성). 램프 등 비평탄 파생이 override해 EffSize×회전 기준 배열을 채우면

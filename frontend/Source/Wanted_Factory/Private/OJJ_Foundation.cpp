@@ -97,6 +97,8 @@ FOJJFoundationFitResult AOJJ_Foundation::OJJ_ComputeHoverFootprint(const AOJJ_Gr
 	FOJJFoundationFitResult Result;
 	Result.EffSize = ((RotationSteps % 2) != 0) ? FIntPoint(FoundationSize.Y, FoundationSize.X) : FoundationSize;
 	Result.Origin = AOJJ_Grid::OJJ_OriginFromCursorCellForSize(CursorCell, Result.EffSize);
+	// 베이스 = 수동 방향(입력 step 그대로 — F3.6-1 ㊁). 평판은 방향 무의미라 출처 문자열은 비움.
+	Result.EffectiveRotationSteps = RotationSteps;
 	return Result;
 }
 
