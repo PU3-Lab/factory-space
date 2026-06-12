@@ -166,6 +166,7 @@ void AOJJ_RampFoundation::OJJ_NotifyFitResult(const FOJJFoundationFitResult& Fit
 	const int32 Step = ((Fit.EffectiveRotationSteps % 4) + 4) % 4;
 	PlacedClimbLengthCells = FMath::Max(1, (Step % 2 == 0) ? Fit.EffSize.X : Fit.EffSize.Y);
 	PlacedRiseSteps = FMath::Max(0, Fit.RiseSteps);
+	PlacedRotationSteps = Step; // F3.8' — 쐐기 월드 방향 규약 + 액터 yaw 역회전용.
 }
 
 bool AOJJ_RampFoundation::OJJ_BuildPerCellSurfaceZ(FIntPoint EffSize, int32 RotationSteps, float BaseSurfaceZ,
@@ -275,7 +276,9 @@ void AOJJ_RampFoundation::UpdateSlabVisual()
 	const float SlabThickness = FMath::Max(1.0f, Thickness);
 
 	// F3.8: 쐐기 우선 — 성공 시 계단 ISM은 비움(인스턴스 0 = 충돌 셰이프 0, 토글 불필요).
-	if (OJJ_BuildWedgeVisual(R, Cols, Rise, CellSize))
+	// F3.8': 확정 step 전달(미확정 에디터 프리뷰 0 — 역회전 항등, 기존 프리뷰와 동일).
+	const int32 Step = PlacedClimbLengthCells > 0 ? PlacedRotationSteps : 0;
+	if (OJJ_BuildWedgeVisual(R, Cols, Rise, CellSize, Step))
 	{
 		if (StepMeshISM)
 		{
@@ -317,29 +320,56 @@ void AOJJ_RampFoundation::UpdateSlabVisual()
 	}
 }
 
-bool AOJJ_RampFoundation::OJJ_BuildWedgeVisual(int32 ClimbCells, int32 WidthCells, int32 RiseSteps, float CellSize)
+bool AOJJ_RampFoundation::OJJ_BuildWedgeVisual(int32 ClimbCells, int32 WidthCells, int32 RiseSteps, float CellSize,
+	int32 RotationSteps)
 {
 	if (!WedgeMesh || RiseSteps < 1 || ClimbCells < 1 || WidthCells < 1 || CellSize <= KINDA_SMALL_NUMBER)
 	{
 		return false; // Rise 0(평지 브리지)은 의도된 퇴화 — 호출자가 계단(평탄 박스) 폴백.
 	}
 
-	// 좌표계 = 계단/배치 수식과 동일: 피벗 = 풋프린트 중심(XY), 로컬 +X = 오르는 방향,
-	// 액터 Z + Thickness = Z_low(아랫단 상면). 양 끝 정합 — 칼끝(낮은 끝, Z=T) = 아랫단 상면 엣지,
-	// 수직 끝면 상단(Z=T+Rise) = 윗단 상면. 빗변은 칼끝→높은 끝 상단의 연속 경사(걷기 매끈) —
-	// 등록 데이터는 셀당 계단(㉰)이라 셀 중심 기준 최대 반행 시각 편차는 비주얼 근사로 수용.
+	// F3.8' 방향 규약(수직 어긋남 교정): 기하를 등록 산식(OJJ_BuildPerCellSurfaceZ r-switch)과 같은
+	// **월드 축** 오르막 방향(0:+X/1:+Y/2:−X/3:−Y)으로 만들고, 액터에 적용될 yaw(+90°×step)의 정확한
+	// 역회전(−90°×step)을 정점·노멀에 선적용한다. R(−θ)=R(θ)⁻¹이라 합성이 항등 — 최종 월드 기하가
+	// yaw 회전 규약 가정과 무관하게 항상 등록 데이터의 방향과 일치(시각=데이터 단일원).
+	// step 0은 역회전 항등 → 이전 구현과 비트 동일(회귀 기준점).
+	// 피벗 = 풋프린트 중심, 액터 Z + Thickness = Z_low. 양 끝 정합 — 칼끝(낮은 끝, Z=T) = 아랫단
+	// 상면 엣지, 수직 끝면 상단(Z=T+Rise) = 윗단 상면. 빗변은 연속 경사 — 등록 데이터는 셀당
+	// 계단(㉰)이라 셀 중심 기준 최대 반행 시각 편차는 비주얼 근사로 수용.
+	const int32 Step = ((RotationSteps % 4) + 4) % 4;
+	FVector ClimbDir(1.0f, 0.0f, 0.0f); // 월드 오르막(낮은 끝 → 높은 끝) — 등록 r-switch와 동일 규약.
+	switch (Step)
+	{
+	case 0: ClimbDir = FVector(1.0f, 0.0f, 0.0f); break;
+	case 1: ClimbDir = FVector(0.0f, 1.0f, 0.0f); break;
+	case 2: ClimbDir = FVector(-1.0f, 0.0f, 0.0f); break;
+	case 3: ClimbDir = FVector(0.0f, -1.0f, 0.0f); break;
+	}
+	// 폭 축 = Up×ClimbDir(step별 +Y/−X/−Y/+X): 위치는 ±Side 대칭이라 부호 무관이지만 **와인딩은
+	// 라벨 순서에 의존** — ClimbDir×SideDir=+Z가 전 step에서 유지돼야 면 조립(K0=−Side, K1=+Side)의
+	// 전면 방향이 보존된다(패리티만 쓰면 step 1·2에서 반전 — Codex F3.8' ④ BUG 수정).
+	const FVector SideDir = FVector::CrossProduct(FVector::UpVector, ClimbDir);
+
 	const float L = ClimbCells * CellSize;
 	const float W = WidthCells * CellSize;
 	const float T = FMath::Max(1.0f, Thickness);
 	const float Rise = RiseSteps * AOJJ_Grid::OJJ_FoundationSnapStep;
-	const float X0 = -L * 0.5f, X1 = L * 0.5f;
-	const float Y0 = -W * 0.5f, Y1 = W * 0.5f;
-	const float Z0 = T, Z1 = T + Rise;
 
-	// 기하 꼭짓점 6 — K=칼끝(낮은 끝), B=높은 끝 바닥, U=높은 끝 상단 (0=좌/−Y, 1=우/+Y).
-	const FVector K0(X0, Y0, Z0), K1(X0, Y1, Z0);
-	const FVector B0(X1, Y0, Z0), B1(X1, Y1, Z0);
-	const FVector U0(X1, Y0, Z1), U1(X1, Y1, Z1);
+	// 액터 yaw의 정확한 역회전 — 정점/노멀에 선적용(위 규약 주석).
+	const FQuat InvActorYaw(FRotator(0.0f, -90.0f * Step, 0.0f));
+	const FVector Up(0.0f, 0.0f, 1.0f);
+	const FVector KnifeCenter = -ClimbDir * (L * 0.5f) + Up * T;        // 낮은 끝 경계(아랫단 상면)
+	const FVector HighCenter = ClimbDir * (L * 0.5f) + Up * T;          // 높은 끝 경계(바닥 높이)
+	const FVector Side = SideDir * (W * 0.5f);
+
+	// 기하 꼭짓점 6(월드 프레임 → 역회전) — K=칼끝(낮은 끝), B=높은 끝 바닥, U=높은 끝 상단
+	// (0=−Side, 1=+Side — 좌/우 역할은 면 와인딩 순서로만 쓰여 회전해도 보존).
+	const FVector K0 = InvActorYaw.RotateVector(KnifeCenter - Side);
+	const FVector K1 = InvActorYaw.RotateVector(KnifeCenter + Side);
+	const FVector B0 = InvActorYaw.RotateVector(HighCenter - Side);
+	const FVector B1 = InvActorYaw.RotateVector(HighCenter + Side);
+	const FVector U0 = InvActorYaw.RotateVector(HighCenter - Side + Up * Rise);
+	const FVector U1 = InvActorYaw.RotateVector(HighCenter + Side + Up * Rise);
 
 	// 렌더 정점은 면별 복제(공유하면 면 노멀이 섞임): 쿼드 3 + 삼각 2 = 18정점/8삼각형.
 	// 와인딩 = 바깥에서 봤을 때 시계방향(UE 전면 규약). AddQuad(A,B,C,D) → (A,B,C),(C,B,D).
@@ -366,13 +396,18 @@ bool AOJJ_RampFoundation::OJJ_BuildWedgeVisual(int32 ClimbCells, int32 WidthCell
 		Triangles.Append({ Base + 0, Base + 1, Base + 2 });
 	};
 
-	// 빗변 노멀: 경사 방향 d=(L,0,Rise)와 수직, 위쪽(+Z 성분) — n=(-Rise,0,L) 정규화.
-	const FVector SlopeNormal = FVector(-Rise, 0.0f, L).GetSafeNormal();
-	AddQuad(K0, K1, U0, U1, SlopeNormal);                  // 빗변 상면
-	AddQuad(K0, B0, K1, B1, FVector(0, 0, -1));            // 바닥(Z=T 수평면, 아래 향함)
-	AddQuad(B0, U0, B1, U1, FVector(1, 0, 0));             // 수직 끝면(높은 끝 = 윗단 옆면)
-	AddTri(K1, B1, U1, FVector(0, 1, 0));                  // 옆면 +Y
-	AddTri(K0, U0, B0, FVector(0, -1, 0));                 // 옆면 −Y
+	// 면 노멀: 월드 프레임에서 산출 후 정점과 동일한 역회전 — 빗변은 경사 방향 d=ClimbDir·L+Up·Rise와
+	// 수직(내적 −Rise·L + L·Rise = 0), 위쪽(+Z 성분). 면 와인딩은 K/B/U 역할 기준이라 회전 불변.
+	const FVector SlopeNormal = InvActorYaw.RotateVector((Up * L - ClimbDir * Rise).GetSafeNormal());
+	const FVector BottomNormal = InvActorYaw.RotateVector(-Up);
+	const FVector EndNormal = InvActorYaw.RotateVector(ClimbDir);
+	const FVector SidePosNormal = InvActorYaw.RotateVector(SideDir);
+	const FVector SideNegNormal = InvActorYaw.RotateVector(-SideDir);
+	AddQuad(K0, K1, U0, U1, SlopeNormal);      // 빗변 상면
+	AddQuad(K0, B0, K1, B1, BottomNormal);     // 바닥(Z=T 수평면, 아래 향함)
+	AddQuad(B0, U0, B1, U1, EndNormal);        // 수직 끝면(높은 끝 = 윗단 옆면)
+	AddTri(K1, B1, U1, SidePosNormal);         // 옆면 +Side
+	AddTri(K0, U0, B0, SideNegNormal);         // 옆면 −Side
 
 	WedgeMesh->ClearAllMeshSections();
 	WedgeMesh->CreateMeshSection_LinearColor(0, Vertices, Triangles, Normals, UVs,

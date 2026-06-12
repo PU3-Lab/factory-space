@@ -77,6 +77,9 @@ protected:
 	// 길이 FoundationSize.X / 1단) — 에디터 프리뷰(OnConstruction)와 기존 고정 램프 경로 회귀 0.
 	int32 PlacedClimbLengthCells = 0;
 	int32 PlacedRiseSteps = 1;
+	// 배치 확정 회전 step(F3.8' — 쐐기가 등록 r-switch와 같은 월드 방향 규약으로 기하를 만들고
+	// 액터 yaw 역회전을 선적용하는 데 사용). 미확정(에디터 프리뷰) 0 = 역회전 항등.
+	int32 PlacedRotationSteps = 0;
 
 	// 계단 박스 비주얼/충돌 — SlabMesh와 동일 충돌 프로파일(Pawn/Visibility Block, Camera Ignore).
 	// F3.8부터 쐐기(WedgeMesh) 실패 시 폴백 전용.
@@ -88,9 +91,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Foundation")
 	TObjectPtr<UProceduralMeshComponent> WedgeMesh;
 
-	// 쐐기 메시 생성 — 꼭짓점 6(칼끝 2 + 높은 끝 바닥 2 + 높은 끝 상단 2, 로컬 +X = 오르는 방향),
-	// 면 5(빗변 상면/바닥/수직 끝면/옆면 2). 양 끝 정합: 칼끝 = 아랫단 상면 엣지(로컬 Z=Thickness),
-	// 수직 끝면 상단 = 윗단 상면(Z=Thickness+Rise) — 배치 수식(풋프린트 중심 피벗)과 동일 좌표계.
-	// false = 생성 불가(RiseSteps<1 평지 브리지 퇴화 등) — 호출자가 계단 박스 폴백 + 경고.
-	bool OJJ_BuildWedgeVisual(int32 ClimbCells, int32 WidthCells, int32 RiseSteps, float CellSize);
+	// 쐐기 메시 생성 — 꼭짓점 6(칼끝 2 + 높은 끝 바닥 2 + 높은 끝 상단 2), 면 5(빗변 상면/바닥/
+	// 수직 끝면/옆면 2). 양 끝 정합: 칼끝 = 아랫단 상면 엣지(Z=Thickness), 수직 끝면 상단 = 윗단
+	// 상면(+Rise). F3.8' 방향 규약: 기하를 등록 r-switch와 같은 **월드 축** 방향(0:+X/1:+Y/2:−X/
+	// 3:−Y = 오르막)으로 만들고 액터 yaw(+90°×step)의 정확한 역회전을 정점에 선적용 — 합성 항등이라
+	// yaw 규약 가정과 무관하게 월드 기하 = 등록 데이터(이전 "로컬 +X = 오르막 + yaw 위임" 가정에서
+	// 방향별 수직 어긋남 관찰 — 가정 의존 제거). false = 생성 불가(RiseSteps<1 등) — 계단 폴백.
+	bool OJJ_BuildWedgeVisual(int32 ClimbCells, int32 WidthCells, int32 RiseSteps, float CellSize,
+		int32 RotationSteps);
 };
