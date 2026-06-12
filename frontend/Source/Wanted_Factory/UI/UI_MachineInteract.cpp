@@ -5,14 +5,43 @@
 #include "Components/Button.h"
 #include "Engine/DataTable.h"
 #include "Resource/ResourceData.h"
+#include "Machines/MachineTable.h"
 
 void UUI_MachineInteract::SetTargetMachine(AMachineBase* InMachine)
 {
     TargetMachine = InMachine;
-    // 기계가 정상적으로 연결되었다면 이름표 갱신
+    
     if (TargetMachine)
     {
-        UpdateMachineName(TargetMachine->GetMachineType().ToString());
+        FName MachineTypeName = TargetMachine->GetMachineType();
+        UpdateMachineName(MachineTypeName.ToString());
+        
+        if (MachineDataTable && IMG_MachinePreview)
+        {
+            FMachineTableRow* RowData = MachineDataTable->FindRow<FMachineTableRow>(MachineTypeName, TEXT("FindMachinePreviewContext"));
+
+            if (RowData)
+            {
+                IMG_MachinePreview->SetVisibility(ESlateVisibility::Visible);
+                
+                if (RowData->ImgAsset.IsValid())
+                {
+                    IMG_MachinePreview->SetBrushFromTexture(RowData->ImgAsset.Get());
+                }
+                else
+                {
+                    UTexture2D* LoadedTexture = RowData->ImgAsset.LoadSynchronous();
+                    if (LoadedTexture)
+                    {
+                        IMG_MachinePreview->SetBrushFromTexture(LoadedTexture);
+                    }
+                }
+            }
+            else
+            {
+                IMG_MachinePreview->SetVisibility(ESlateVisibility::Hidden);
+            }
+        }
     }
 }
 

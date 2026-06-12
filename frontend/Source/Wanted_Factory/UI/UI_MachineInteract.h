@@ -67,12 +67,12 @@ protected:
 	UPROPERTY(meta = (BindWidget)) UProgressBar* PB_CraftingProgress;
 	UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_ProgressPercent;
 	UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_MachineState;
-	
 	UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_MachineName;
+	UPROPERTY(meta = (BindWidget))
+	class UImage* IMG_MachinePreview;
 	
 	UPROPERTY(meta = (BindWidget))
 	class UButton* BTN_Close;
-
 	UPROPERTY(meta = (BindWidgetOptional))
 	class UButton* BTN_Repair;
 	
@@ -85,6 +85,8 @@ protected:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Data")
 	class UDataTable* ResourceDataTable;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Data")
+	class UDataTable* MachineDataTable;
 
 private:
 	// 테스트하기 위한 임시 변수
