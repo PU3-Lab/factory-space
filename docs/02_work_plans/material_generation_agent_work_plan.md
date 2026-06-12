@@ -293,21 +293,21 @@ Phase 0 (데이터·DB)
 
 기획 §16 MVP 포함 항목 전체가 다음을 만족:
 
-- [ ] RecipeTable.csv → `recipes` DB 적재(ingestion) + known_items + recipe key 매칭 동작
-- [ ] experiment_hash / material_hash 생성 (순서·재현성 보장)
-- [ ] ExperimentRegistry 조회·저장 (성공·실패 모두)
-- [ ] 기존 레시피 완전 매칭 + 미등록 아이템 차단
-- [ ] ExperimentClassifier 1차 분류 + 장비 정책 반영
-- [ ] candidate/ambiguous에만 LLM 호출
-- [ ] LLM 결과 JSON Schema 검증 + MaterialResultValidator 통과
-- [ ] generated_materials / generated_experiments DB 저장
-- [ ] MaterialCreated 이벤트 발행
-- [ ] VisualAssetPipeline 비동기 실행 + 실패 시 fallback 아이콘
-- [ ] §3 흐름이 LangGraph **sync 서브그래프**로 동작 (검증 재시도 루프 포함)
-- [ ] async 코드 sync 변환 완료 + material 분기가 서브그래프 실행 (제네릭 LLM 경로 아님)
-- [ ] `new_material_generator` 잔존 이름 전부 `material_generation`로 정리
-- [ ] WS 단독 채널로 합성 시도 → 신물질/캐시/기존레시피 응답(§14.2~14.4) 수신
-- [ ] 기획 §12 예시 표 회귀 테스트 전부 통과
+- [x] RecipeTable.csv → `recipes` DB 적재(ingestion) + known_items + recipe key 매칭 동작
+- [x] experiment_hash / material_hash 생성 (순서·재현성 보장)
+- [x] ExperimentRegistry 조회·저장 (성공·실패 모두)
+- [x] 기존 레시피 완전 매칭 + 미등록 아이템 차단
+- [x] ExperimentClassifier 1차 분류 + 장비 정책 반영
+- [x] candidate/ambiguous에만 LLM 호출
+- [x] LLM 결과 JSON Schema 검증 + MaterialResultValidator 통과
+- [x] generated_materials / generated_experiments DB 저장
+- [x] MaterialCreated 이벤트 발행
+- [x] VisualAssetPipeline 비동기 실행 + 실패 시 fallback 아이콘
+- [x] §3 흐름이 LangGraph **sync 서브그래프**로 동작 (검증 재시도 루프 포함)
+- [x] async 코드 sync 변환 완료 + material 분기가 서브그래프 실행 (제네릭 LLM 경로 아님)
+- [x] `new_material_generator` 잔존 이름 전부 `material_generation`로 정리
+- [x] WS 단독 채널로 합성 시도 → 신물질/캐시/기존레시피 응답(§14.2~14.4) 수신
+- [x] 기획 §12 예시 표 회귀 테스트 전부 통과
 
 ---
 
