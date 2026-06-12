@@ -10,6 +10,7 @@
 #include "Machines/MachineSubsystem.h"
 #include "Materials/MaterialInterface.h"
 #include "PlanetEventManagerSubsystem.h"
+#include "PlayerWarehouseSubsystem.h"
 #include "RecipeManagerSubsystem.h"
 #include "Wanted_Factory.h"
 #include "Algo/Count.h"
@@ -164,6 +165,8 @@ void AMachineBase::ApplyMachineData(const FMachineTableRow& MachineData)
 	MaxDurability = FMath::Max(1.f, MachineData.Durability);
 	CurrentDurability = FMath::Clamp(CurrentDurability, 0.f, MaxDurability);
 	PowerConsumption = FMath::Max(0.f, MachineData.Power);
+	RepairCostItemID = MachineData.CostType;
+	RepairBaseCostQty = FMath::Max(0, MachineData.CostQty);
 
 	if (MeshComponent)
 	{
@@ -1041,6 +1044,76 @@ void AMachineBase::RepairDurability(float RepairAmount)
 	OnDurabilityChanged.Broadcast(CurrentDurability, MaxDurability);
 	RefreshMachineState();
 	RequestPowerGridRefresh(this);
+}
+
+int32 AMachineBase::GetMaxRepairCostQty() const
+{
+	return FMath::FloorToInt(static_cast<float>(RepairBaseCostQty) * 0.8f);
+}
+
+int32 AMachineBase::GetRepairCostQtyForCurrentDurability() const
+{
+	const int32 MaxRepairCostQty = GetMaxRepairCostQty();
+	if (MaxRepairCostQty <= 0 || MaxDurability <= 0.f)
+	{
+		return 0;
+	}
+
+	const float MissingDurability = FMath::Max(0.f, MaxDurability - CurrentDurability);
+	if (MissingDurability <= 0.f)
+	{
+		return 0;
+	}
+
+	return FMath::FloorToInt((MissingDurability / MaxDurability) * MaxRepairCostQty);
+}
+
+bool AMachineBase::RepairUsingWarehouse()
+{
+	if (RepairCostItemID.IsNone())
+	{
+		return false;
+	}
+
+	const int32 RequiredCostQty = GetRepairCostQtyForCurrentDurability();
+	if (RequiredCostQty <= 0)
+	{
+		return false;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	UPlayerWarehouseSubsystem* Warehouse = GameInstance
+		? GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>()
+		: nullptr;
+	if (!Warehouse)
+	{
+		return false;
+	}
+
+	const int32 AvailableCostQty = Warehouse->GetItemCount(RepairCostItemID);
+	const int32 ConsumedCostQty = FMath::Min(RequiredCostQty, AvailableCostQty);
+	const int32 MaxRepairCostQty = GetMaxRepairCostQty();
+	if (ConsumedCostQty <= 0 || MaxRepairCostQty <= 0)
+	{
+		return false;
+	}
+
+	if (!Warehouse->TakeItem(RepairCostItemID, ConsumedCostQty))
+	{
+		return false;
+	}
+
+	const float RepairAmount = MaxDurability * static_cast<float>(ConsumedCostQty) / MaxRepairCostQty;
+	RepairDurability(RepairAmount);
+
+	LOG_SSR_W(TEXT("Machine Repaired Using Warehouse : %s x %d -> %.1f / %.1f"),
+		*RepairCostItemID.ToString(),
+		ConsumedCostQty,
+		CurrentDurability,
+		MaxDurability
+	);
+
+	return true;
 }
 
 void AMachineBase::ApplyDurabilityDamage(float DamageAmount)
