@@ -28,7 +28,7 @@
 #include "UI/UI_MachineInteract.h"
 #include "UI/UI_MainHUD.h"
 #include "UI/UI_Inventory.h"
-#include "Machines/WarehousePort.h"
+
 
 AOJJ_Player::AOJJ_Player()
 {
@@ -882,7 +882,7 @@ void AOJJ_Player::TriggerInventoryToggle()
 	APlayerController* PC = Cast<APlayerController>(GetController());
 	if (!PC) return;
 
-	// 1. 이미 열려 있다면 닫기
+	// 이미 열려 있다면 닫기
 	if (bIsInventoryOpen)
 	{
 		if (InventoryWidgetInstance)
@@ -890,30 +890,12 @@ void AOJJ_Player::TriggerInventoryToggle()
 			InventoryWidgetInstance->RemoveFromParent();
 			bIsInventoryOpen = false;
 		}
-		
-		PC->SetInputMode(FInputModeGameOnly());
-		PC->SetShowMouseCursor(false);
-
+		// 실시간 타이머 종료
 		GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
 		return;
 	}
 
-	// 2. 레이저 검사 (창고 포트인지 확인)
-	UWorld* World = GetWorld();
-	if (!Camera || !World) return;
-
-	FVector TraceStart = Camera->GetComponentLocation();
-	FVector TraceEnd = TraceStart + Camera->GetForwardVector() * MaxInteractDistance;
-	FHitResult Hit;
-	FCollisionQueryParams TraceParams(FName(TEXT("OJJInventoryInteract")), false, this);
-
-	bool bHit = World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, TraceParams);
-	if (!bHit) return;
-
-	AWarehousePort* WarehouseMachine = Cast<AWarehousePort>(Hit.GetActor());
-	if (!WarehouseMachine) return;
-
-	// 3. 창고 포트 확인 완료 시 인벤토리 오픈
+	// I키를 누르면 인벤토리 즉시 오픈
 	if (!InventoryWidgetInstance && InventoryWidgetClass)
 	{
 		InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
@@ -921,13 +903,15 @@ void AOJJ_Player::TriggerInventoryToggle()
 
 	if (InventoryWidgetInstance)
 	{
+		// 캐릭터가 달리는 도중 켰을 때 관성으로 계속 직진하는 버그 방지
+		if (AController* PlayerController = GetController())
+		{
+			PlayerController->StopMovement();
+		}
+
 		InventoryWidgetInstance->RefreshInventoryWindow();
 		InventoryWidgetInstance->AddToViewport();
 		bIsInventoryOpen = true;
-		
-		PC->SetInputMode(FInputModeGameAndUI());
-		PC->SetShowMouseCursor(true);
-
 		GetWorldTimerManager().SetTimer(
 			InventoryRefreshTimerHandle, 
 			this, 
