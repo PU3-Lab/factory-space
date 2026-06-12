@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import json
 
 from websockets.asyncio.client import connect
@@ -29,4 +29,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-

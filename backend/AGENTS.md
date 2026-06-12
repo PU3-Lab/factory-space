@@ -192,6 +192,7 @@ Unreal이 예측 가능하게 실행할 수 있도록 backend의 action schema�
 - import는 항상 파일 상단에 둡니다. 함수나 메서드 내부 import는 금지합니다.
 - 일반 source 파일은 500줄을 넘기지 않습니다. 넘기면 역할 기준으로 파일을 분리합니다.
 - 모듈은 작고 책임이 분명하게 유지합니다.
+- 코드 작성/수정 후에는 항상 `ruff --fix` 및 `ruff format`을 수행하여 스타일과 포맷을 정돈합니다.
 - 임시 데이터나 생성물은 의도된 fixture가 아니라면 source control에 넣지 않습니다.
 - 새로운 message type, action type, shared contract를 추가하면 문서화합니다.
 

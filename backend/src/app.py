@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from agent_connection.router import router as agent_connection_router
+from agents.material_generation.router import router as material_generation_router
 from agents.pipeline import AgentPipeline
 from docs_router import router as docs_router
 from websocket_gateway.gateway import router as websocket_router
@@ -32,6 +33,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(agent_connection_router)
+    app.include_router(material_generation_router, prefix="/api/v1")
     app.include_router(docs_router)
     app.include_router(websocket_router)
     return app

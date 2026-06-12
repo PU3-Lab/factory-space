@@ -299,9 +299,8 @@ def _is_tool_error(content: str | list[Any]) -> bool:
         return False
     parsed = _parse_json_object(content)
     return (
-        (isinstance(parsed, dict) and parsed.get("status") == "error")
-        or content.startswith("Error:")
-    )
+        isinstance(parsed, dict) and parsed.get("status") == "error"
+    ) or content.startswith("Error:")
 
 
 def _truncate_tool_content(content: str | list[Any]) -> str:

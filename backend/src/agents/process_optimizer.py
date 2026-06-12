@@ -34,7 +34,9 @@ class ProcessOptimizerAgent:
         payload: dict[str, Any],
         context: AgentContext,
     ) -> AgentRunResult:
-        machines = payload.get("machines") or payload.get("factory_state", {}).get("machines", [])
+        machines = payload.get("machines") or payload.get("factory_state", {}).get(
+            "machines", []
+        )
         bottleneck_count = len(machines) if isinstance(machines, list) else 0
         return AgentRunResult(
             agent=self.agent_id,

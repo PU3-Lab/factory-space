@@ -59,7 +59,7 @@ def build_validation_error(
             "INVALID_ENVELOPE",
             "Agent request envelope validation failed.",
             details={"errors": exc.errors()},
-        )
+        ),
     )
     return error.model_dump(mode="json")
 

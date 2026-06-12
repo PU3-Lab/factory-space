@@ -93,4 +93,3 @@ class ManualQAResult(BaseModel):
             "supporting_manuals": self.supporting_manuals,
             "target_ids": self.target_ids,
         }
-
