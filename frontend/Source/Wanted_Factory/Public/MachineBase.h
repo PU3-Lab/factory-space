@@ -229,6 +229,12 @@ protected:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine | Durability")
 	float CurrentDurability = 1000.f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Durability")
+	FName RepairCostItemID;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Durability", meta = (ClampMin = "0"))
+	int32 RepairBaseCostQty = 0;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Durability")
 	bool bDisableWhenBroken = true;
@@ -377,6 +383,18 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "Machine | Durability")
 	void RepairDurability(float RepairAmount);
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Durability")
+	int32 GetMaxRepairCostQty() const;
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Durability")
+	int32 GetRepairCostQtyForCurrentDurability() const;
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Durability")
+	FName GetRepairCostItemID() const { return RepairCostItemID; }
+
+	UFUNCTION(BlueprintCallable, Category = "Machine | Durability")
+	bool RepairUsingWarehouse();
 
 	UFUNCTION(BlueprintCallable, Category = "Machine | Durability")
 	void ApplyDurabilityDamage(float DamageAmount);

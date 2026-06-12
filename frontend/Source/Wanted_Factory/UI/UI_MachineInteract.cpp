@@ -21,6 +21,11 @@ void UUI_MachineInteract::NativeConstruct()
     {
         BTN_Close->OnClicked.AddDynamic(this, &UUI_MachineInteract::OnCloseClicked);
     }
+
+    if (BTN_Repair)
+    {
+        BTN_Repair->OnClicked.AddDynamic(this, &UUI_MachineInteract::OnRepairClicked);
+    }
 }
 
 void UUI_MachineInteract::NativeDestruct()
@@ -142,6 +147,16 @@ void UUI_MachineInteract::UpdateMachineName(FString MachineName)
 void UUI_MachineInteract::OnCloseClicked()
 {
     RemoveFromParent();
+}
+
+void UUI_MachineInteract::OnRepairClicked()
+{
+    if (!TargetMachine)
+    {
+        return;
+    }
+
+    TargetMachine->RepairUsingWarehouse();
 }
 
 void UUI_MachineInteract::UpdateDurabilityUI(float CurrentDurability, float MaxDurability)
