@@ -6,6 +6,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "OJJ_Grid.h"
+#include "ProceduralMeshComponent.h"
 #include "UObject/ConstructorHelpers.h"
 
 AOJJ_RampFoundation::AOJJ_RampFoundation()
@@ -29,6 +30,22 @@ AOJJ_RampFoundation::AOJJ_RampFoundation()
 	{
 		StepMeshISM->SetStaticMesh(CubeMesh.Object);
 	}
+
+	// 쐐기 ProcMesh(F3.8) — 계단 ISM과 동일 충돌 프로파일 미러(걷기 Pawn Block + 커서 Visibility
+	// Block + Camera Ignore). 충돌은 Convex 단순 충돌(쐐기 = 볼록체, complex-as-simple 비사용) —
+	// 경사면 걷기 가부는 CharacterMovement WalkableFloorAngle(기본 ≈44.77°)이 자연 판정: 행당
+	// 100uu(45°) 급경사는 못 걷고(F3.7' 보행 불가 경고와 동근거), 완경사는 매끈하게 걸어 오름.
+	WedgeMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("WedgeMesh"));
+	WedgeMesh->SetupAttachment(RootComponent);
+	WedgeMesh->bUseComplexAsSimpleCollision = false;
+	WedgeMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	WedgeMesh->SetCollisionObjectType(ECC_WorldStatic);
+	WedgeMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+	WedgeMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+	WedgeMesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	WedgeMesh->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	WedgeMesh->SetCanEverAffectNavigation(false);
+	WedgeMesh->SetCastShadow(false);
 }
 
 namespace
@@ -242,15 +259,11 @@ float AOJJ_RampFoundation::OJJ_ComputeSnapLift(const AOJJ_Grid& Grid, FIntPoint 
 
 void AOJJ_RampFoundation::UpdateSlabVisual()
 {
-	// 베이스 슬래브(단일 박스)는 램프 형상과 안 맞음 — 숨기고 충돌도 끔(계단 ISM이 전담).
+	// 베이스 슬래브(단일 박스)는 램프 형상과 안 맞음 — 숨기고 충돌도 끔(쐐기/계단이 전담).
 	if (SlabMesh)
 	{
 		SlabMesh->SetVisibility(false);
 		SlabMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	}
-	if (!StepMeshISM)
-	{
-		return;
 	}
 
 	const float CellSize = OJJ_ResolveCellSize();
@@ -260,6 +273,33 @@ void AOJJ_RampFoundation::UpdateSlabVisual()
 	const int32 Rise = PlacedClimbLengthCells > 0 ? PlacedRiseSteps : 1;
 	const int32 Cols = FMath::Max(1, FoundationSize.Y);
 	const float SlabThickness = FMath::Max(1.0f, Thickness);
+
+	// F3.8: 쐐기 우선 — 성공 시 계단 ISM은 비움(인스턴스 0 = 충돌 셰이프 0, 토글 불필요).
+	if (OJJ_BuildWedgeVisual(R, Cols, Rise, CellSize))
+	{
+		if (StepMeshISM)
+		{
+			StepMeshISM->ClearInstances();
+		}
+		return;
+	}
+
+	// 폴백: 기존 계단 박스(쐐기 실패). 쐐기 잔여 정리. Rise 0(평지 브리지)은 의도된 퇴화라 무경고 —
+	// 경고는 비정상 실패(컴포넌트 미생성 등)에만.
+	if (WedgeMesh)
+	{
+		WedgeMesh->ClearAllMeshSections();
+		WedgeMesh->ClearCollisionConvexMeshes();
+	}
+	if (Rise >= 1)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[RampFoundation] 쐐기 생성 불가(R=%d, Rise=%d단) — 계단 박스 폴백"), R, Rise);
+	}
+	if (!StepMeshISM)
+	{
+		return;
+	}
 
 	// 로컬 공간 계단: 액터 원점 = 풋프린트 중심, 액터 Z + Thickness = Z_low(낮은 단 상면).
 	// 행 r 박스 상면(로컬) = Thickness + (r/(R−1))×Rise×100 — 등록 SurfaceZ와 동일 산식(시각=데이터
@@ -275,4 +315,78 @@ void AOJJ_RampFoundation::UpdateSlabVisual()
 		const FVector StepScale(CellSize / 100.0f, Cols * CellSize / 100.0f, SlabThickness / 100.0f);
 		StepMeshISM->AddInstance(FTransform(FRotator::ZeroRotator, StepLocation, StepScale));
 	}
+}
+
+bool AOJJ_RampFoundation::OJJ_BuildWedgeVisual(int32 ClimbCells, int32 WidthCells, int32 RiseSteps, float CellSize)
+{
+	if (!WedgeMesh || RiseSteps < 1 || ClimbCells < 1 || WidthCells < 1 || CellSize <= KINDA_SMALL_NUMBER)
+	{
+		return false; // Rise 0(평지 브리지)은 의도된 퇴화 — 호출자가 계단(평탄 박스) 폴백.
+	}
+
+	// 좌표계 = 계단/배치 수식과 동일: 피벗 = 풋프린트 중심(XY), 로컬 +X = 오르는 방향,
+	// 액터 Z + Thickness = Z_low(아랫단 상면). 양 끝 정합 — 칼끝(낮은 끝, Z=T) = 아랫단 상면 엣지,
+	// 수직 끝면 상단(Z=T+Rise) = 윗단 상면. 빗변은 칼끝→높은 끝 상단의 연속 경사(걷기 매끈) —
+	// 등록 데이터는 셀당 계단(㉰)이라 셀 중심 기준 최대 반행 시각 편차는 비주얼 근사로 수용.
+	const float L = ClimbCells * CellSize;
+	const float W = WidthCells * CellSize;
+	const float T = FMath::Max(1.0f, Thickness);
+	const float Rise = RiseSteps * AOJJ_Grid::OJJ_FoundationSnapStep;
+	const float X0 = -L * 0.5f, X1 = L * 0.5f;
+	const float Y0 = -W * 0.5f, Y1 = W * 0.5f;
+	const float Z0 = T, Z1 = T + Rise;
+
+	// 기하 꼭짓점 6 — K=칼끝(낮은 끝), B=높은 끝 바닥, U=높은 끝 상단 (0=좌/−Y, 1=우/+Y).
+	const FVector K0(X0, Y0, Z0), K1(X0, Y1, Z0);
+	const FVector B0(X1, Y0, Z0), B1(X1, Y1, Z0);
+	const FVector U0(X1, Y0, Z1), U1(X1, Y1, Z1);
+
+	// 렌더 정점은 면별 복제(공유하면 면 노멀이 섞임): 쿼드 3 + 삼각 2 = 18정점/8삼각형.
+	// 와인딩 = 바깥에서 봤을 때 시계방향(UE 전면 규약). AddQuad(A,B,C,D) → (A,B,C),(C,B,D).
+	TArray<FVector> Vertices;
+	TArray<int32> Triangles;
+	TArray<FVector> Normals;
+	TArray<FVector2D> UVs;
+	Vertices.Reserve(18); Triangles.Reserve(24); Normals.Reserve(18); UVs.Reserve(18);
+
+	auto AddQuad = [&](const FVector& A, const FVector& B, const FVector& C, const FVector& D, const FVector& N)
+	{
+		const int32 Base = Vertices.Num();
+		Vertices.Append({ A, B, C, D });
+		Normals.Append({ N, N, N, N });
+		UVs.Append({ FVector2D(0, 0), FVector2D(0, 1), FVector2D(1, 0), FVector2D(1, 1) });
+		Triangles.Append({ Base + 0, Base + 1, Base + 2, Base + 2, Base + 1, Base + 3 });
+	};
+	auto AddTri = [&](const FVector& A, const FVector& B, const FVector& C, const FVector& N)
+	{
+		const int32 Base = Vertices.Num();
+		Vertices.Append({ A, B, C });
+		Normals.Append({ N, N, N });
+		UVs.Append({ FVector2D(0, 0), FVector2D(0, 1), FVector2D(1, 1) });
+		Triangles.Append({ Base + 0, Base + 1, Base + 2 });
+	};
+
+	// 빗변 노멀: 경사 방향 d=(L,0,Rise)와 수직, 위쪽(+Z 성분) — n=(-Rise,0,L) 정규화.
+	const FVector SlopeNormal = FVector(-Rise, 0.0f, L).GetSafeNormal();
+	AddQuad(K0, K1, U0, U1, SlopeNormal);                  // 빗변 상면
+	AddQuad(K0, B0, K1, B1, FVector(0, 0, -1));            // 바닥(Z=T 수평면, 아래 향함)
+	AddQuad(B0, U0, B1, U1, FVector(1, 0, 0));             // 수직 끝면(높은 끝 = 윗단 옆면)
+	AddTri(K1, B1, U1, FVector(0, 1, 0));                  // 옆면 +Y
+	AddTri(K0, U0, B0, FVector(0, -1, 0));                 // 옆면 −Y
+
+	WedgeMesh->ClearAllMeshSections();
+	WedgeMesh->CreateMeshSection_LinearColor(0, Vertices, Triangles, Normals, UVs,
+		TArray<FLinearColor>(), TArray<FProcMeshTangent>(), /*bCreateCollision=*/false);
+
+	// 충돌 = Convex 단순 충돌(쐐기는 볼록체) — 기하 꼭짓점 6개로 hull 생성. complex-as-simple
+	// 비사용(생성자 설정)이라 걷기/스윕이 이 convex를 탄다.
+	WedgeMesh->ClearCollisionConvexMeshes();
+	WedgeMesh->AddCollisionConvexMesh({ K0, K1, B0, B1, U0, U1 });
+
+	// 머티리얼: 기존 슬래브 지정 그대로 미러(F1-b 임시 비주얼 정책 유지).
+	if (SlabMesh)
+	{
+		WedgeMesh->SetMaterial(0, SlabMesh->GetMaterial(0));
+	}
+	return true;
 }

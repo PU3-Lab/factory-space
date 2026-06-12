@@ -7,6 +7,7 @@
 #include "OJJ_RampFoundation.generated.h"
 
 class UInstancedStaticMeshComponent;
+class UProceduralMeshComponent;
 
 /**
  * 램프 Foundation (F3-2, 계획 ㉰㉱㉲ — f3_slope_link_plan.md) — 낮은 단에서 +1단(100uu)으로 오르는
@@ -78,6 +79,18 @@ protected:
 	int32 PlacedRiseSteps = 1;
 
 	// 계단 박스 비주얼/충돌 — SlabMesh와 동일 충돌 프로파일(Pawn/Visibility Block, Camera Ignore).
+	// F3.8부터 쐐기(WedgeMesh) 실패 시 폴백 전용.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Foundation")
 	TObjectPtr<UInstancedStaticMeshComponent> StepMeshISM;
+
+	// 쐐기 비주얼(F3.8 — 에디터 수동 모델링 대신 코드 생성). 충돌 = Convex 단순 충돌
+	// (쐐기는 볼록체 — complex-as-simple 비사용), 채널은 계단 ISM 프로파일 미러.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Foundation")
+	TObjectPtr<UProceduralMeshComponent> WedgeMesh;
+
+	// 쐐기 메시 생성 — 꼭짓점 6(칼끝 2 + 높은 끝 바닥 2 + 높은 끝 상단 2, 로컬 +X = 오르는 방향),
+	// 면 5(빗변 상면/바닥/수직 끝면/옆면 2). 양 끝 정합: 칼끝 = 아랫단 상면 엣지(로컬 Z=Thickness),
+	// 수직 끝면 상단 = 윗단 상면(Z=Thickness+Rise) — 배치 수식(풋프린트 중심 피벗)과 동일 좌표계.
+	// false = 생성 불가(RiseSteps<1 평지 브리지 퇴화 등) — 호출자가 계단 박스 폴백 + 경고.
+	bool OJJ_BuildWedgeVisual(int32 ClimbCells, int32 WidthCells, int32 RiseSteps, float CellSize);
 };
