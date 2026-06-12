@@ -2,10 +2,17 @@
 
 #include "EngineUtils.h"
 #include "MachineBase.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "Wanted_Factory.h"
 #include "Engine/DataTable.h"
 #include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+	constexpr TCHAR MachineCsvRelativePath[] = TEXT("Source/Wanted_Factory/Data/MachineTable.csv");
+}
 
 UMachineSubsystem::UMachineSubsystem()
 {
@@ -25,11 +32,36 @@ void UMachineSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	if (!MachineTable)
 	{
+		MachineTable = NewObject<UDataTable>(this, TEXT("MachineTable"));
+		if (MachineTable)
+		{
+			MachineTable->RowStruct = FMachineTableRow::StaticStruct();
+		}
+	}
+
+	if (!MachineTable)
+	{
 		LOG_SSR_W(TEXT("MachineTable Load Failed"));
 		return;
 	}
 
 	LOG_SSR_W(TEXT("MachineTable Loaded"));
+
+	const FString CsvPath = FPaths::Combine(FPaths::ProjectDir(), MachineCsvRelativePath);
+	FString CsvContent;
+	if (FFileHelper::LoadFileToString(CsvContent, *CsvPath))
+	{
+		MachineTable->EmptyTable();
+		const TArray<FString> ImportProblems = MachineTable->CreateTableFromCSVString(CsvContent);
+		for (const FString& Problem : ImportProblems)
+		{
+			LOG_SSR_W(TEXT("MachineTable CSV import warning: %s"), *Problem);
+		}
+	}
+	else
+	{
+		LOG_SSR_W(TEXT("MachineTable CSV Load Failed: %s"), *CsvPath);
+	}
 
 	BuildMachineIndex();
 }
