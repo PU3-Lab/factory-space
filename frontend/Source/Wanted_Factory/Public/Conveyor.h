@@ -97,6 +97,16 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "Conveyor|Path")
 	TArray<float> PathNodeLocalZs;
 
+	// [OJJ F3.9] 포트 꺾임 흐름 방향(그리드가 OJJ_SetPortFlowDirections로 주입). Start = 머신에서
+	// 첫 셀로 들어오는 방향(소스 출력 포트 바깥 = BackStep), End = 마지막 셀에서 머신으로 나가는
+	// 방향(타깃 입력 −FrontStep). **Zero = 미주입(기존 전 경로) — 끝 세그먼트 판정 완전 기존 동작.**
+	// 경로 밖(머신 안) 꺾임을 코너 판정에 보충해, 옆 접근 시 끝 세그먼트가 직선 대신 코너가 된다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "Conveyor|Path")
+	FIntPoint OJJ_StartPortFlowDir = FIntPoint::ZeroValue;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "Conveyor|Path")
+	FIntPoint OJJ_EndPortFlowDir = FIntPoint::ZeroValue;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Items")
 	TArray<FName> ItemSlots;
 
@@ -143,6 +153,10 @@ public:
 	// 리셋 — stale Z 방어). 크기가 PathCells.Num()+1이 아니면 무시 + 경고(평면 유지). 빈 배열 = 평면 복귀.
 	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
 	void OJJ_SetPathNodeLocalZs(const TArray<float>& NewNodeLocalZs);
+
+	// [OJJ F3.9] 포트 꺾임 흐름 방향 주입(SetPath 이후 호출 계약 — SetPath가 리셋). Zero = 보충 없음.
+	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
+	void OJJ_SetPortFlowDirections(FIntPoint StartFlowDir, FIntPoint EndFlowDir);
 
 	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
 	void ConfigureTransport(

@@ -192,6 +192,9 @@ void AConveyor::SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize
 	// [OJJ F3.7-0] 새 경로 = 평면으로 시작(이전 경로의 노드 Z가 stale로 남는 것 방어).
 	// 경사 Z는 그리드가 SetPath 직후 OJJ_SetPathNodeLocalZs로 별도 주입(호출 계약).
 	PathNodeLocalZs.Reset();
+	// [OJJ F3.9] 포트 꺾임 방향도 동일 계약 — 새 경로는 미주입(기존 동작)으로 시작.
+	OJJ_StartPortFlowDir = FIntPoint::ZeroValue;
+	OJJ_EndPortFlowDir = FIntPoint::ZeroValue;
 
 	RebuildVisuals();
 	RefreshItemVisualInstances();
@@ -213,6 +216,14 @@ void AConveyor::OJJ_SetPathNodeLocalZs(const TArray<float>& NewNodeLocalZs)
 	PathNodeLocalZs = NewNodeLocalZs;
 	RebuildVisuals();
 	RefreshItemVisualInstances();
+}
+
+void AConveyor::OJJ_SetPortFlowDirections(FIntPoint StartFlowDir, FIntPoint EndFlowDir)
+{
+	// [OJJ F3.9] 포트 꺾임 흐름 방향 — RebuildVisuals의 코너 판정 보충용(Zero = 보충 없음).
+	OJJ_StartPortFlowDir = StartFlowDir;
+	OJJ_EndPortFlowDir = EndFlowDir;
+	RebuildVisuals();
 }
 
 float AConveyor::OJJ_GetPathNodeLocalZ(int32 NodeIndex) const
@@ -276,6 +287,8 @@ void AConveyor::ClearPath()
 {
 	PathCells.Reset();
 	PathNodeLocalZs.Reset(); // [OJJ F3.7-0] 경로와 한 쌍 — 함께 정리.
+	OJJ_StartPortFlowDir = FIntPoint::ZeroValue; // [OJJ F3.9] 포트 꺾임 방향도 함께 정리.
+	OJJ_EndPortFlowDir = FIntPoint::ZeroValue;
 	OccupiedGridCells.Reset();
 	SourceMachine.Reset();
 	TargetMachine.Reset();
@@ -417,10 +430,23 @@ void AConveyor::RebuildVisuals()
 
 		const bool bHasPrevious = PreviousDirection != FIntPoint::ZeroValue;
 		const bool bHasNext = NextDirection != FIntPoint::ZeroValue;
+		// [OJJ F3.9] 포트 꺾임 보충: 끝 셀의 경로 밖(머신 안) 방향을 포트 흐름 방향으로 채워 코너
+		// 판정에 참여 — 옆 접근 시 끝 세그먼트가 직선 대신 코너(좌/우는 기존 CornerToYaw90 단일
+		// 규칙). 정면 접근(포트 방향 = 진행 방향)은 직각이 아니라 직선 그대로, 미주입(Zero — 기존
+		// 전 경로 포함)은 보충 자체가 없어 완전 기존 동작. 경사 끝 셀(노드 델타 ≠ 0)은 코너 메시가
+		// 평면 전제(㊅)라 보충 생략 — 직선 유지(known limitation).
+		const bool bCellFlat =
+			FMath::Abs(OJJ_GetPathNodeLocalZ(Index + 1) - OJJ_GetPathNodeLocalZ(Index)) <= KINDA_SMALL_NUMBER;
+		const FIntPoint EffPrevDirection =
+			(!bHasPrevious && bCellFlat) ? OJJ_StartPortFlowDir : PreviousDirection;
+		const FIntPoint EffNextDirection =
+			(!bHasNext && bCellFlat) ? OJJ_EndPortFlowDir : NextDirection;
 		// 직각만 코너로 인정: prev==next는 직선, prev+next==0은 U턴(반대방향) → 코너 아님(직선 흐름 처리).
-		const bool bIsRightAngle = PreviousDirection != NextDirection
-			&& (PreviousDirection + NextDirection) != FIntPoint::ZeroValue;
-		const bool bIsCorner = bHasPrevious && bHasNext && bIsRightAngle;
+		const bool bIsRightAngle = EffPrevDirection != EffNextDirection
+			&& (EffPrevDirection + EffNextDirection) != FIntPoint::ZeroValue;
+		const bool bIsCorner = EffPrevDirection != FIntPoint::ZeroValue
+			&& EffNextDirection != FIntPoint::ZeroValue
+			&& bIsRightAngle;
 		const FIntPoint VisualDirection = bHasNext ? NextDirection : PreviousDirection;
 
 		// [OJJ F3.7-0] 셀별 로컬 Z 가산 — 평면(빈 배열)은 +0.0f로 기존과 수치 동일(㊉).
@@ -433,7 +459,8 @@ void AConveyor::RebuildVisuals()
 		{
 			// ㄱ자 코너 메시: XZ평면 수직 벽 → Roll 90(X축)로 XY바닥에 눕히고 진행면을 위로.
 			// 합성 YawQuat * RollQuat → Roll(눕히기) 먼저, Yaw(격자 코너 방향) 나중.
-			const FQuat YawQuat(FRotator(0.0f, CornerToYaw90(PreviousDirection, NextDirection) + CornerBaseYaw, 0.0f));
+			// [OJJ F3.9] Eff 방향 사용 — 경로 안 코너는 원본과 동일값(보충은 끝 셀에서만 발생).
+			const FQuat YawQuat(FRotator(0.0f, CornerToYaw90(EffPrevDirection, EffNextDirection) + CornerBaseYaw, 0.0f));
 			const FQuat RollQuat(FRotator(0.0f, 0.0f, 90.0f));   // XZ벽 → XY바닥
 			const FQuat CornerQuat = YawQuat * RollQuat;
 			// 메시가 셀 한 칸에 맞게 제작됨 → 원본 크기 그대로(보정 불필요). 균일 스케일이라 회전 왜곡 0.

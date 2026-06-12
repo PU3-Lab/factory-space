@@ -2626,6 +2626,17 @@ bool AOJJ_Grid::OJJ_TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint
 	// 피벗을 belt centroid로 옮겨도 belt 월드위치는 불변(로컬에서 centroid를 차감하므로 상쇄).
 	// centroid는 액터 로컬 오프셋이므로 액터 회전을 적용해 월드 방향으로 변환(무회전에선 항등, 미래 회전 대비).
 	Conveyor->SetPath(PlacementCells, CellSize);
+	// [OJJ F3.9] 포트 꺾임 방향 주입: 끝 셀이 머신 위면(끝 스텝 = 포트 법선 — 꺾임이 경로 안이라
+	// 기존 코너 생성) Zero, 인접 끝이면 타깃 −FrontStep = BackStep(포트 셀 → 머신 안 —
+	// OJJ_IsMachineFrontInputPair의 EndCell = MachineCell + FrontStep 계약에서 도출)을 전달 →
+	// 옆 접근 시 벨트 끝 세그먼트가 코너로 표현됨. **시작 측은 도달 불가 방어 잔여**(Codex F3.9 ④):
+	// OJJ_BuildConveyorPlacementPath가 인접 시작에 머신 셀을 선두 삽입(:2556)해 정규화하므로 유효
+	// 경로는 항상 머신 셀로 시작 — 옆 출구 꺾임은 경로 안이라 기존 코너가 처리, 주입은 항상 Zero.
+	const bool bStartsOnMachine = OJJ_GetMachineAtCell(OccupiedCells, PlacementCells[0]) != nullptr;
+	const bool bEndsOnMachineCell = OJJ_GetMachineAtCell(OccupiedCells, PlacementCells.Last()) != nullptr;
+	Conveyor->OJJ_SetPortFlowDirections(
+		bStartsOnMachine ? FIntPoint::ZeroValue : OJJ_GetMachineBackStep(SourceMachine),
+		bEndsOnMachineCell ? FIntPoint::ZeroValue : OJJ_GetMachineBackStep(TargetMachine));
 	// 센터화(GridToWorld −half) 정합 보정: 컨베이어 벨트(Conveyor.cpp, 타 소유)는 cell→local을 GridToWorld
 	// 미경유 수동식(Cell*CellSize + 0.5*CellSize)으로 계산해 옛 좌표(원점 +X/+Y)에 놓인다. 벨트는 손대지 않고
 	// 그리드측에서 액터 앵커를 −half extent 만큼 옮겨 다른 시스템(머신/호버/포트)과 동일 좌표로 정렬.
