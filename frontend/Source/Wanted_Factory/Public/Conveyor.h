@@ -87,6 +87,13 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Path")
 	TArray<FIntPoint> OccupiedGridCells;
 
+	// [OJJ F3.7-0] 경사 경로 셀별 로컬 Z(PathCells와 1:1 인덱스, 액터 Z 기준 델타 — 그리드가
+	// OJJ_SetPathCellLocalZs로 주입, docs/f3_7_slope_conveyor_plan.md ㊃). **빈 배열 = 평면(기존
+	// 전 경로)** — 소비 수식이 전부 +0/pitch 0/스케일 ×1 항등이라 기존 동작과 수치 동일(㊉).
+	// Transient: 배치 시 주입되는 런타임 상태 — 직렬화 의도 없음(Codex F3.7-0 ⑤).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "Conveyor|Path")
+	TArray<float> PathCellLocalZs;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Items")
 	TArray<FName> ItemSlots;
 
@@ -127,6 +134,12 @@ protected:
 public:
 	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
 	void SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize);
+
+	// [OJJ F3.7-0] 경사 경로 셀별 로컬 Z 주입(OJJ_ 접두 = 그리드 측 침습 경계 표식 — 벨트 자체
+	// 로직은 이 값을 생산하지 않음). SetPath 이후 호출 계약(SetPath가 배열을 리셋 — stale Z 방어).
+	// 크기가 PathCells와 다르면 무시 + 경고(평면 유지). 빈 배열 전달 = 평면 복귀.
+	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
+	void OJJ_SetPathCellLocalZs(const TArray<float>& NewCellLocalZs);
 
 	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
 	void ConfigureTransport(
@@ -179,6 +192,10 @@ private:
 	void RefreshItemVisualInstances();
 	float GetCurrentMoveAlpha() const;
 	FVector GetCellLocalCenter(FIntPoint Cell) const;
+	// [OJJ F3.7-0] 셀별 로컬 Z 조회 — 빈 배열/무효 인덱스는 0(평면 항등). ByCell은 경사 경로에서만
+	// 선형 탐색에 도달(평면은 빈 배열 즉시 반환 — 기존 경로 비용 0).
+	float OJJ_GetPathCellLocalZByIndex(int32 PathIndex) const;
+	float OJJ_GetPathCellLocalZByCell(FIntPoint Cell) const;
 	FVector GetSlotLocalCenter(int32 SlotIndex) const;
 	FVector GetIncomingItemLocalCenter() const;
 	FVector ResolveItemVisualStartLocation(int32 SlotIndex) const;
