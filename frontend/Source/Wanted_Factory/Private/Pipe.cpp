@@ -13,6 +13,11 @@
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
+namespace
+{
+	constexpr float BasicCylinderHeight = 200.0f;
+}
+
 APipe::APipe()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -215,15 +220,41 @@ void APipe::RebuildVisuals()
 
 	const FVector Centroid = GetPathCentroidLocal();
 	const float UniformScale = FMath::Max(0.01f, SegmentRadiusScale);
-	const FVector SegmentScale(UniformScale, UniformScale, UniformScale);
-
-	for (const FIntPoint& Cell : PathCells)
+	if (PathCells.Num() == 1)
 	{
+		const FIntPoint Cell = PathCells[0];
 		const FVector LocalLocation(
 			(Cell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
 			(Cell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
 			ZOffset);
-		SegmentInstances->AddInstance(FTransform(FRotator(90.0f, 0.0f, 0.0f), LocalLocation, SegmentScale));
+		const FVector SegmentScale(UniformScale, UniformScale, 0.5f);
+		SegmentInstances->AddInstance(FTransform(FRotator::ZeroRotator, LocalLocation, SegmentScale));
+		return;
+	}
+
+	for (int32 Index = 0; Index + 1 < PathCells.Num(); ++Index)
+	{
+		const FIntPoint StartCell = PathCells[Index];
+		const FIntPoint EndCell = PathCells[Index + 1];
+		const FVector StartLocation(
+			(StartCell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
+			(StartCell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
+			ZOffset);
+		const FVector EndLocation(
+			(EndCell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
+			(EndCell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
+			ZOffset);
+		const FVector SegmentVector = EndLocation - StartLocation;
+		if (SegmentVector.IsNearlyZero())
+		{
+			continue;
+		}
+
+		const FVector SegmentMidpoint = (StartLocation + EndLocation) * 0.5f;
+		const FQuat SegmentRotation = FQuat::FindBetweenNormals(FVector::UpVector, SegmentVector.GetSafeNormal());
+		const float SegmentLengthScale = SegmentVector.Length() / BasicCylinderHeight;
+		const FVector SegmentScale(UniformScale, UniformScale, FMath::Max(0.01f, SegmentLengthScale));
+		SegmentInstances->AddInstance(FTransform(SegmentRotation, SegmentMidpoint, SegmentScale));
 	}
 }
 
