@@ -41,6 +41,12 @@ public:
 	// 배치 확정 풋프린트 저장(F3.6-1) — 자동 맞춤의 동적 길이/상승 단수를 계단 비주얼이 쓰도록.
 	virtual void OJJ_NotifyFitResult(const FOJJFoundationFitResult& Fit) override;
 
+	// [계측 — F3.8' 수직 어긋남 확정용] 배치 직후 1회 덤프: [데이터] 장부 등록 낮은/높은 셀 SurfaceZ
+	// / [기대] 그리드 독립 산출(배치 수식+장부)의 칼끝·상단 월드 좌표 / [실제] ProcMesh 꼭짓점의
+	// 월드 변환 실측 / [정답지] 계단 박스 수식이 산출하는 행0·행R−1 상면 월드 좌표 + ΔZ 요약.
+	// 오차 0 확인 후 제거 예정(가설 수정 금지 — 숫자로 증명 후 수정).
+	void OJJ_DumpPlacementDebug(const AOJJ_Grid& Grid, FIntPoint Origin, FIntPoint EffSize) const;
+
 	// 계단 근사 셀별 SurfaceZ(결정 ㉲ — 산식은 클래스 책임, 그리드는 불변식만 검증).
 	// R<2(경사 불능) 또는 RiseSteps<1(상승 없음 — ㉿ 평지 퇴화)면 false — 평판 단일값 경로 폴백.
 	// F3.6-0: R = EffSize의 오르는 방향 축(고정 램프에선 FoundationSize.X와 동치 — 스왑 규칙),

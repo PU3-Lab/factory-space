@@ -320,6 +320,103 @@ void AOJJ_RampFoundation::UpdateSlabVisual()
 	}
 }
 
+void AOJJ_RampFoundation::OJJ_DumpPlacementDebug(const AOJJ_Grid& Grid, FIntPoint Origin, FIntPoint EffSize) const
+{
+	const int32 Step = ((PlacedRotationSteps % 4) + 4) % 4;
+	const int32 R = FMath::Max(1, PlacedClimbLengthCells > 0 ? PlacedClimbLengthCells : FoundationSize.X);
+	const int32 Rise = PlacedClimbLengthCells > 0 ? PlacedRiseSteps : 1;
+	const float CellSize = OJJ_ResolveCellSize();
+	const float L = R * CellSize;
+	const float T = FMath::Max(1.0f, Thickness);
+
+	// 월드 오르막(등록 r-switch 규약) + 낮은/높은 끝 대표 셀(해당 행의 중앙 열).
+	FVector ClimbDir(1.0f, 0.0f, 0.0f);
+	FIntPoint LowCell = Origin, HighCell = Origin;
+	const int32 MidX = Origin.X + EffSize.X / 2;
+	const int32 MidY = Origin.Y + EffSize.Y / 2;
+	switch (Step)
+	{
+	case 0: ClimbDir = FVector(1, 0, 0);  LowCell = FIntPoint(Origin.X, MidY);                  HighCell = FIntPoint(Origin.X + EffSize.X - 1, MidY); break;
+	case 1: ClimbDir = FVector(0, 1, 0);  LowCell = FIntPoint(MidX, Origin.Y);                  HighCell = FIntPoint(MidX, Origin.Y + EffSize.Y - 1); break;
+	case 2: ClimbDir = FVector(-1, 0, 0); LowCell = FIntPoint(Origin.X + EffSize.X - 1, MidY);  HighCell = FIntPoint(Origin.X, MidY); break;
+	case 3: ClimbDir = FVector(0, -1, 0); LowCell = FIntPoint(MidX, Origin.Y + EffSize.Y - 1);  HighCell = FIntPoint(MidX, Origin.Y); break;
+	}
+
+	// [데이터] 장부 등록값(배치 직후 = 그리드가 진실원).
+	float LowDataZ = 0.0f, HighDataZ = 0.0f;
+	const bool bLowData = Grid.GetFoundationSurfaceZ(LowCell, LowDataZ);
+	const bool bHighData = Grid.GetFoundationSurfaceZ(HighCell, HighDataZ);
+
+	// [기대] 그리드 독립 산출: XY = 배치 수식 중심 ± 오르막×L/2(풋프린트 경계), Z = 장부값.
+	const FVector PlaceCenter = Grid.GetFoundationPlacementLocation(Origin, EffSize);
+	const FVector ExpKnife(PlaceCenter.X - ClimbDir.X * L * 0.5f, PlaceCenter.Y - ClimbDir.Y * L * 0.5f, LowDataZ);
+	const FVector ExpTop(PlaceCenter.X + ClimbDir.X * L * 0.5f, PlaceCenter.Y + ClimbDir.Y * L * 0.5f, HighDataZ);
+
+	// [실제] ProcMesh 섹션 0 꼭짓점 → 컴포넌트 월드 변환 실측: 최저 Z 군 평균 = 칼끝, 최고 Z 군 = 상단.
+	FVector ActKnife = FVector::ZeroVector, ActTop = FVector::ZeroVector;
+	bool bHasMesh = false;
+	if (WedgeMesh)
+	{
+		if (const FProcMeshSection* Section = WedgeMesh->GetProcMeshSection(0))
+		{
+			if (Section->ProcVertexBuffer.Num() > 0)
+			{
+				const FTransform& MeshXf = WedgeMesh->GetComponentTransform();
+				TArray<FVector> WorldVerts;
+				WorldVerts.Reserve(Section->ProcVertexBuffer.Num());
+				float MinZ = TNumericLimits<float>::Max();
+				float MaxZ = -TNumericLimits<float>::Max();
+				for (const FProcMeshVertex& V : Section->ProcVertexBuffer)
+				{
+					const FVector WorldPos = MeshXf.TransformPosition(FVector(V.Position));
+					WorldVerts.Add(WorldPos);
+					MinZ = FMath::Min(MinZ, (float)WorldPos.Z);
+					MaxZ = FMath::Max(MaxZ, (float)WorldPos.Z);
+				}
+				int32 MinCount = 0, MaxCount = 0;
+				for (const FVector& WorldPos : WorldVerts)
+				{
+					if (WorldPos.Z < MinZ + 1.0f) { ActKnife += WorldPos; ++MinCount; }
+					if (WorldPos.Z > MaxZ - 1.0f) { ActTop += WorldPos; ++MaxCount; }
+				}
+				if (MinCount > 0) { ActKnife /= MinCount; }
+				if (MaxCount > 0) { ActTop /= MaxCount; }
+				bHasMesh = true;
+			}
+		}
+	}
+
+	// [정답지] 계단 박스 수식(F3.5 PIE 정합 검증됐던 기준)의 행0/행R−1 상면 중심 — 액터 변환 경유
+	// (계단과 쐐기는 같은 액터 트랜스폼을 공유하므로, 이 줄과 [실제]의 차 = 순수 꼭짓점 수식 차).
+	const FTransform ActorXf = GetActorTransform();
+	const FVector Row0Top = ActorXf.TransformPosition(
+		FVector(0.5f * CellSize - L * 0.5f, 0.0f, T));
+	const FVector RowLastTop = ActorXf.TransformPosition(
+		FVector(((float)R - 0.5f) * CellSize - L * 0.5f, 0.0f,
+			T + (R > 1 ? (float)Rise * AOJJ_Grid::OJJ_FoundationSnapStep : 0.0f)));
+
+	UE_LOG(LogTemp, Log, TEXT("[RampDebug] step=%d R=%d Rise=%d단 액터(%.0f,%.0f,Z=%.1f yaw=%.0f) | 데이터: 낮은셀(%d,%d) Z=%s / 높은셀(%d,%d) Z=%s"),
+		Step, R, Rise, GetActorLocation().X, GetActorLocation().Y, GetActorLocation().Z, GetActorRotation().Yaw,
+		LowCell.X, LowCell.Y, bLowData ? *FString::Printf(TEXT("%.1f"), LowDataZ) : TEXT("없음"),
+		HighCell.X, HighCell.Y, bHighData ? *FString::Printf(TEXT("%.1f"), HighDataZ) : TEXT("없음"));
+	UE_LOG(LogTemp, Log, TEXT("[RampDebug] 기대:   칼끝 (%.0f, %.0f, %.1f) / 상단 (%.0f, %.0f, %.1f)"),
+		ExpKnife.X, ExpKnife.Y, ExpKnife.Z, ExpTop.X, ExpTop.Y, ExpTop.Z);
+	if (bHasMesh)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[RampDebug] 실제:   칼끝 (%.0f, %.0f, %.1f) / 상단 (%.0f, %.0f, %.1f)"),
+			ActKnife.X, ActKnife.Y, ActKnife.Z, ActTop.X, ActTop.Y, ActTop.Z);
+		UE_LOG(LogTemp, Log, TEXT("[RampDebug] 오차:   칼끝 ΔZ=%+.2f ΔXY=%.1f / 상단 ΔZ=%+.2f ΔXY=%.1f"),
+			ActKnife.Z - ExpKnife.Z, FVector::Dist2D(ActKnife, ExpKnife),
+			ActTop.Z - ExpTop.Z, FVector::Dist2D(ActTop, ExpTop));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("[RampDebug] 실제:   ProcMesh 섹션 없음(계단 폴백 상태 — Rise 0 등)"));
+	}
+	UE_LOG(LogTemp, Log, TEXT("[RampDebug] 정답지(계단 수식): 행0 상면 (%.0f, %.0f, %.1f) / 행%d 상면 (%.0f, %.0f, %.1f)"),
+		Row0Top.X, Row0Top.Y, Row0Top.Z, R - 1, RowLastTop.X, RowLastTop.Y, RowLastTop.Z);
+}
+
 bool AOJJ_RampFoundation::OJJ_BuildWedgeVisual(int32 ClimbCells, int32 WidthCells, int32 RiseSteps, float CellSize,
 	int32 RotationSteps)
 {
