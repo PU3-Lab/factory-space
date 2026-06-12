@@ -9,8 +9,10 @@
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "FactoryManagerSubsystem.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "LandscapeProxy.h"
 #include "MachineBase.h"
 #include "OJJ_Grid.h"
 #include "Conveyor.h"
@@ -23,6 +25,7 @@
 #include "Machines/Pump.h"
 #include "Machines/Smelter.h"
 #include "Machines/WarehousePort.h"
+#include "OJJ_Foundation.h"
 #include "OJJ_ProtectionTower.h"
 #include "QuestManagerSubsystem.h"
 #include "Resource/ResourceBase.h"
@@ -128,6 +131,7 @@ void AOJJ_BuildController::Tick(float DeltaSeconds)
 	if (bIsBuildMode)
 	{
 		UpdateMouseHover();
+		UpdateCharacterCellOverlay();
 	}
 }
 
@@ -206,6 +210,9 @@ void AOJJ_BuildController::EnterBuildMode()
 	// 빌드 세션은 항상 회전 0(미회전)으로 시작 — 예측 가능한 기본 방향.
 	HoverRotationSteps = 0;
 
+	// Foundation 종류도 평판으로 시작(F3-2.5) — 회전과 동일한 "예측 가능한 기본값" 정책.
+	bRampFoundationSelected = false;
+
 	// 컨베이어 드래그 상태 초기화(이전 세션 잔여 방지).
 	bIsDraggingConveyor = false;
 	ConveyorDragCells.Reset();
@@ -224,6 +231,9 @@ void AOJJ_BuildController::EnterBuildMode()
 
 	// 첫 UpdateMouseHover 호출이 무조건 갱신을 트리거하도록 sentinel로 초기화
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+
+	// 캐릭터 셀 표시(F2-4 후속 ②) — 빈 캐시로 시작해 첫 Tick이 무조건 적재.
+	CharacterOverlayCells.Reset();
 }
 
 void AOJJ_BuildController::ExitBuildMode()
@@ -238,7 +248,9 @@ void AOJJ_BuildController::ExitBuildMode()
 		TargetGrid->SetVisualizationVisible(false);
 		TargetGrid->ClearHoverPreview();         // 호버 셀 + 호버 화살표 제거
 		TargetGrid->ClearPlacedMachineArrows();  // 배치 머신 화살표 제거 (진입 RefreshPlacedMachineArrows와 대칭)
+		TargetGrid->OJJ_UpdateCharacterCellOverlay(TArray<FIntPoint>());  // 캐릭터 셀 표시 제거(F2-4 후속 ②)
 	}
+	CharacterOverlayCells.Reset();
 
 	bIsBuildMode = false;
 
@@ -261,6 +273,9 @@ void AOJJ_BuildController::ExitBuildMode()
 
 	// 회전 상태도 리셋 — 다음 진입은 미회전(0)으로 시작(EnterBuildMode 초기화와 일관).
 	HoverRotationSteps = 0;
+
+	// Foundation 종류도 평판으로 리셋(F3-2.5 — EnterBuildMode 초기화와 대칭).
+	bRampFoundationSelected = false;
 
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -286,7 +301,7 @@ void AOJJ_BuildController::ToggleBuildMode()
 void AOJJ_BuildController::RotateHoverClockwise()
 {
 	// R은 IMC_Build 전용이라 빌드모드에서만 발동하지만, 방어적으로 가드.
-	// 회전은 머신 호버 전용 — 컨베이어 모드에서는 무시(Dummy parity).
+	// 회전은 머신 + Foundation(F3-0 ㉱ — 램프 방향성 대비) 호버 전용 — 컨베이어 모드에서는 무시(Dummy parity).
 	if (!bIsBuildMode
 		|| (PlacementMode != EOJJ_BuildPlacementMode::Machine
 			&& PlacementMode != EOJJ_BuildPlacementMode::PowerNode
@@ -296,7 +311,8 @@ void AOJJ_BuildController::RotateHoverClockwise()
 			&& PlacementMode != EOJJ_BuildPlacementMode::Miner
 			&& PlacementMode != EOJJ_BuildPlacementMode::Pump
 			&& PlacementMode != EOJJ_BuildPlacementMode::Smelter
-			&& PlacementMode != EOJJ_BuildPlacementMode::Warehouse))
+			&& PlacementMode != EOJJ_BuildPlacementMode::Warehouse
+			&& PlacementMode != EOJJ_BuildPlacementMode::Foundation))
 	{
 		return;
 	}
@@ -305,6 +321,48 @@ void AOJJ_BuildController::RotateHoverClockwise()
 
 	// 마우스가 같은 셀에 멈춰 있어도 회전이 즉시 미리보기에 반영되도록 sentinel 리셋 후 강제 갱신.
 	// (UpdateMouseHover는 CursorCell==CurrentHoverCell이면 rebuild를 스킵하므로 sentinel이 필요.)
+	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+	UpdateMouseHover();
+}
+
+void AOJJ_BuildController::OJJ_SelectFoundationKind(bool bSelectRamp)
+{
+	// F3.7' 키 개편(G=평판/H=램프 직행 — F3-2.5 T 토글 대체). 빌드모드 밖 호출은 기존 모드 키들과
+	// 동일하게 무해(호버/클릭이 bIsBuildMode 게이트, EnterBuildMode가 종류를 평판으로 리셋 — 회전 정책).
+	// 램프 미지정이면 선택 거부 — 사용처(호버/배치)의 silent 폴백보다 선택 시점 1회 경고가 명확.
+	if (bSelectRamp && !RampFoundationClass)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[BuildController] RampFoundationClass 미지정 — 램프 모드 선택 무시"));
+		return;
+	}
+
+	const bool bKindChanged = (bRampFoundationSelected != bSelectRamp);
+	bRampFoundationSelected = bSelectRamp;
+	UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation: %s"),
+		bRampFoundationSelected ? TEXT("Ramp") : TEXT("Flat"));
+
+	// Foundation 모드 밖이면 진입까지(직행 키 의미) — SetPlacementMode가 sentinel 리셋 + 호버
+	// 강제 갱신을 수행하므로 별도 처리 불필요.
+	if (PlacementMode != EOJJ_BuildPlacementMode::Foundation)
+	{
+		SetPlacementMode(EOJJ_BuildPlacementMode::Foundation);
+		return;
+	}
+
+	if (!bKindChanged)
+	{
+		return; // 같은 종류 재선택 — 호버 변화 없음.
+	}
+
+	// 종류가 바뀌면 CDO 풋프린트(평판 8×8 vs 램프 비정사각)가 달라짐 — 회전(RotateHoverClockwise)과
+	// 동일하게 sentinel 리셋 후 강제 갱신(F3-2.5 T 로직 재사용). 단 커서가 유효 표면 밖이면
+	// UpdateMouseHover의 Foundation 분기가 리빌드 없이 끝날 수 있으므로, 이전 종류 타일 잔존 금지를
+	// 위해 먼저 명시적으로 클리어(유효 표면 위라면 프리뷰 함수가 어차피 클리어 후 재적재 — 이중 무해).
+	if (TargetGrid)
+	{
+		TargetGrid->ClearHoverPreview();
+	}
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 	UpdateMouseHover();
 }
@@ -321,8 +379,14 @@ FIntPoint AOJJ_BuildController::ComputeOriginFromCursorCell(FIntPoint CursorCell
 	// 같은 size 가정에서 동작해야 호버/배치와 occupancy/메시 위치가 어긋나지 않음. step 0이면 기존과 동일.
 	const FIntPoint Size = AOJJ_Grid::EffectiveSize(Machine->GetMachineSize(), RotationSteps);
 
-	// (Size-1)/2 정수 나눗셈 → lower-left bias. 1x1 offset 0 (회귀 없음).
-	return FIntPoint(CursorCell.X - (Size.X - 1) / 2, CursorCell.Y - (Size.Y - 1) / 2);
+	return ComputeOriginFromCursorCellForSize(CursorCell, Size);
+}
+
+FIntPoint AOJJ_BuildController::ComputeOriginFromCursorCellForSize(FIntPoint CursorCell, FIntPoint EffSize)
+{
+	// 머신/Foundation 공통 수식 — 두 경로의 "마우스 = 풋프린트 중심" 정책이 갈라지지 않게 단일원 유지.
+	// F3.6-0: 본문을 그리드 정적으로 이관(Foundation 풋프린트 훅 베이스도 같은 수식을 쓰도록) — 위임만.
+	return AOJJ_Grid::OJJ_OriginFromCursorCellForSize(CursorCell, EffSize);
 }
 
 TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
@@ -466,6 +530,13 @@ void AOJJ_BuildController::UpdateMouseHover()
 		return;
 	}
 
+	// Foundation 모드(F1-b): 머신 경로와 독립 분기(Conveyor/Demolish 패턴) — CDO FoundationSize 풋프린트 호버.
+	if (PlacementMode == EOJJ_BuildPlacementMode::Foundation)
+	{
+		UpdateFoundationHover(CursorCell, Hit);
+		return;
+	}
+
 	// === Machine 모드 (기존 동작 무변경) ===
 	TSubclassOf<AMachineBase> ActiveMachineClass = GetActiveMachineClass();
 	if (!ActiveMachineClass)
@@ -482,7 +553,13 @@ void AOJJ_BuildController::UpdateMouseHover()
 	AActor* HitActor = Hit.GetActor();
 	const bool bHitFloor = (HitComp == TargetGrid->GetGridFloorMesh());
 	const bool bHitMachine = HitActor && HitActor->IsA<AMachineBase>();
-	if (!bHitFloor && !bHitMachine)
+	// F1-c: Foundation 슬래브 상면(Visibility Block)도 유효 호버 표면 — 없으면 Foundation 위 머신 배치 불가.
+	const bool bHitFoundation = HitActor && HitActor->IsA<AOJJ_Foundation>();
+	// F2-1' 사각지대 해소: 평면 위(+델타) 지형은 Landscape가 커서 플레인보다 먼저 히트 — buildable 셀인데
+	// 호버 사망. 셀 매핑은 WorldToGrid가 XY만 쓰므로(Z 무관) 플로어 히트와 동일하게 통과시킨다.
+	// 배치 가능 여부는 기존처럼 CanPlace 경로가 판정(게이트는 표면 식별만).
+	const bool bHitLandscape = HitActor && HitActor->IsA<ALandscapeProxy>();
+	if (!bHitFloor && !bHitMachine && !bHitFoundation && !bHitLandscape)
 	{
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
@@ -539,6 +616,12 @@ void AOJJ_BuildController::UpdateDemolishHover()
 
 	AActor* Target = TargetGrid->GetActorAtCell(CursorCell);
 
+	// F1-b': 점유(머신/컨베이어)가 없는 셀은 Foundation 역조회 — 건물이 있으면 건물 우선(위→아래 철거 순서 유도).
+	if (!Target)
+	{
+		Target = TargetGrid->GetFoundationAtCell(CursorCell);
+	}
+
 	// 빈 셀 또는 맵 고정물(광맥/WaterArea = AResourceBase)은 철거 대상 아님 → 하이라이트 없음.
 	if (!Target || Target->IsA<AResourceBase>())
 	{
@@ -546,8 +629,20 @@ void AOJJ_BuildController::UpdateDemolishHover()
 		return;
 	}
 
-	// 머신/컨베이어 등 제거 가능 대상 → 점유 셀 전체 빨강.
-	if (const TArray<FIntPoint>* Cells = TargetGrid->GetActorCells(Target))
+	// 머신/컨베이어는 점유 맵, Foundation은 커버리지 맵 — 어느 쪽이든 대상 셀 전체 빨강.
+	const TArray<FIntPoint>* Cells = TargetGrid->GetActorCells(Target);
+	if (!Cells)
+	{
+		// F2-0(Codex F1-b' #4): 위 건물이 있는 Foundation은 클릭(RemoveFoundation)이 거부하므로 호버도
+		// 표시 생략 — 단일 진실원(호버 = 클릭 판정)을 철거 모드에도 적용. 거부 사유 화면 표시는 UI 백로그.
+		if (TargetGrid->OJJ_CountOccupiedFoundationCells(Target) > 0)
+		{
+			TargetGrid->ClearHoverPreview();
+			return;
+		}
+		Cells = TargetGrid->GetFoundationCells(Target);
+	}
+	if (Cells)
 	{
 		TargetGrid->OJJ_HighlightCellsInvalid(*Cells);
 	}
@@ -571,6 +666,11 @@ void AOJJ_BuildController::DemolishUnderCursor()
 	}
 
 	AActor* Target = TargetGrid->GetActorAtCell(CursorCell);
+	// F1-b': 점유가 없으면 Foundation 역조회 — 호버(UpdateDemolishHover)와 동일 우선순위.
+	if (!Target)
+	{
+		Target = TargetGrid->GetFoundationAtCell(CursorCell);
+	}
 	if (!Target)
 	{
 		return; // 빈 셀 무시.
@@ -623,6 +723,23 @@ void AOJJ_BuildController::DemolishUnderCursor()
 		{
 			Conveyor->Destroy();
 			bRemoved = true;
+		}
+	}
+	else if (AOJJ_Foundation* Foundation = Cast<AOJJ_Foundation>(Target))
+	{
+		// Foundation 철거(F1-b'): RemoveFoundation이 커버 셀 위 건물(점유)을 검사해 거부 + 사유 반환 —
+		// 성공 시에만 Destroy(머신의 RemoveMachineAt→Destroy 순서와 동일). Destroy 후 EndPlay의
+		// RemoveFoundation 재호출은 "not registered"로 끝나 이중 해제 안전(EndPlay 주석의 대칭 계약).
+		FString OutReason;
+		if (TargetGrid->RemoveFoundation(Foundation, OutReason))
+		{
+			Foundation->Destroy();
+			bRemoved = true;
+		}
+		else
+		{
+			// 거부 사유 표시 — 배치 거부(TryPlaceFoundation 실패)와 동일 채널(로그). 예: 위 건물 N셀.
+			UE_LOG(LogTemp, Warning, TEXT("[BuildController] Foundation 철거 거부: %s"), *OutReason);
 		}
 	}
 
@@ -727,10 +844,19 @@ void AOJJ_BuildController::OnLeftClickPressed()
 		return;
 	}
 
-	// Demolish 모드: 좌클릭 = 커서 셀 대상 제거(머신/컨베이어). 배치 경로(CanPlaceMachine 등)와 분리.
+	// Demolish 모드: 좌클릭 = 커서 셀 대상 제거(머신/컨베이어/Foundation). 배치 경로(CanPlaceMachine 등)와 분리.
 	if (PlacementMode == EOJJ_BuildPlacementMode::Demolish)
 	{
 		DemolishUnderCursor();
+		return;
+	}
+
+	// Foundation 모드(F1-b): 클릭 즉시 배치(드래그 없음). 머신 spawn-validate-destroy 패턴 미러 —
+	// 검증/등록은 F1-a TryPlaceFoundation(그리드는 데이터만), 액터 위치 세팅은 여기서.
+	// 머신 경로 도달 전 return → #164 퀘스트 훅(NotifyMainQuestMachinePlaced) 비경유(비간섭).
+	if (PlacementMode == EOJJ_BuildPlacementMode::Foundation)
+	{
+		PlaceFoundationAtCursor();
 		return;
 	}
 
@@ -815,6 +941,297 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 }
 
+// === Foundation 모드 (F1-b — 머신 경로와 독립, 커버리지 배치) ===
+
+TSubclassOf<AOJJ_Foundation> AOJJ_BuildController::GetActiveFoundationClass() const
+{
+	// F3-2.5: 종류 상태에 따라 평판/램프 선택. 램프 선택 상태인데 클래스가 비어 있는 경우는
+	// OJJ_SelectFoundationKind 게이트가 차단하므로 정상 흐름에선 도달 불가 — 그래도 null이면
+	// 사용처(호버/배치)의 기존 null 가드가 동작한다.
+	return bRampFoundationSelected ? RampFoundationClass : FlatFoundationClass;
+}
+
+void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHitResult& Hit)
+{
+	// 머신 호버와 동일한 표면 게이트: floor/머신 위에서만 유효(그 외 표면은 off-grid — 프리뷰 클리어).
+	// 머신 위 호버는 점유 셀로 매핑돼 CanPlaceFoundation occupied 게이트가 빨강 표시 — 의도된 피드백.
+	// (배치된 Foundation 슬래브는 NoCollision이라 트레이스가 통과해 floor에 닿음 → 겹침 빨강도 정상 동작.)
+	UPrimitiveComponent* HitComp = Hit.GetComponent();
+	AActor* HitActor = Hit.GetActor();
+	const bool bHitFloor = (HitComp == TargetGrid->GetGridFloorMesh());
+	const bool bHitMachine = HitActor && HitActor->IsA<AMachineBase>();
+	// F1-c: 기존 슬래브 위 호버도 유효(겹침은 CanPlaceFoundation이 빨강으로 — 인접 확장 배치 UX).
+	const bool bHitFoundation = HitActor && HitActor->IsA<AOJJ_Foundation>();
+	// F2-1' 사각지대 해소: 평면 위(+델타) 지형의 Landscape 선히트 허용 — 머신 게이트와 동일 사유/처리.
+	const bool bHitLandscape = HitActor && HitActor->IsA<ALandscapeProxy>();
+	if (!bHitFloor && !bHitMachine && !bHitFoundation && !bHitLandscape)
+	{
+		TargetGrid->ClearHoverPreview();
+		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+		return;
+	}
+
+	// 머신 경로와 동일한 동일-셀 ISM 리빌드 스킵(Tick 경로 비용 절감).
+	if (CursorCell == CurrentHoverCell)
+	{
+		return;
+	}
+
+	const TSubclassOf<AOJJ_Foundation> ActiveClass = GetActiveFoundationClass();
+	const AOJJ_Foundation* DefaultFoundation = ActiveClass ? ActiveClass.GetDefaultObject() : nullptr;
+	if (!DefaultFoundation)
+	{
+		// 활성 클래스가 비어 있으면(예: 램프 선택 상태에서 PIE 중 에디터로 클래스 비움) 이전 종류
+		// 프리뷰가 stale로 남지 않게 정리 후 반환(Codex F3-2.5 ④ RISK 방어).
+		TargetGrid->ClearHoverPreview();
+		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+		return;
+	}
+
+	// F3.6-0(㉽): 풋프린트는 CDO 훅이 산출 — 베이스는 기존 정적 산출(홀수 step 스왑 + origin 공통
+	// 수식)과 동작 동일(회귀 0). 자동 맞춤 램프(F3.6-1)부터 커서+그리드 상태 기반 동적 풋프린트가
+	// override로 들어온다(CDO 호출 — spawn 부작용 없음은 종전과 동일).
+	const FOJJFoundationFitResult Fit = DefaultFoundation->OJJ_ComputeHoverFootprint(
+		*TargetGrid, CursorCell, HoverRotationSteps);
+	// F3.6-1(㊂): 풋프린트 구성 불가(자동 맞춤 경사 한계)는 클릭도 같은 훅 bValid로 거부 — 빨강 강제로
+	// 색 단일 진실원 유지. 사유 텍스트는 클릭 시 로그(아래 호버 로그에도 동반 — 셀 변경 시만이라 저빈도).
+	TargetGrid->OJJ_UpdateFoundationHoverPreview(Fit.Origin, Fit.EffSize, !Fit.bValid);
+	// ㊁ 보강: 방향 출처 표시 — 자동(이웃 낮→높) vs 수동(R) 이원화의 UX 방어. 평판은 출처가 비어
+	// 있어 무로그(스팸 0), 램프만 셀 변경 시 1줄.
+	if (!Fit.DirectionSource.IsEmpty())
+	{
+		const FString InvalidSuffix = Fit.bValid
+			? FString()
+			: FString::Printf(TEXT(" — 구성 불가: %s"), *Fit.FailReason);
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] 램프 풋프린트 %s%s"), *Fit.DirectionSource, *InvalidSuffix);
+	}
+	CurrentHoverCell = CursorCell;
+}
+
+void AOJJ_BuildController::PlaceFoundationAtCursor()
+{
+	const TSubclassOf<AOJJ_Foundation> ActiveClass = GetActiveFoundationClass();
+	if (!TargetGrid || !ActiveClass)
+	{
+		// F3-2.5 마이그레이션 안내: 구 FoundationClass 지정은 CoreRedirects가 FlatFoundationClass로
+		// 이관 — 그래도 비어 있으면 BP/레벨 인스턴스에서 재지정 필요.
+		UE_LOG(LogTemp, Warning,
+			TEXT("[BuildController] TargetGrid 또는 %s 미설정 — BP/레벨 인스턴스에서 지정 확인(구 FoundationClass는 FlatFoundationClass로 개명됨)"),
+			bRampFoundationSelected ? TEXT("RampFoundationClass") : TEXT("FlatFoundationClass"));
+		return;
+	}
+
+	// 마우스가 floor 밖이라 호버 갱신이 한 번도 안 됐으면 클릭 무시(머신 경로와 동일).
+	if (CurrentHoverCell.X == INT_MIN || CurrentHoverCell.Y == INT_MIN)
+	{
+		return;
+	}
+
+	const AOJJ_Foundation* DefaultFoundation = ActiveClass.GetDefaultObject();
+	if (!DefaultFoundation)
+	{
+		return;
+	}
+
+	// 호버와 같은 풋프린트 훅을 사용해야 "미리보기 = 실제 배치" 정합(머신 경로의 핵심 계약과 동일 —
+	// F3.6-0 ㉽: CDO 정적 산출 → 훅. 같은 입력(셀·회전)이면 같은 결과 — 클릭 시 재산출이 진실원).
+	const FOJJFoundationFitResult Fit = DefaultFoundation->OJJ_ComputeHoverFootprint(
+		*TargetGrid, CurrentHoverCell, HoverRotationSteps);
+	if (!Fit.bValid)
+	{
+		// 풋프린트 구성 불가(F3.6-1 자동 맞춤 경사 한계 미달 등 — 베이스/고정 램프는 항상 valid).
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation 배치 거부(풋프린트): %s"), *Fit.FailReason);
+		return;
+	}
+	const FIntPoint EffSize = Fit.EffSize;
+	const FIntPoint Origin = Fit.Origin;
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParams.Owner = this;
+
+	AOJJ_Foundation* NewFoundation = World->SpawnActor<AOJJ_Foundation>(
+		ActiveClass, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+	if (!NewFoundation)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] Foundation SpawnActor 실패"));
+		return;
+	}
+
+	// F3.6-1: 동적 풋프린트 확정값(자동 맞춤 길이/단수)을 액터에 통지 — 등록 전에 저장해
+	// 비주얼(OJJ_NotifyPlacedOnGrid → UpdateSlabVisual)이 등록 데이터와 같은 규격으로 그린다.
+	NewFoundation->OJJ_NotifyFitResult(Fit);
+
+	// SurfaceZ = 평면 + Thickness + 스냅 리프트(F2-4 §5-4 — 풋프린트 GroundZ 최고점의 N×100단, 평탄 N=0 =
+	// F1 동작). 좌표/리프트는 그리드 헬퍼(결정점 ② — 데이터/좌표는 그리드, 액터 이동은 컨트롤러).
+	// 액터는 통째로 리프트만큼 위 — 슬래브 상면(액터Z+Thickness)이 SurfaceZ와 자동 일치. 실패 시 즉시 파기.
+	const FVector PlaceLocation = TargetGrid->GetFoundationPlacementLocation(Origin, EffSize);
+	// 높이 결정은 클래스 훅(F3.5 우선순위: ① 이웃 상속 → ② 지형 씨앗 / 램프 ③ 엣지 스냅 → 폴백).
+	// HeightSource는 배치 로그용 출처(결정 ㉷ 보강 — 정책 동작 실측).
+	// F3.6-1(㊁): 회전은 훅이 확정한 유효 step — 자동 맞춤은 부호(낮→높)가 이웃에서 자동, 그 외는
+	// 입력 step 그대로. 스냅/퍼셀 산식/액터 yaw가 전부 같은 값을 써야 낮은 끝 판정이 안 어긋난다.
+	FString HeightSource;
+	const float SnapLift = NewFoundation->OJJ_ComputeSnapLift(
+		*TargetGrid, Origin, EffSize, Fit.EffectiveRotationSteps, &HeightSource);
+	const FVector SnappedLocation = PlaceLocation + FVector(0.0f, 0.0f, SnapLift);
+	const float BaseSurfaceZ = SnappedLocation.Z + NewFoundation->GetThickness();
+
+	// F3-2: 비평탄(램프) Foundation은 셀별 SurfaceZ — 산식은 클래스 책임(결정 ㉲), 등록은 PerCell 경유
+	// (그리드가 불변식 검증). 평탄은 기존 단일값 경로 그대로(배열 미생성).
+	FString OutReason;
+	TArray<float> CellZs;
+	const bool bPlaced = NewFoundation->OJJ_BuildPerCellSurfaceZ(EffSize, Fit.EffectiveRotationSteps, BaseSurfaceZ, Fit.RiseSteps, CellZs)
+		? TargetGrid->OJJ_TryPlaceFoundationPerCell(NewFoundation, Origin, EffSize, CellZs, OutReason)
+		: TargetGrid->TryPlaceFoundation(NewFoundation, Origin, EffSize, BaseSurfaceZ, OutReason);
+	if (!bPlaced)
+	{
+		// OutReason에 사유별 셀 수(water/occupied/overlap 등) — F1-b 디버깅·waterZ 재검토 실측 데이터.
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation 배치 불가: %s"), *OutReason);
+		NewFoundation->Destroy();
+		return;
+	}
+
+	// F3-0(㉱): 액터 yaw = 90°×step — 로컬 Size 메시가 월드에서 EffSize 풋프린트와 정렬(머신 :873 패턴).
+	// 정사각 평판 큐브는 시각 동일(회귀 0). step은 훅 확정값(F3.6-1 ㊁ — 산식과 동일 회전 규약).
+	NewFoundation->SetActorLocationAndRotation(
+		SnappedLocation, FRotator(0.0f, 90.0f * Fit.EffectiveRotationSteps, 0.0f));
+	NewFoundation->OJJ_NotifyPlacedOnGrid(TargetGrid);
+
+	// N + 높이 출처(결정 ⑤·㉷ 보강) + 방향 출처(㊁ 보강 — 자동/수동) 기록 — 정책 동작 실측.
+	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s Foundation 배치 성공 (%dx%d, R=%d, N=%d단, %s%s%s)"),
+		*Origin.ToString(), EffSize.X, EffSize.Y, Fit.EffectiveRotationSteps,
+		FMath::RoundToInt(SnapLift / AOJJ_Grid::OJJ_FoundationSnapStep), *HeightSource,
+		Fit.DirectionSource.IsEmpty() ? TEXT("") : TEXT(", "), *Fit.DirectionSource);
+
+	// F2-4 후속 ①: 풋프린트에 깔린 Pawn을 상면으로 올려태움(F3-2부터 셀별 SurfaceZ — 등록 데이터를
+	// 그리드에서 읽음). 후속 ② 캐시도 리셋 — 셀은 그대로여도 비주얼 Z가 상면으로 바뀌므로 강제 재적재.
+	OJJ_LiftPawnsOntoFoundation(Origin, EffSize, NewFoundation->GetThickness());
+	CharacterOverlayCells.Reset();
+
+	// 직전 영역이 이제 커버됨(겹침 금지) → 다음 호버에서 빨강 재표시 강제(머신 경로와 동일).
+	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+}
+
+void AOJJ_BuildController::OJJ_LiftPawnsOntoFoundation(FIntPoint Origin, FIntPoint Size, float SlabThickness)
+{
+	// 서버 권위 — 배치(TryPlaceFoundation의 HasAuthority)와 같은 흐름. 모든 Pawn 대상(멀티 대비).
+	// 배치 성공 직후 호출되므로 셀별 SurfaceZ는 그리드 등록 데이터(GetFoundationSurfaceZ)가 진실원 —
+	// 평판(전 셀 동일)과 램프(F3-2 계단)를 같은 코드로 처리(㉳).
+	if (!HasAuthority() || !TargetGrid)
+	{
+		return;
+	}
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	for (TActorIterator<APawn> It(World); It; ++It)
+	{
+		APawn* Pawn = *It;
+		if (!IsValid(Pawn))
+		{
+			continue;
+		}
+		float Radius = 0.0f;
+		float HalfHeight = 0.0f;
+		Pawn->GetSimpleCollisionCylinder(Radius, HalfHeight);
+		const FVector Loc = Pawn->GetActorLocation();
+		const float Feet = Loc.Z - HalfHeight;
+		const float Head = Loc.Z + HalfHeight;
+
+		// 캡슐이 걸친 셀 범위(WorldToGrid — XY 전용, 셀 반올림 규칙 공유) ∩ 풋프린트.
+		const FIntPoint MinCell = TargetGrid->WorldToGrid(Loc - FVector(Radius, Radius, 0.0f));
+		const FIntPoint MaxCell = TargetGrid->WorldToGrid(Loc + FVector(Radius, Radius, 0.0f));
+		const int32 IterMinX = FMath::Max(MinCell.X, Origin.X);
+		const int32 IterMaxX = FMath::Min(MaxCell.X, Origin.X + Size.X - 1);
+		const int32 IterMinY = FMath::Max(MinCell.Y, Origin.Y);
+		const int32 IterMaxY = FMath::Min(MaxCell.Y, Origin.Y + Size.Y - 1);
+
+		// 셀별 판정: 캡슐이 그 셀 슬래브 구간 [상면−두께, 상면]과 겹칠 때만 — 발이 이미 상면 이상이면
+		// no-op, 머리가 슬래브 바닥 아래면(높은 단 밑 갭 보행 — 결정 ⑥) 간섭 없음. 올림 목표는
+		// 걸린 셀 상면의 max(램프 위면 더 높은 행 기준 — 재끼임 방지).
+		float LiftToZ = 0.0f;
+		bool bLift = false;
+		for (int32 X = IterMinX; X <= IterMaxX; ++X)
+		{
+			for (int32 Y = IterMinY; Y <= IterMaxY; ++Y)
+			{
+				float CellSurfaceZ = 0.0f;
+				if (!TargetGrid->GetFoundationSurfaceZ(FIntPoint(X, Y), CellSurfaceZ))
+				{
+					continue;
+				}
+				if (Feet < CellSurfaceZ && Head > CellSurfaceZ - SlabThickness)
+				{
+					LiftToZ = bLift ? FMath::Max(LiftToZ, CellSurfaceZ) : CellSurfaceZ;
+					bLift = true;
+				}
+			}
+		}
+		if (!bLift)
+		{
+			continue;
+		}
+
+		// 상면 + 캡슐 반높이(+2 초기 침투 방지 — 착지는 중력이 정리). XY 유지("깔면 올라탐").
+		// 위 공간이 다른 액터로 막힌 경우의 정교한 처리는 백로그 — 일단 올리고 로그로 추적.
+		const FVector NewLoc(Loc.X, Loc.Y, LiftToZ + HalfHeight + 2.0f);
+		Pawn->SetActorLocation(NewLoc, /*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation 배치 — Pawn 올려태움: %s Z %.1f→%.1f (상면 %.1f)"),
+			*Pawn->GetName(), Loc.Z, NewLoc.Z, LiftToZ);
+	}
+}
+
+void AOJJ_BuildController::UpdateCharacterCellOverlay()
+{
+	if (!TargetGrid)
+	{
+		return;
+	}
+
+	// 로컬 플레이어만(F2-4 후속 ② — 타 플레이어 표시는 백로그). Pawn 없음(관전 등)이면 표시 제거 경로.
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+
+	TArray<FIntPoint> Cells;
+	if (Pawn)
+	{
+		float Radius = 0.0f;
+		float HalfHeight = 0.0f;
+		Pawn->GetSimpleCollisionCylinder(Radius, HalfHeight);
+		const FVector Loc = Pawn->GetActorLocation();
+		// 캡슐 풋프린트가 걸친 셀(보통 1~2, 최대 4) — WorldToGrid가 XY만 쓰므로 Z 무관. off-grid는 제외.
+		const FIntPoint MinCell = TargetGrid->WorldToGrid(Loc - FVector(Radius, Radius, 0.0f));
+		const FIntPoint MaxCell = TargetGrid->WorldToGrid(Loc + FVector(Radius, Radius, 0.0f));
+		for (int32 X = MinCell.X; X <= MaxCell.X; ++X)
+		{
+			for (int32 Y = MinCell.Y; Y <= MaxCell.Y; ++Y)
+			{
+				const FIntPoint Cell(X, Y);
+				if (TargetGrid->IsValidGridCell(Cell))
+				{
+					Cells.Add(Cell);
+				}
+			}
+		}
+	}
+
+	// 셀 좌표 변경 시에만 ISM 재빌드(계약 — 비교는 ≤4원소라 틱 비용 무시 가능).
+	if (Cells != CharacterOverlayCells)
+	{
+		CharacterOverlayCells = Cells;
+		TargetGrid->OJJ_UpdateCharacterCellOverlay(Cells);
+	}
+}
+
 // === Conveyor 입력 (Step 6 — Dummy 원본 이식(parity)) ===
 
 void AOJJ_BuildController::OnLeftClickReleased()
@@ -855,6 +1272,7 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::Smelter:   ModeName = TEXT("Smelter");    break;
 	case EOJJ_BuildPlacementMode::Warehouse: ModeName = TEXT("Warehouse");  break;
 	case EOJJ_BuildPlacementMode::Demolish:  ModeName = TEXT("Demolish");   break;
+	case EOJJ_BuildPlacementMode::Foundation: ModeName = TEXT("Foundation"); break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 
