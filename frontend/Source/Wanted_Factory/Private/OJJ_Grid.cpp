@@ -251,8 +251,11 @@ bool OJJ_FindInputMachineAtPathEnd(
 // MaxRampStepPerRow 기본과 동기) ③ 방향 전환(코너) 셀은 양옆 ΔZ=0
 // (㊅ — 벨트 코너 세그먼트가 평면 전제라 경사 코너 금지). 성공 시 OutCellZs = 셀별 절대 SurfaceZ
 // (PathCells와 1:1) — OJJ_TryPlaceConveyor가 시작 셀 기준 로컬화(㊇) 후 벨트에 주입(㊃).
-// ※ 의도(Codex F3.7-1 ②④): 검사는 **형태 기반**(㊆(a) 채택 — 액터가 램프인지는 안 봄. 단 간격
-// 100 고정이라 정상 평판 간 ΔZ는 항상 45 초과 — 45 이하 비격자 면은 램프 중간 행만 생성).
+// ※ 의도(Codex F3.7-1 ②④): 검사는 **형태 기반**(㊆(a) 채택 — 액터가 램프인지는 안 봄).
+// F3.10 결정 승격(2026-06-12 PIE 실측 확정): 한계 100(F3.7')에서 평판↔평판 Δ1단(100uu) **벨트
+// 직결도 의도된 기능** — 벨트 시각/흐름 정상 실측. 단차 물류 수단: gap 0 = 직결, gap 1 = 1칸
+// 램프(45° 쐐기), gap 2+ = 자동 맞춤 램프. (구 서술 "평판 간 ΔZ는 항상 45 초과라 걸러짐"은
+// 한계 45 시절 — 100 완화로 폐기.)
 // 끝점 머신 셀 포함 순회도 의도 — 기존 균일 검사와 동일 범위("전 경로 셀, 머신 끝점 포함"),
 // 지형 직배치 머신과의 혼합 경로는 기존 정책대로 거부.
 bool OJJ_ValidateConveyorSlopePath(
@@ -1574,6 +1577,9 @@ void AOJJ_Grid::OJJ_AccumulateFoundationSurfaceZ(FIntPoint RectOrigin, FIntPoint
 			// 비격자 단 제외(Codex F3.5 C): 램프 중간 행(행당 100/(R−1)uu) 등 단 격자 밖 SurfaceZ를
 			// 상속하면 평판이 비정수 단에 떠서 단 격자 전제(걸침 균일·㉲ 불변식)가 무너진다.
 			// 램프 양 끝 행은 격자 위라 정상 후보로 남음(엣지 확장 허용 — 의도).
+			// [F3.10 관찰 b①] 1칸 램프는 셀 전체가 격자 위(Z_low 평판 등록)라 이 필터를 통과 —
+			// 자동 맞춤 스캔이 45° 쐐기 면을 평판 이웃으로 쓸 수 있음(낮은쪽 단 기준 산출). PIE 관찰
+			// 후 문제 실측 시 face 훅(OJJ_GetVisualSurfaceZAtWorld 보유 = 비평탄) 제외로 보강.
 			const float StepRemainder = FMath::Fmod(SurfaceZ - SnapGridOriginZ, OJJ_FoundationSnapStep);
 			if (!FMath::IsNearlyZero(StepRemainder, 0.1f)
 				&& !FMath::IsNearlyEqual(FMath::Abs(StepRemainder), OJJ_FoundationSnapStep, 0.1f))
@@ -1670,6 +1676,9 @@ bool AOJJ_Grid::OJJ_GetUniformSurfaceZ(const TArray<FIntPoint>& Cells, float& Ou
 {
 	// 단일 건설면 규칙(F1-c §7-3): 전 셀이 같은 높이의 면이어야 Z 안착이 유일하게 정해진다.
 	// 지형(비-Foundation)은 균일 취급 유지 — §5-2 직배치는 F3까지 비파괴(셀 간 GroundZ 차로 거부하지 않음).
+	// [F3.10 관찰 b②] 1셀 풋프린트는 자명히 균일 통과 — 램프 셀(중간 행/1칸 램프) 위 1×1 배치물이
+	// 장부 Z(계단/Z_low)에 앉아 쐐기에 묻힐 수 있음(램프 중간 행 거부는 다셀 이높이 비교에만 의존).
+	// PIE 관찰 후 실측 시 face 훅 보유 셀 게이트로 보강.
 	// F2-1(결정 (a)/③)부터 지형 OutZ는 평면 고정이 아니라 풋프린트 GroundZ 최고점(함수 말미) —
 	// 베이크 대표값(셀 최고점)과 한 쌍으로 직배치 묻힘 해소. 뜸은 ≤ tol+셀간차로 유계(충돌 없음).
 	// stale Foundation 셀은 GetFoundationSurfaceZ가 false라 비-Foundation 취급(점유 stale 의미와 일관).
