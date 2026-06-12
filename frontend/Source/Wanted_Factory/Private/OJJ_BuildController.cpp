@@ -27,6 +27,7 @@
 #include "Machines/WarehousePort.h"
 #include "OJJ_Foundation.h"
 #include "OJJ_ProtectionTower.h"
+#include "Pipe.h"
 #include "QuestManagerSubsystem.h"
 #include "Resource/ResourceBase.h"
 
@@ -112,6 +113,7 @@ AOJJ_BuildController::AOJJ_BuildController()
 
 	// 컨베이어 모드 기본 클래스(BP 미지정 시). Dummy와 동일 패턴.
 	ConveyorClass = AConveyor::StaticClass();
+	PipeClass = APipe::StaticClass();
 	PowerLineClass = APowerLine::StaticClass();
 	PowerGridNodeClass = APowerGridNode::StaticClass();
 	ShieldClass = AOJJ_ProtectionTower::StaticClass();
@@ -475,8 +477,9 @@ void AOJJ_BuildController::UpdateMouseHover()
 
 	const FIntPoint CursorCell = TargetGrid->WorldToGrid(Hit.Location);
 
-	// Conveyor 모드: 드래그/단일 셀 미리보기로 분기 (머신 경로와 독립).
-	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor)
+	// Conveyor/Pipe 모드: 드래그/단일 셀 미리보기로 분기 (머신 경로와 독립 — 파이프는 프리뷰만 분기).
+	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor
+		|| PlacementMode == EOJJ_BuildPlacementMode::Pipe)
 	{
 		UpdateConveyorHover(CursorCell);
 		return;
@@ -616,7 +619,13 @@ void AOJJ_BuildController::UpdateDemolishHover()
 
 	AActor* Target = TargetGrid->GetActorAtCell(CursorCell);
 
-	// F1-b': 점유(머신/컨베이어)가 없는 셀은 Foundation 역조회 — 건물이 있으면 건물 우선(위→아래 철거 순서 유도).
+	// F4-1(Codex ③): 파이프 → Foundation 순서 — 클릭(DemolishUnderCursor)과 동일 우선순위(단일 진실원).
+	// 위→아래(건물→파이프→기초): Foundation 위 파이프를 호버/클릭 모두 파이프로 잡는다.
+	if (!Target)
+	{
+		Target = TargetGrid->OJJ_GetPipeAtCell(CursorCell);
+	}
+	// F1-b': 점유(머신/컨베이어)·파이프가 없는 셀은 Foundation 역조회.
 	if (!Target)
 	{
 		Target = TargetGrid->GetFoundationAtCell(CursorCell);
@@ -641,6 +650,11 @@ void AOJJ_BuildController::UpdateDemolishHover()
 			return;
 		}
 		Cells = TargetGrid->GetFoundationCells(Target);
+		// F4-1: Foundation도 아니면 파이프 레이어 셀 — 라인 전체 빨강(클릭 철거 단위와 일치).
+		if (!Cells)
+		{
+			Cells = TargetGrid->OJJ_GetPipeCells(Target);
+		}
 	}
 	if (Cells)
 	{
@@ -666,7 +680,14 @@ void AOJJ_BuildController::DemolishUnderCursor()
 	}
 
 	AActor* Target = TargetGrid->GetActorAtCell(CursorCell);
-	// F1-b': 점유가 없으면 Foundation 역조회 — 호버(UpdateDemolishHover)와 동일 우선순위.
+	// F4-1(Codex ③): 파이프가 Foundation보다 먼저 — 위→아래(건물→파이프→기초) 철거 순서. Foundation
+	// 우선이면 그 위 파이프를 직접 철거할 수 없고(파이프 분기 도달 불가), Foundation 게이트는
+	// OJJ_CountOccupiedFoundationCells의 파이프 합산이 막는다(거부 + 사유).
+	if (!Target)
+	{
+		Target = TargetGrid->OJJ_GetPipeAtCell(CursorCell);
+	}
+	// F1-b': 점유·파이프가 없으면 Foundation 역조회 — 호버(UpdateDemolishHover)와 동일 우선순위.
 	if (!Target)
 	{
 		Target = TargetGrid->GetFoundationAtCell(CursorCell);
@@ -708,6 +729,17 @@ void AOJJ_BuildController::DemolishUnderCursor()
 			Conveyor->Destroy(); // 액터/비주얼 실제 제거 — 그리드 함수는 점유 해제만, Destroy는 호출자 책임(기존 854 패턴).
 		}
 
+		// F4-1: 파이프 캐스케이드 — 컨베이어와 동일 근거(끝점 머신 소실 = 라인 존재 조건 상실).
+		// 수집은 레이어 역방향 맵 + 끝점 대조(그리드 헬퍼) — 컨베이어판(둘레 스캔)보다 직접적.
+		TArray<APipe*> ConnectedPipes;
+		TargetGrid->OJJ_GetPipesConnectedToMachine(Machine, ConnectedPipes);
+		for (APipe* Pipe : ConnectedPipes)
+		{
+			FString PipeReason;
+			TargetGrid->OJJ_UnregisterPipeCells(Pipe, PipeReason);
+			Pipe->Destroy();
+		}
+
 		// 2) 머신 본체: RemoveMachineAt → RemoveMachine → OnRemovedFromGrid 훅(자원 Release/Claim 정리) +
 		//    FactoryManager Unregister + 화살표 재적재. 그 후 액터 Destroy.
 		if (TargetGrid->RemoveMachineAt(CursorCell))
@@ -722,6 +754,17 @@ void AOJJ_BuildController::DemolishUnderCursor()
 		if (TargetGrid->OJJ_RemoveActorAt(CursorCell))
 		{
 			Conveyor->Destroy();
+			bRemoved = true;
+		}
+	}
+	else if (APipe* Pipe = Cast<APipe>(Target))
+	{
+		// F4-1 파이프 직접 철거: 라인 단위(1액터=다중셀) 레이어 해제 + Destroy. 위 건물 게이트 없음
+		// (파이프 레이어 위엔 아무것도 안 올라감 — 항상 성공).
+		FString PipeReason;
+		if (TargetGrid->OJJ_UnregisterPipeCells(Pipe, PipeReason))
+		{
+			Pipe->Destroy();
 			bRemoved = true;
 		}
 	}
@@ -827,8 +870,10 @@ void AOJJ_BuildController::OnLeftClickPressed()
 		return;
 	}
 
-	// Conveyor 모드: 좌클릭 누름 = 드래그 시작. (커밋은 OnLeftClickReleased.)
-	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor)
+	// Conveyor/Pipe 모드: 좌클릭 누름 = 드래그 시작. (커밋은 OnLeftClickReleased.)
+	// 파이프(F4-1)는 드래그 상태머신 공용 — 프리뷰/커밋만 모드 분기.
+	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor
+		|| PlacementMode == EOJJ_BuildPlacementMode::Pipe)
 	{
 		FIntPoint CursorCell;
 		if (GetCursorCell(CursorCell))
@@ -1236,7 +1281,8 @@ void AOJJ_BuildController::UpdateCharacterCellOverlay()
 
 void AOJJ_BuildController::OnLeftClickReleased()
 {
-	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor)
+	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor
+		|| PlacementMode == EOJJ_BuildPlacementMode::Pipe)
 	{
 		CommitConveyorDrag();
 	}
@@ -1273,6 +1319,7 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::Warehouse: ModeName = TEXT("Warehouse");  break;
 	case EOJJ_BuildPlacementMode::Demolish:  ModeName = TEXT("Demolish");   break;
 	case EOJJ_BuildPlacementMode::Foundation: ModeName = TEXT("Foundation"); break;
+	case EOJJ_BuildPlacementMode::Pipe:      ModeName = TEXT("Pipe");       break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 
@@ -1308,19 +1355,33 @@ bool AOJJ_BuildController::GetCursorCell(FIntPoint& OutCell) const
 	return true;
 }
 
+void AOJJ_BuildController::UpdatePathDragHoverPreview(const TArray<FIntPoint>& Cells)
+{
+	// F4-1: 컨베이어/파이프가 드래그 상태머신(bIsDraggingConveyor/ConveyorDragCells)을 공용 —
+	// 모드는 동시에 하나라 상태 충돌 없음(SetPlacementMode가 전환 시 드래그 취소). 프리뷰만 분기.
+	if (PlacementMode == EOJJ_BuildPlacementMode::Pipe)
+	{
+		TargetGrid->OJJ_UpdatePipePathHoverPreview(Cells);
+	}
+	else
+	{
+		TargetGrid->OJJ_UpdateConveyorPathHoverPreview(Cells);
+	}
+}
+
 void AOJJ_BuildController::BeginConveyorDrag(FIntPoint StartCell)
 {
 	bIsDraggingConveyor = true;
 	ConveyorDragCells.Reset();
 	ConveyorDragCells.Add(StartCell);
 	CurrentHoverCell = StartCell;
-	TargetGrid->OJJ_UpdateConveyorPathHoverPreview(ConveyorDragCells);
+	UpdatePathDragHoverPreview(ConveyorDragCells);
 }
 
 void AOJJ_BuildController::UpdateConveyorDrag(FIntPoint CursorCell)
 {
 	AppendConveyorPathTo(CursorCell);
-	TargetGrid->OJJ_UpdateConveyorPathHoverPreview(ConveyorDragCells);
+	UpdatePathDragHoverPreview(ConveyorDragCells);
 	CurrentHoverCell = CursorCell;
 }
 
@@ -1356,7 +1417,9 @@ void AOJJ_BuildController::CommitConveyorDrag()
 		return;
 	}
 
-	if (!TargetGrid || !ConveyorClass || ConveyorDragCells.Num() == 0)
+	// F4-1: 파이프 모드는 클래스/정규화/배치만 분기 — 드래그 수집·정리 흐름은 공용.
+	const bool bPipeMode = PlacementMode == EOJJ_BuildPlacementMode::Pipe;
+	if (!TargetGrid || (bPipeMode ? !PipeClass : !ConveyorClass) || ConveyorDragCells.Num() == 0)
 	{
 		ConveyorDragCells.Reset();
 		return;
@@ -1364,9 +1427,13 @@ void AOJJ_BuildController::CommitConveyorDrag()
 
 	TArray<FIntPoint> PlacementCells;
 	FString OutReason;
-	if (!TargetGrid->OJJ_BuildConveyorPlacementPath(ConveyorDragCells, PlacementCells, OutReason))
+	const bool bPathBuilt = bPipeMode
+		? TargetGrid->OJJ_BuildPipePlacementPath(ConveyorDragCells, PlacementCells, OutReason)
+		: TargetGrid->OJJ_BuildConveyorPlacementPath(ConveyorDragCells, PlacementCells, OutReason);
+	if (!bPathBuilt)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[BuildController] Conveyor path cannot be placed: %s"), *OutReason);
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] %s path cannot be placed: %s"),
+			bPipeMode ? TEXT("Pipe") : TEXT("Conveyor"), *OutReason);
 		ConveyorDragCells.Reset();
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
@@ -1385,6 +1452,30 @@ void AOJJ_BuildController::CommitConveyorDrag()
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	SpawnParams.Owner = this;
+
+	// F4-1: spawn-validate-destroy 패턴 공용 — 파이프는 클래스/TryPlace만 다름.
+	if (bPipeMode)
+	{
+		APipe* Pipe = World->SpawnActor<APipe>(
+			PipeClass, TargetGrid->GetActorLocation(), FRotator::ZeroRotator, SpawnParams);
+		if (!Pipe)
+		{
+			ConveyorDragCells.Reset();
+			TargetGrid->ClearHoverPreview();
+			CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+			return;
+		}
+		if (!TargetGrid->OJJ_TryPlacePipe(Pipe, PlacementCells, OutReason))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[BuildController] OJJ_TryPlacePipe failed: %s"), *OutReason);
+			Pipe->Destroy();
+		}
+		// 파이프는 퀘스트 배치 타깃 미등록(NotifyMainQuestMachinePlaced 비호출 — 컨베이어 전용 훅).
+		ConveyorDragCells.Reset();
+		TargetGrid->ClearHoverPreview();
+		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+		return;
+	}
 
 	AConveyor* Conveyor = World->SpawnActor<AConveyor>(
 		ConveyorClass,
@@ -1625,6 +1716,6 @@ void AOJJ_BuildController::UpdateConveyorHover(FIntPoint CursorCell)
 
 	TArray<FIntPoint> PreviewCells;
 	PreviewCells.Add(CursorCell);
-	TargetGrid->OJJ_UpdateConveyorPathHoverPreview(PreviewCells);
+	UpdatePathDragHoverPreview(PreviewCells);
 	CurrentHoverCell = CursorCell;
 }

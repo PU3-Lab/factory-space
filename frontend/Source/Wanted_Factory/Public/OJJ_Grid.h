@@ -9,6 +9,7 @@
 
 class AMachineBase;
 class AConveyor;
+class APipe;
 class UStaticMeshComponent;
 class UInstancedStaticMeshComponent;
 class UMaterialInterface;
@@ -475,6 +476,13 @@ private:
 	// (레이어 독립이라 별도 함수). 오버레이 복원 없음(F4-0 파이프 레이어는 시각 표현 0 — F4-1 호버에서 재검토).
 	void SweepStalePipeEntries();
 
+	// 파이프 배치 검증 단일원(F4-1 — 호버/클릭 공유): 정규화·수집(포트/건설 게이트/점유/연속)은
+	// 컨베이어 체인 위임, 그 위에 파이프 게이트 ① 균일 SurfaceZ 한정(수집기의 경사 폴백 불채택 —
+	// 평면 파이프, 오버패스/경사는 F4-3) ② ㉤ 액체 끝점(Pump→LiquidTank) ③ ㉥ 파이프 레이어 겹침.
+	bool OJJ_ValidatePipePlacement(const TArray<FIntPoint>& PathCells, TArray<FIntPoint>& OutPlacementCells,
+		TArray<FIntPoint>& OutReservedCells, AMachineBase*& OutSourceMachine, AMachineBase*& OutTargetMachine,
+		float& OutPathSurfaceZ, FString& OutReason) const;
+
 	// Foundation 등록의 검증/커밋 단일원(F3-1) — 단일값(TryPlaceFoundation)과 셀별(PerCell) 공용.
 	// SurfaceZForCell은 검증 통과 셀에만 호출(배열 없는 단일값 경로의 할당 0 유지).
 	bool OJJ_TryPlaceFoundationInternal(AActor* Foundation, FIntPoint Origin, FIntPoint Size,
@@ -769,6 +777,27 @@ public:
 
 	// 파이프의 점유 셀 목록(미등록이면 nullptr) — GetFoundationCells 미러(F4-1 철거 호버용).
 	const TArray<FIntPoint>* OJJ_GetPipeCells(AActor* Pipe) const;
+
+	// === 파이프 배치 (F4-1 — 컨베이어 배치 체인 위임 + 파이프 전용 게이트) ===
+
+	// 파이프 경로 정규화 — 컨베이어 정규화(OJJ_BuildConveyorPlacementPath)에 위임: 끝점 포트 규칙이
+	// 동일(펌프 back-output 출발 / 탱크 front-input 도착 — MachineTable In/Out 1 SSOT, f4 §4).
+	// OutReason의 "Conveyor" 명칭은 위임 수용(문구 일반화 = 컨베이어 거동 영역 변경이라 기각).
+	bool OJJ_BuildPipePlacementPath(const TArray<FIntPoint>& DragCells, TArray<FIntPoint>& OutPathCells,
+		FString& OutReason) const;
+
+	// 파이프 배치 — 검증(OJJ_ValidatePipePlacement) → 파이프 레이어 등록(평면: bElevated=false) →
+	// SetPath/앵커·Z 안착/ConfigureTransport. OJJ_TryPlaceConveyor 미러(점유 대신 레이어 등록).
+	bool OJJ_TryPlacePipe(APipe* Pipe, const TArray<FIntPoint>& PathCells, FString& OutReason);
+
+	// 파이프 경로 호버 — 검증 = 클릭 판정 전체 공유(호버 색 = 클릭 가부 단일 진실원, F2-0 계약).
+	// 컨베이어 프리뷰(정규화만 검사)보다 강함 — 파이프는 게이트가 많아(액체 끝점/균일/레이어 겹침)
+	// 정규화만으론 호버≠클릭 불일치가 잦다.
+	void OJJ_UpdatePipePathHoverPreview(const TArray<FIntPoint>& PathCells);
+
+	// 머신을 끝점으로 갖는 등록 파이프 수집(철거 캐스케이드 — CollectConveyorsConnectedToMachine판).
+	// 컨베이어판(둘레 셀 스캔)과 달리 레이어 역방향 맵 순회 + Source/Target 직접 대조(파이프가 끝점 보관).
+	void OJJ_GetPipesConnectedToMachine(AMachineBase* Machine, TArray<APipe*>& OutPipes) const;
 
 	// === 지형 높이 캐시 접근 (F0 갭 해소 — CellGroundZQuant 소비처 첫 도입) ===
 

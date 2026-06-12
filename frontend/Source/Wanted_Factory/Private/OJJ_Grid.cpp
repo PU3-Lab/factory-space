@@ -16,6 +16,7 @@
 #include "Materials/MaterialInterface.h"
 #include "OJJ_Foundation.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Pipe.h"
 #include "Resource/ResourceBase.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -1629,6 +1630,9 @@ int32 AOJJ_Grid::OJJ_CountOccupiedFoundationCells(AActor* Foundation) const
 {
 	// stale 점유는 IsCellOccupied가 weak IsValid로 걸러 비차단(점유 레이어와 동일 의미).
 	// const라 sweep은 write 경로(RemoveFoundation)에 위임 — CanPlaceFoundation과 동일 방어.
+	// F4-1(Codex ③): 파이프 레이어도 "위 건물"로 합산 — Foundation 위 파이프(f4 ㉦ 명시 수용)가
+	// 있는 채로 Foundation을 빼면 고아 파이프(지지면 상실)가 남는다. 철거 호버/클릭이 이 함수를
+	// 공유(F2-0 단일원)하므로 한 곳 수정으로 둘 다 일치.
 	const TArray<FIntPoint>* Cells = Foundation ? OJJ_FoundationToCells.Find(Foundation) : nullptr;
 	if (!Cells)
 	{
@@ -1637,7 +1641,7 @@ int32 AOJJ_Grid::OJJ_CountOccupiedFoundationCells(AActor* Foundation) const
 	int32 Occupied = 0;
 	for (const FIntPoint& Cell : *Cells)
 	{
-		if (IsCellOccupied(Cell)) { ++Occupied; }
+		if (IsCellOccupied(Cell) || OJJ_GetPipeAtCell(Cell)) { ++Occupied; }
 	}
 	return Occupied;
 }
@@ -2069,6 +2073,190 @@ const TArray<FIntPoint>* AOJJ_Grid::OJJ_GetPipeCells(AActor* Pipe) const
 {
 	const TWeakObjectPtr<AActor> Key(Pipe);
 	return Key.IsValid() ? OJJ_PipeToCells.Find(Key) : nullptr;
+}
+
+// === 파이프 배치 (F4-1 — 컨베이어 배치 체인 위임 + 파이프 전용 게이트) ===
+
+bool AOJJ_Grid::OJJ_BuildPipePlacementPath(const TArray<FIntPoint>& DragCells,
+	TArray<FIntPoint>& OutPathCells, FString& OutReason) const
+{
+	// 정규화는 컨베이어와 완전 동일(머신 시작 back-output 정규화 / 인접 시작 머신 셀 선두 삽입) — 위임.
+	return OJJ_BuildConveyorPlacementPath(DragCells, OutPathCells, OutReason);
+}
+
+bool AOJJ_Grid::OJJ_ValidatePipePlacement(const TArray<FIntPoint>& PathCells,
+	TArray<FIntPoint>& OutPlacementCells, TArray<FIntPoint>& OutReservedCells,
+	AMachineBase*& OutSourceMachine, AMachineBase*& OutTargetMachine,
+	float& OutPathSurfaceZ, FString& OutReason) const
+{
+	OutSourceMachine = nullptr;
+	OutTargetMachine = nullptr;
+	OutPathSurfaceZ = GetActorLocation().Z;
+
+	if (!OJJ_BuildPipePlacementPath(PathCells, OutPlacementCells, OutReason))
+	{
+		return false;
+	}
+
+	// 수집 위임 — 포트 정합(출력→입력)·건설 게이트(IsCellConstructible)·점유 차단·연속성 전부 공유.
+	// 머신/컨베이어 점유 셀 차단은 F4-1 유지 — 컨베이어 점유 셀의 오버패스 완화는 F4-3에서 이 지점.
+	if (!OJJ_CollectConveyorReservedCells(this, OccupiedCells, OJJ_ActorToCells, OutPlacementCells,
+		OutReservedCells, OutReason, &OutSourceMachine, &OutTargetMachine))
+	{
+		return false;
+	}
+	if (OutReservedCells.Num() == 0)
+	{
+		OutReason = TEXT("Pipe must occupy at least one grid cell.");
+		return false;
+	}
+	if (!OutSourceMachine || !OutTargetMachine)
+	{
+		OutReason = TEXT("Pipe transfer requires valid machine endpoints.");
+		return false;
+	}
+
+	// ① 균일 SurfaceZ 한정 — 수집기는 균일 실패 시 경사 검사(F3.7-1)로 통과시킬 수 있으나 평면
+	// 파이프(F4-1)는 불채택. 오버패스/경사 파이프 Z는 F4-3(Chan Z 채널 후).
+	if (!OJJ_GetUniformSurfaceZ(OutPlacementCells, OutPathSurfaceZ))
+	{
+		OutReason = TEXT("Pipe path must be on a single flat surface (slope/overpass arrives in F4-3).");
+		return false;
+	}
+
+	// ② ㉤ 액체 끝점 사전 게이트 — 잘못 깐 라인의 침묵 유휴(런타임 IsLiquidItem 필터만)를 배치 시점
+	// 빨강+사유로 조기 노출. 문자열 비교는 OJJ_IsExtractionMachine과 동일한 잠정 방식(TODO 동률 —
+	// SSR 협의로 가상 predicate 전환 시 함께 교체).
+	if (OutSourceMachine->GetMachineType() != TEXT("Pump"))
+	{
+		OutReason = TEXT("Pipe must start from a liquid output machine (Pump).");
+		return false;
+	}
+	if (OutTargetMachine->GetMachineType() != TEXT("LiquidTank"))
+	{
+		OutReason = TEXT("Pipe must end at a liquid input machine (LiquidTank).");
+		return false;
+	}
+
+	// ③ ㉥ 파이프 간 겹침 — 등록(OJJ_TryRegisterPipeCells)도 거부하지만 호버 단계에서 사유 노출
+	// (호버 = 클릭 단일 진실원).
+	for (const FIntPoint& Cell : OutReservedCells)
+	{
+		if (OJJ_GetPipeAtCell(Cell))
+		{
+			OutReason = FString::Printf(TEXT("Pipe cell (%d,%d) is occupied by another pipe."), Cell.X, Cell.Y);
+			return false;
+		}
+	}
+
+	OutReason.Reset();
+	return true;
+}
+
+bool AOJJ_Grid::OJJ_TryPlacePipe(APipe* Pipe, const TArray<FIntPoint>& PathCells, FString& OutReason)
+{
+	if (!IsValid(Pipe))
+	{
+		OutReason = TEXT("Invalid pipe actor.");
+		return false;
+	}
+
+	TArray<FIntPoint> PlacementCells;
+	TArray<FIntPoint> ReservedCells;
+	AMachineBase* SourceMachine = nullptr;
+	AMachineBase* TargetMachine = nullptr;
+	float PathSurfaceZ = GetActorLocation().Z;
+	if (!OJJ_ValidatePipePlacement(PathCells, PlacementCells, ReservedCells,
+		SourceMachine, TargetMachine, PathSurfaceZ, OutReason))
+	{
+		return false;
+	}
+
+	// 레이어 등록(평면: 전 셀 CellZ = 경로 기준면, bElevated=false — 오버패스 셀 산출은 F4-3).
+	// 등록 실패 시 부작용 없이 false(가드 조기 종료) → 롤백 불필요(컨베이어 등록과 동일 계약).
+	TArray<float> CellZs;
+	CellZs.Init(PathSurfaceZ, ReservedCells.Num());
+	TArray<bool> ElevatedFlags;
+	ElevatedFlags.Init(false, ReservedCells.Num());
+	if (!OJJ_TryRegisterPipeCells(Pipe, ReservedCells, CellZs, ElevatedFlags, OutReason))
+	{
+		return false;
+	}
+
+	// SetPath → 앵커 −half 보정 → Z 안착 — 컨베이어 안착과 동일 구조(파이프도 cell→local 수동식
+	// = parity 부채 #9 복제라 같은 앵커 보정 필요). centroid 수식은 Pipe.GetPathCentroidLocal과
+	// 동일하지만 비공개라 그리드측 산출 — Chan Z 채널 커밋(F4-2) 시 공개 전환 검토 태그.
+	Pipe->SetPath(PlacementCells, CellSize);
+	FVector CentroidLocal = FVector::ZeroVector;
+	for (const FIntPoint& Cell : PlacementCells)
+	{
+		CentroidLocal.X += Cell.X * CellSize + CellSize * 0.5f;
+		CentroidLocal.Y += Cell.Y * CellSize + CellSize * 0.5f;
+	}
+	CentroidLocal /= static_cast<float>(PlacementCells.Num());
+	CentroidLocal.Z = 0.0f;
+
+	const FVector HalfExtent(GridSize.X * CellSize * 0.5f, GridSize.Y * CellSize * 0.5f, 0.0f);
+	FVector PipeLocation =
+		GetActorLocation() + Pipe->GetActorRotation().RotateVector(CentroidLocal) - HalfExtent;
+	PipeLocation.Z += PathSurfaceZ - GetActorLocation().Z; // 균일 경로 기준면 안착(F1-c 컨베이어 ② 미러)
+	Pipe->SetActorLocation(PipeLocation);
+	Pipe->ConfigureTransport(ReservedCells, SourceMachine, TargetMachine);
+	return true;
+}
+
+void AOJJ_Grid::OJJ_UpdatePipePathHoverPreview(const TArray<FIntPoint>& PathCells)
+{
+	ClearHoverPreview();
+	if (PathCells.Num() == 0)
+	{
+		return;
+	}
+
+	// 검증 = 클릭 판정 전체(OJJ_ValidatePipePlacement) — 호버 색 = 클릭 가부 단일 진실원(F2-0 계약).
+	TArray<FIntPoint> PreviewCells;
+	TArray<FIntPoint> UnusedReserved;
+	AMachineBase* UnusedSource = nullptr;
+	AMachineBase* UnusedTarget = nullptr;
+	float UnusedZ = 0.0f;
+	FString UnusedReason;
+	const bool bCanPlace = OJJ_ValidatePipePlacement(PathCells, PreviewCells, UnusedReserved,
+		UnusedSource, UnusedTarget, UnusedZ, UnusedReason);
+	if (PreviewCells.Num() == 0)
+	{
+		PreviewCells = PathCells; // 정규화 자체가 실패한 경로 — 드래그 셀 그대로 빨강.
+	}
+
+	UInstancedStaticMeshComponent* TargetISM = bCanPlace ? ValidHoverISM.Get() : InvalidHoverISM.Get();
+	if (!TargetISM)
+	{
+		return;
+	}
+
+	for (const FIntPoint& Cell : PreviewCells)
+	{
+		const FVector CellCenter = GridToWorld(Cell);
+		const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(Cell) + 2.0f + HoverExtraZLift);
+		const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
+		TargetISM->AddInstance(FTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale), /*bWorldSpace=*/true);
+	}
+}
+
+void AOJJ_Grid::OJJ_GetPipesConnectedToMachine(AMachineBase* Machine, TArray<APipe*>& OutPipes) const
+{
+	OutPipes.Reset();
+	if (!Machine)
+	{
+		return;
+	}
+	for (const TPair<TWeakObjectPtr<AActor>, TArray<FIntPoint>>& Pair : OJJ_PipeToCells)
+	{
+		APipe* Pipe = Cast<APipe>(Pair.Key.Get());
+		if (Pipe && (Pipe->GetSourceMachine() == Machine || Pipe->GetTargetMachine() == Machine))
+		{
+			OutPipes.Add(Pipe);
+		}
+	}
 }
 
 // === 지형 높이 캐시 접근 (F0 갭 해소) ===

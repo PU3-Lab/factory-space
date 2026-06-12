@@ -166,6 +166,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_SetConveyorMode;
 
+	// 파이프 모드(F4-1 — 펌프→물탱크 액체 라인, 컨베이어와 드래그 공용). IMC_Build 매핑/에셋 연결은
+	// 에디터 작업(BP 후속 — IA 미지정 시 키 진입 불가, SetPlacementMode(Pipe) BP 직접 호출은 가능).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetPipeMode;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_SetPowerNodeMode;
 
@@ -273,6 +278,7 @@ protected:
 	// 배치 모드 전환 — BuildController->SetPlacementMode로 위임.
 	void SetMachineMode(const FInputActionValue& Value);
 	void SetConveyorMode(const FInputActionValue& Value);
+	void SetPipeMode(const FInputActionValue& Value);
 	void SetPowerNodeMode(const FInputActionValue& Value);
 	void SetShieldMode(const FInputActionValue& Value);
 	void SetPowerLineMode(const FInputActionValue& Value);
