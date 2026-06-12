@@ -298,6 +298,9 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
 	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
+	// Foundation 모드(F1-b) — 직접 바인딩(M/J/I 패턴). IA/IMC 에셋 전환은 키 정리 백로그.
+	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AOJJ_Player::SetFoundationMode);
+	PlayerInputComponent->BindKey(EKeys::H, IE_Pressed, this, &AOJJ_Player::SetRampFoundationMode);
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -638,6 +641,27 @@ void AOJJ_Player::SetDemolishMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Demolish);
+}
+
+// 평판 Foundation 모드 직행(G키 — F1-b, F3.7' 키 개편으로 종류까지 확정). 다른 모드 핸들러와
+// 동일하게 BuildController 위임만 — 모드 진입/호버 갱신/빌드모드 밖 무해성은 컨트롤러 소관.
+void AOJJ_Player::SetFoundationMode()
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->OJJ_SelectFoundationKind(false);
+}
+
+// 램프 Foundation 모드 직행(H키 — F3.7' 키 개편, F3-2.5 T 토글 대체).
+void AOJJ_Player::SetRampFoundationMode()
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->OJJ_SelectFoundationKind(true);
 }
 
 void AOJJ_Player::StartSprint(const FInputActionValue& Value)
