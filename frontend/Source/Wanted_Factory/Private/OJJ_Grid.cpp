@@ -2689,7 +2689,6 @@ bool AOJJ_Grid::OJJ_TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint
 			NodeZs.SetNumUninitialized(CellCount + 1);
 			NodeZs[0] = CellZs[0];
 			NodeZs[CellCount] = CellZs[CellCount - 1];
-			float MaxChordDeviation = 0.0f;
 			for (int32 Node = 1; Node < CellCount; ++Node)
 			{
 				const FVector BoundaryPos =
@@ -2704,20 +2703,8 @@ bool AOJJ_Grid::OJJ_TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint
 				{
 					FaceZ = ChordZ; // 양쪽 다 평판/브리지 — 면=장부.
 				}
-				// [계측 ConvDebug — F3.8''' 전환부 진단/검증용, 확인 후 제거] 현(셀 중심 체인) vs
-				// 면(꺾임점) — 전환부 노드에서만 비0, 이론값 = 행간/4(사용자 관찰 부유량 대조).
-				if (FMath::Abs(FaceZ - ChordZ) > 0.05f)
-				{
-					UE_LOG(LogTemp, Log,
-						TEXT("[ConvDebug] 노드 %d(셀 경계): 현 %.1f → 면 %.1f (전환부 편차 %+.2f — 이론 행간/4)"),
-						Node, ChordZ, FaceZ, FaceZ - ChordZ);
-				}
-				MaxChordDeviation = FMath::Max(MaxChordDeviation, FMath::Abs(FaceZ - ChordZ));
 				NodeZs[Node] = FaceZ;
 			}
-			UE_LOG(LogTemp, Log,
-				TEXT("[ConvDebug] 경사 경로 %d셀/%d노드 — 전환부 현-코너 편차 max %.2fuu → 노드 주입으로 해소(세그먼트 ≡ 면)"),
-				CellCount, CellCount + 1, MaxChordDeviation);
 
 			const float BaseZ = NodeZs[0];
 			for (float& NodeZ : NodeZs)

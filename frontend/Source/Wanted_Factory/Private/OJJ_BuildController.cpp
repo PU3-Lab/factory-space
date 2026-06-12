@@ -26,7 +26,6 @@
 #include "Machines/Smelter.h"
 #include "Machines/WarehousePort.h"
 #include "OJJ_Foundation.h"
-#include "OJJ_RampFoundation.h"
 #include "OJJ_ProtectionTower.h"
 #include "QuestManagerSubsystem.h"
 #include "Resource/ResourceBase.h"
@@ -1109,13 +1108,6 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 		*Origin.ToString(), EffSize.X, EffSize.Y, Fit.EffectiveRotationSteps,
 		FMath::RoundToInt(SnapLift / AOJJ_Grid::OJJ_FoundationSnapStep), *HeightSource,
 		Fit.DirectionSource.IsEmpty() ? TEXT("") : TEXT(", "), *Fit.DirectionSource);
-
-	// [계측 — F3.8' 수직 어긋남 확정] 램프 배치 직후 1회 덤프(데이터/기대/실제/정답지 + ΔZ).
-	// 오차 0 확인 후 제거 예정.
-	if (const AOJJ_RampFoundation* PlacedRamp = Cast<AOJJ_RampFoundation>(NewFoundation))
-	{
-		PlacedRamp->OJJ_DumpPlacementDebug(*TargetGrid, Origin, EffSize);
-	}
 
 	// F2-4 후속 ①: 풋프린트에 깔린 Pawn을 상면으로 올려태움(F3-2부터 셀별 SurfaceZ — 등록 데이터를
 	// 그리드에서 읽음). 후속 ② 캐시도 리셋 — 셀은 그대로여도 비주얼 Z가 상면으로 바뀌므로 강제 재적재.
