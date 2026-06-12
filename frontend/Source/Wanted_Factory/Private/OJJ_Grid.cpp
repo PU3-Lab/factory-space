@@ -2657,42 +2657,65 @@ bool AOJJ_Grid::OJJ_TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint
 		{
 			// F3.8'' 벨트 Z 경계: 장부(FoundationCells.SurfaceZ — 셀 계단)는 배치 검증/걸침/걷기의
 			// 진실원으로 **무변경**. 벨트 비주얼 Z만 면(램프 빗변 — OJJ_GetVisualSurfaceZAtWorld
-			// 가상 훅, 쐐기 꼭짓점과 수식 단일원)을 소비해 세그먼트·아이템의 반행 편차(면=연속,
-			// 장부=계단)를 제거. 평판/끝 셀(머신 포트 — 평판 위)은 훅이 false라 장부값 그대로
-			// (평면 경로는 이 분기 자체에 비진입 — 회귀 0, 포트 Z 정합 유지).
-			// 끝 셀(첫/마지막 = 머신 포트 셀)은 면 치환 제외(Codex F3.8'' ③): BaseZ 앵커(첫 셀)와
-			// 포트 Z 정합은 장부 기준이 최우선 — 머신이 램프 끝 행 위에 있는 엣지에서도 앵커 불변.
-			float MaxFaceCorrection = 0.0f;
-			for (int32 Index = 1; Index + 1 < FinalPathCells.Num(); ++Index)
+			// 가상 훅, 쐐기 꼭짓점과 수식 단일원)을 소비(평면 경로는 이 분기 비진입 — 회귀 0).
+			// F3.8''' 노드화: 주입 단위 = 셀 경계 노드(N+1) — 면의 꺾임점은 항상 셀 경계(램프
+			// 풋프린트 변 = 셀 정렬)라 경계 샘플이면 세그먼트 체인이 면과 전 구간 정확 일치
+			// (전환부 현-코너 부유 해소 — 세그먼트 분할 불필요, 개수 불변). 셀 중심 Z는 벨트가
+			// 노드 중점으로 도출(셀 내 면 선형 — 아이템 보간 자동 수혜). 양 끝 노드 = 끝 셀
+			// 장부값(머신 포트 앵커 — Codex F3.8'' ③ 유지), 내부 노드 = 인접 셀의 면 훅
+			// (양쪽 다 평판/브리지면 장부 중점 = 평탄).
+			auto QueryFaceZ = [this](FIntPoint Cell, const FVector& WorldPos, float& OutFaceZ) -> bool
 			{
-				const FOJJFoundationCellInfo* CellInfo = FoundationCells.Find(FinalPathCells[Index]);
+				const FOJJFoundationCellInfo* CellInfo = FoundationCells.Find(Cell);
 				const AOJJ_Foundation* CellFoundation = CellInfo
 					? Cast<AOJJ_Foundation>(CellInfo->Foundation.Get())
 					: nullptr;
+				return CellFoundation && CellFoundation->OJJ_GetVisualSurfaceZAtWorld(WorldPos, OutFaceZ);
+			};
+
+			const int32 CellCount = FinalPathCells.Num();
+			TArray<float> NodeZs;
+			NodeZs.SetNumUninitialized(CellCount + 1);
+			NodeZs[0] = CellZs[0];
+			NodeZs[CellCount] = CellZs[CellCount - 1];
+			float MaxChordDeviation = 0.0f;
+			for (int32 Node = 1; Node < CellCount; ++Node)
+			{
+				const FVector BoundaryPos =
+					(GridToWorld(FinalPathCells[Node - 1]) + GridToWorld(FinalPathCells[Node])) * 0.5;
+				const float ChordZ = 0.5f * (CellZs[Node - 1] + CellZs[Node]); // 구(셀 중심 체인)의 경계값
+				// 첫 성공 우선(이전 셀 → 다음 셀). 두 램프 면이 같은 경계에서 어긋나는 구성(다른
+				// 단의 끝 행이 맞닿음 = 턱이 실존)은 어느 쪽을 채택해도 한쪽 면과는 불일치 —
+				// 세그먼트가 그 턱을 현으로 가로지르는 기존 거동 유지(수용, Codex F3.8''' ⑤).
 				float FaceZ = 0.0f;
-				if (CellFoundation
-					&& CellFoundation->OJJ_GetVisualSurfaceZAtWorld(GridToWorld(FinalPathCells[Index]), FaceZ))
+				if (!QueryFaceZ(FinalPathCells[Node - 1], BoundaryPos, FaceZ)
+					&& !QueryFaceZ(FinalPathCells[Node], BoundaryPos, FaceZ))
 				{
-					// [계측 ConvDebug — F3.8'' 수정 검증용, 편차 0 확인 후 제거] 장부(계단)→면(빗변) 보정.
-					UE_LOG(LogTemp, Log, TEXT("[ConvDebug] 셀(%d,%d): 장부 %.1f → 면 %.1f (보정 %+.1f)"),
-						FinalPathCells[Index].X, FinalPathCells[Index].Y,
-						CellZs[Index], FaceZ, FaceZ - CellZs[Index]);
-					MaxFaceCorrection = FMath::Max(MaxFaceCorrection, FMath::Abs(FaceZ - CellZs[Index]));
-					CellZs[Index] = FaceZ;
+					FaceZ = ChordZ; // 양쪽 다 평판/브리지 — 면=장부.
 				}
+				// [계측 ConvDebug — F3.8''' 전환부 진단/검증용, 확인 후 제거] 현(셀 중심 체인) vs
+				// 면(꺾임점) — 전환부 노드에서만 비0, 이론값 = 행간/4(사용자 관찰 부유량 대조).
+				if (FMath::Abs(FaceZ - ChordZ) > 0.05f)
+				{
+					UE_LOG(LogTemp, Log,
+						TEXT("[ConvDebug] 노드 %d(셀 경계): 현 %.1f → 면 %.1f (전환부 편차 %+.2f — 이론 행간/4)"),
+						Node, ChordZ, FaceZ, FaceZ - ChordZ);
+				}
+				MaxChordDeviation = FMath::Max(MaxChordDeviation, FMath::Abs(FaceZ - ChordZ));
+				NodeZs[Node] = FaceZ;
 			}
 			UE_LOG(LogTemp, Log,
-				TEXT("[ConvDebug] 경사 경로 %d셀 — 면 보정 max %.1fuu (주입=면: 세그먼트·아이템 Z ≡ 빗변)"),
-				FinalPathCells.Num(), MaxFaceCorrection);
+				TEXT("[ConvDebug] 경사 경로 %d셀/%d노드 — 전환부 현-코너 편차 max %.2fuu → 노드 주입으로 해소(세그먼트 ≡ 면)"),
+				CellCount, CellCount + 1, MaxChordDeviation);
 
-			const float BaseZ = CellZs[0];
-			for (float& CellZ : CellZs)
+			const float BaseZ = NodeZs[0];
+			for (float& NodeZ : NodeZs)
 			{
-				CellZ -= BaseZ;
+				NodeZ -= BaseZ;
 			}
 			ConveyorLocation.Z += BaseZ - GetActorLocation().Z;
 			Conveyor->SetActorLocation(ConveyorLocation);
-			Conveyor->OJJ_SetPathCellLocalZs(CellZs);
+			Conveyor->OJJ_SetPathNodeLocalZs(NodeZs);
 		}
 		else
 		{

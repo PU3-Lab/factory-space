@@ -189,40 +189,48 @@ void AConveyor::SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize
 		}
 	}
 
-	// [OJJ F3.7-0] 새 경로 = 평면으로 시작(이전 경로의 셀별 Z가 stale로 남는 것 방어).
-	// 경사 Z는 그리드가 SetPath 직후 OJJ_SetPathCellLocalZs로 별도 주입(호출 계약).
-	PathCellLocalZs.Reset();
+	// [OJJ F3.7-0] 새 경로 = 평면으로 시작(이전 경로의 노드 Z가 stale로 남는 것 방어).
+	// 경사 Z는 그리드가 SetPath 직후 OJJ_SetPathNodeLocalZs로 별도 주입(호출 계약).
+	PathNodeLocalZs.Reset();
 
 	RebuildVisuals();
 	RefreshItemVisualInstances();
 	UpdateDebugStateText();
 }
 
-void AConveyor::OJJ_SetPathCellLocalZs(const TArray<float>& NewCellLocalZs)
+void AConveyor::OJJ_SetPathNodeLocalZs(const TArray<float>& NewNodeLocalZs)
 {
-	// [OJJ F3.7-0] 크기 불일치는 주입 거부(평면 유지) — 액터 신뢰 금지(그리드 ㉲ 검증과 같은 취지).
-	if (NewCellLocalZs.Num() != 0 && NewCellLocalZs.Num() != PathCells.Num())
+	// [OJJ F3.7-0, F3.8'''] 크기 불일치는 주입 거부(평면 유지) — 액터 신뢰 금지(그리드 ㉲ 검증과
+	// 같은 취지). 노드 수 = 셀 수 + 1(셀 경계, 양 끝 포함).
+	if (NewNodeLocalZs.Num() != 0 && NewNodeLocalZs.Num() != PathCells.Num() + 1)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[Conveyor] OJJ_SetPathCellLocalZs: 크기 불일치(%d != PathCells %d) — 무시(평면 유지)"),
-			NewCellLocalZs.Num(), PathCells.Num());
+			TEXT("[Conveyor] OJJ_SetPathNodeLocalZs: 크기 불일치(%d != PathCells+1 %d) — 무시(평면 유지)"),
+			NewNodeLocalZs.Num(), PathCells.Num() + 1);
 		return;
 	}
 
-	PathCellLocalZs = NewCellLocalZs;
+	PathNodeLocalZs = NewNodeLocalZs;
 	RebuildVisuals();
 	RefreshItemVisualInstances();
 }
 
+float AConveyor::OJJ_GetPathNodeLocalZ(int32 NodeIndex) const
+{
+	// 빈 배열(평면 — 기존 전 경로)·무효 인덱스 = 0: 소비 수식이 +0/pitch 0/×1 항등(㊉ 유지).
+	return PathNodeLocalZs.IsValidIndex(NodeIndex) ? PathNodeLocalZs[NodeIndex] : 0.0f;
+}
+
 float AConveyor::OJJ_GetPathCellLocalZByIndex(int32 PathIndex) const
 {
-	// 빈 배열(평면 — 기존 전 경로)·무효 인덱스 = 0: 소비 수식이 +0/pitch 0/×1 항등(㊉).
-	return PathCellLocalZs.IsValidIndex(PathIndex) ? PathCellLocalZs[PathIndex] : 0.0f;
+	// 셀 중심 = 양 경계 노드의 중점 — 셀 내 면이 선형(꺾임점은 항상 셀 경계)이라 면의 중심값과
+	// 정확히 동일. 빈 배열이면 0+0 → 0(평면 항등).
+	return 0.5f * (OJJ_GetPathNodeLocalZ(PathIndex) + OJJ_GetPathNodeLocalZ(PathIndex + 1));
 }
 
 float AConveyor::OJJ_GetPathCellLocalZByCell(FIntPoint Cell) const
 {
-	if (PathCellLocalZs.Num() == 0)
+	if (PathNodeLocalZs.Num() == 0)
 	{
 		return 0.0f; // 평면 — 탐색 비용 0(기존 경로 영향 없음).
 	}
@@ -267,7 +275,7 @@ void AConveyor::ConfigureTransport(
 void AConveyor::ClearPath()
 {
 	PathCells.Reset();
-	PathCellLocalZs.Reset(); // [OJJ F3.7-0] 경로와 1:1 — 함께 정리.
+	PathNodeLocalZs.Reset(); // [OJJ F3.7-0] 경로와 한 쌍 — 함께 정리.
 	OccupiedGridCells.Reset();
 	SourceMachine.Reset();
 	TargetMachine.Reset();
@@ -439,18 +447,16 @@ void AConveyor::RebuildVisuals()
 		// 직선 메시: 코너와 동일 구조(균일 스케일 + 자세 보정).
 		// 세워진 메시를 Roll로 XY바닥에 눕히고(StraightRoll), 흐름 방향 Yaw(+오프셋)로 정렬.
 		// 합성 YawQuat * RollQuat → Roll(눕히기) 먼저, Yaw(진행 방향) 나중. 코너와 같은 순서.
-		// [OJJ F3.7-0] 경사 직선(㊄): 흐름 방향 셀 간 ΔZ로 기울기 + 빗변 길이 스케일.
+		// [OJJ F3.7-0] 경사 직선(㊄): 셀 진입/진출 경계 노드 간 ΔZ로 기울기 + 빗변 길이 스케일.
+		// [OJJ F3.8'''] ΔZ = 자기 셀의 경계 노드 델타 — 면의 꺾임점이 항상 셀 경계라 세그먼트가
+		// 면과 전 구간 정확 일치(이전 셀 중심 간 델타 휴리스틱은 전환부 ±행간/4 부유 — 현 문제).
 		// [OJJ F3.7-2 fix] 기울기는 "흐름 벡터를 +Z로 들어 올리는 월드 수평축(dy, −dx)" 회전을
 		// **좌측 합성** — 이전의 Yaw*Pitch*Roll 우측 합성은 YawQuat에 메시 자세 보정
 		// StraightBaseYaw(+90°)가 섞여 있어 pitch 축이 90° 돌아간 roll(좌우 기울기)로 나타났음
 		// (PIE 버그). 월드축 좌측 합성은 4방향(동서남북 진행) 전부에서 진행 방향 위아래 기울기.
 		// 평면(빈 배열)은 ΔZ=0 → 각도 0의 정확한 항등 쿼터니언(sin 0) 좌측 곱이라 기존
 		// Yaw*Roll 결과와 비트 동일(㊉ 유지). 단일 셀 경로는 축이 영벡터지만 각도도 0 — 항등 안전.
-		const float DeltaZ = PathCells.Num() < 2
-			? 0.0f
-			: (bHasNext
-				? OJJ_GetPathCellLocalZByIndex(Index + 1) - OJJ_GetPathCellLocalZByIndex(Index)
-				: OJJ_GetPathCellLocalZByIndex(Index) - OJJ_GetPathCellLocalZByIndex(Index - 1));
+		const float DeltaZ = OJJ_GetPathNodeLocalZ(Index + 1) - OJJ_GetPathNodeLocalZ(Index);
 		const FQuat YawQuat(FRotator(0.0f, DirectionToYaw(VisualDirection) + StraightBaseYaw, 0.0f));
 		const FVector PitchAxis((float)VisualDirection.Y, -(float)VisualDirection.X, 0.0f);
 		const FQuat PitchQuat(PitchAxis.GetSafeNormal(), FMath::Atan2(DeltaZ, CellSize));
