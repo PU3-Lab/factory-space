@@ -1918,6 +1918,159 @@ void AOJJ_Grid::SweepStaleFoundationEntries()
 	}
 }
 
+// === 파이프 레이어 (F4-0, f4_pipe_plan.md 결정 ㉠ — FoundationCells 독립 레이어 패턴 미러) ===
+
+void AOJJ_Grid::SweepStalePipeEntries()
+{
+	// SweepStaleFoundationEntries 미러(파이프판). forward 셀은 weak 무효일 때만 제거 — 동일 방어.
+	// 오버레이 복원 호출 없음(F4-0 파이프 레이어는 시각 표현 0).
+	for (auto It = OJJ_PipeToCells.CreateIterator(); It; ++It)
+	{
+		if (!It.Key().IsValid())
+		{
+			for (const FIntPoint& Cell : It.Value())
+			{
+				const FOJJPipeCellInfo* Found = OJJ_PipeCells.Find(Cell);
+				if (Found && !Found->Pipe.IsValid())
+				{
+					OJJ_PipeCells.Remove(Cell);
+				}
+			}
+			It.RemoveCurrent();
+		}
+	}
+}
+
+bool AOJJ_Grid::OJJ_TryRegisterPipeCells(AActor* Pipe, const TArray<FIntPoint>& Cells,
+	const TArray<float>& CellZs, const TArray<bool>& ElevatedFlags, FString& OutReason)
+{
+	if (!HasAuthority())
+	{
+		ensureMsgf(false, TEXT("OJJ_TryRegisterPipeCells called on non-authority"));
+		OutReason = TEXT("Not authority");
+		return false;
+	}
+	// IsValid: pending kill 거부(Foundation 등록 원본 미러 — Codex F4-0 ②). null 통과 시 weak가 즉시
+	// invalid라 "등록 성공인데 질의는 미점유" 모순 상태가 생김.
+	if (!IsValid(Pipe) || Cells.Num() == 0)
+	{
+		OutReason = TEXT("Invalid pipe or empty cells.");
+		return false;
+	}
+	// 배열 1:1 불변식(액터 신뢰 금지 — PerCell 등록의 크기 검증과 동일 정신).
+	if (CellZs.Num() != Cells.Num() || ElevatedFlags.Num() != Cells.Num())
+	{
+		OutReason = FString::Printf(TEXT("Cell array size mismatch (cells %d / z %d / elevated %d)."),
+			Cells.Num(), CellZs.Num(), ElevatedFlags.Num());
+		return false;
+	}
+
+	SweepStalePipeEntries();
+
+	if (OJJ_PipeToCells.Contains(Pipe))
+	{
+		OutReason = TEXT("Pipe already registered.");
+		return false;
+	}
+
+	// 검증 패스: 그리드 내 + 비유한 Z 거부 + 파이프 간 겹침 거부(결정 ㉥ — 레이어 내 단일 점유).
+	// 중복 입력 셀은 AddUnique로 1회 등록(컨베이어 등록 UniqueCells 정신).
+	TArray<FIntPoint> UniqueCells;
+	UniqueCells.Reserve(Cells.Num());
+	for (int32 Index = 0; Index < Cells.Num(); ++Index)
+	{
+		const FIntPoint Cell = Cells[Index];
+		if (!IsValidGridCell(Cell))
+		{
+			OutReason = FString::Printf(TEXT("Pipe cell (%d,%d) is outside the grid."), Cell.X, Cell.Y);
+			return false;
+		}
+		if (!FMath::IsFinite(CellZs[Index]))
+		{
+			OutReason = FString::Printf(TEXT("Pipe cell (%d,%d) has non-finite Z."), Cell.X, Cell.Y);
+			return false;
+		}
+		const FOJJPipeCellInfo* Existing = OJJ_PipeCells.Find(Cell);
+		if (Existing && Existing->Pipe.IsValid())
+		{
+			OutReason = FString::Printf(TEXT("Pipe cell (%d,%d) is occupied by another pipe."), Cell.X, Cell.Y);
+			return false;
+		}
+		UniqueCells.AddUnique(Cell);
+	}
+
+	// 커밋 패스 — 셀별 값은 "마지막 입력 우선"이 아닌 첫 입력 기준(중복 셀은 경로 왕복 같은 비정상
+	// 입력 — F4-1 수집기가 애초에 안 만들지만 방어적으로 결정론 고정).
+	for (const FIntPoint& Cell : UniqueCells)
+	{
+		const int32 FirstIndex = Cells.IndexOfByKey(Cell);
+		FOJJPipeCellInfo Info;
+		Info.Pipe = Pipe;
+		Info.CellZ = CellZs[FirstIndex];
+		Info.bElevated = ElevatedFlags[FirstIndex];
+		OJJ_PipeCells.Add(Cell, Info);
+	}
+	OJJ_PipeToCells.Add(Pipe, MoveTemp(UniqueCells));
+
+	OutReason.Reset();
+	return true;
+}
+
+bool AOJJ_Grid::OJJ_UnregisterPipeCells(AActor* Pipe, FString& OutReason)
+{
+	if (!HasAuthority())
+	{
+		ensureMsgf(false, TEXT("OJJ_UnregisterPipeCells called on non-authority"));
+		OutReason = TEXT("Not authority");
+		return false;
+	}
+
+	SweepStalePipeEntries();
+
+	const TArray<FIntPoint>* Cells = Pipe ? OJJ_PipeToCells.Find(Pipe) : nullptr;
+	if (!Cells)
+	{
+		OutReason = TEXT("Pipe not registered.");
+		return false;
+	}
+
+	// 양방향 대칭 해제 — forward 엔트리는 본인 소유일 때만 제거(RemoveFoundation 방어 미러).
+	// 위 건물 게이트 없음: 파이프 레이어 위엔 아무것도 안 올라감(결정 ㉠ — 항상 해제 성공).
+	for (const FIntPoint& Cell : *Cells)
+	{
+		const FOJJPipeCellInfo* Found = OJJ_PipeCells.Find(Cell);
+		if (Found && Found->Pipe == Pipe)
+		{
+			OJJ_PipeCells.Remove(Cell);
+		}
+	}
+	OJJ_PipeToCells.Remove(Pipe);
+
+	OutReason.Reset();
+	return true;
+}
+
+AActor* AOJJ_Grid::OJJ_GetPipeAtCell(FIntPoint Cell) const
+{
+	// stale weak는 nullptr(미점유 취급) — GetFoundationAtCell/GetFoundationSurfaceZ의 stale 정책 미러.
+	const FOJJPipeCellInfo* Found = OJJ_PipeCells.Find(Cell);
+	return (Found && Found->Pipe.IsValid()) ? Found->Pipe.Get() : nullptr;
+}
+
+bool AOJJ_Grid::OJJ_IsCellBlockedByGroundPipe(FIntPoint Cell) const
+{
+	// 결정 ㉡: 지상 파이프 셀만 차단 — 공중(bElevated, 오버패스) 셀 아래는 컨베이어 통과 허용.
+	// 소비처(컨베이어 경로 수집 거부 + OutReason "지상 파이프 통과 불가 — 파이프 상향/우회")는 F4-3.
+	const FOJJPipeCellInfo* Found = OJJ_PipeCells.Find(Cell);
+	return Found && Found->Pipe.IsValid() && !Found->bElevated;
+}
+
+const TArray<FIntPoint>* AOJJ_Grid::OJJ_GetPipeCells(AActor* Pipe) const
+{
+	const TWeakObjectPtr<AActor> Key(Pipe);
+	return Key.IsValid() ? OJJ_PipeToCells.Find(Key) : nullptr;
+}
+
 // === 지형 높이 캐시 접근 (F0 갭 해소) ===
 
 bool AOJJ_Grid::OJJ_HasValidGroundZData() const

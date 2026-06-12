@@ -47,6 +47,29 @@ struct FOJJFoundationCellInfo
 };
 
 /**
+ * 파이프 점유 셀 정보 (F4-0, f4_pipe_plan.md 결정 ㉠ — 파이프 전용 레이어). 머신/컨베이어
+ * 점유(OccupiedCells)·Foundation 커버리지와 전부 직교하는 세 번째 레이어 — FoundationCells가
+ * 선례인 독립 레이어 패턴 미러. 파이프 참조는 AActor 약참조 일반화(APipe는 타 소유(Chan) 클래스라
+ * 그리드가 몰라도 되게 — Foundation F1-a와 동일 계약). CellZ = 파이프 중심 월드 Z,
+ * bElevated = 오버패스 공중 셀(결정 ㉡ — 지상 셀만 컨베이어를 차단, 공중 셀 아래는 통과 허용.
+ * F4-0은 보관만, 산출/소비는 F4-3).
+ */
+USTRUCT()
+struct FOJJPipeCellInfo
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TWeakObjectPtr<AActor> Pipe;
+
+	UPROPERTY()
+	float CellZ = 0.0f;
+
+	UPROPERTY()
+	bool bElevated = false;
+};
+
+/**
  * AOJJ_Grid is the source of truth for grid occupancy.
  * Machines not registered via TryPlaceMachine or RegisterExistingMachine
  * are invisible to this grid. CanPlaceMachine may return true for cells
@@ -410,6 +433,17 @@ protected:
 	// Foundation → 커버 셀 목록 (RemoveFoundation 일괄 해제용). OJJ_ActorToCells 패턴 미러(비-UPROPERTY, weak 키).
 	TMap<TWeakObjectPtr<AActor>, TArray<FIntPoint>> OJJ_FoundationToCells;
 
+	// === 파이프 레이어 (F4-0 — 데이터/질의만. 배치/게이트 소비처 연결은 F4-1, 오버패스 산출은 F4-3) ===
+
+	// 셀 → 파이프 + 셀 Z/공중 여부. 점유·커버리지와 완전 독립 — 교차 규칙(파이프↔컨베이어)은
+	// 레이어 간 명시 규칙으로 표현(결정 ㉠(b)). 불변식: F4-0 동안 기존 어떤 read/write 경로도
+	// 이 맵을 참조하지 않는다(회귀 0 — FoundationCells F1-a와 동일 도입 방식).
+	UPROPERTY(Transient)
+	TMap<FIntPoint, FOJJPipeCellInfo> OJJ_PipeCells;
+
+	// 파이프 → 점유 셀 목록 (일괄 해제용) — OJJ_FoundationToCells 패턴 미러(비-UPROPERTY, weak 키).
+	TMap<TWeakObjectPtr<AActor>, TArray<FIntPoint>> OJJ_PipeToCells;
+
 private:
 	// Origin부터 머신 풋프린트가 차지하는 셀 좌표 목록. RotationSteps로 90° 회전 footprint 지원(기본 0).
 	TArray<FIntPoint> CalculateFootprint(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
@@ -436,6 +470,10 @@ private:
 	// GC/Destroy된 Foundation 엔트리를 커버리지 양방향 맵에서 정리. Foundation write 경로 진입부에서 호출.
 	// SweepStaleEntries의 커버리지판 — 점유 맵과 레이어 독립이라 별도 함수(서로 호출하지 않음).
 	void SweepStaleFoundationEntries();
+
+	// GC/Destroy된 파이프 엔트리를 레이어 양방향 맵에서 정리 — SweepStaleFoundationEntries 미러
+	// (레이어 독립이라 별도 함수). 오버레이 복원 없음(F4-0 파이프 레이어는 시각 표현 0 — F4-1 호버에서 재검토).
+	void SweepStalePipeEntries();
 
 	// Foundation 등록의 검증/커밋 단일원(F3-1) — 단일값(TryPlaceFoundation)과 셀별(PerCell) 공용.
 	// SurfaceZForCell은 검증 통과 셀에만 호출(배열 없는 단일값 경로의 할당 0 유지).
@@ -708,6 +746,29 @@ public:
 	// 책임은 호출자(BuildController가 이전 셀 비교) — 여기는 ClearInstances+재적재만. Z는
 	// OJJ_GetCellVisualBaseZ 단일원(Foundation 위에 서 있으면 상면에 표시) + 호버보다 1uu 위(겹침 시 식별).
 	void OJJ_UpdateCharacterCellOverlay(const TArray<FIntPoint>& Cells);
+
+	// === 파이프 레이어 API (F4-0, f4_pipe_plan.md — 등록/해제/질의만. 경로 검증·포트 정합은 F4-1) ===
+
+	// 파이프 셀 등록 — 유효 셀·배열 1:1(액터 신뢰 금지)·파이프 간 겹침 거부(결정 ㉥) + 양방향 맵
+	// 등록만 수행. 액터 위치/비주얼 불관여(Foundation 계약 미러 — 그리드는 파이프 메시를 모름).
+	// 머신/컨베이어 점유 셀과의 공존 규칙은 검사하지 않음 — OJJ_RegisterActorCells와 동일 경계
+	// ("점유 데이터 등록" 전용, placement 유효성은 F4-1 수집기 소관). 서버 권위 전용, 중복 등록 거부.
+	bool OJJ_TryRegisterPipeCells(AActor* Pipe, const TArray<FIntPoint>& Cells,
+		const TArray<float>& CellZs, const TArray<bool>& ElevatedFlags, FString& OutReason);
+
+	// 파이프 셀 일괄 해제(철거) — RemoveFoundation 미러. 파이프는 위 건물 게이트가 없음(레이어 위에
+	// 아무것도 안 올라감 — 거부 사유 없이 항상 해제). 미등록이면 false. 서버 권위 전용.
+	bool OJJ_UnregisterPipeCells(AActor* Pipe, FString& OutReason);
+
+	// 셀의 파이프 조회(없거나 stale이면 nullptr). 점유(GetActorAtCell)와 별개 레이어 — 그쪽에 안 보임.
+	AActor* OJJ_GetPipeAtCell(FIntPoint Cell) const;
+
+	// 셀이 "지상" 파이프에 점유됐는지 — 컨베이어 역방향 게이트 입력(결정 ㉡: 지상 셀만 차단,
+	// 공중(bElevated) 셀 아래는 통과 허용). stale은 false. 소비처 연결은 F4-3(F4-0은 질의만 제공).
+	bool OJJ_IsCellBlockedByGroundPipe(FIntPoint Cell) const;
+
+	// 파이프의 점유 셀 목록(미등록이면 nullptr) — GetFoundationCells 미러(F4-1 철거 호버용).
+	const TArray<FIntPoint>* OJJ_GetPipeCells(AActor* Pipe) const;
 
 	// === 지형 높이 캐시 접근 (F0 갭 해소 — CellGroundZQuant 소비처 첫 도입) ===
 
