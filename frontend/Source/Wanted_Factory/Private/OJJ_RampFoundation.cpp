@@ -32,24 +32,25 @@ AOJJ_RampFoundation::AOJJ_RampFoundation()
 }
 
 bool AOJJ_RampFoundation::OJJ_BuildPerCellSurfaceZ(FIntPoint EffSize, int32 RotationSteps, float BaseSurfaceZ,
-	TArray<float>& OutCellZs) const
+	int32 RiseSteps, TArray<float>& OutCellZs) const
 {
-	// R = 오르는 방향(로컬 +X) 길이. EffSize는 회전 스왑된 월드 크기라 step 0/2에선 EffSize.X,
-	// 1/3에선 EffSize.Y가 R과 같다(F3-0 스왑 규칙) — r 산출은 월드 축 기준이므로 아래 switch로 흡수.
-	const int32 R = FMath::Max(1, FoundationSize.X);
-	if (R < 2 || EffSize.X < 1 || EffSize.Y < 1)
+	// R = 오르는 방향(로컬 +X) 길이 = EffSize의 해당 월드 축(step 0/2 → X, 1/3 → Y — F3-0 스왑 규칙).
+	// F3.6-0 일반화: 고정 램프에선 FoundationSize.X와 동치(스왑이 정확히 상쇄 — 동작 비트 동일)이고,
+	// 동적 풋프린트(F3.6-1 자동 맞춤)에선 틈 길이 D를 그대로 따른다. r 산출은 월드 축 기준 switch.
+	const int32 Step = ((RotationSteps % 4) + 4) % 4;
+	const int32 R = (Step % 2 == 0) ? EffSize.X : EffSize.Y;
+	if (R < 2 || RiseSteps < 1 || EffSize.X < 1 || EffSize.Y < 1)
 	{
-		return false; // 1행 램프는 경사 불능 — 평판 단일값 경로 폴백.
+		// 1행 램프는 경사 불능, RiseSteps<1은 평지 퇴화(㉿) — 평판 단일값 경로 폴백.
+		return false;
 	}
 
 	OutCellZs.SetNumUninitialized(EffSize.X * EffSize.Y);
-	const int32 Step = ((RotationSteps % 4) + 4) % 4;
 	for (int32 LX = 0; LX < EffSize.X; ++LX)
 	{
 		for (int32 LY = 0; LY < EffSize.Y; ++LY)
 		{
-			// 풋프린트 로컬(월드 축) → 오르는 방향 행 r. 양 끝 정합(턱 0): r=0 → Z_low 정확,
-			// r=R−1 → (R−1)/(R−1)=1이라 Z_low+100 정확(float 오차 0) — f3 계획 §보강 산식.
+			// 풋프린트 로컬(월드 축) → 오르는 방향 행 r — f3 계획 §보강 산식.
 			int32 r = 0;
 			switch (Step)
 			{
@@ -58,8 +59,10 @@ bool AOJJ_RampFoundation::OJJ_BuildPerCellSurfaceZ(FIntPoint EffSize, int32 Rota
 			case 2: r = (EffSize.X - 1) - LX; break;     // 월드 −X
 			case 3: r = (EffSize.Y - 1) - LY; break;     // 월드 −Y
 			}
+			// 양 끝 정합(턱 0): r=0 → BaseSurfaceZ 정확, r=R−1 → +RiseSteps×100 정확(float 오차 0 —
+			// (R−1)/(R−1)=1). RiseSteps=1이면 F3-2 산식과 비트 동일.
 			OutCellZs[LX * EffSize.Y + LY] =
-				BaseSurfaceZ + ((float)r / (float)(R - 1)) * AOJJ_Grid::OJJ_FoundationSnapStep;
+				BaseSurfaceZ + ((float)r / (float)(R - 1)) * RiseSteps * AOJJ_Grid::OJJ_FoundationSnapStep;
 		}
 	}
 	return true;

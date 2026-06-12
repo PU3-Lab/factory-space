@@ -374,9 +374,9 @@ FIntPoint AOJJ_BuildController::ComputeOriginFromCursorCell(FIntPoint CursorCell
 
 FIntPoint AOJJ_BuildController::ComputeOriginFromCursorCellForSize(FIntPoint CursorCell, FIntPoint EffSize)
 {
-	// (Size-1)/2 정수 나눗셈 → lower-left bias. 1x1 offset 0 (회귀 없음). 머신/Foundation 공통 수식 —
-	// 두 경로의 "마우스 = 풋프린트 중심" 정책이 갈라지지 않게 단일원으로 유지.
-	return FIntPoint(CursorCell.X - (EffSize.X - 1) / 2, CursorCell.Y - (EffSize.Y - 1) / 2);
+	// 머신/Foundation 공통 수식 — 두 경로의 "마우스 = 풋프린트 중심" 정책이 갈라지지 않게 단일원 유지.
+	// F3.6-0: 본문을 그리드 정적으로 이관(Foundation 풋프린트 훅 베이스도 같은 수식을 쓰도록) — 위임만.
+	return AOJJ_Grid::OJJ_OriginFromCursorCellForSize(CursorCell, EffSize);
 }
 
 TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
@@ -978,13 +978,12 @@ void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHi
 		return;
 	}
 
-	// CDO에서 크기만 읽음(머신 CDO 풋프린트 조회와 동일 — spawn 부작용 없음).
-	// F3-0(㉱) 회전 4방: 홀수 step이면 X/Y 스왑(머신 EffSize 규칙과 동일). 정사각 평판은 스왑
-	// 불변(회귀 0) — 비정사각(램프 F3-2)부터 의미를 가짐.
-	const FIntPoint Size = DefaultFoundation->GetFoundationSize();
-	const FIntPoint EffSize = (HoverRotationSteps % 2 != 0) ? FIntPoint(Size.Y, Size.X) : Size;
-	const FIntPoint Origin = ComputeOriginFromCursorCellForSize(CursorCell, EffSize);
-	TargetGrid->OJJ_UpdateFoundationHoverPreview(Origin, EffSize);
+	// F3.6-0(㉽): 풋프린트는 CDO 훅이 산출 — 베이스는 기존 정적 산출(홀수 step 스왑 + origin 공통
+	// 수식)과 동작 동일(회귀 0). 자동 맞춤 램프(F3.6-1)부터 커서+그리드 상태 기반 동적 풋프린트가
+	// override로 들어온다(CDO 호출 — spawn 부작용 없음은 종전과 동일).
+	const FOJJFoundationFitResult Fit = DefaultFoundation->OJJ_ComputeHoverFootprint(
+		*TargetGrid, CursorCell, HoverRotationSteps);
+	TargetGrid->OJJ_UpdateFoundationHoverPreview(Fit.Origin, Fit.EffSize);
 	CurrentHoverCell = CursorCell;
 }
 
@@ -1013,11 +1012,18 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 		return;
 	}
 
-	// 호버와 같은 origin 변환을 사용해야 "미리보기 = 실제 배치" 정합(머신 경로의 핵심 계약과 동일).
-	// F3-0(㉱): 회전 EffSize도 호버(UpdateFoundationHover)와 동일 규칙 — 홀수 step X/Y 스왑.
-	const FIntPoint Size = DefaultFoundation->GetFoundationSize();
-	const FIntPoint EffSize = (HoverRotationSteps % 2 != 0) ? FIntPoint(Size.Y, Size.X) : Size;
-	const FIntPoint Origin = ComputeOriginFromCursorCellForSize(CurrentHoverCell, EffSize);
+	// 호버와 같은 풋프린트 훅을 사용해야 "미리보기 = 실제 배치" 정합(머신 경로의 핵심 계약과 동일 —
+	// F3.6-0 ㉽: CDO 정적 산출 → 훅. 같은 입력(셀·회전)이면 같은 결과 — 클릭 시 재산출이 진실원).
+	const FOJJFoundationFitResult Fit = DefaultFoundation->OJJ_ComputeHoverFootprint(
+		*TargetGrid, CurrentHoverCell, HoverRotationSteps);
+	if (!Fit.bValid)
+	{
+		// 풋프린트 구성 불가(F3.6-1 자동 맞춤 경사 한계 미달 등 — 베이스/고정 램프는 항상 valid).
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation 배치 거부(풋프린트): %s"), *Fit.FailReason);
+		return;
+	}
+	const FIntPoint EffSize = Fit.EffSize;
+	const FIntPoint Origin = Fit.Origin;
 
 	UWorld* World = GetWorld();
 	if (!World)
@@ -1053,7 +1059,7 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 	// (그리드가 불변식 검증). 평탄은 기존 단일값 경로 그대로(배열 미생성).
 	FString OutReason;
 	TArray<float> CellZs;
-	const bool bPlaced = NewFoundation->OJJ_BuildPerCellSurfaceZ(EffSize, HoverRotationSteps, BaseSurfaceZ, CellZs)
+	const bool bPlaced = NewFoundation->OJJ_BuildPerCellSurfaceZ(EffSize, HoverRotationSteps, BaseSurfaceZ, Fit.RiseSteps, CellZs)
 		? TargetGrid->OJJ_TryPlaceFoundationPerCell(NewFoundation, Origin, EffSize, CellZs, OutReason)
 		: TargetGrid->TryPlaceFoundation(NewFoundation, Origin, EffSize, BaseSurfaceZ, OutReason);
 	if (!bPlaced)

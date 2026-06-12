@@ -88,6 +88,18 @@ void AOJJ_Foundation::UpdateSlabVisual()
 	SlabMesh->SetRelativeLocation(FVector(0.0f, 0.0f, SlabThickness * 0.5f));
 }
 
+FOJJFoundationFitResult AOJJ_Foundation::OJJ_ComputeHoverFootprint(const AOJJ_Grid& Grid, FIntPoint CursorCell,
+	int32 RotationSteps) const
+{
+	// 베이스 = 기존 컨트롤러 정적 산출 그대로(F3.6-0 회귀 0): 홀수 step이면 X/Y 스왑(F3-0 ㉱ —
+	// EffectiveSize와 동일 parity 규칙) + lower-left origin 공통 수식. Grid는 베이스에서 미사용 —
+	// 자동 맞춤(F3.6-1) 이웃 스캔의 입력으로 시그니처에 미리 포함.
+	FOJJFoundationFitResult Result;
+	Result.EffSize = ((RotationSteps % 2) != 0) ? FIntPoint(FoundationSize.Y, FoundationSize.X) : FoundationSize;
+	Result.Origin = AOJJ_Grid::OJJ_OriginFromCursorCellForSize(CursorCell, Result.EffSize);
+	return Result;
+}
+
 float AOJJ_Foundation::OJJ_ComputeSnapLift(const AOJJ_Grid& Grid, FIntPoint Origin, FIntPoint EffSize,
 	int32 RotationSteps, FString* OutHeightSource) const
 {

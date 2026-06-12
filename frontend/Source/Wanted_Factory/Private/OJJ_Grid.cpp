@@ -620,6 +620,13 @@ FIntPoint AOJJ_Grid::EffectiveSize(FVector2D RawSize, int32 RotationSteps)
 	return ((RotationSteps % 2) != 0) ? FIntPoint(Y, X) : FIntPoint(X, Y);
 }
 
+FIntPoint AOJJ_Grid::OJJ_OriginFromCursorCellForSize(FIntPoint CursorCell, FIntPoint EffSize)
+{
+	// (Size-1)/2 정수 나눗셈 → lower-left bias. 1x1 offset 0. BuildController
+	// ComputeOriginFromCursorCellForSize에서 본문 이관(F3.6-0) — 호출처 정책 주석은 컨트롤러 측 참조.
+	return FIntPoint(CursorCell.X - (EffSize.X - 1) / 2, CursorCell.Y - (EffSize.Y - 1) / 2);
+}
+
 FVector AOJJ_Grid::GetMachinePlacementLocation(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps) const
 {
 	// 방어층: 머신 없으면 lower-left 셀 중심 반환 (호출자가 잘못 부른 경우 안전한 fallback).

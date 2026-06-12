@@ -30,9 +30,11 @@ public:
 	AOJJ_RampFoundation();
 
 	// 계단 근사 셀별 SurfaceZ(결정 ㉲ — 산식은 클래스 책임, 그리드는 불변식만 검증).
-	// R<2(경사 불능)면 false — 평판 단일값 경로 폴백.
+	// R<2(경사 불능) 또는 RiseSteps<1(상승 없음 — ㉿ 평지 퇴화)면 false — 평판 단일값 경로 폴백.
+	// F3.6-0: R = EffSize의 오르는 방향 축(고정 램프에선 FoundationSize.X와 동치 — 스왑 규칙),
+	// 총 상승 = RiseSteps×100 — 동적 풋프린트(F3.6-1 자동 맞춤)에 자동 정합.
 	virtual bool OJJ_BuildPerCellSurfaceZ(FIntPoint EffSize, int32 RotationSteps, float BaseSurfaceZ,
-		TArray<float>& OutCellZs) const override;
+		int32 RiseSteps, TArray<float>& OutCellZs) const override;
 
 	// Z_low 결정(F3.5 ③): 낮은 끝 바깥 인접 라인의 이웃 SurfaceZ에 엣지 스냅(낮은 끝 = 이웃,
 	// 높은 끝 = +100 — 단 간격 고정이라 높은 쪽 이웃과도 자동 일치). 이웃 없으면 낮은 끝(r=0) 행

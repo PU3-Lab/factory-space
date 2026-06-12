@@ -9,6 +9,28 @@
 class AOJJ_Grid;
 class UStaticMeshComponent;
 
+// Foundation 호버/배치 풋프린트 산출 결과(F3.6-0, 결정 ㉽ — f3_6_autofit_ramp_plan.md §2).
+// 자동 맞춤 램프(F3.6-1)는 풋프린트가 "커서+그리드 상태의 함수"라 컨트롤러의 CDO 정적 산출을
+// 훅으로 대체 — 호버와 배치가 같은 훅을 호출해 "미리보기 = 실제 배치" 단일원을 유지한다.
+struct FOJJFoundationFitResult
+{
+	// lower-left origin / 회전 적용된 월드 풋프린트 크기 — 기존 컨트롤러 정적 산출과 동일 의미.
+	FIntPoint Origin = FIntPoint::ZeroValue;
+	FIntPoint EffSize = FIntPoint(1, 1);
+
+	// 총 상승 단수 k(셀별 SurfaceZ 산식의 상승 = k×100uu). 고정 램프 = 1(평판은 미사용),
+	// 자동 맞춤(F3.6-1)이 이웃 ΔZ로 채움.
+	int32 RiseSteps = 1;
+
+	// 양쪽 이웃 스캔으로 산출된 자동 맞춤 풋프린트 여부 — F3.6-1 전까지 항상 false.
+	bool bAutoFit = false;
+
+	// false = 풋프린트 구성 불가(자동 맞춤 경사 한계 미달 등) — 배치 거부 + FailReason 로그.
+	// 호버 프리뷰 빨강 강제는 F3.6-1에서 연결. 베이스/고정 램프는 항상 true(회귀 0).
+	bool bValid = true;
+	FString FailReason;
+};
+
 /**
  * Foundation(기초) 액터 — F1-b. AActor 직속(설계 §7-1 — AMachineBase 상속 금지):
  * 머신 계약(레시피/버퍼/내구도/전력)이 전부 불필요하고, 머신은 점유(차단) 모델인데 Foundation은
@@ -38,12 +60,20 @@ public:
 	// 배치 확정 직후 BuildController가 호출 — EndPlay 대칭 해제용 그리드 보관 + 비주얼 확정 갱신.
 	void OJJ_NotifyPlacedOnGrid(AOJJ_Grid* Grid);
 
+	// 풋프린트 산출 훅(F3.6-0, 결정 ㉽ — ㉲와 같은 "산식은 클래스 책임" 패턴). 베이스 = CDO 크기
+	// 정적 산출(홀수 step X/Y 스왑 + lower-left origin 공통 수식) — 기존 컨트롤러 산출과 동작 동일.
+	// 자동 맞춤 램프(F3.6-1)가 override해 회전 축 양방향 이웃 스캔 풋프린트로 대체한다.
+	// 호버(UpdateFoundationHover)와 배치(PlaceFoundationAtCursor)가 같은 훅을 호출해야 함.
+	virtual FOJJFoundationFitResult OJJ_ComputeHoverFootprint(const AOJJ_Grid& Grid, FIntPoint CursorCell,
+		int32 RotationSteps) const;
+
 	// 셀별 SurfaceZ 산식 훅(F3-2, 결정 ㉲ — 산식은 클래스 책임). false = 평탄(전 셀 동일 — 단일값 등록
 	// 경로 사용, 배열 미생성). 램프 등 비평탄 파생이 override해 EffSize×회전 기준 배열을 채우면
 	// 컨트롤러가 OJJ_TryPlaceFoundationPerCell로 등록(그리드가 불변식 검증).
 	// BaseSurfaceZ = 낮은 단 상면(평면 + Thickness + 스냅 리프트). 인덱싱 = (LX×EffSize.Y + LY).
+	// RiseSteps = 총 상승 단수 k(F3.6-0 일반화 — 풋프린트 훅 결과를 컨트롤러가 전달, 고정 램프 1).
 	virtual bool OJJ_BuildPerCellSurfaceZ(FIntPoint EffSize, int32 RotationSteps, float BaseSurfaceZ,
-		TArray<float>& OutCellZs) const
+		int32 RiseSteps, TArray<float>& OutCellZs) const
 	{
 		return false;
 	}

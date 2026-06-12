@@ -535,6 +535,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
 	static FIntPoint EffectiveSize(FVector2D RawSize, int32 RotationSteps);
 
+	// cursor cell → lower-left origin 공통 수식("마우스 = 풋프린트 중심" — (Size-1)/2 정수 나눗셈
+	// lower-left bias). F3.6-0(결정 ㉽): BuildController 정적에서 이관 — 머신/Foundation 호버·배치
+	// (컨트롤러 위임)와 Foundation 풋프린트 훅(OJJ_ComputeHoverFootprint 베이스)이 한 수식을 공유.
+	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
+	static FIntPoint OJJ_OriginFromCursorCellForSize(FIntPoint CursorCell, FIntPoint EffSize);
+
 	// 머신 mesh는 center anchor (머신 팀과 합의된 contract). 그리드 lower-left 좌표계와
 	// 정렬을 맞추기 위해 풋프린트 전체 center에 머신 액터 중심을 배치한다.
 	// 1x1은 offset (0,0) → GridToWorld(Origin)과 동일하므로 회귀 없음.
