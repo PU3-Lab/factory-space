@@ -279,6 +279,14 @@ protected:
 	void SetMachineMode(const FInputActionValue& Value);
 	void SetConveyorMode(const FInputActionValue& Value);
 	void SetPipeMode(const FInputActionValue& Value);
+
+public:
+	// [임시 진입로 — F4-1'] PIE 콘솔용 배치 모드 전환(예: `OJJ_SetBuildMode pipe`). IA 에셋/UI 슬롯이
+	// 없는 신규 모드(pipe/tank)의 검증 진입로 — 정식 키/UI 와이어링(BP·UI 소유자 안건) 후 제거 후보.
+	UFUNCTION(Exec)
+	void OJJ_SetBuildMode(const FString& ModeName);
+
+protected:
 	void SetPowerNodeMode(const FInputActionValue& Value);
 	void SetShieldMode(const FInputActionValue& Value);
 	void SetPowerLineMode(const FInputActionValue& Value);

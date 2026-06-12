@@ -37,7 +37,9 @@ enum class EOJJ_BuildPlacementMode : uint8
 	// ⚠️ 신규 모드는 항상 맨 끝에 append — BP가 enum 값을 직렬화하므로 중간 삽입(값 시프트) 금지.
 	Foundation,
 	// 파이프 모드(F4-1) — 컨베이어와 드래그 상태머신 공용(프리뷰/커밋만 분기). 펌프→물탱크 액체 라인.
-	Pipe
+	Pipe,
+	// 물탱크 모드(F4-1') — 기존 머신 서브모드 패턴(발전소/펌프와 동일). 파이프 도착 끝점용.
+	LiquidTank
 };
 
 /**
@@ -92,6 +94,10 @@ protected:
 	// 파이프 모드에서 spawn할 클래스(F4-1 — 기본 APipe, 생성자에서 설정). BP 파생(Chan BP_Pipe) 지정 가능.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
 	TSubclassOf<APipe> PipeClass;
+
+	// 물탱크 모드 클래스(F4-1' — 기본 ALiquidTank, 생성자에서 설정). 머신 서브모드 패턴 미러.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AMachineBase> LiquidTankClass;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
 	TSubclassOf<APowerLine> PowerLineClass;

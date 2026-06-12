@@ -23,6 +23,7 @@
 #include "Machines/MachineSubsystem.h"
 #include "Machines/MinerMachine.h"
 #include "Machines/Pump.h"
+#include "Machines/LiquidTank.h"
 #include "Machines/Smelter.h"
 #include "Machines/WarehousePort.h"
 #include "OJJ_Foundation.h"
@@ -77,6 +78,8 @@ namespace
 			return TEXT("WarehousePort");
 		case EOJJ_BuildPlacementMode::Conveyor:
 			return TEXT("Conveyor");
+		case EOJJ_BuildPlacementMode::LiquidTank:
+			return TEXT("LiquidTank"); // F4-1' — ALiquidTank ctor의 MachineType과 동일 표기.
 		default:
 			return NAME_None;
 		}
@@ -114,6 +117,7 @@ AOJJ_BuildController::AOJJ_BuildController()
 	// 컨베이어 모드 기본 클래스(BP 미지정 시). Dummy와 동일 패턴.
 	ConveyorClass = AConveyor::StaticClass();
 	PipeClass = APipe::StaticClass();
+	LiquidTankClass = ALiquidTank::StaticClass();
 	PowerLineClass = APowerLine::StaticClass();
 	PowerGridNodeClass = APowerGridNode::StaticClass();
 	ShieldClass = AOJJ_ProtectionTower::StaticClass();
@@ -189,6 +193,11 @@ void AOJJ_BuildController::EnterBuildMode()
 	if (PlacementMode == EOJJ_BuildPlacementMode::Smelter && !SmelterClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] SmelterClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::LiquidTank && !LiquidTankClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] LiquidTankClass missing. EnterBuildMode stopped."));
 		return;
 	}
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor && !ConveyorClass)
@@ -314,6 +323,7 @@ void AOJJ_BuildController::RotateHoverClockwise()
 			&& PlacementMode != EOJJ_BuildPlacementMode::Pump
 			&& PlacementMode != EOJJ_BuildPlacementMode::Smelter
 			&& PlacementMode != EOJJ_BuildPlacementMode::Warehouse
+			&& PlacementMode != EOJJ_BuildPlacementMode::LiquidTank
 			&& PlacementMode != EOJJ_BuildPlacementMode::Foundation))
 	{
 		return;
@@ -426,6 +436,11 @@ TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
 	if (PlacementMode == EOJJ_BuildPlacementMode::Smelter)
 	{
 		return SmelterClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::LiquidTank)
+	{
+		return LiquidTankClass;
 	}
 
 	if (PlacementMode == EOJJ_BuildPlacementMode::Warehouse)
@@ -1320,6 +1335,7 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::Demolish:  ModeName = TEXT("Demolish");   break;
 	case EOJJ_BuildPlacementMode::Foundation: ModeName = TEXT("Foundation"); break;
 	case EOJJ_BuildPlacementMode::Pipe:      ModeName = TEXT("Pipe");       break;
+	case EOJJ_BuildPlacementMode::LiquidTank: ModeName = TEXT("LiquidTank"); break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 

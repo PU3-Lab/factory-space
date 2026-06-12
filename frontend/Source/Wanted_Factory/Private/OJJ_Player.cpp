@@ -563,6 +563,29 @@ void AOJJ_Player::SetPipeMode(const FInputActionValue& Value)
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pipe);
 }
 
+void AOJJ_Player::OJJ_SetBuildMode(const FString& ModeName)
+{
+	// [임시 진입로] 콘솔 exec — IA/UI 미와이어링 모드(pipe/tank) 전용. 빌드모드 여부는 검사하지
+	// 않음 — 기존 모드 키(SetConveyorMode 등)와 동일 정책(빌드모드 밖 호출 = 다음 진입 모드 예약).
+	if (!BuildController)
+	{
+		return;
+	}
+	const FString Lower = ModeName.ToLower();
+	if (Lower == TEXT("pipe"))
+	{
+		BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pipe);
+	}
+	else if (Lower == TEXT("tank") || Lower == TEXT("liquidtank"))
+	{
+		BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::LiquidTank);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] OJJ_SetBuildMode: 알 수 없는 모드 '%s' (pipe|tank)"), *ModeName);
+	}
+}
+
 void AOJJ_Player::SetPowerNodeMode(const FInputActionValue& Value)
 {
 	if (!BuildController)
