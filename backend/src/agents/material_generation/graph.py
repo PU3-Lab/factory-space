@@ -47,7 +47,10 @@ def get_proposal_generator() -> MaterialProposalGenerator:
 
 
 def normalize_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Normalize input items and compute experiment hash."""
+    """Node: Normalize input items and compute experiment hash.
+
+    [한글] 입력 아이템을 수량 기준으로 정렬 및 병합하여 정규화하고, 고유 실험 해시(experiment_hash)를 계산합니다.
+    """
     request = state["request"]
     normalized = normalize_inputs(request.inputs)
     exp_hash = generate_experiment_hash(
@@ -63,7 +66,10 @@ def normalize_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def lookup_cache_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Check experiment registry for cached results."""
+    """Node: Check experiment registry for cached results.
+
+    [한글] DB에서 동일한 실험 해시를 가진 기존의 성공/실패 실험 결과를 찾아 캐시된 응답을 반환합니다.
+    """
     session = state["db"]
     exp_hash = state["experiment_hash"]
 
@@ -120,7 +126,10 @@ def lookup_cache_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def recipe_match_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Search authored system recipes."""
+    """Node: Search authored system recipes.
+
+    [한글] 기획자가 설계한 정식 레시피 데이터베이스와 정규화된 입력물이 완전히 매칭되는지 조회합니다.
+    """
     if state.get("response"):
         return {}
 
@@ -176,7 +185,10 @@ def recipe_match_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def prevalidate_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Deterministic validation checks."""
+    """Node: Deterministic validation checks.
+
+    [한글] 게임 내 미등록 아이템(unknown item)이나 장비 스펙 준수 여부 등을 결정론적으로 사전 검증합니다.
+    """
     if state.get("response"):
         return {}
 
@@ -212,7 +224,10 @@ def prevalidate_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def classify_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Classify experiment configuration."""
+    """Node: Classify experiment configuration.
+
+    [한글] 입력 조합과 장비 타입을 분석하여 5가지 유형(단순 변형, 중간재, 합성 불가 장비 등)으로 실험을 분류합니다.
+    """
     if state.get("response"):
         return {}
 
@@ -227,7 +242,10 @@ def classify_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def handle_rule_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Fast-fail non-synthesis categories."""
+    """Node: Fast-fail non-synthesis categories.
+
+    [한글] 단순 레시피 양 불일치, 중간재 생성, 부적합 장비 등의 비합성 대상 조건인 경우, 룰 기반으로 실패 처리하여 즉시 종료합니다.
+    """
     if state.get("response"):
         return {}
 
@@ -282,7 +300,10 @@ def handle_rule_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def similarity_context_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Retrieve history of similar experiments for context."""
+    """Node: Retrieve history of similar experiments for context.
+
+    [한글] LLM 생성 품질 향상을 위해 동일 장비 및 오버랩되는 주재료를 가진 과거의 유사 성공 실험 결과를 DB에서 로드합니다.
+    """
     if state.get("response"):
         return {}
 
@@ -297,7 +318,10 @@ def similarity_context_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def llm_propose_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Query LLM for material proposal."""
+    """Node: Query LLM for material proposal.
+
+    [한글] LLM을 호출하여 신물질 제안 정보(이름, 카테고리, 속성 수치, 비주얼 묘사 프롬프트 등)를 획득합니다.
+    """
     if state.get("response"):
         return {}
 
@@ -312,7 +336,10 @@ def llm_propose_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def validate_result_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Enforce rules, sanitization, and manage retry state."""
+    """Node: Enforce rules, sanitization, and manage retry state.
+
+    [한글] LLM 제안 값에 대해 정밀 검증 및 수치 클램핑을 수행하고, 위반 시 최대 3회까지 LLM 노드로 재생성 재시도를 보냅니다.
+    """
     if state.get("response"):
         return {}
 
@@ -366,7 +393,10 @@ def validate_result_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Deduplicate attributes by checking existing material hashes."""
+    """Node: Deduplicate attributes by checking existing material hashes.
+
+    [한글] 생성된 물질 속성 기반의 해시(material_hash)를 통해 중복 생성 여부를 판단하고, 신규ID 부여 혹은 기존ID 연결을 지정합니다.
+    """
     if state.get("response"):
         return {}
 
@@ -411,7 +441,10 @@ def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def register_material_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Commit new material and discoveries, publishing asset pipeline events."""
+    """Node: Commit new material and discoveries, publishing asset pipeline events.
+
+    [한글] 최종 확정된 신물질(신규 발견 시)과 실험 이력, 플레이어의 발견 로그를 DB에 저장하고 비주얼 에셋 생성 이벤트를 발행합니다.
+    """
     session = state["db"]
     request = state["request"]
     proposal = state["proposal"]
