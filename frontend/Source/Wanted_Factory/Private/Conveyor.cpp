@@ -439,19 +439,23 @@ void AConveyor::RebuildVisuals()
 		// 직선 메시: 코너와 동일 구조(균일 스케일 + 자세 보정).
 		// 세워진 메시를 Roll로 XY바닥에 눕히고(StraightRoll), 흐름 방향 Yaw(+오프셋)로 정렬.
 		// 합성 YawQuat * RollQuat → Roll(눕히기) 먼저, Yaw(진행 방향) 나중. 코너와 같은 순서.
-		// [OJJ F3.7-0] 경사 직선(㊄): 흐름 방향 셀 간 ΔZ로 pitch(Yaw와 Roll 사이 — Yaw 프레임의
-		// 우축 회전이라 흐름 방향이 기울어짐) + 빗변 길이 스케일. 평면(빈 배열)은 ΔZ=0 →
-		// PitchQuat 항등·SlopeLength=1 → 기존 Yaw*Roll 합성·×1 스케일과 수치 동일(㊉).
-		// pitch 부호(오르막 = nose-up 양수)는 PIE 확인 항목(F3.7-2).
+		// [OJJ F3.7-0] 경사 직선(㊄): 흐름 방향 셀 간 ΔZ로 기울기 + 빗변 길이 스케일.
+		// [OJJ F3.7-2 fix] 기울기는 "흐름 벡터를 +Z로 들어 올리는 월드 수평축(dy, −dx)" 회전을
+		// **좌측 합성** — 이전의 Yaw*Pitch*Roll 우측 합성은 YawQuat에 메시 자세 보정
+		// StraightBaseYaw(+90°)가 섞여 있어 pitch 축이 90° 돌아간 roll(좌우 기울기)로 나타났음
+		// (PIE 버그). 월드축 좌측 합성은 4방향(동서남북 진행) 전부에서 진행 방향 위아래 기울기.
+		// 평면(빈 배열)은 ΔZ=0 → 각도 0의 정확한 항등 쿼터니언(sin 0) 좌측 곱이라 기존
+		// Yaw*Roll 결과와 비트 동일(㊉ 유지). 단일 셀 경로는 축이 영벡터지만 각도도 0 — 항등 안전.
 		const float DeltaZ = PathCells.Num() < 2
 			? 0.0f
 			: (bHasNext
 				? OJJ_GetPathCellLocalZByIndex(Index + 1) - OJJ_GetPathCellLocalZByIndex(Index)
 				: OJJ_GetPathCellLocalZByIndex(Index) - OJJ_GetPathCellLocalZByIndex(Index - 1));
 		const FQuat YawQuat(FRotator(0.0f, DirectionToYaw(VisualDirection) + StraightBaseYaw, 0.0f));
-		const FQuat PitchQuat(FRotator(FMath::RadiansToDegrees(FMath::Atan2(DeltaZ, CellSize)), 0.0f, 0.0f));
+		const FVector PitchAxis((float)VisualDirection.Y, -(float)VisualDirection.X, 0.0f);
+		const FQuat PitchQuat(PitchAxis.GetSafeNormal(), FMath::Atan2(DeltaZ, CellSize));
 		const FQuat RollQuat(FRotator(0.0f, 0.0f, StraightRoll));
-		const FQuat StraightQuat = YawQuat * PitchQuat * RollQuat;
+		const FQuat StraightQuat = PitchQuat * YawQuat * RollQuat;
 		// 메시가 셀 한 칸에 맞게 제작됨 → 균일 스케일이라 회전 왜곡 0. ClampMin은 에디터 전용이라 런타임 방어.
 		const float StraightUniform = FMath::Max(0.01f, StraightScaleMultiplier);
 		// [OJJ F3.7-0] 빗변 보정은 흐름 축에만 — 흐름 축이 메시 로컬의 어느 축인지는 베이스 자세
