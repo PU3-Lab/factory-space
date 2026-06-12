@@ -51,11 +51,13 @@ public:
 
 protected:
 	// --- 입력(Input) 위젯 ---
+	UPROPERTY(meta = (BindWidget)) class UImage* IMG_InputIcon;
 	UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_InputName;
 	UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_InputCount;
 	UPROPERTY(meta = (BindWidget)) UProgressBar* PB_InputBuffer;
 	
 	// --- 출력(Output) 위젯 ---
+	UPROPERTY(meta = (BindWidget)) class UImage* IMG_OutputIcon;
 	UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_OutputName;
 	UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_OutputCount;
 	UPROPERTY(meta = (BindWidget)) UProgressBar* PB_OutputBuffer;
@@ -76,6 +78,9 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	class UProgressBar* PB_Durability;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Data")
+	class UDataTable* ResourceDataTable;
 
 private:
 	// 테스트하기 위한 임시 변수

@@ -17,6 +17,9 @@ protected:
 	// 아이템 개수 텍스트
 	UPROPERTY(meta = (BindWidget))
 	class UTextBlock* TXT_ItemCount;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Data")
+	class UDataTable* ResourceDataTable;
 
 public:
 	// 서브시스템 데이터를 받아 슬롯의 시각적 정보 갱신

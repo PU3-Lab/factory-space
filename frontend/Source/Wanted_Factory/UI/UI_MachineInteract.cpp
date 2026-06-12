@@ -1,7 +1,10 @@
 #include "UI_MachineInteract.h"
+#include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Components/ProgressBar.h"
 #include "Components/Button.h"
+#include "Engine/DataTable.h"
+#include "Resource/ResourceData.h"
 
 void UUI_MachineInteract::SetTargetMachine(AMachineBase* InMachine)
 {
@@ -90,6 +93,34 @@ void UUI_MachineInteract::UpdateInputUI(FName ItemName, int32 CurrentAmount, int
         float FillPercent = (MaxAmount > 0) ? (float)CurrentAmount / MaxAmount : 0.0f;
         PB_InputBuffer->SetPercent(FillPercent);
     }
+    if (ItemName.IsNone())
+    {
+        if (IMG_InputIcon) IMG_InputIcon->SetVisibility(ESlateVisibility::Hidden);
+        return;
+    }
+
+    if (ResourceDataTable && IMG_InputIcon)
+    {
+        IMG_InputIcon->SetVisibility(ESlateVisibility::Visible);
+        
+        if (FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("FindInputIconContext")))
+        {
+            if (RowData->ImgAsset.IsValid()) IMG_InputIcon->SetBrushFromTexture(RowData->ImgAsset.Get());
+            else
+            {
+                UTexture2D* LoadedTexture = RowData->ImgAsset.LoadSynchronous();
+                if (LoadedTexture) IMG_InputIcon->SetBrushFromTexture(LoadedTexture);
+            }
+            if (CurrentAmount <= 0)
+            {
+                IMG_InputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.15f));
+            }
+            else
+            {
+                IMG_InputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
+            }
+        }
+    }
 }
 
 void UUI_MachineInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, int32 MaxAmount)
@@ -106,6 +137,34 @@ void UUI_MachineInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, in
         // 3. 출력 버퍼 프로그래스 바(게이지) 세팅
         float FillPercent = (MaxAmount > 0) ? (float)CurrentAmount / MaxAmount : 0.0f;
         PB_OutputBuffer->SetPercent(FillPercent);
+    }
+    if (ItemName.IsNone())
+    {
+        if (IMG_OutputIcon) IMG_OutputIcon->SetVisibility(ESlateVisibility::Hidden);
+        return;
+    }
+
+    if (ResourceDataTable && IMG_OutputIcon)
+    {
+        IMG_OutputIcon->SetVisibility(ESlateVisibility::Visible);
+
+        if (FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("FindOutputIconContext")))
+        {
+            if (RowData->ImgAsset.IsValid()) IMG_OutputIcon->SetBrushFromTexture(RowData->ImgAsset.Get());
+            else
+            {
+                UTexture2D* LoadedTexture = RowData->ImgAsset.LoadSynchronous();
+                if (LoadedTexture) IMG_OutputIcon->SetBrushFromTexture(LoadedTexture);
+            }
+            if (CurrentAmount <= 0)
+            {
+                IMG_OutputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.15f));
+            }
+            else
+            {
+                IMG_OutputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
+            }
+        }
     }
 }
 
