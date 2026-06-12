@@ -87,6 +87,26 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Path")
 	TArray<FIntPoint> OccupiedGridCells;
 
+	// [OJJ F3.7-0, F3.8''' 노드화] 경사 경로 **셀 경계 노드** 로컬 Z(크기 = PathCells.Num()+1 —
+	// 노드 i = 셀 i의 진입 경계, 마지막 노드 = 마지막 셀의 진출 경계. 액터 Z 기준 델타, 그리드가
+	// OJJ_SetPathNodeLocalZs로 주입). 셀 중심 단위였던 이전 주입은 면의 꺾임점(항상 셀 경계 —
+	// 램프 풋프린트 변이 셀 정렬)을 세그먼트가 현으로 가로질러 전환부가 ±행간/4 부유 — 경계
+	// 샘플이면 세그먼트 체인이 면과 전 구간 정확 일치(분할 불필요, 세그먼트 수 불변).
+	// **빈 배열 = 평면(기존 전 경로)** — 소비 수식이 전부 +0/pitch 0/스케일 ×1 항등(㊉).
+	// Transient: 배치 시 주입되는 런타임 상태 — 직렬화 의도 없음(Codex F3.7-0 ⑤).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "Conveyor|Path")
+	TArray<float> PathNodeLocalZs;
+
+	// [OJJ F3.9] 포트 꺾임 흐름 방향(그리드가 OJJ_SetPortFlowDirections로 주입). Start = 머신에서
+	// 첫 셀로 들어오는 방향(소스 출력 포트 바깥 = BackStep), End = 마지막 셀에서 머신으로 나가는
+	// 방향(타깃 입력 −FrontStep). **Zero = 미주입(기존 전 경로) — 끝 세그먼트 판정 완전 기존 동작.**
+	// 경로 밖(머신 안) 꺾임을 코너 판정에 보충해, 옆 접근 시 끝 세그먼트가 직선 대신 코너가 된다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "Conveyor|Path")
+	FIntPoint OJJ_StartPortFlowDir = FIntPoint::ZeroValue;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "Conveyor|Path")
+	FIntPoint OJJ_EndPortFlowDir = FIntPoint::ZeroValue;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Items")
 	TArray<FName> ItemSlots;
 
@@ -127,6 +147,16 @@ protected:
 public:
 	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
 	void SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize);
+
+	// [OJJ F3.7-0, F3.8''' 노드화] 경사 경로 셀 경계 노드 Z 주입(OJJ_ 접두 = 그리드 측 침습 경계
+	// 표식 — 벨트 자체 로직은 이 값을 생산하지 않음). SetPath 이후 호출 계약(SetPath가 배열을
+	// 리셋 — stale Z 방어). 크기가 PathCells.Num()+1이 아니면 무시 + 경고(평면 유지). 빈 배열 = 평면 복귀.
+	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
+	void OJJ_SetPathNodeLocalZs(const TArray<float>& NewNodeLocalZs);
+
+	// [OJJ F3.9] 포트 꺾임 흐름 방향 주입(SetPath 이후 호출 계약 — SetPath가 리셋). Zero = 보충 없음.
+	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
+	void OJJ_SetPortFlowDirections(FIntPoint StartFlowDir, FIntPoint EndFlowDir);
 
 	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
 	void ConfigureTransport(
@@ -179,6 +209,12 @@ private:
 	void RefreshItemVisualInstances();
 	float GetCurrentMoveAlpha() const;
 	FVector GetCellLocalCenter(FIntPoint Cell) const;
+	// [OJJ F3.7-0, F3.8''' 노드화] 노드(셀 경계)/셀 중심 로컬 Z 조회 — 빈 배열/무효 인덱스는 0
+	// (평면 항등). 셀 중심 = 양 경계 노드의 중점(셀 내 면이 선형이라 면의 중심값과 정확히 동일 —
+	// 아이템 보간 무변경 수혜). ByCell은 경사 경로에서만 선형 탐색에 도달(평면은 즉시 0 — 비용 0).
+	float OJJ_GetPathNodeLocalZ(int32 NodeIndex) const;
+	float OJJ_GetPathCellLocalZByIndex(int32 PathIndex) const;
+	float OJJ_GetPathCellLocalZByCell(FIntPoint Cell) const;
 	FVector GetSlotLocalCenter(int32 SlotIndex) const;
 	FVector GetIncomingItemLocalCenter() const;
 	FVector ResolveItemVisualStartLocation(int32 SlotIndex) const;
