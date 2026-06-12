@@ -88,6 +88,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid Settings", meta = (ClampMin = "1.0"))
 	float CellSize;
 
+	// 컨베이어 경사 게이트 한계(uu) — 접근은 OJJ_GetMaxConveyorStepZ(주석도 거기). F3.7' 개정:
+	// 45 고정(보행 기준) → 프로퍼티(기본 100 = 램프 MaxRampStepPerRow 기본과 동기).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Grid|Conveyor", meta = (ClampMin = "1.0"))
+	float OJJ_MaxConveyorStepZ = 100.0f;
+
 	// 실제 placement 가능 영역 (X 칸 × Y 칸).
 	// CanPlaceMachine / IsValidGridCell이 권위 있는 grid extent로 사용. 머신은 이 범위 내에서만 등록 가능.
 	// VisualizationRange (시각화 한 변당 셀 수) 와 독립 — 디자이너가 두 값을 분리 가능.
@@ -684,6 +689,12 @@ public:
 	// 단 간격(1m). 고정 상수 — "같은 단 = 같은 SurfaceZ"가 걸침 허용/거부(OJJ_GetUniformSurfaceZ)의
 	// 기준이라 디자이너 튜닝 비노출(단 간격이 갈라지면 동일성 판정이 무의미해짐).
 	static constexpr float OJJ_FoundationSnapStep = 100.0f;
+
+	// 컨베이어 경사 게이트 한계(F3.7-1 ㊆, F3.7' 개정): 인접 경로 셀 간 허용 |ΔZ|(uu).
+	// 기본 100 = 램프 MaxRampStepPerRow 기본과 동기 — 급경사 램프(행당 ≤100, 보행 불가) 위
+	// 컨베이어 허용. 보행 불가 경고는 램프 배치 로그가 담당(컨베이어는 어차피 비보행).
+	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
+	float OJJ_GetMaxConveyorStepZ() const { return OJJ_MaxConveyorStepZ; }
 
 	// Foundation 배치 호버 미리보기 — 풋프린트 전체를 단일색 녹(가능)/적(불가)으로 표시.
 	// 단일 진실원: 색 판정 = 클릭 시 판정(CanPlaceFoundation) — 머신 UpdateHoverPreview와 동일 정책

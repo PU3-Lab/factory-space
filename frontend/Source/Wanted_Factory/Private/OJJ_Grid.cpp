@@ -247,8 +247,8 @@ bool OJJ_FindInputMachineAtPathEnd(
 
 // F3.7-1(f3_7 계획 ㊆): 균일 SurfaceZ 실패 경로의 경사 허용 검사 — 단일 높이 규칙의 램프 경로
 // 예외 게이트. 조건: ① 전 셀 Foundation 커버(혼합 지형 경사는 F1-c 규칙대로 계속 거부 — 경사는
-// 램프/평판 위만) ② 인접 셀 |ΔZ| ≤ 45uu(램프 행간 계단 한계와 동일 근거 — F2-3 MaxStepHeight 45,
-// AOJJ_RampFoundation::OJJ_MaxAutoFitStepPerRow와 같은 상수) ③ 방향 전환(코너) 셀은 양옆 ΔZ=0
+// 램프/평판 위만) ② 인접 셀 |ΔZ| ≤ OJJ_MaxConveyorStepZ(F3.7' 개정 — 기본 100, 램프
+// MaxRampStepPerRow 기본과 동기) ③ 방향 전환(코너) 셀은 양옆 ΔZ=0
 // (㊅ — 벨트 코너 세그먼트가 평면 전제라 경사 코너 금지). 성공 시 OutCellZs = 셀별 절대 SurfaceZ
 // (PathCells와 1:1) — OJJ_TryPlaceConveyor가 시작 셀 기준 로컬화(㊇) 후 벨트에 주입(㊃).
 // ※ 의도(Codex F3.7-1 ②④): 검사는 **형태 기반**(㊆(a) 채택 — 액터가 램프인지는 안 봄. 단 간격
@@ -261,7 +261,9 @@ bool OJJ_ValidateConveyorSlopePath(
 	TArray<float>& OutCellZs,
 	FString& OutReason)
 {
-	constexpr float MaxSlopeStepZ = 45.0f;
+	// F3.7' 개정(㊆): 45 고정(보행 기준) → 그리드 프로퍼티(기본 100 — 램프 행간 한계 기본과 동기,
+	// 급경사 컨베이어 전용 램프 허용). 컨베이어는 비보행이라 보행 경고는 램프 배치 로그 소관.
+	const float MaxSlopeStepZ = FMath::Max(1.0f, Grid->OJJ_GetMaxConveyorStepZ());
 
 	OutCellZs.Reset();
 	OutCellZs.Reserve(PathCells.Num());

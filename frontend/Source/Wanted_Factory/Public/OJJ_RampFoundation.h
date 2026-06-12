@@ -62,9 +62,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Foundation", meta = (ClampMin = "1"))
 	int32 MaxAutoFitScanCells = 32;
 
-	// 행간 계단 한계(uu) — 캐릭터 MaxStepHeight 기본 45와 동일 근거(F2-3 Thickness 45와 같은 상수).
-	// 동일성 판정 기준이라 비노출(OJJ_FoundationSnapStep과 같은 취지).
-	static constexpr float OJJ_MaxAutoFitStepPerRow = 45.0f;
+	// 자동 맞춤 행간 계단 거부 한계(uu) — F3.7' 개정: 보행 기준 45 고정 → 프로퍼티. 기본 100 =
+	// Δ1단 틈 2칸(행당 100uu)까지 허용 — 짧은 틈 급경사(보행 불가, 컨베이어 전용 램프)를 플레이어
+	// 선택으로 수용(사용자 결정 2026-06-12). 보행 가능 여부는 거부 대신 호버/배치 로그가 경고.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Foundation", meta = (ClampMin = "1.0"))
+	float MaxRampStepPerRow = 100.0f;
+
+	// 보행 가능 행간 계단 기준(uu) — 캐릭터 MaxStepHeight 기본 45(F2-3 Thickness 45와 동일 근거).
+	// 거부 게이트가 아니라 로그 경고 기준(배치 가부는 MaxRampStepPerRow가 결정).
+	static constexpr float OJJ_WalkableStepPerRow = 45.0f;
 
 	// 배치 확정값(OJJ_NotifyFitResult — 자동 맞춤 동적 비주얼용). 0 = 미확정(CDO 고정 램프 규격 사용:
 	// 길이 FoundationSize.X / 1단) — 에디터 프리뷰(OnConstruction)와 기존 고정 램프 경로 회귀 0.

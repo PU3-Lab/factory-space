@@ -105,21 +105,39 @@ FOJJFoundationFitResult AOJJ_RampFoundation::OJJ_ComputeHoverFootprint(const AOJ
 	const bool bNegIsLow = ZNeg <= ZPos;
 	Result.RiseSteps = FMath::RoundToInt(FMath::Abs(ZPos - ZNeg) / AOJJ_Grid::OJJ_FoundationSnapStep);
 	Result.EffectiveRotationSteps = bAxisX ? (bNegIsLow ? 0 : 2) : (bNegIsLow ? 1 : 3);
-	Result.DirectionSource = FString::Printf(TEXT("방향 자동(이웃 낮→높) — 틈 %d칸, Δ%d단"),
-		GapLength, Result.RiseSteps);
 
-	// 행간 계단 ≤ 45uu 검증(계획 §1): 틈의 D−1 구간이 k×100을 분담 — 미달이면 빨강 + 최소 칸수 사유(㊂).
+	// 행간 계단 검증(F3.7' 개정): 한계 = MaxRampStepPerRow 프로퍼티(보행 기준 45 고정에서 완화 —
+	// 짧은 틈 급경사 수용). 틈의 D−1 구간이 k×100을 분담, 미달이면 빨강 + 최소 칸수 사유(㊂).
+	// Δ1단 1칸은 산식상 불능(단일 행이 양 끝 동시 정합 불가) — RequiredIntervals ≥ 1이 자동 거부.
+	const float StepLimit = FMath::Max(1.0f, MaxRampStepPerRow);
 	if (Result.RiseSteps >= 1)
 	{
-		const int32 RequiredIntervals =
-			(Result.RiseSteps * (int32)AOJJ_Grid::OJJ_FoundationSnapStep + (int32)OJJ_MaxAutoFitStepPerRow - 1)
-			/ (int32)OJJ_MaxAutoFitStepPerRow;
+		const int32 RequiredIntervals = FMath::CeilToInt(
+			Result.RiseSteps * AOJJ_Grid::OJJ_FoundationSnapStep / StepLimit - KINDA_SMALL_NUMBER);
 		if (GapLength - 1 < RequiredIntervals)
 		{
 			Result.bValid = false;
 			Result.FailReason = FString::Printf(TEXT("틈 %d칸 < 최소 %d칸(Δ%d단, 행간 계단 ≤ %.0fuu)"),
-				GapLength, RequiredIntervals + 1, Result.RiseSteps, OJJ_MaxAutoFitStepPerRow);
+				GapLength, RequiredIntervals + 1, Result.RiseSteps, StepLimit);
 		}
+	}
+
+	// 방향 출처(㊁) + 보행 가능 여부(F3.7' 개정 — 거부 대신 경고: 플레이어가 알고 깔게).
+	if (Result.RiseSteps >= 1 && GapLength >= 2)
+	{
+		const float StepPerRow =
+			Result.RiseSteps * AOJJ_Grid::OJJ_FoundationSnapStep / (float)(GapLength - 1);
+		Result.DirectionSource = FString::Printf(
+			TEXT("방향 자동(이웃 낮→높) — 틈 %d칸, Δ%d단, 행당 %.0fuu (%s)"),
+			GapLength, Result.RiseSteps, StepPerRow,
+			StepPerRow <= OJJ_WalkableStepPerRow + KINDA_SMALL_NUMBER
+				? TEXT("보행 가능")
+				: TEXT("보행 불가 — 컨베이어 전용"));
+	}
+	else
+	{
+		Result.DirectionSource = FString::Printf(TEXT("방향 자동(이웃 낮→높) — 틈 %d칸, Δ%d단"),
+			GapLength, Result.RiseSteps);
 	}
 	return Result;
 }
