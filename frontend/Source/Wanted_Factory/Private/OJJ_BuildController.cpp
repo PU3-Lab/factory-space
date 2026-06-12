@@ -325,30 +325,40 @@ void AOJJ_BuildController::RotateHoverClockwise()
 	UpdateMouseHover();
 }
 
-void AOJJ_BuildController::ToggleFoundationKind()
+void AOJJ_BuildController::OJJ_SelectFoundationKind(bool bSelectRamp)
 {
-	// Foundation 모드 전용(F3-2.5) — 머신/컨베이어 등 다른 모드 비간섭(T키가 눌려도 no-op).
-	if (!bIsBuildMode || PlacementMode != EOJJ_BuildPlacementMode::Foundation)
-	{
-		return;
-	}
-
-	// 램프 미지정이면 전환 거부 — 사용처(호버/배치)의 silent 폴백보다 전환 시점 1회 경고가 명확.
-	if (!bRampFoundationSelected && !RampFoundationClass)
+	// F3.7' 키 개편(G=평판/H=램프 직행 — F3-2.5 T 토글 대체). 빌드모드 밖 호출은 기존 모드 키들과
+	// 동일하게 무해(호버/클릭이 bIsBuildMode 게이트, EnterBuildMode가 종류를 평판으로 리셋 — 회전 정책).
+	// 램프 미지정이면 선택 거부 — 사용처(호버/배치)의 silent 폴백보다 선택 시점 1회 경고가 명확.
+	if (bSelectRamp && !RampFoundationClass)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[BuildController] RampFoundationClass 미지정 — Foundation 종류 전환 무시(평판 유지)"));
+			TEXT("[BuildController] RampFoundationClass 미지정 — 램프 모드 선택 무시"));
 		return;
 	}
 
-	bRampFoundationSelected = !bRampFoundationSelected;
+	const bool bKindChanged = (bRampFoundationSelected != bSelectRamp);
+	bRampFoundationSelected = bSelectRamp;
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation: %s"),
 		bRampFoundationSelected ? TEXT("Ramp") : TEXT("Flat"));
 
+	// Foundation 모드 밖이면 진입까지(직행 키 의미) — SetPlacementMode가 sentinel 리셋 + 호버
+	// 강제 갱신을 수행하므로 별도 처리 불필요.
+	if (PlacementMode != EOJJ_BuildPlacementMode::Foundation)
+	{
+		SetPlacementMode(EOJJ_BuildPlacementMode::Foundation);
+		return;
+	}
+
+	if (!bKindChanged)
+	{
+		return; // 같은 종류 재선택 — 호버 변화 없음.
+	}
+
 	// 종류가 바뀌면 CDO 풋프린트(평판 8×8 vs 램프 비정사각)가 달라짐 — 회전(RotateHoverClockwise)과
-	// 동일하게 sentinel 리셋 후 강제 갱신. 단 커서가 유효 표면 밖이면 UpdateMouseHover의 Foundation
-	// 분기가 리빌드 없이 끝날 수 있으므로, 이전 종류 타일 잔존 금지를 위해 먼저 명시적으로 클리어
-	// (유효 표면 위라면 OJJ_UpdateFoundationHoverPreview가 어차피 클리어 후 재적재 — 이중 클리어 무해).
+	// 동일하게 sentinel 리셋 후 강제 갱신(F3-2.5 T 로직 재사용). 단 커서가 유효 표면 밖이면
+	// UpdateMouseHover의 Foundation 분기가 리빌드 없이 끝날 수 있으므로, 이전 종류 타일 잔존 금지를
+	// 위해 먼저 명시적으로 클리어(유효 표면 위라면 프리뷰 함수가 어차피 클리어 후 재적재 — 이중 무해).
 	if (TargetGrid)
 	{
 		TargetGrid->ClearHoverPreview();
@@ -936,7 +946,7 @@ void AOJJ_BuildController::OnLeftClickPressed()
 TSubclassOf<AOJJ_Foundation> AOJJ_BuildController::GetActiveFoundationClass() const
 {
 	// F3-2.5: 종류 상태에 따라 평판/램프 선택. 램프 선택 상태인데 클래스가 비어 있는 경우는
-	// ToggleFoundationKind 게이트가 차단하므로 정상 흐름에선 도달 불가 — 그래도 null이면
+	// OJJ_SelectFoundationKind 게이트가 차단하므로 정상 흐름에선 도달 불가 — 그래도 null이면
 	// 사용처(호버/배치)의 기존 null 가드가 동작한다.
 	return bRampFoundationSelected ? RampFoundationClass : FlatFoundationClass;
 }

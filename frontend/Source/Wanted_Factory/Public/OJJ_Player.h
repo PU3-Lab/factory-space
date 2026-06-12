@@ -284,11 +284,12 @@ protected:
 	void SetWarehouseMode(const FInputActionValue& Value);
 	void SetDemolishMode(const FInputActionValue& Value);
 
-	// Foundation(기초) 모드 진입(G키 — M/J/I와 같은 BindKey 직접 바인딩이라 무인자. 정식 IA 전환은 백로그).
+	// 평판 Foundation 모드 직행(G키 — M/J/I와 같은 BindKey 직접 바인딩이라 무인자).
+	// F3.7' 키 개편: G=평판/H=램프 직행(F3-2.5 T 토글 대체). 정식 IA 전환 백로그에 G/H 함께 기록.
 	void SetFoundationMode();
 
-	// Foundation 종류 전환(T키 — F3-2.5, 평판↔램프. G키와 같은 BindKey 임시, 정식 IA 전환은 백로그).
-	void ToggleFoundationKind();
+	// 램프 Foundation 모드 직행(H키 — F3.7' 키 개편, G와 같은 BindKey 임시. 정식 IA 백로그 G/H 쌍).
+	void SetRampFoundationMode();
 
 	// 스프린트 — Started=달리기 속도, Completed=걷기 속도로 복귀.
 	void StartSprint(const FInputActionValue& Value);

@@ -132,7 +132,7 @@ protected:
 	TSubclassOf<AOJJ_Foundation> FlatFoundationClass;
 
 	// Foundation 모드에서 배치할 램프 클래스(F3-2.5 — AOJJ_RampFoundation 또는 파생 BP).
-	// 미지정이면 종류 전환(ToggleFoundationKind)이 거부되고 평판만 사용 가능.
+	// 미지정이면 램프 선택(OJJ_SelectFoundationKind)이 거부되고 평판만 사용 가능.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
 	TSubclassOf<AOJJ_Foundation> RampFoundationClass;
 
@@ -230,10 +230,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void RotateHoverClockwise();
 
-	// Foundation 종류 전환(F3-2.5): 평판 ↔ 램프. 빌드모드 + Foundation 모드에서만 동작 —
-	// 플레이어 T키(임시 BindKey)가 위임. 전환 즉시 호버 강제 갱신(CDO 풋프린트 차이 반영).
+	// Foundation 종류 직행 선택(F3.7' 키 개편: G=평판/H=램프 — F3-2.5 T 토글 대체, 상태 기억이
+	// 필요 없는 직행 키). Foundation 모드가 아니면 진입까지 수행. 종류 변경 시 호버 즉시 갱신
+	// (CDO 풋프린트 차이 반영 + 이전 종류 타일 잔존 금지). 램프 미지정 시 선택 거부 + 경고.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
-	void ToggleFoundationKind();
+	void OJJ_SelectFoundationKind(bool bSelectRamp);
 
 private:
 	// cursor cell → lower-left origin 변환. 마우스 = 풋프린트 중심 정책.
