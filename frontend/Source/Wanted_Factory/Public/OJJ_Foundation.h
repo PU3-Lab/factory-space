@@ -81,6 +81,12 @@ public:
 	// 베이스 no-op(평판 비주얼은 FoundationSize로 충분 — 회귀 0).
 	virtual void OJJ_NotifyFitResult(const FOJJFoundationFitResult& Fit) {}
 
+	// 비주얼 면 Z 조회(F3.8'' — 면이 장부와 다른 클래스용). false = 면=장부(평판 — 호출자가 장부
+	// SurfaceZ 사용). 램프가 override해 쐐기 빗변 보간 Z 반환. **경계: 장부(FoundationCells의 셀별
+	// SurfaceZ = 셀 계단)는 배치 검증/걸침/걷기의 진실원으로 무변경 — 이 훅은 벨트 비주얼 Z 전용
+	// 소비("데이터=계단, 면·벨트=빗변").**
+	virtual bool OJJ_GetVisualSurfaceZAtWorld(const FVector& WorldPos, float& OutZ) const { return false; }
+
 	// 셀별 SurfaceZ 산식 훅(F3-2, 결정 ㉲ — 산식은 클래스 책임). false = 평탄(전 셀 동일 — 단일값 등록
 	// 경로 사용, 배열 미생성). 램프 등 비평탄 파생이 override해 EffSize×회전 기준 배열을 채우면
 	// 컨트롤러가 OJJ_TryPlaceFoundationPerCell로 등록(그리드가 불변식 검증).

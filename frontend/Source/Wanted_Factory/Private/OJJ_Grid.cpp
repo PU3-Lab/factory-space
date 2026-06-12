@@ -2655,6 +2655,36 @@ bool AOJJ_Grid::OJJ_TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint
 		if (OJJ_ValidateConveyorSlopePath(this, FinalPathCells, CellZs, UnusedSlopeReason)
 			&& CellZs.Num() > 0)
 		{
+			// F3.8'' 벨트 Z 경계: 장부(FoundationCells.SurfaceZ — 셀 계단)는 배치 검증/걸침/걷기의
+			// 진실원으로 **무변경**. 벨트 비주얼 Z만 면(램프 빗변 — OJJ_GetVisualSurfaceZAtWorld
+			// 가상 훅, 쐐기 꼭짓점과 수식 단일원)을 소비해 세그먼트·아이템의 반행 편차(면=연속,
+			// 장부=계단)를 제거. 평판/끝 셀(머신 포트 — 평판 위)은 훅이 false라 장부값 그대로
+			// (평면 경로는 이 분기 자체에 비진입 — 회귀 0, 포트 Z 정합 유지).
+			// 끝 셀(첫/마지막 = 머신 포트 셀)은 면 치환 제외(Codex F3.8'' ③): BaseZ 앵커(첫 셀)와
+			// 포트 Z 정합은 장부 기준이 최우선 — 머신이 램프 끝 행 위에 있는 엣지에서도 앵커 불변.
+			float MaxFaceCorrection = 0.0f;
+			for (int32 Index = 1; Index + 1 < FinalPathCells.Num(); ++Index)
+			{
+				const FOJJFoundationCellInfo* CellInfo = FoundationCells.Find(FinalPathCells[Index]);
+				const AOJJ_Foundation* CellFoundation = CellInfo
+					? Cast<AOJJ_Foundation>(CellInfo->Foundation.Get())
+					: nullptr;
+				float FaceZ = 0.0f;
+				if (CellFoundation
+					&& CellFoundation->OJJ_GetVisualSurfaceZAtWorld(GridToWorld(FinalPathCells[Index]), FaceZ))
+				{
+					// [계측 ConvDebug — F3.8'' 수정 검증용, 편차 0 확인 후 제거] 장부(계단)→면(빗변) 보정.
+					UE_LOG(LogTemp, Log, TEXT("[ConvDebug] 셀(%d,%d): 장부 %.1f → 면 %.1f (보정 %+.1f)"),
+						FinalPathCells[Index].X, FinalPathCells[Index].Y,
+						CellZs[Index], FaceZ, FaceZ - CellZs[Index]);
+					MaxFaceCorrection = FMath::Max(MaxFaceCorrection, FMath::Abs(FaceZ - CellZs[Index]));
+					CellZs[Index] = FaceZ;
+				}
+			}
+			UE_LOG(LogTemp, Log,
+				TEXT("[ConvDebug] 경사 경로 %d셀 — 면 보정 max %.1fuu (주입=면: 세그먼트·아이템 Z ≡ 빗변)"),
+				FinalPathCells.Num(), MaxFaceCorrection);
+
 			const float BaseZ = CellZs[0];
 			for (float& CellZ : CellZs)
 			{

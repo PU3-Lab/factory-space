@@ -320,6 +320,44 @@ void AOJJ_RampFoundation::UpdateSlabVisual()
 	}
 }
 
+FVector AOJJ_RampFoundation::OJJ_ClimbDirForStep(int32 RotationSteps)
+{
+	// 등록 r-switch(OJJ_BuildPerCellSurfaceZ)와 동일 규약 — 쐐기 꼭짓점/빗변 Z 조회의 방향 단일원.
+	switch (((RotationSteps % 4) + 4) % 4)
+	{
+	default:
+	case 0: return FVector(1.0f, 0.0f, 0.0f);
+	case 1: return FVector(0.0f, 1.0f, 0.0f);
+	case 2: return FVector(-1.0f, 0.0f, 0.0f);
+	case 3: return FVector(0.0f, -1.0f, 0.0f);
+	}
+}
+
+bool AOJJ_RampFoundation::OJJ_GetVisualSurfaceZAtWorld(const FVector& WorldPos, float& OutZ) const
+{
+	// F3.8'' 벨트 반행 편차 해소: 면(쐐기 빗변)의 보간 Z — 쐐기 꼭짓점 산식과 동일 수식·프레임
+	// (칼끝 d=0 → T, 높은 끝 d=L → T+Rise). 장부(셀 계단)는 무변경 — "데이터=계단, 면·벨트=빗변".
+	const int32 R = FMath::Max(1, PlacedClimbLengthCells > 0 ? PlacedClimbLengthCells : FoundationSize.X);
+	const int32 Rise = PlacedClimbLengthCells > 0 ? PlacedRiseSteps : 1;
+	if (Rise < 1)
+	{
+		return false; // 평지 브리지 — 면=장부(평탄), 보정 불필요.
+	}
+	const float CellSize = OJJ_ResolveCellSize();
+	const float L = R * CellSize;
+	if (L <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+	const FVector ClimbDir = OJJ_ClimbDirForStep(PlacedRotationSteps);
+	const FVector ToPos = WorldPos - GetActorLocation(); // 액터 = 풋프린트 중심(쐐기와 동일 기준)
+	const float Alpha = FMath::Clamp(
+		(ClimbDir.X * ToPos.X + ClimbDir.Y * ToPos.Y + L * 0.5f) / L, 0.0f, 1.0f);
+	OutZ = GetActorLocation().Z + FMath::Max(1.0f, Thickness)
+		+ Alpha * Rise * AOJJ_Grid::OJJ_FoundationSnapStep;
+	return true;
+}
+
 void AOJJ_RampFoundation::OJJ_DumpPlacementDebug(const AOJJ_Grid& Grid, FIntPoint Origin, FIntPoint EffSize) const
 {
 	const int32 Step = ((PlacedRotationSteps % 4) + 4) % 4;
@@ -434,14 +472,8 @@ bool AOJJ_RampFoundation::OJJ_BuildWedgeVisual(int32 ClimbCells, int32 WidthCell
 	// 상면 엣지, 수직 끝면 상단(Z=T+Rise) = 윗단 상면. 빗변은 연속 경사 — 등록 데이터는 셀당
 	// 계단(㉰)이라 셀 중심 기준 최대 반행 시각 편차는 비주얼 근사로 수용.
 	const int32 Step = ((RotationSteps % 4) + 4) % 4;
-	FVector ClimbDir(1.0f, 0.0f, 0.0f); // 월드 오르막(낮은 끝 → 높은 끝) — 등록 r-switch와 동일 규약.
-	switch (Step)
-	{
-	case 0: ClimbDir = FVector(1.0f, 0.0f, 0.0f); break;
-	case 1: ClimbDir = FVector(0.0f, 1.0f, 0.0f); break;
-	case 2: ClimbDir = FVector(-1.0f, 0.0f, 0.0f); break;
-	case 3: ClimbDir = FVector(0.0f, -1.0f, 0.0f); break;
-	}
+	// 월드 오르막(낮은 끝 → 높은 끝) — 방향 단일원(OJJ_ClimbDirForStep: 등록 r-switch·빗변 Z 조회 공유).
+	const FVector ClimbDir = OJJ_ClimbDirForStep(Step);
 	// 폭 축 = Up×ClimbDir(step별 +Y/−X/−Y/+X): 위치는 ±Side 대칭이라 부호 무관이지만 **와인딩은
 	// 라벨 순서에 의존** — ClimbDir×SideDir=+Z가 전 step에서 유지돼야 면 조립(K0=−Side, K1=+Side)의
 	// 전면 방향이 보존된다(패리티만 쓰면 step 1·2에서 반전 — Codex F3.8' ④ BUG 수정).

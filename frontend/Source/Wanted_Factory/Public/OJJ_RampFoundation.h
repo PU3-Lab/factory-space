@@ -41,6 +41,10 @@ public:
 	// 배치 확정 풋프린트 저장(F3.6-1) — 자동 맞춤의 동적 길이/상승 단수를 계단 비주얼이 쓰도록.
 	virtual void OJJ_NotifyFitResult(const FOJJFoundationFitResult& Fit) override;
 
+	// 쐐기 빗변 면의 보간 Z(F3.8'' — 벨트 반행 편차 해소): 쐐기 꼭짓점과 같은 프레임/수식
+	// (OJJ_ClimbDirForStep + L/Rise/Thickness — 단일원). 평지 브리지(Rise 0)는 false(면=장부 평탄).
+	virtual bool OJJ_GetVisualSurfaceZAtWorld(const FVector& WorldPos, float& OutZ) const override;
+
 	// [계측 — F3.8' 수직 어긋남 확정용] 배치 직후 1회 덤프: [데이터] 장부 등록 낮은/높은 셀 SurfaceZ
 	// / [기대] 그리드 독립 산출(배치 수식+장부)의 칼끝·상단 월드 좌표 / [실제] ProcMesh 꼭짓점의
 	// 월드 변환 실측 / [정답지] 계단 박스 수식이 산출하는 행0·행R−1 상면 월드 좌표 + ΔZ 요약.
@@ -96,6 +100,10 @@ protected:
 	// (쐐기는 볼록체 — complex-as-simple 비사용), 채널은 계단 ISM 프로파일 미러.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Foundation")
 	TObjectPtr<UProceduralMeshComponent> WedgeMesh;
+
+	// 오르막 월드 방향 단일원(F3.8''): 등록 r-switch와 동일 규약(0:+X/1:+Y/2:−X/3:−Y) —
+	// 쐐기 꼭짓점(OJJ_BuildWedgeVisual)과 빗변 Z 조회(OJJ_GetVisualSurfaceZAtWorld)가 이 한 곳을 공유.
+	static FVector OJJ_ClimbDirForStep(int32 RotationSteps);
 
 	// 쐐기 메시 생성 — 꼭짓점 6(칼끝 2 + 높은 끝 바닥 2 + 높은 끝 상단 2), 면 5(빗변 상면/바닥/
 	// 수직 끝면/옆면 2). 양 끝 정합: 칼끝 = 아랫단 상면 엣지(Z=Thickness), 수직 끝면 상단 = 윗단
