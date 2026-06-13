@@ -8,7 +8,7 @@
 
 namespace
 {
-	const FName LiquidFormName(TEXT("liquid"));
+	const FName HydroLiquidFormName(TEXT("liquid"));
 }
 
 AHydroPowerPlant::AHydroPowerPlant()
@@ -80,7 +80,7 @@ AResourceBase* AHydroPowerPlant::FindAdjacentWater(const AOJJ_Grid* Grid, FIntPo
 			Visited.Add(Neighbor);
 
 			AResourceBase* Resource = Cast<AResourceBase>(Grid->GetActorAtCell(Neighbor));
-			if (Resource && Resource->HasForm(LiquidFormName))
+			if (Resource && Resource->HasForm(HydroLiquidFormName))
 			{
 				return Resource;
 			}
