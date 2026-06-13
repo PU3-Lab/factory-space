@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import String, cast, or_, select
+from sqlalchemy import String, case, cast, or_, select
 from sqlalchemy.orm import Session
 
 from db.models import GeneratedExperimentModel, GeneratedMaterialModel
@@ -31,8 +31,6 @@ class ExperimentSimilarityService:
             cast(GeneratedExperimentModel.inputs_json, String).like(f'%"{item_id}"%')
             for item_id in input_item_ids
         ]
-
-        from sqlalchemy import case
 
         overlap_score = sum(
             case(

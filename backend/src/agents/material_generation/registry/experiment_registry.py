@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from db.models import GeneratedExperimentModel
@@ -31,8 +32,6 @@ class ExperimentRegistryService:
         experiment: GeneratedExperimentModel,
     ) -> None:
         """Insert or merge an experiment record in the database."""
-        from sqlalchemy.exc import IntegrityError
-
         nested = session.begin_nested()
         try:
             session.add(experiment)

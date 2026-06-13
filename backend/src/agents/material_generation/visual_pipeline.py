@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from db.engine import get_db_session
 from db.models import GeneratedMaterialModel
@@ -15,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 class VisualAssetPipeline:
     """Synchronous background processing for texturing and rendering material assets."""
+
+    session_factory: Callable[[], Session] | None = None
 
     @classmethod
     def process_visual_asset(
@@ -31,7 +35,8 @@ class VisualAssetPipeline:
         # Simulate processing delay
         time.sleep(2.0)
 
-        with get_db_session() as session:
+        factory = cls.session_factory or get_db_session
+        with factory() as session:
             try:
                 # Query the material model to update its asset keys
                 stmt = select(GeneratedMaterialModel).where(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from db.models import GeneratedMaterialDiscoveryModel, GeneratedMaterialModel
@@ -31,8 +32,6 @@ class MaterialRegistryService:
         material: GeneratedMaterialModel,
     ) -> None:
         """Save a new material profile to the database."""
-        from sqlalchemy.exc import IntegrityError
-
         nested = session.begin_nested()
         try:
             session.add(material)

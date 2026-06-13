@@ -7,8 +7,11 @@ from collections.abc import Iterator
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
+from agents.material_generation.events import MaterialEventPublisher
 from agents.material_generation.recipe_repository import RecipeRepository
+from agents.material_generation.visual_pipeline import VisualAssetPipeline
 from db.models import (
     GeneratedExperimentModel,
     GeneratedMaterialDiscoveryModel,
@@ -20,7 +23,13 @@ from db.models import (
 @pytest.fixture
 def db_session() -> Iterator[Session]:
     """Provide an in-memory SQLite session prepopulated with basic test recipes."""
-    engine = create_engine("sqlite:///:memory:", echo=False)
+    MaterialEventPublisher.reset_executor(wait=False)
+    engine = create_engine(
+        "sqlite:///:memory:",
+        echo=False,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
 
     # Create tables synchronously
     RecipeModel.__table__.create(engine)
@@ -29,6 +38,8 @@ def db_session() -> Iterator[Session]:
     GeneratedMaterialDiscoveryModel.__table__.create(engine)
 
     session_factory = sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
+
+    VisualAssetPipeline.session_factory = session_factory
 
     session = session_factory()
     # Authored sample recipes matching actual data
@@ -61,4 +72,9 @@ def db_session() -> Iterator[Session]:
     yield session
 
     session.close()
+
+    # Wait for background jobs to finish within the testing session lifecycle
+    MaterialEventPublisher.wait_for_jobs()
+    VisualAssetPipeline.session_factory = None
+
     engine.dispose()

@@ -11,6 +11,8 @@ from langgraph.graph.state import CompiledStateGraph
 from pydantic import ValidationError
 
 from agents.base import AgentContext
+from agents.material_generation.agent import MaterialCreationAgent
+from agents.material_generation.schemas import MaterialCreationRequest
 from agents.operator_guide.agent import (
     OPERATOR_GUIDE_LEAF_AGENT_IDS,
     OperatorGuideAgent,
@@ -42,6 +44,7 @@ from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS, QuestGeneratorAgen
 from agents.quest_generator.tools import PRODUCTION_QUEST_SELECTION_TOOL_NAME
 from agents.router import AgentRouter, UnknownAgentError, create_default_agent_router
 from cache.response_cache import ResponseCache
+from db.engine import get_db_session
 from llm.adapter import LLMAdapter, create_llm_adapter
 from llm.settings import LLMModelSlot, LLMSettings
 from protocol.errors import build_error_payload
@@ -223,8 +226,6 @@ class AgentPipeline:
                 }
 
             try:
-                from agents.material_generation.schemas import MaterialCreationRequest
-
                 envelope = state["envelope"]
                 req_data = {
                     "machine_type": payload.get("machine_type"),
@@ -241,10 +242,6 @@ class AgentPipeline:
                         f"Request payload validation failed: {exc}",
                     )
                 }
-
-            from agents.material_generation.agent import MaterialCreationAgent
-            from db.engine import get_db_session
-
             agent = MaterialCreationAgent()
             try:
                 with get_db_session() as db:

@@ -1,6 +1,8 @@
 # 신물질 생성 Agent 작업 계획서
 
 > 기획서: [docs/01_planning/material_generation_agent.md](../01_planning/material_generation_agent.md)
+>
+> 현재 구현 구조: [docs/03_architecture/material_generation_current_structure.md](../03_architecture/material_generation_current_structure.md)
 > 작성일: 2026-06-12
 > 대상 범위: 기획서 §16 MVP 범위
 

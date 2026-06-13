@@ -14,8 +14,8 @@ backend_root = Path(__file__).resolve().parents[1]
 if str(backend_root) not in sys.path:
     sys.path.insert(0, str(backend_root))
 
-from db.engine import get_db_session
-from db.models import RecipeModel
+from db.engine import get_db_session  # noqa: E402
+from db.models import RecipeModel  # noqa: E402
 
 CSV_PATH = (
     backend_root.parent
