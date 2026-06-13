@@ -237,6 +237,10 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	{
 		EnhancedInput->BindAction(IA_SetPipeMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPipeMode);
 	}
+	if (IA_SetTankMode)
+	{
+		EnhancedInput->BindAction(IA_SetTankMode, ETriggerEvent::Started, this, &AOJJ_Player::SetTankMode);
+	}
 	if (IA_SetPowerNodeMode)
 	{
 		EnhancedInput->BindAction(IA_SetPowerNodeMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerNodeMode);
@@ -561,6 +565,16 @@ void AOJJ_Player::SetPipeMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pipe);
+}
+
+// 물탱크 모드 직행(K키 — F4-4, IA 경로). 파이프 핸들러 미러 — 콘솔 OJJ_SetBuildMode tank와 동일 위임.
+void AOJJ_Player::SetTankMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::LiquidTank);
 }
 
 void AOJJ_Player::OJJ_SetBuildMode(const FString& ModeName)
