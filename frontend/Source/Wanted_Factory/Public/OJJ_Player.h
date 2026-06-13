@@ -166,6 +166,16 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_SetConveyorMode;
 
+	// 파이프 모드(F4-1 — 펌프→물탱크 액체 라인, 컨베이어와 드래그 공용). IMC_Build 매핑/에셋 연결은
+	// 에디터 작업(BP 후속 — IA 미지정 시 키 진입 불가, SetPlacementMode(Pipe) BP 직접 호출은 가능).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetPipeMode;
+
+	// 물탱크 모드(F4-4 — K키). IA_SetPipeMode 미러. IMC_Build의 K 매핑/에셋 연결은 에디터 작업
+	// (IA 미지정 시 키 진입 불가 — 콘솔 OJJ_SetBuildMode tank는 계속 동작).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetTankMode;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_SetPowerNodeMode;
 
@@ -273,6 +283,16 @@ protected:
 	// 배치 모드 전환 — BuildController->SetPlacementMode로 위임.
 	void SetMachineMode(const FInputActionValue& Value);
 	void SetConveyorMode(const FInputActionValue& Value);
+	void SetPipeMode(const FInputActionValue& Value);
+	void SetTankMode(const FInputActionValue& Value);
+
+public:
+	// [임시 진입로 — F4-1'] PIE 콘솔용 배치 모드 전환(예: `OJJ_SetBuildMode pipe`). IA 에셋/UI 슬롯이
+	// 없는 신규 모드(pipe/tank)의 검증 진입로 — 정식 키/UI 와이어링(BP·UI 소유자 안건) 후 제거 후보.
+	UFUNCTION(Exec)
+	void OJJ_SetBuildMode(const FString& ModeName);
+
+protected:
 	void SetPowerNodeMode(const FInputActionValue& Value);
 	void SetShieldMode(const FInputActionValue& Value);
 	void SetPowerLineMode(const FInputActionValue& Value);

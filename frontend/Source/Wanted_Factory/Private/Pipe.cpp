@@ -15,7 +15,17 @@
 
 namespace
 {
-	constexpr float BasicCylinderHeight = 200.0f;
+	// 엔진 기본 메시(실린더/구)의 실제 치수를 런타임 측정 — 하드코딩 제거(PowerLine::UpdateLineSegment 패턴).
+	// 반환값 = 풀스케일 박스 크기(2×BoxExtent), 각 축 0 나눗셈 방지 클램프 적용.
+	FVector OJJ_MeshBoxSize(const UInstancedStaticMeshComponent* ISM)
+	{
+		const UStaticMesh* Mesh = ISM ? ISM->GetStaticMesh() : nullptr;
+		const FVector Size = Mesh ? Mesh->GetBounds().BoxExtent * 2.0f : FVector(100.0f);
+		return FVector(
+			FMath::Max(Size.X, KINDA_SMALL_NUMBER),
+			FMath::Max(Size.Y, KINDA_SMALL_NUMBER),
+			FMath::Max(Size.Z, KINDA_SMALL_NUMBER));
+	}
 }
 
 APipe::APipe()
@@ -25,9 +35,27 @@ APipe::APipe()
 	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
 
+	// 튜브 충돌 — 플레이어(Pawn) 걷기만 차단, 나머지 채널 전부 Ignore. 특히 커서 호버가 쓰는
+	// ECC_Visibility와 카메라 스프링암(ECC_Camera)을 Ignore해 빌드 호버 게이트/카메라에 무간섭.
+	// 인스턴스 단위 충돌이라 튜브 형상과 정확히 일치 → ㄷ자 상판 "아래"(인스턴스 없음)는 자동 무충돌
+	// (플레이어/컨베이어 통행로). 라이저(수직)·지상·상판 자체는 충돌. 컨베이어는 충돌 자체가 없어
+	// 미러 대상이 아님 — 파이프 전용 설계.
+	auto SetupTubeCollision = [](UInstancedStaticMeshComponent* ISM)
+	{
+		ISM->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		ISM->SetCollisionObjectType(ECC_WorldStatic);
+		ISM->SetCollisionResponseToAllChannels(ECR_Ignore);
+		ISM->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+		ISM->SetGenerateOverlapEvents(false);
+	};
+
 	SegmentInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("SegmentInstances"));
 	SegmentInstances->SetupAttachment(Root);
-	SegmentInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SetupTubeCollision(SegmentInstances);
+
+	JoinInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("JoinInstances"));
+	JoinInstances->SetupAttachment(Root);
+	SetupTubeCollision(JoinInstances);
 
 	LiquidVisualInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("LiquidVisualInstances"));
 	LiquidVisualInstances->SetupAttachment(Root);
@@ -48,11 +76,19 @@ APipe::APipe()
 		LiquidVisualInstances->SetStaticMesh(CylinderMesh.Object);
 	}
 
+	// 코너 조인트는 구 — 어떤 방향 전환각이든 반경 PipeRadius로 이음새를 덮음.
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	if (SphereMesh.Succeeded())
+	{
+		JoinInstances->SetStaticMesh(SphereMesh.Object);
+	}
+
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> MaterialAsset(
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	if (MaterialAsset.Succeeded())
 	{
 		SegmentInstances->SetMaterial(0, MaterialAsset.Object);
+		JoinInstances->SetMaterial(0, MaterialAsset.Object);
 		LiquidVisualInstances->SetMaterial(0, MaterialAsset.Object);
 	}
 
@@ -106,6 +142,14 @@ void APipe::SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize)
 	RebuildVisuals();
 	RefreshLiquidVisualInstances();
 	UpdateDebugStateText();
+}
+
+void APipe::OJJ_SetPathCellLocalZs(const TArray<float>& InCellLifts)
+{
+	// 1:1(PathCells와 동수)일 때만 적용 — 그 외(빈 배열/불일치)는 평면 fallback. 빈 배열 = 기존 동작 항등.
+	PathCellZs = (InCellLifts.Num() == PathCells.Num()) ? InCellLifts : TArray<float>();
+	RebuildVisuals();
+	RefreshLiquidVisualInstances();
 }
 
 void APipe::ConfigureTransport(
@@ -213,48 +257,111 @@ void APipe::RebuildVisuals()
 	}
 
 	SegmentInstances->ClearInstances();
+	if (JoinInstances)
+	{
+		JoinInstances->ClearInstances();
+	}
 	if (PathCells.Num() == 0)
 	{
 		return;
 	}
 
+	const float Diameter = FMath::Max(1.0f, PipeRadius * 2.0f);
 	const FVector Centroid = GetPathCentroidLocal();
-	const float UniformScale = FMath::Max(0.01f, SegmentRadiusScale);
-	if (PathCells.Num() == 1)
+
+	// PathCells + 셀별 lift(PathCellZs) → 3D 노드 폴리라인. lift가 0↔H로 바뀌는 경계 셀엔 같은 XY에
+	// base/top 2노드를 삽입해 수직 라이저(ㄷ자 다리)를 만든다. lift 균일(전부 0/빈 배열)이면 셀당 1노드(평면 항등).
+	auto CellLift = [this](int32 NodeIndex) -> float
 	{
-		const FIntPoint Cell = PathCells[0];
-		const FVector LocalLocation(
-			(Cell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
-			(Cell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
-			ZOffset);
-		const FVector SegmentScale(UniformScale, UniformScale, 0.5f);
-		SegmentInstances->AddInstance(FTransform(FRotator::ZeroRotator, LocalLocation, SegmentScale));
+		return PathCellZs.IsValidIndex(NodeIndex) ? PathCellZs[NodeIndex] : 0.0f;
+	};
+	const int32 NumCells = PathCells.Num();
+	TArray<FVector> Nodes;
+	Nodes.Reserve(NumCells + 4);
+	for (int32 Index = 0; Index < NumCells; ++Index)
+	{
+		const FIntPoint Cell = PathCells[Index];
+		const float LocalX = (Cell.X * CellSize) + (CellSize * 0.5f) - Centroid.X;
+		const float LocalY = (Cell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y;
+		const float Lift = CellLift(Index);
+		const float PrevLift = (Index > 0) ? CellLift(Index - 1) : Lift;
+		const float NextLift = (Index + 1 < NumCells) ? CellLift(Index + 1) : Lift;
+
+		if (Lift > PrevLift) // 상승 진입 — 이전 높이의 base 먼저(수직 라이저 up)
+		{
+			Nodes.Add(FVector(LocalX, LocalY, ZOffset + PrevLift));
+		}
+		Nodes.Add(FVector(LocalX, LocalY, ZOffset + Lift)); // 셀 주 노드(자기 높이)
+		if (Lift > NextLift) // 하강 이탈 — 다음 높이의 base 추가(수직 라이저 down)
+		{
+			Nodes.Add(FVector(LocalX, LocalY, ZOffset + NextLift));
+		}
+	}
+
+	// 끝 노드를 머신 포트 면까지 반 칸 연장 — 컨베이어가 셀당 풀셀 메시로 끝 셀을 꽉 채우는 것과 동일
+	// 커버리지. 파이프는 노드 중심 간 실린더라 끝 반 칸(중심→셀 경계)이 비어 머신에서 떠 보였음.
+	// 양 끝(펌프 출력 / 탱크 입력) 모두 끝 세그먼트 진행축으로 0.5칸 밀어 포트 면에 닿게 한다.
+	if (Nodes.Num() >= 2)
+	{
+		const float HalfCell = CellSize * 0.5f;
+		const FVector StartDir = (Nodes[1] - Nodes[0]).GetSafeNormal();
+		const FVector EndDir = (Nodes.Last() - Nodes[Nodes.Num() - 2]).GetSafeNormal();
+		Nodes[0] -= StartDir * HalfCell;          // 시작 노드 → 머신(경로 반대) 쪽으로
+		Nodes.Last() += EndDir * HalfCell;         // 끝 노드 → 머신(진행) 쪽으로
+	}
+
+	// 조인트 구 스케일 — 메시 실측 지름으로 환산해 균일 반경(=PipeRadius) 보장.
+	const FVector SphereMeshSize = JoinInstances ? OJJ_MeshBoxSize(JoinInstances) : FVector(100.0f);
+	const FVector SphereScale(
+		Diameter / SphereMeshSize.X,
+		Diameter / SphereMeshSize.Y,
+		Diameter / SphereMeshSize.Z);
+
+	// 단일 노드(퇴화 경로): 방향이 없으므로 조인트 구 하나로 마감.
+	if (Nodes.Num() == 1)
+	{
+		if (JoinInstances)
+		{
+			JoinInstances->AddInstance(FTransform(FRotator::ZeroRotator, Nodes[0], SphereScale));
+		}
 		return;
 	}
 
-	for (int32 Index = 0; Index + 1 < PathCells.Num(); ++Index)
+	// ① 세그먼트 — 노드쌍마다 실린더 1개. 수직 라이저(같은 XY, Z만 차이)도 FindBetweenNormals(Up,+Z)로
+	// 자연 수직 실린더가 됨. 길이/지름은 메시 실측 스케일.
+	const FVector CylinderMeshSize = OJJ_MeshBoxSize(SegmentInstances);
+	for (int32 Index = 0; Index + 1 < Nodes.Num(); ++Index)
 	{
-		const FIntPoint StartCell = PathCells[Index];
-		const FIntPoint EndCell = PathCells[Index + 1];
-		const FVector StartLocation(
-			(StartCell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
-			(StartCell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
-			ZOffset);
-		const FVector EndLocation(
-			(EndCell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
-			(EndCell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
-			ZOffset);
-		const FVector SegmentVector = EndLocation - StartLocation;
-		if (SegmentVector.IsNearlyZero())
+		const FVector SegmentVector = Nodes[Index + 1] - Nodes[Index];
+		const float SegmentLength = SegmentVector.Length();
+		if (SegmentLength <= KINDA_SMALL_NUMBER)
 		{
 			continue;
 		}
 
-		const FVector SegmentMidpoint = (StartLocation + EndLocation) * 0.5f;
-		const FQuat SegmentRotation = FQuat::FindBetweenNormals(FVector::UpVector, SegmentVector.GetSafeNormal());
-		const float SegmentLengthScale = SegmentVector.Length() / BasicCylinderHeight;
-		const FVector SegmentScale(UniformScale, UniformScale, FMath::Max(0.01f, SegmentLengthScale));
+		const FQuat SegmentRotation = FQuat::FindBetweenNormals(FVector::UpVector, SegmentVector / SegmentLength);
+		const FVector SegmentMidpoint = (Nodes[Index] + Nodes[Index + 1]) * 0.5f;
+		const FVector SegmentScale(
+			Diameter / CylinderMeshSize.X,
+			Diameter / CylinderMeshSize.Y,
+			SegmentLength / CylinderMeshSize.Z);
 		SegmentInstances->AddInstance(FTransform(SegmentRotation, SegmentMidpoint, SegmentScale));
+	}
+
+	// ② 코너 이음새 — 3D 방향 전환 노드에 조인트 구(ㄱ자 평면 코너 + ㄷ자 수직↔수평 4모서리 전부).
+	// 동축(방향 동일) 노드는 갭이 없으므로 생략(오버드로 최소화).
+	if (JoinInstances)
+	{
+		for (int32 Index = 1; Index + 1 < Nodes.Num(); ++Index)
+		{
+			const FVector PrevDir = (Nodes[Index] - Nodes[Index - 1]).GetSafeNormal();
+			const FVector NextDir = (Nodes[Index + 1] - Nodes[Index]).GetSafeNormal();
+			if (PrevDir.Equals(NextDir, KINDA_SMALL_NUMBER))
+			{
+				continue;
+			}
+			JoinInstances->AddInstance(FTransform(FRotator::ZeroRotator, Nodes[Index], SphereScale));
+		}
 	}
 }
 
@@ -467,8 +574,11 @@ FVector APipe::GetPathCentroidLocal() const
 FVector APipe::GetCellLocalCenter(FIntPoint Cell) const
 {
 	const FVector Centroid = GetPathCentroidLocal();
+	// F4-3: 액체 비주얼도 노드 lift를 따라 오르게 — 셀의 경로 인덱스로 PathCellZs 조회(없으면 0=평면).
+	const int32 NodeIndex = PathCells.IndexOfByKey(Cell);
+	const float Lift = PathCellZs.IsValidIndex(NodeIndex) ? PathCellZs[NodeIndex] : 0.0f;
 	return FVector(
 		(Cell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
 		(Cell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
-		ZOffset);
+		ZOffset + Lift);
 }
