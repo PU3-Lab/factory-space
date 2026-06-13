@@ -2148,9 +2148,12 @@ bool AOJJ_Grid::OJJ_ValidatePipePlacement(const TArray<FIntPoint>& PathCells,
 	// ② ㉤ 액체 끝점 사전 게이트 — 잘못 깐 라인의 침묵 유휴(런타임 IsLiquidItem 필터만)를 배치 시점
 	// 빨강+사유로 조기 노출. 문자열 비교는 OJJ_IsExtractionMachine과 동일한 잠정 방식(TODO 동률 —
 	// SSR 협의로 가상 predicate 전환 시 함께 교체).
-	if (OutSourceMachine->GetMachineType() != TEXT("Pump"))
+	const FName SourceMachineType = OutSourceMachine->GetMachineType();
+	const bool bIsLiquidOutputMachine =
+		SourceMachineType == TEXT("Pump") || SourceMachineType == TEXT("LiquidTank");
+	if (!bIsLiquidOutputMachine)
 	{
-		OutReason = TEXT("Pipe must start from a liquid output machine (Pump).");
+		OutReason = TEXT("Pipe must start from a liquid output machine (Pump or LiquidTank).");
 		return false;
 	}
 	if (OutTargetMachine->GetMachineType() != TEXT("LiquidTank"))

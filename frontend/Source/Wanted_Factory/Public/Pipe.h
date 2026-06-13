@@ -7,6 +7,8 @@
 class AMachineBase;
 class UDataTable;
 class UInstancedStaticMeshComponent;
+class UMaterialInstanceDynamic;
+class UMaterialInterface;
 class USceneComponent;
 class UTextRenderComponent;
 
@@ -66,7 +68,7 @@ protected:
 	float CellSize = 100.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
-	float ZOffset = 20.0f;
+	float ZOffset = 50.0f;
 
 	// 파이프 반경(월드 uu). 지름 = 2×PipeRadius (기본 60 = PIE 실측 확정). 메시 실측 치수로 환산하므로
 	// 엔진 기본 실린더/구의 절대 크기와 무관 — 메시를 바꿔도 반경이 유지됨. 직선/코너/라이저 전부 추종.
@@ -78,6 +80,24 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
 	float LiquidVisualZOffset = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Material")
+	TObjectPtr<UMaterialInterface> PipeMaterialBase;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Material")
+	TObjectPtr<UMaterialInterface> EmptyPipeMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Material")
+	TObjectPtr<UMaterialInterface> FilledPipeMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Material")
+	FLinearColor EmptyPipeColor = FLinearColor(0.85f, 0.95f, 1.0f, 0.12f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Material")
+	FLinearColor FilledPipeColor = FLinearColor(0.2f, 0.7f, 1.0f, 0.45f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Material", meta = (ClampMin = "0.0"))
+	float FilledPipeEmissiveStrength = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Flow", meta = (ClampMin = "0.01"))
 	float SecondsPerSegment = 1.0f;
@@ -168,8 +188,20 @@ private:
 	void MoveLiquidsOneSegment();
 	void RefreshLiquidVisualInstances();
 	void UpdateDebugTextFacingPlayer();
+	void UpdateMaterialState();
 	bool TryPullLiquidFromSource(FPipeLiquidSlot& OutSlot);
 	bool IsLiquidItem(FName ItemID) const;
+	bool HasAnyLiquid() const;
+	FName GetPrimaryLiquidID() const;
+	FLinearColor GetFilledPipeColor() const;
+	UMaterialInterface* GetPipeMaterial(bool bHasLiquid);
+	void ConfigureMaterialInstance(UMaterialInstanceDynamic* MaterialInstance, bool bHasLiquid) const;
 	FVector GetPathCentroidLocal() const;
 	FVector GetCellLocalCenter(FIntPoint Cell) const;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> EmptyPipeMaterialInstance;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> FilledPipeMaterialInstance;
 };
