@@ -35,13 +35,27 @@ APipe::APipe()
 	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
 
+	// 튜브 충돌 — 플레이어(Pawn) 걷기만 차단, 나머지 채널 전부 Ignore. 특히 커서 호버가 쓰는
+	// ECC_Visibility와 카메라 스프링암(ECC_Camera)을 Ignore해 빌드 호버 게이트/카메라에 무간섭.
+	// 인스턴스 단위 충돌이라 튜브 형상과 정확히 일치 → ㄷ자 상판 "아래"(인스턴스 없음)는 자동 무충돌
+	// (플레이어/컨베이어 통행로). 라이저(수직)·지상·상판 자체는 충돌. 컨베이어는 충돌 자체가 없어
+	// 미러 대상이 아님 — 파이프 전용 설계.
+	auto SetupTubeCollision = [](UInstancedStaticMeshComponent* ISM)
+	{
+		ISM->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		ISM->SetCollisionObjectType(ECC_WorldStatic);
+		ISM->SetCollisionResponseToAllChannels(ECR_Ignore);
+		ISM->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+		ISM->SetGenerateOverlapEvents(false);
+	};
+
 	SegmentInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("SegmentInstances"));
 	SegmentInstances->SetupAttachment(Root);
-	SegmentInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SetupTubeCollision(SegmentInstances);
 
 	JoinInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("JoinInstances"));
 	JoinInstances->SetupAttachment(Root);
-	JoinInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SetupTubeCollision(JoinInstances);
 
 	LiquidVisualInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("LiquidVisualInstances"));
 	LiquidVisualInstances->SetupAttachment(Root);
