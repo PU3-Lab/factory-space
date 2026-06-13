@@ -117,6 +117,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Grid|Conveyor", meta = (ClampMin = "1.0"))
 	float OJJ_MaxConveyorStepZ = 100.0f;
 
+	// F4-3 오버패스 클리어런스(uu) — 컨베이어 교차 셀에서 파이프가 경로 기준면 위로 상승하는 높이.
+	// ㄷ자 상판 높이 + 수직 라이저 길이를 동시에 결정. 기본 100 = PIE 실측 확정(벨트 아이템 여유 + 비율).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Grid|Conveyor", meta = (ClampMin = "1.0"))
+	float OJJ_PipeOverpassClearance = 100.0f;
+
 	// 실제 placement 가능 영역 (X 칸 × Y 칸).
 	// CanPlaceMachine / IsValidGridCell이 권위 있는 grid extent로 사용. 머신은 이 범위 내에서만 등록 가능.
 	// VisualizationRange (시각화 한 변당 셀 수) 와 독립 — 디자이너가 두 값을 분리 가능.
@@ -916,10 +921,13 @@ public:
 
 	// 드래그 셀 목록을 정규 컨베이어 경로로 보정 — 시작이 머신 출력 셀 위/인접인지 검사해 출력셀 포함 경로 생성.
 	// 실패 시 OutReason에 사유. (포트 판정/연속성/충돌은 내부 OJJ_CollectConveyorReservedCells로 검증.) C++ 전용.
+	// bAllowConveyorOverpass: 파이프 정규화(OJJ_BuildPipePlacementPath)가 true 전달 — 내부 수집 검증이
+	// 컨베이어 점유 셀을 타넘기로 허용. 컨베이어 호출(기본 false)은 기존 동작 그대로.
 	bool OJJ_BuildConveyorPlacementPath(
 		const TArray<FIntPoint>& DragCells,
 		TArray<FIntPoint>& OutPathCells,
-		FString& OutReason) const;
+		FString& OutReason,
+		bool bAllowConveyorOverpass = false) const;
 
 	// 주어진 경로가 배치 가능한지만 판정(예약셀 산출 없이 OJJ_CollectConveyorReservedCells 래핑). C++ 전용.
 	bool OJJ_CanPlaceConveyorPath(const TArray<FIntPoint>& PathCells) const;

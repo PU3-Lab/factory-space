@@ -68,10 +68,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
 	float ZOffset = 20.0f;
 
-	// 파이프 반경(월드 uu). 지름 = 2×PipeRadius (기본 80). 메시 실측 치수로 환산하므로
-	// 엔진 기본 실린더/구의 절대 크기와 무관 — 메시를 바꿔도 반경이 유지됨.
+	// 파이프 반경(월드 uu). 지름 = 2×PipeRadius (기본 60 = PIE 실측 확정). 메시 실측 치수로 환산하므로
+	// 엔진 기본 실린더/구의 절대 크기와 무관 — 메시를 바꿔도 반경이 유지됨. 직선/코너/라이저 전부 추종.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "1.0"))
-	float PipeRadius = 40.0f;
+	float PipeRadius = 30.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.01"))
 	float LiquidVisualScaleRatio = 0.2f;
@@ -100,8 +100,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pipe|Path")
 	TArray<FIntPoint> PathCells;
 
-	// F4-3 오버패스/경사 대비 — 노드별 절대 SurfaceZ(PathCells와 1:1, 로컬 Z). 비면 ZOffset 균일.
-	// FindBetweenNormals가 3D라 양끝 Z가 다르면 경사 실린더가 공짜로 생성됨(렌더는 이미 준비됨).
+	// F4-3 오버패스 — 셀별 상승 lift 프로파일(ZOffset 위 델타, PathCells와 1:1). 비거나 길이 불일치면 0(평면 항등).
+	// 다리 셀(교차 ∪ 양옆)은 lift=H. RebuildVisuals가 이 프로파일에서 0↔H 경계마다 수직 라이저(같은 XY에
+	// base/top 2노드)를 즉석 삽입해 ㄷ자 다리를 구성하고, 액체 블롭도 셀 lift만큼 따라 오른다.
+	// 그리드가 OJJ_SetPathCellLocalZs로 주입(빈 배열 = 기존 평면 동작 그대로).
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Path")
 	TArray<float> PathCellZs;
 
@@ -125,6 +127,11 @@ protected:
 public:
 	UFUNCTION(BlueprintCallable, Category = "Pipe|Path")
 	void SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize);
+
+	// F4-3 오버패스 비주얼 주입 — 노드별 lift(ZOffset 위 델타, PathCells와 1:1). SetPath 이후 호출.
+	// 길이가 PathCells와 안 맞으면 무시(평면 fallback) — 빈 배열이면 기존 평면 동작 그대로(항등).
+	UFUNCTION(BlueprintCallable, Category = "Pipe|Path")
+	void OJJ_SetPathCellLocalZs(const TArray<float>& InCellLifts);
 
 	UFUNCTION(BlueprintCallable, Category = "Pipe|Path")
 	void ConfigureTransport(

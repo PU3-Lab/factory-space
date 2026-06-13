@@ -318,7 +318,10 @@ bool OJJ_CollectConveyorReservedCells(
 	TArray<FIntPoint>& OutReservedCells,
 	FString& OutReason,
 	AMachineBase** OutSourceMachine = nullptr,
-	AMachineBase** OutTargetMachine = nullptr)
+	AMachineBase** OutTargetMachine = nullptr,
+	// F4-3: true면 컨베이어 점유 셀을 타넘기(오버패스)로 허용·예약(파이프 전용). false(기본)는 기존
+	// 컨베이어 동작 그대로 — 컨베이어 배치는 이 인자를 안 넘기므로 수치/판정 완전 항등.
+	bool bAllowConveyorOverpass = false)
 {
 	OutReservedCells.Reset();
 	if (OutSourceMachine)
@@ -378,6 +381,15 @@ bool OJJ_CollectConveyorReservedCells(
 			return false;
 		}
 
+		// F4-3 비대칭 게이트(㉡): 지상 파이프 셀 위로 컨베이어 금지(나중에 까는 쪽이 양보 — 파이프는 안 양보).
+		// 공중(오버패스, bElevated) 파이프 셀 아래는 통과 허용 — OJJ_IsCellBlockedByGroundPipe가 지상만 true.
+		// 파이프 배치(bAllowConveyorOverpass)엔 비적용 — 파이프↔파이프 규칙은 레이어 겹침 게이트 소관.
+		if (!bAllowConveyorOverpass && Grid->OJJ_IsCellBlockedByGroundPipe(Cell))
+		{
+			OutReason = TEXT("Conveyor cannot cross a ground pipe — raise the pipe (overpass) or reroute.");
+			return false;
+		}
+
 		if (Index > 0 && OJJ_ManhattanDistance(PathCells[Index - 1], Cell) != 1)
 		{
 			OutReason = TEXT("Conveyor path must be contiguous.");
@@ -391,12 +403,18 @@ bool OJJ_CollectConveyorReservedCells(
 			const bool bAllowedInputCell = bEndsOnMachine
 				&& Index == PathCells.Num() - 1
 				&& Occupant->Get() == EndMachine;
-			if (!bAllowedOutputCell && !bAllowedInputCell)
+			// F4-3 오버패스: 파이프는 컨베이어 점유 셀을 타넘기 — 차단 대신 예약 유지(공중 셀로 등록).
+			const bool bConveyorOverpass = bAllowConveyorOverpass && Grid->OJJ_GetConveyorAtCell(Cell) != nullptr;
+			if (!bAllowedOutputCell && !bAllowedInputCell && !bConveyorOverpass)
 			{
 				OutReason = TEXT("Conveyor path is blocked by an occupied cell.");
 				return false;
 			}
-			continue;
+			// 머신 끝점 셀은 예약 제외(기존). 오버패스 셀은 fall-through → 아래 AddUnique로 공중 예약.
+			if (!bConveyorOverpass)
+			{
+				continue;
+			}
 		}
 
 		OutReservedCells.AddUnique(Cell);
@@ -2081,7 +2099,9 @@ bool AOJJ_Grid::OJJ_BuildPipePlacementPath(const TArray<FIntPoint>& DragCells,
 	TArray<FIntPoint>& OutPathCells, FString& OutReason) const
 {
 	// 정규화는 컨베이어와 완전 동일(머신 시작 back-output 정규화 / 인접 시작 머신 셀 선두 삽입) — 위임.
-	return OJJ_BuildConveyorPlacementPath(DragCells, OutPathCells, OutReason);
+	// F4-3: 내부 수집 검증도 오버패스 허용으로(true) — 안 그러면 정규화 단계 수집기(기본 false)가
+	// 컨베이어 교차 셀을 점유 거부해 ValidatePipePlacement의 true 호출에 도달 못 함.
+	return OJJ_BuildConveyorPlacementPath(DragCells, OutPathCells, OutReason, /*bAllowConveyorOverpass=*/ true);
 }
 
 bool AOJJ_Grid::OJJ_ValidatePipePlacement(const TArray<FIntPoint>& PathCells,
@@ -2099,9 +2119,10 @@ bool AOJJ_Grid::OJJ_ValidatePipePlacement(const TArray<FIntPoint>& PathCells,
 	}
 
 	// 수집 위임 — 포트 정합(출력→입력)·건설 게이트(IsCellConstructible)·점유 차단·연속성 전부 공유.
-	// 머신/컨베이어 점유 셀 차단은 F4-1 유지 — 컨베이어 점유 셀의 오버패스 완화는 F4-3에서 이 지점.
+	// F4-3: bAllowConveyorOverpass=true — 컨베이어 점유 셀을 타넘기로 허용·예약(공중 셀). 머신 점유는
+	// 여전히 차단(끝점만 예외). 지상 파이프↔컨베이어 비대칭 게이트는 컨베이어 측 호출(false)에서만 적용.
 	if (!OJJ_CollectConveyorReservedCells(this, OccupiedCells, OJJ_ActorToCells, OutPlacementCells,
-		OutReservedCells, OutReason, &OutSourceMachine, &OutTargetMachine))
+		OutReservedCells, OutReason, &OutSourceMachine, &OutTargetMachine, /*bAllowConveyorOverpass=*/ true))
 	{
 		return false;
 	}
@@ -2149,6 +2170,26 @@ bool AOJJ_Grid::OJJ_ValidatePipePlacement(const TArray<FIntPoint>& PathCells,
 		}
 	}
 
+	// F4-3 끝점 게이트(㉡) — ㄷ자 다리 셀 = 교차 셀 ∪ 양옆(라이저). 다리가 경로 끝점까지 닿으면
+	// (교차가 펌프/탱크에 너무 가까움) 지상 진입/라이저 공간이 없어 다리를 못 세움 → 거부.
+	{
+		auto CrossesConveyor = [this, &OutPlacementCells](int32 Index) -> bool
+		{
+			return OutPlacementCells.IsValidIndex(Index)
+				&& OJJ_GetConveyorAtCell(OutPlacementCells[Index]) != nullptr;
+		};
+		auto IsBridgeCell = [&CrossesConveyor](int32 Index) -> bool
+		{
+			return CrossesConveyor(Index) || CrossesConveyor(Index - 1) || CrossesConveyor(Index + 1);
+		};
+		if (OutPlacementCells.Num() > 0
+			&& (IsBridgeCell(0) || IsBridgeCell(OutPlacementCells.Num() - 1)))
+		{
+			OutReason = TEXT("Overpass needs a free ground cell on each side of the conveyor (crossing too close to pump/tank).");
+			return false;
+		}
+	}
+
 	OutReason.Reset();
 	return true;
 }
@@ -2172,12 +2213,19 @@ bool AOJJ_Grid::OJJ_TryPlacePipe(APipe* Pipe, const TArray<FIntPoint>& PathCells
 		return false;
 	}
 
-	// 레이어 등록(평면: 전 셀 CellZ = 경로 기준면, bElevated=false — 오버패스 셀 산출은 F4-3).
+	// F4-3 오버패스 산출 — 컨베이어 점유 셀과 교차하는 파이프 셀은 경로 기준면 위로 상승(공중) 처리.
+	// 교차 셀: CellZ = 기준면 + 클리어런스, bElevated=true(아래 컨베이어 통과 허용). 그 외: 기준면, 지상.
 	// 등록 실패 시 부작용 없이 false(가드 조기 종료) → 롤백 불필요(컨베이어 등록과 동일 계약).
 	TArray<float> CellZs;
-	CellZs.Init(PathSurfaceZ, ReservedCells.Num());
+	CellZs.Reserve(ReservedCells.Num());
 	TArray<bool> ElevatedFlags;
-	ElevatedFlags.Init(false, ReservedCells.Num());
+	ElevatedFlags.Reserve(ReservedCells.Num());
+	for (const FIntPoint& Cell : ReservedCells)
+	{
+		const bool bCrossesConveyor = OJJ_GetConveyorAtCell(Cell) != nullptr;
+		CellZs.Add(bCrossesConveyor ? PathSurfaceZ + OJJ_PipeOverpassClearance : PathSurfaceZ);
+		ElevatedFlags.Add(bCrossesConveyor);
+	}
 	if (!OJJ_TryRegisterPipeCells(Pipe, ReservedCells, CellZs, ElevatedFlags, OutReason))
 	{
 		return false;
@@ -2187,6 +2235,33 @@ bool AOJJ_Grid::OJJ_TryPlacePipe(APipe* Pipe, const TArray<FIntPoint>& PathCells
 	// = parity 부채 #9 복제라 같은 앵커 보정 필요). centroid 수식은 Pipe.GetPathCentroidLocal과
 	// 동일하지만 비공개라 그리드측 산출 — Chan Z 채널 커밋(F4-2) 시 공개 전환 검토 태그.
 	Pipe->SetPath(PlacementCells, CellSize);
+
+	// F4-3 비주얼 — ㄷ자 다리 lift 프로파일 주입(파이프 GetPathCells와 1:1). 다리 셀 = 교차 셀 ∪ 양옆
+	// (전이/라이저) → 상판이 교차 ±1까지 뻗음(연속 교차는 자동 병합). 라이저 위치(0↔H 경계 base/top
+	// 2노드)는 Pipe::RebuildVisuals가 이 프로파일에서 즉석 구성. 레이어 데이터(CellZ/Elevated, 교차 셀만)는
+	// 위에서 완료 — T1/T2(라이저)는 레이어상 지상이라 그 아래 컨베이어 거부 유지. 교차 없으면 전부 0 = 평면.
+	const TArray<FIntPoint> PipePathCells = Pipe->GetPathCells();
+	const int32 NumPipeCells = PipePathCells.Num();
+	TArray<bool> bCrossesConveyor;
+	bCrossesConveyor.Init(false, NumPipeCells);
+	for (int32 i = 0; i < NumPipeCells; ++i)
+	{
+		bCrossesConveyor[i] = OJJ_GetConveyorAtCell(PipePathCells[i]) != nullptr;
+	}
+	TArray<float> CellLifts;
+	CellLifts.Init(0.0f, NumPipeCells);
+	for (int32 i = 0; i < NumPipeCells; ++i)
+	{
+		const bool bBridge = bCrossesConveyor[i]
+			|| (i > 0 && bCrossesConveyor[i - 1])
+			|| (i + 1 < NumPipeCells && bCrossesConveyor[i + 1]);
+		if (bBridge)
+		{
+			CellLifts[i] = OJJ_PipeOverpassClearance;
+		}
+	}
+	Pipe->OJJ_SetPathCellLocalZs(CellLifts);
+
 	FVector CentroidLocal = FVector::ZeroVector;
 	for (const FIntPoint& Cell : PlacementCells)
 	{
@@ -2848,7 +2923,8 @@ bool AOJJ_Grid::OJJ_RemoveActorAt(FIntPoint Cell)
 bool AOJJ_Grid::OJJ_BuildConveyorPlacementPath(
 	const TArray<FIntPoint>& DragCells,
 	TArray<FIntPoint>& OutPathCells,
-	FString& OutReason) const
+	FString& OutReason,
+	bool bAllowConveyorOverpass) const
 {
 	OutPathCells.Reset();
 	if (DragCells.Num() == 0)
@@ -2918,7 +2994,8 @@ bool AOJJ_Grid::OJJ_BuildConveyorPlacementPath(
 	}
 
 	TArray<FIntPoint> ReservedCells;
-	return OJJ_CollectConveyorReservedCells(this, OccupiedCells, OJJ_ActorToCells, OutPathCells, ReservedCells, OutReason);
+	return OJJ_CollectConveyorReservedCells(this, OccupiedCells, OJJ_ActorToCells, OutPathCells, ReservedCells,
+		OutReason, nullptr, nullptr, bAllowConveyorOverpass);
 }
 
 bool AOJJ_Grid::OJJ_CanPlaceConveyorPath(const TArray<FIntPoint>& PathCells) const
