@@ -15,7 +15,17 @@
 
 namespace
 {
-	constexpr float BasicCylinderHeight = 200.0f;
+	// 엔진 기본 메시(실린더/구)의 실제 치수를 런타임 측정 — 하드코딩 제거(PowerLine::UpdateLineSegment 패턴).
+	// 반환값 = 풀스케일 박스 크기(2×BoxExtent), 각 축 0 나눗셈 방지 클램프 적용.
+	FVector OJJ_MeshBoxSize(const UInstancedStaticMeshComponent* ISM)
+	{
+		const UStaticMesh* Mesh = ISM ? ISM->GetStaticMesh() : nullptr;
+		const FVector Size = Mesh ? Mesh->GetBounds().BoxExtent * 2.0f : FVector(100.0f);
+		return FVector(
+			FMath::Max(Size.X, KINDA_SMALL_NUMBER),
+			FMath::Max(Size.Y, KINDA_SMALL_NUMBER),
+			FMath::Max(Size.Z, KINDA_SMALL_NUMBER));
+	}
 }
 
 APipe::APipe()
@@ -28,6 +38,10 @@ APipe::APipe()
 	SegmentInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("SegmentInstances"));
 	SegmentInstances->SetupAttachment(Root);
 	SegmentInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	JoinInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("JoinInstances"));
+	JoinInstances->SetupAttachment(Root);
+	JoinInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	LiquidVisualInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("LiquidVisualInstances"));
 	LiquidVisualInstances->SetupAttachment(Root);
@@ -48,11 +62,19 @@ APipe::APipe()
 		LiquidVisualInstances->SetStaticMesh(CylinderMesh.Object);
 	}
 
+	// 코너 조인트는 구 — 어떤 방향 전환각이든 반경 PipeRadius로 이음새를 덮음.
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	if (SphereMesh.Succeeded())
+	{
+		JoinInstances->SetStaticMesh(SphereMesh.Object);
+	}
+
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> MaterialAsset(
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	if (MaterialAsset.Succeeded())
 	{
 		SegmentInstances->SetMaterial(0, MaterialAsset.Object);
+		JoinInstances->SetMaterial(0, MaterialAsset.Object);
 		LiquidVisualInstances->SetMaterial(0, MaterialAsset.Object);
 	}
 
@@ -213,48 +235,84 @@ void APipe::RebuildVisuals()
 	}
 
 	SegmentInstances->ClearInstances();
+	if (JoinInstances)
+	{
+		JoinInstances->ClearInstances();
+	}
 	if (PathCells.Num() == 0)
 	{
 		return;
 	}
 
+	const float Diameter = FMath::Max(1.0f, PipeRadius * 2.0f);
 	const FVector Centroid = GetPathCentroidLocal();
-	const float UniformScale = FMath::Max(0.01f, SegmentRadiusScale);
-	if (PathCells.Num() == 1)
+
+	// 노드 로컬 중심 — XY는 셀 중앙, Z는 PathCellZs(있으면 노드별, 없으면 ZOffset 균일).
+	// PathCellZs가 채워지면 양끝 Z 차이가 그대로 경사 실린더로 반영됨(F4-3 오버패스 대비, 렌더 무변경).
+	auto NodeLocalCenter = [this, &Centroid](int32 NodeIndex) -> FVector
 	{
-		const FIntPoint Cell = PathCells[0];
-		const FVector LocalLocation(
+		const FIntPoint Cell = PathCells[NodeIndex];
+		const float NodeZ = PathCellZs.IsValidIndex(NodeIndex) ? PathCellZs[NodeIndex] : ZOffset;
+		return FVector(
 			(Cell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
 			(Cell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
-			ZOffset);
-		const FVector SegmentScale(UniformScale, UniformScale, 0.5f);
-		SegmentInstances->AddInstance(FTransform(FRotator::ZeroRotator, LocalLocation, SegmentScale));
+			NodeZ);
+	};
+
+	// 조인트 구 스케일 — 메시 실측 지름으로 환산해 균일 반경(=PipeRadius) 보장.
+	const FVector SphereMeshSize = JoinInstances ? OJJ_MeshBoxSize(JoinInstances) : FVector(100.0f);
+	const FVector SphereScale(
+		Diameter / SphereMeshSize.X,
+		Diameter / SphereMeshSize.Y,
+		Diameter / SphereMeshSize.Z);
+
+	// 단일 셀(퇴화 경로): 방향이 없으므로 조인트 구 하나로 마감.
+	if (PathCells.Num() == 1)
+	{
+		if (JoinInstances)
+		{
+			JoinInstances->AddInstance(FTransform(FRotator::ZeroRotator, NodeLocalCenter(0), SphereScale));
+		}
 		return;
 	}
 
+	// ① 직선 세그먼트 — 노드쌍마다 실린더 1개(중점 배치 + 방향 정렬 + 길이/지름 실측 스케일).
+	const FVector CylinderMeshSize = OJJ_MeshBoxSize(SegmentInstances);
 	for (int32 Index = 0; Index + 1 < PathCells.Num(); ++Index)
 	{
-		const FIntPoint StartCell = PathCells[Index];
-		const FIntPoint EndCell = PathCells[Index + 1];
-		const FVector StartLocation(
-			(StartCell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
-			(StartCell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
-			ZOffset);
-		const FVector EndLocation(
-			(EndCell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
-			(EndCell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
-			ZOffset);
+		const FVector StartLocation = NodeLocalCenter(Index);
+		const FVector EndLocation = NodeLocalCenter(Index + 1);
 		const FVector SegmentVector = EndLocation - StartLocation;
-		if (SegmentVector.IsNearlyZero())
+		const float SegmentLength = SegmentVector.Length();
+		if (SegmentLength <= KINDA_SMALL_NUMBER)
 		{
 			continue;
 		}
 
+		// FindBetweenNormals는 3D — 양끝 Z가 다르면 기울어진 실린더(경사 파이프)가 자동 생성됨.
+		const FQuat SegmentRotation = FQuat::FindBetweenNormals(FVector::UpVector, SegmentVector / SegmentLength);
 		const FVector SegmentMidpoint = (StartLocation + EndLocation) * 0.5f;
-		const FQuat SegmentRotation = FQuat::FindBetweenNormals(FVector::UpVector, SegmentVector.GetSafeNormal());
-		const float SegmentLengthScale = SegmentVector.Length() / BasicCylinderHeight;
-		const FVector SegmentScale(UniformScale, UniformScale, FMath::Max(0.01f, SegmentLengthScale));
+		const FVector SegmentScale(
+			Diameter / CylinderMeshSize.X,
+			Diameter / CylinderMeshSize.Y,
+			SegmentLength / CylinderMeshSize.Z);
 		SegmentInstances->AddInstance(FTransform(SegmentRotation, SegmentMidpoint, SegmentScale));
+	}
+
+	// ② ㄱ자 코너 이음새 — 방향 전환 노드에만 조인트 구를 박아 두 실린더 만나는 모서리 갭을 가림.
+	// 직진 통과 노드(Prev==Next)는 동축 실린더라 갭이 없으므로 생략(오버드로 최소화).
+	if (JoinInstances)
+	{
+		for (int32 Index = 1; Index + 1 < PathCells.Num(); ++Index)
+		{
+			const FIntPoint PrevDir = PathCells[Index] - PathCells[Index - 1];
+			const FIntPoint NextDir = PathCells[Index + 1] - PathCells[Index];
+			if (PrevDir == NextDir)
+			{
+				continue;
+			}
+			JoinInstances->AddInstance(FTransform(FRotator::ZeroRotator, NodeLocalCenter(Index), SphereScale));
+		}
 	}
 }
 
