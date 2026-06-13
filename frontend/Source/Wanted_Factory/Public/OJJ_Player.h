@@ -176,6 +176,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_SetTankMode;
 
+	// 평판 Foundation 모드(G키 — #196 레거시 BindKey→IA 전환). IMC_Build의 G 매핑/에셋 연결은 에디터 작업.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetFoundationMode;
+
+	// 램프 Foundation 모드(H키 — #196 레거시 BindKey→IA 전환). IMC_Build의 H 매핑/에셋 연결은 에디터 작업.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetRampMode;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_SetPowerNodeMode;
 
@@ -304,12 +312,10 @@ protected:
 	void SetWarehouseMode(const FInputActionValue& Value);
 	void SetDemolishMode(const FInputActionValue& Value);
 
-	// 평판 Foundation 모드 직행(G키 — M/J/I와 같은 BindKey 직접 바인딩이라 무인자).
-	// F3.7' 키 개편: G=평판/H=램프 직행(F3-2.5 T 토글 대체). 정식 IA 전환 백로그에 G/H 함께 기록.
-	void SetFoundationMode();
-
-	// 램프 Foundation 모드 직행(H키 — F3.7' 키 개편, G와 같은 BindKey 임시. 정식 IA 백로그 G/H 쌍).
-	void SetRampFoundationMode();
+	// 평판/램프 Foundation 모드 진입(G/H — #196 Enhanced Input IA 전환, 탱크/파이프와 동일 구조).
+	// 이중발화 차단 위해 레거시 BindKey 제거 + IA 단일 경로로 통일.
+	void SetFoundationMode(const FInputActionValue& Value);
+	void SetRampFoundationMode(const FInputActionValue& Value);
 
 	// 스프린트 — Started=달리기 속도, Completed=걷기 속도로 복귀.
 	void StartSprint(const FInputActionValue& Value);
