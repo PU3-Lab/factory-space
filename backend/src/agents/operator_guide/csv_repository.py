@@ -118,12 +118,16 @@ class CsvManualQARepository:
                 category=_value(row, "category", "분류"),
                 role=_value(row, "role", "역할"),
                 input_resources=_split_ids(_value(row, "input_resources", "입력자원")),
-                output_resources=_split_ids(_value(row, "output_resources", "출력자원")),
+                output_resources=_split_ids(
+                    _value(row, "output_resources", "출력자원")
+                ),
                 power_required=_value(row, "power_required", "필요전력"),
                 connectable_equipment=_split_ids(
                     _value(row, "connectable_equipment", "연결가능장비")
                 ),
-                related_recipes=_split_ids(_value(row, "related_recipes", "관련레시피")),
+                related_recipes=_split_ids(
+                    _value(row, "related_recipes", "관련레시피")
+                ),
                 common_issues=_split_ids(_value(row, "common_issues", "자주발생문제")),
             )
             for row in rows
@@ -140,8 +144,12 @@ class CsvManualQARepository:
                 acquisition_method=_value(row, "acquisition_method", "획득방법"),
                 produced_by=_value(row, "produced_by", "생산장비"),
                 used_for=_value(row, "used_for", "사용처"),
-                used_in_recipes=_split_ids(_value(row, "used_in_recipes", "사용레시피")),
-                related_resources=_split_ids(_value(row, "related_resources", "관련자원")),
+                used_in_recipes=_split_ids(
+                    _value(row, "used_in_recipes", "사용레시피")
+                ),
+                related_resources=_split_ids(
+                    _value(row, "related_resources", "관련자원")
+                ),
             )
             for row in rows
         }
@@ -154,7 +162,9 @@ class CsvManualQARepository:
                 recipe_id=_value(row, "recipe_id", "레시피ID"),
                 name=_value(row, "name", "레시피명"),
                 input_resources=_split_ids(_value(row, "input_resources", "입력자원")),
-                output_resource=_strip_quantity(_value(row, "output_resource", "출력자원")),
+                output_resource=_strip_quantity(
+                    _value(row, "output_resource", "출력자원")
+                ),
                 required_equipment=_strip_quantity(
                     _value(row, "required_equipment", "필요장비")
                 ),
@@ -184,8 +194,12 @@ class CsvManualQARepository:
                     _value(row, "recommended_action_ids", "추천행동ID")
                 ),
                 resolution=_value(row, "resolution", "해결방법"),
-                related_equipment=_split_ids(_value(row, "related_equipment", "관련장비")),
-                related_resources=_split_ids(_value(row, "related_resources", "관련자원")),
+                related_equipment=_split_ids(
+                    _value(row, "related_equipment", "관련장비")
+                ),
+                related_resources=_split_ids(
+                    _value(row, "related_resources", "관련자원")
+                ),
             )
             for row in rows
         }
@@ -263,7 +277,9 @@ class CsvManualQARepository:
                 return machine_stopped
 
         for rule in self._troubleshooting_rules.values():
-            if rule.name in question or any(symptom in question for symptom in rule.symptom):
+            if rule.name in question or any(
+                symptom in question for symptom in rule.symptom
+            ):
                 return rule
         return None
 

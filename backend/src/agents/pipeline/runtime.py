@@ -11,6 +11,8 @@ from langgraph.graph.state import CompiledStateGraph
 from pydantic import ValidationError
 
 from agents.base import AgentContext
+from agents.material_generation.agent import MaterialCreationAgent
+from agents.material_generation.schemas import MaterialCreationRequest
 from agents.operator_guide.agent import (
     OPERATOR_GUIDE_LEAF_AGENT_IDS,
     OperatorGuideAgent,
@@ -42,6 +44,7 @@ from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS, QuestGeneratorAgen
 from agents.quest_generator.tools import PRODUCTION_QUEST_SELECTION_TOOL_NAME
 from agents.router import AgentRouter, UnknownAgentError, create_default_agent_router
 from cache.response_cache import ResponseCache
+from db.engine import get_db_session
 from llm.adapter import LLMAdapter, create_llm_adapter
 from llm.settings import LLMModelSlot, LLMSettings
 from protocol.errors import build_error_payload
@@ -191,7 +194,10 @@ class AgentPipeline:
 
         def validate_process_payload(state: AgentGraphState) -> AgentGraphState:
             explicit_sub_agent = state["typedPayload"].get("sub_agent")
-            if explicit_sub_agent is not None and explicit_sub_agent != "process_optimizer":
+            if (
+                explicit_sub_agent is not None
+                and explicit_sub_agent != "process_optimizer"
+            ):
                 return {
                     "error": build_error_payload(
                         "INVALID_SUB_AGENT",
@@ -201,20 +207,57 @@ class AgentPipeline:
                 }
             return {"selectedLeafAgent": "process_optimizer"}
 
-        def validate_material_payload(state: AgentGraphState) -> AgentGraphState:
-            explicit_sub_agent = state["typedPayload"].get("sub_agent")
+        def synthesize_material(state: AgentGraphState) -> AgentGraphState:
+            if state.get("error"):
+                return {}
+
+            payload = state["typedPayload"]
+            explicit_sub_agent = payload.get("sub_agent")
             if (
                 explicit_sub_agent is not None
-                and explicit_sub_agent != "new_material_generator"
+                and explicit_sub_agent != "material_generation"
             ):
                 return {
                     "error": build_error_payload(
                         "INVALID_SUB_AGENT",
-                        "Explicit sub_agent is not valid for new_material_generator.",
+                        "Explicit sub_agent is not valid for material_generation.",
                         details={"sub_agent": explicit_sub_agent},
                     )
                 }
-            return {"selectedLeafAgent": "new_material_generator"}
+
+            try:
+                envelope = state["envelope"]
+                req_data = {
+                    "machine_type": payload.get("machine_type"),
+                    "inputs": payload.get("inputs"),
+                    "process_conditions": payload.get("process_conditions") or {},
+                    "player_id": envelope.session_id or "default_player",
+                    "generate_visual_asset": payload.get("generate_visual_asset", True),
+                }
+                req = MaterialCreationRequest.model_validate(req_data)
+            except Exception as exc:
+                return {
+                    "error": build_error_payload(
+                        "INVALID_REQUEST_PAYLOAD",
+                        f"Request payload validation failed: {exc}",
+                    )
+                }
+            agent = MaterialCreationAgent()
+            try:
+                with get_db_session() as db:
+                    response = agent.synthesize(db, req)
+            except Exception as exc:
+                return {
+                    "error": build_error_payload(
+                        "SYNTHESIS_ERROR",
+                        f"Failed to synthesize material: {exc}",
+                    )
+                }
+
+            return {
+                "selectedLeafAgent": "material_generation",
+                "responsePayload": response.model_dump(),
+            }
 
         def route_operator_guide_sub_agent(state: AgentGraphState) -> AgentGraphState:
             explicit_sub_agent = state["typedPayload"].get("sub_agent")
@@ -357,7 +400,11 @@ class AgentPipeline:
             cleaned = raw.strip()
             if cleaned.startswith("```"):
                 lines = cleaned.splitlines()
-                if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].startswith("```"):
+                if (
+                    len(lines) >= 2
+                    and lines[0].startswith("```")
+                    and lines[-1].startswith("```")
+                ):
                     cleaned = "\n".join(lines[1:-1]).strip()
 
             try:
@@ -494,7 +541,9 @@ class AgentPipeline:
             envelope = state["envelope"]
             selected_agent = state.get("selectedAgent")
             response_agent = (
-                selected_agent if selected_agent in TOP_LEVEL_AGENT_IDS else envelope.agent
+                selected_agent
+                if selected_agent in TOP_LEVEL_AGENT_IDS
+                else envelope.agent
             )
             default_error = build_error_payload(
                 "ROUTING_UNAVAILABLE",
@@ -517,7 +566,7 @@ class AgentPipeline:
         graph.add_node("validate_process_payload", validate_process_payload)
         graph.add_node("operator_guide.route_sub_agent", route_operator_guide_sub_agent)
         graph.add_node("quest_generator.route_sub_agent", route_quest_sub_agent)
-        graph.add_node("validate_material_payload", validate_material_payload)
+        graph.add_node("synthesize_material", synthesize_material)
         graph.add_node("cache_lookup", cache_lookup)
         graph.add_node("build_cached_response", build_cached_response)
         graph.add_node("build_prompt", build_prompt)
@@ -547,7 +596,9 @@ def _has_successful_tool_call(state: AgentGraphState, tool_name: str) -> bool:
     )
 
 
-def run_agent_pipeline(message: AgentRequestEnvelope | dict[str, Any]) -> dict[str, Any]:
+def run_agent_pipeline(
+    message: AgentRequestEnvelope | dict[str, Any],
+) -> dict[str, Any]:
     """Run one message through a default agent pipeline."""
 
     try:

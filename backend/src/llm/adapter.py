@@ -243,7 +243,11 @@ class LocalLLMAdapter:
 
         if not self.slot.base_url:
             return None
-        logger.info("Calling Local LLM (model: %s, url: %s)", self.slot.model, self.slot.base_url)
+        logger.info(
+            "Calling Local LLM (model: %s, url: %s)",
+            self.slot.model,
+            self.slot.base_url,
+        )
         return _invoke_openai_compatible(
             slot=self.slot,
             messages=messages,

@@ -178,7 +178,9 @@ def test_pipeline_operator_guide_uses_llm_prompt_with_manual_csv_evidence() -> N
         agent="operator_guide",
         sub_agent="operator_guide.machine_help",
     )
-    assert response["payload"]["final_answer"] == "LLM tutorial answer from CSV evidence."
+    assert (
+        response["payload"]["final_answer"] == "LLM tutorial answer from CSV evidence."
+    )
     assert response["payload"]["actions"] == []
     assert "answer" not in response["payload"]
     assert "text" not in response["payload"]
@@ -342,13 +344,13 @@ def test_pipeline_rejects_invalid_explicit_process_sub_agent() -> None:
 
 
 def test_pipeline_rejects_invalid_explicit_material_sub_agent() -> None:
-    pipeline = AgentPipeline(llm=StubLLM([top_agent_decision("new_material_generator")]))
+    pipeline = AgentPipeline(llm=StubLLM([top_agent_decision("material_generation")]))
 
     response = pipeline.run(
         {
             "type": "agent.request",
             "request_id": "request-invalid-material-sub-agent",
-            "agent": "new_material_generator",
+            "agent": "material_generation",
             "payload": {"sub_agent": "quest_generator.production_quest"},
         }
     )

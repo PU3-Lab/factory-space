@@ -34,7 +34,7 @@ def test_default_agent_router_contains_leaf_agents() -> None:
     router = create_default_agent_router()
 
     assert router.list_agent_ids() == [
-        "new_material_generator",
+        "material_generation",
         "operator_guide.machine_help",
         "operator_guide.recipe_explainer",
         "operator_guide.troubleshooter",
@@ -60,7 +60,9 @@ def test_agents_expose_tools_tuple() -> None:
 def test_top_level_agent_catalog_covers_orchestrator_choices() -> None:
     capabilities = get_top_level_agent_capabilities()
 
-    assert tuple(capability.agent_id for capability in capabilities) == TOP_LEVEL_AGENT_IDS
+    assert (
+        tuple(capability.agent_id for capability in capabilities) == TOP_LEVEL_AGENT_IDS
+    )
     assert set(TOP_LEVEL_AGENT_IDS) == set(TOP_LEVEL_AGENT_BRANCHES)
     for capability in capabilities:
         assert capability.summary

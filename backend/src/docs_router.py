@@ -1,9 +1,9 @@
-﻿"""HTML documentation pages for quest agent explanation."""
+"""HTML documentation pages for quest agent explanation."""
 
 from __future__ import annotations
 
-from html import escape
 import json
+from html import escape
 from typing import Any
 
 from fastapi import APIRouter
@@ -458,7 +458,9 @@ flowchart TD
 async def quest_agent_docs() -> HTMLResponse:
     """Return a service-oriented quest agent explanation page."""
 
-    return HTMLResponse(_render_page("퀘스트 에이전트 서비스 문서", _render_docs_body()))
+    return HTMLResponse(
+        _render_page("퀘스트 에이전트 서비스 문서", _render_docs_body())
+    )
 
 
 @router.get("/quest-agent-architecture", response_class=HTMLResponse)
@@ -474,14 +476,18 @@ async def quest_agent_architecture() -> HTMLResponse:
 async def agent_docs() -> HTMLResponse:
     """Return a service-oriented overview of all agents (for non-developers)."""
 
-    return HTMLResponse(_render_page("에이전트 서비스 문서", _render_all_agent_docs_body()))
+    return HTMLResponse(
+        _render_page("에이전트 서비스 문서", _render_all_agent_docs_body())
+    )
 
 
 @router.get("/architecture", response_class=HTMLResponse)
 async def architecture() -> HTMLResponse:
     """Return a developer-oriented architecture page covering all agents."""
 
-    return HTMLResponse(_render_page("전체 에이전트 아키텍처", _render_all_architecture_body()))
+    return HTMLResponse(
+        _render_page("전체 에이전트 아키텍처", _render_all_architecture_body())
+    )
 
 
 @router.get("/agent-test", response_class=HTMLResponse)
@@ -626,11 +632,7 @@ def _render_architecture_body() -> str:
         }
         for agent in QUEST_AGENTS
     )
-    tool_rows = tuple(
-        tool
-        for agent in QUEST_AGENTS
-        for tool in agent["tools"]
-    )
+    tool_rows = tuple(tool for agent in QUEST_AGENTS for tool in agent["tools"])
     return f"""
 <section class="panel">
   <h2>에이전트 표</h2>
@@ -658,20 +660,18 @@ def _render_table(
 ) -> str:
     head = "".join(f"<th>{escape(header)}</th>" for header in headers)
     body = "".join(
-        "<tr>"
-        + "".join(f"<td>{escape(str(row[key]))}</td>" for key in keys)
-        + "</tr>"
+        "<tr>" + "".join(f"<td>{escape(str(row[key]))}</td>" for key in keys) + "</tr>"
         for row in rows
     )
     return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
 
 
-def _render_tuple_table(headers: tuple[str, ...], rows: tuple[tuple[str, ...], ...]) -> str:
+def _render_tuple_table(
+    headers: tuple[str, ...], rows: tuple[tuple[str, ...], ...]
+) -> str:
     head = "".join(f"<th>{escape(header)}</th>" for header in headers)
     body = "".join(
-        "<tr>"
-        + "".join(f"<td>{escape(value)}</td>" for value in row)
-        + "</tr>"
+        "<tr>" + "".join(f"<td>{escape(value)}</td>" for value in row) + "</tr>"
         for row in rows
     )
     return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
@@ -719,7 +719,7 @@ def _render_service_agent_card(agent: dict[str, Any]) -> str:
     if agent["parent"]:
         parent_badge = f' <span style="font-size:13px;color:#5e6a7d;">({escape(agent["parent"])} 그룹)</span>'
     return f"""
-<section class="panel" style="margin-left: {'24px' if agent['parent'] else '0'}">
+<section class="panel" style="margin-left: {"24px" if agent["parent"] else "0"}">
   <span class="badge">{escape(agent["id"])}</span>{parent_badge}
   <h2>{escape(agent["name"])}</h2>
   <p>{escape(agent["summary"])}</p>
@@ -740,7 +740,7 @@ def _render_all_architecture_body() -> str:
     sections = []
     for agent in ALL_SERVICE_AGENTS:
         parent_note = (
-            f'<p><strong>소속 그룹:</strong> <code>{escape(agent["parent"])}</code></p>'
+            f"<p><strong>소속 그룹:</strong> <code>{escape(agent['parent'])}</code></p>"
             if agent["parent"]
             else ""
         )
