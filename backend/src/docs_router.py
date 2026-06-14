@@ -1022,6 +1022,9 @@ _TEST_PAGE_TEMPLATE = """<!doctype html>
           <optgroup label="material_generation">
             <option value="material_generation.recipe_match">레시피 매칭 (기존 레시피)</option>
             <option value="material_generation.new_material">신물질 합성 (새 물질)</option>
+            <option value="material_generation.failed_smelter">합성 실패 (제련기 2종 투입)</option>
+            <option value="material_generation.intermediate_grinder">중간 산물 (분쇄기 2종 투입)</option>
+            <option value="material_generation.invalid_input">잘못된 입력 (미등록 아이템)</option>
           </optgroup>
         </select>
         <button class="btn btn-ghost btn-sm" onclick="newId()">ID 갱신</button>
@@ -1628,6 +1631,41 @@ def _render_test_page() -> str:
                     "pressure": "5atm",
                     "catalyst": "palladium",
                 },
+                "generate_visual_asset": True,
+            },
+        },
+        "material_generation.failed_smelter": {
+            "type": "agent.request",
+            "agent": "material_generation",
+            "payload": {
+                "machine_type": "Smelter",
+                "inputs": [
+                    {"item_id": "iron_ingot", "qty": 1},
+                    {"item_id": "copper_ingot", "qty": 1},
+                ],
+                "generate_visual_asset": True,
+            },
+        },
+        "material_generation.intermediate_grinder": {
+            "type": "agent.request",
+            "agent": "material_generation",
+            "payload": {
+                "machine_type": "Grinder",
+                "inputs": [
+                    {"item_id": "iron_ingot", "qty": 1},
+                    {"item_id": "copper_ingot", "qty": 1},
+                ],
+                "generate_visual_asset": True,
+            },
+        },
+        "material_generation.invalid_input": {
+            "type": "agent.request",
+            "agent": "material_generation",
+            "payload": {
+                "machine_type": "Synthesizer",
+                "inputs": [
+                    {"item_id": "unobtanium", "qty": 1},
+                ],
                 "generate_visual_asset": True,
             },
         },
