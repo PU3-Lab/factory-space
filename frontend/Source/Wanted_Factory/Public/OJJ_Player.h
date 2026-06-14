@@ -12,6 +12,7 @@ class UInputMappingContext;
 class UInputAction;
 class AOJJ_BuildController;
 class AOJJ_BuildCamera;
+class AOJJ_Ladder;
 class AMachineBase;
 class UUI_MachineInteract;
 struct FInputActionValue;
@@ -37,8 +38,19 @@ public:
 
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
+	// --- 사다리 등반 (#184, AOJJ_Ladder가 트리거에서 호출) ---
+	// 등반 시작: MOVE_Flying+중력0로 전환, 현재 사다리 캐시. 이미 등반 중이면 no-op.
+	void BeginClimb(AOJJ_Ladder* Ladder);
+	// 등반 종료: 상단이면 step-off 보간 시작, 아니면 MOVE_Walking 복귀+중력 복원.
+	void EndClimb(bool bStepOffTop);
+	// 등반/step-off 상태를 즉시 청산하고 걷기로 수렴(빌드모드 진입·EndPlay·사다리 소멸 등 비정상 종료용).
+	void AbortClimb();
+
 protected:
 	virtual void BeginPlay() override;
+
+	// step-off 부드러운 안착 보간(#184) 처리. 평상시엔 별 비용 없음(bSteppingOff 가드).
+	virtual void Tick(float DeltaSeconds) override;
 
 	// 폰 파괴/언포제스 시 열려 있던 머신 상호작용 위젯·입력모드를 정리(컨트롤러 무효 시 위젯 제거만).
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -232,6 +244,58 @@ protected:
 	// 스프린트(Shift) 중 속도.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (ClampMin = "0.0"))
 	float SprintSpeed = 600.f;
+
+	// --- 사다리 등반 (#184) ---
+	// 등반 중 수직 이동 속도(MaxFlySpeed). W/S로 위/아래.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
+	float ClimbSpeed = 250.f;
+
+	// 상단 step-off 시 사다리 전방(상면 안쪽)으로 내딛는 수평 거리(uu). 작을수록 튀는 느낌 적음.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
+	float StepOffForward = 60.f;
+
+	// step-off 안착 보간 시간(초). 0이면 즉시(순간이동). 0.15~0.25가 부드러움. 보간 중 이동 입력 잠금.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
+	float StepOffDuration = 0.2f;
+
+	// step-off 안착 시 상면 위로 띄우는 여유(uu). 캡슐 반높이에 더해 상면에 살짝 떠서 시작(겹침 방지).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
+	float StepOffZMargin = 20.f;
+
+	// 등반 종료 후 트리거 재진입 무시 시간(초). step-off 직후 같은 트리거에 다시 잡혀 MOVE_Flying로
+	// 복귀하는 무한 토글(진동)을 차단하는 핵심 가드.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
+	float ClimbReentryCooldown = 0.5f;
+
+	// 도달 판정 히스테리시스(uu). 상/하단 경계에서 도달↔미도달 매프레임 토글 방지.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
+	float ClimbReachMargin = 5.f;
+
+	// 등반 진입 허용 Z 여유(uu). 캐릭터 발이 사다리 하단 + 이 값 이내일 때만 등반 시작.
+	// 상면에서 걸어다니는 캐릭터(발 Z ≈ 상단)가 전체높이 트리거에 닿아 등반으로 오인되어 step-off가
+	// 반복되는 것을 차단(밑동 전용 진입). ⚠️ 상면→하강 등반은 미지원(올라가기 전용, MVP). 하강은 후속.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
+	float ClimbEntryZTolerance = 80.f;
+
+	// 현재 오르는 사다리(없으면 null). 등반 상태의 단일 진실원.
+	UPROPERTY(Transient)
+	TObjectPtr<AOJJ_Ladder> CurrentLadder;
+
+	// 재진입 쿨다운 만료 월드시각(초). BeginClimb이 이 시각 전이면 무시.
+	float ClimbCooldownUntil = 0.f;
+
+	// 등반 활성 플래그(#184). CurrentLadder와 함께 set/clear. 사다리가 GC/파괴로 사라지면 포인터는
+	// null이 되지만 이 플래그로 '비정상 소멸'을 감지해 비행/중력0 고착을 Tick에서 복구.
+	bool bClimbing = false;
+
+	// step-off 보간 상태(#184). 보간 중엔 이동 입력 잠금 + 비행(중력0) 유지, 완료 시 Walking+쿨다운.
+	bool bSteppingOff = false;
+	FVector StepOffStart = FVector::ZeroVector;
+	FVector StepOffTarget = FVector::ZeroVector;
+	float StepOffElapsed = 0.f;
+
+	// 등반/step-off 종료 후 걷기 복귀 + 재진입 쿨다운 개시(공통 단일원).
+	void ResumeWalkingWithCooldown();
 
 	// --- 상호작용(Interact) ---
 	// 카메라 전방 머신 상호작용 트레이스 최대 거리(uu). 빌드모드 호버와 동일 채널(ECC_Visibility).
