@@ -64,10 +64,7 @@ class OrchestratorAgent:
         payload: dict[str, Any],
         context: AgentContext,
     ) -> str:
-        results = [
-            tool.invoke(payload, context)
-            for tool in self.tools
-        ]
+        results = [tool.invoke(payload, context) for tool in self.tools]
         return "\n\n".join(
             f"[{result.section}]\n{result.content}"
             for result in results

@@ -21,7 +21,17 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    bind = op.get_bind()
+    is_sqlite = bind.dialect.name == "sqlite"
+
+    if not is_sqlite:
+        op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        embedding_type = Vector(1536)
+        metadata_json_type = postgresql.JSONB()
+    else:
+        embedding_type = sa.JSON()
+        metadata_json_type = sa.JSON()
+
     op.create_table(
         "manual_rag_documents",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -31,8 +41,8 @@ def upgrade() -> None:
         sa.Column("title", sa.String(length=255), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("content_hash", sa.String(length=64), nullable=False),
-        sa.Column("metadata_json", postgresql.JSONB(), nullable=False),
-        sa.Column("embedding", Vector(1536), nullable=False),
+        sa.Column("metadata_json", metadata_json_type, nullable=False),
+        sa.Column("embedding", embedding_type, nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default="true", nullable=False),
         sa.Column(
             "created_at",
@@ -57,26 +67,37 @@ def upgrade() -> None:
         "manual_rag_documents",
         ["is_active"],
     )
-    op.create_index(
-        "ix_manual_rag_documents_metadata_json",
-        "manual_rag_documents",
-        ["metadata_json"],
-        postgresql_using="gin",
-    )
-    op.create_index(
-        "ix_manual_rag_documents_embedding",
-        "manual_rag_documents",
-        ["embedding"],
-        postgresql_using="ivfflat",
-        postgresql_ops={"embedding": "vector_cosine_ops"},
-    )
+    if not is_sqlite:
+        op.create_index(
+            "ix_manual_rag_documents_metadata_json",
+            "manual_rag_documents",
+            ["metadata_json"],
+            postgresql_using="gin",
+        )
+        op.create_index(
+            "ix_manual_rag_documents_embedding",
+            "manual_rag_documents",
+            ["embedding"],
+            postgresql_using="ivfflat",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        )
+    else:
+        op.create_index(
+            "ix_manual_rag_documents_metadata_json",
+            "manual_rag_documents",
+            ["metadata_json"],
+        )
 
 
 def downgrade() -> None:
-    op.drop_index(
-        "ix_manual_rag_documents_embedding",
-        table_name="manual_rag_documents",
-    )
+    bind = op.get_bind()
+    is_sqlite = bind.dialect.name == "sqlite"
+
+    if not is_sqlite:
+        op.drop_index(
+            "ix_manual_rag_documents_embedding",
+            table_name="manual_rag_documents",
+        )
     op.drop_index(
         "ix_manual_rag_documents_metadata_json",
         table_name="manual_rag_documents",

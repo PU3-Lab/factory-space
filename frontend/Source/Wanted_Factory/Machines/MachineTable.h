@@ -19,7 +19,7 @@ struct FMachineTableRow : public FTableRowBase
 	FName MachineType;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	int32 Level;
+	int32 Level = 0;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName CostType;

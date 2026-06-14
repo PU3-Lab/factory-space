@@ -13,7 +13,7 @@ from agents.pipeline.tool_node import is_tool_request
 from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS
 
 SINGLE_LEAF_AGENT_IDS = {
-    "new_material_generator": ("new_material_generator",),
+    "material_generation": ("material_generation",),
     "process_optimizer": ("process_optimizer",),
 }
 
@@ -21,7 +21,7 @@ TOP_LEVEL_AGENT_BRANCHES = {
     "process_optimizer": "validate_process_payload",
     "operator_guide": "operator_guide.route_sub_agent",
     "quest_generator": "quest_generator.route_sub_agent",
-    "new_material_generator": "validate_material_payload",
+    "material_generation": "synthesize_material",
 }
 
 
@@ -41,7 +41,6 @@ def wire_agent_graph(graph: StateGraph) -> None:
         "validate_process_payload",
         "operator_guide.route_sub_agent",
         "quest_generator.route_sub_agent",
-        "validate_material_payload",
     ):
         graph.add_conditional_edges(
             node,
@@ -123,8 +122,20 @@ def wire_agent_graph(graph: StateGraph) -> None:
     )
     graph.add_edge("cache_write", "agent.middleware.after")
     graph.add_edge("agent.middleware.after", "build_agent_response")
+    graph.add_conditional_edges(
+        "synthesize_material",
+        route_synthesis_result,
+        {
+            "valid": "build_agent_response",
+            "error": "build_agent_error",
+        },
+    )
     graph.add_edge("build_agent_response", END)
     graph.add_edge("build_agent_error", END)
+
+
+def route_synthesis_result(state: AgentGraphState) -> Literal["valid", "error"]:
+    return "error" if state.get("error") else "valid"
 
 
 def route_selected_agent(state: AgentGraphState) -> TopRoute:

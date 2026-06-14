@@ -65,7 +65,9 @@ class ManualQAContextBuilder:
                         sources.append(self._resource_source(resource))
                         evidence["records"].append(self._resource_evidence(resource))
                 continue
-            if (rule := self._repository.get_troubleshooting_rule(target_id)) is not None:
+            if (
+                rule := self._repository.get_troubleshooting_rule(target_id)
+            ) is not None:
                 sources.append(self._rule_source(rule))
                 recommended_action_ids.extend(rule.recommended_action_ids)
                 evidence["records"].append(self._rule_evidence(rule))

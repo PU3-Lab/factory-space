@@ -781,16 +781,16 @@ def test_pipeline_records_middleware_logs_and_current_model(
         "slot": "fallback2",
         "provider": "none",
     }
-    assert [
-        log["node"] for log in metadata["middlewareLogs"]
-    ] == [
+    assert [log["node"] for log in metadata["middlewareLogs"]] == [
         "agent.middleware.before",
         "agent.middleware.fallback",
         "agent.middleware.after",
     ]
-    assert [
-        log["event"] for log in metadata["middlewareLogs"]
-    ] == ["agent_started", "deterministic_fallback", "agent_finished"]
+    assert [log["event"] for log in metadata["middlewareLogs"]] == [
+        "agent_started",
+        "deterministic_fallback",
+        "agent_finished",
+    ]
     assert "agent.middleware.before agent_started" in caplog.messages
     assert "agent.middleware.fallback deterministic_fallback" in caplog.messages
     assert "agent.middleware.after agent_finished" in caplog.messages
@@ -864,7 +864,9 @@ def test_pipeline_rejects_non_object_llm_response() -> None:
     assert_agent_error(response, code="INVALID_LLM_RESPONSE")
 
 
-def test_pipeline_returns_routing_unavailable_for_invalid_explicit_agent_without_model_decision() -> None:
+def test_pipeline_returns_routing_unavailable_for_invalid_explicit_agent_without_model_decision() -> (
+    None
+):
     pipeline = AgentPipeline(llm=StubLLM([]))
 
     response = pipeline.run(
