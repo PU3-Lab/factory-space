@@ -21,6 +21,7 @@ class WANTED_FACTORY_API UUI_MachineInteract : public UUserWidget
 public:
 	virtual void NativeConstruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	virtual bool NativeOnDrop(const FGeometry& MyGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 
 	// 모든 닫힘 경로(BTN_Close·외부 RemoveFromParent)를 NativeDestruct 한 곳에서 커버해 OnClosed를 1회 Broadcast.
 	virtual void NativeDestruct() override;

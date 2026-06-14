@@ -6,6 +6,8 @@
 #include "Engine/DataTable.h"
 #include "Resource/ResourceData.h"
 #include "Machines/MachineTable.h"
+#include "ItemDragDropOperation.h"
+#include "PlayerWarehouseSubsystem.h"
 
 void UUI_MachineInteract::SetTargetMachine(AMachineBase* InMachine)
 {
@@ -266,4 +268,49 @@ void UUI_MachineInteract::UpdateDurabilityUI(float CurrentDurability, float MaxD
 
         TXT_DurabilityPercent->SetText(FText::FromString(DurabilityStr));
     }
+}
+
+bool UUI_MachineInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+    // 1. 공중에 떠돌던 마우스 오퍼레이션을 아이템용 클래스로 캐스팅
+    UItemDragDropOperation* ItemDragOp = Cast<UItemDragDropOperation>(InOperation);
+    if (!ItemDragOp || !TargetMachine) return false;
+
+    FName DroppedItemID = ItemDragOp->DraggedItemID;
+
+    // 2. 현재 기계가 돌고 있는 레시피 구조체 가져오기
+    FRecipeTable CurrentRecipe = TargetMachine->GetCurrentRecipe();
+    
+    // 유저가 던진 아이템이 이 기계가 '요구하는 재료1번'과 일치하는가?
+    if (DroppedItemID != CurrentRecipe.InputItem1)
+    {
+        return false; 
+    }
+
+    // 이미 기계 입력 버퍼가 가득 차 있다면 투입 거부
+    int32 CurrentInputAmount = TargetMachine->GetInputInventory().FindRef(DroppedItemID);
+    if (CurrentInputAmount >= TargetMachine->GetMaxInput())
+    {
+        return false;
+    }
+
+    // 3. 서브시스템에 접근하여 내 가방(유저 인벤토리)에서 해당 아이템 1개 빼기
+    UGameInstance* GI = GetGameInstance();
+    if (GI)
+    {
+        UPlayerWarehouseSubsystem* WarehouseSubsystem = GI->GetSubsystem<UPlayerWarehouseSubsystem>();
+        if (WarehouseSubsystem)
+        {
+            bool bSuccess = WarehouseSubsystem->TakeItem(DroppedItemID, 1); 
+            
+            if (bSuccess)
+            {
+                // 4. 서브시스템에서 차감 완료되었으니, 실제 기계 데이터 인벤토리에 1개 가산!!
+                TargetMachine->AddItem(DroppedItemID, 1);
+                return true; 
+            }
+        }
+    }
+
+    return false;
 }

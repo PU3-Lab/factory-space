@@ -25,6 +25,7 @@
 #include "OJJ_Grid.h"
 #include "Blueprint/UserWidget.h"
 #include "MachineBase.h"
+#include "Machines/WarehousePort.h"
 #include "UI/UI_MachineInteract.h"
 #include "UI/UI_MainHUD.h"
 #include "UI/UI_Inventory.h"
@@ -769,6 +770,12 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 	// (자체 닫기 시 입력모드/커서 즉시 복원은 위젯 OnClosed 델리게이트 → RestoreGameInputMode가 처리.)
 	if (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport())
 	{
+		if (bIsInventoryOpen && InventoryWidgetInstance)
+		{
+			InventoryWidgetInstance->RemoveFromParent();
+			bIsInventoryOpen = false;
+			GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
+		}
 		CloseMachineInteractWidget(PC);
 		return;
 	}
@@ -816,6 +823,36 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 	// 머신 참조 전달 — 위젯의 모든 실데이터(입출력/상태/진행도/내구도) 표시가 이 참조에 의존.
 	Widget->SetTargetMachine(Machine);
 	MachineInteractWidgetInstance = Widget;
+	// 🌟 3. [핵심 추가] 상호작용한 대상이 하필 '창고 포트'인 경우 우측에 인벤토리 가방 동시 팝업!
+	if (AWarehousePort* Warehouse = Cast<AWarehousePort>(Machine))
+	{
+		if (!InventoryWidgetInstance && InventoryWidgetClass)
+		{
+			InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
+		}
+
+		if (InventoryWidgetInstance)
+		{
+			// 달리기 도중 켰을 때 미끄러짐 방지
+			if (AController* PlayerController = GetController())
+			{
+				PlayerController->StopMovement();
+			}
+
+			InventoryWidgetInstance->RefreshInventoryWindow();
+			InventoryWidgetInstance->AddToViewport();
+			bIsInventoryOpen = true;
+
+			// 가방 데이터 0.1초 실시간 동기화 루프 시작
+			GetWorldTimerManager().SetTimer(
+				InventoryRefreshTimerHandle, 
+				this, 
+				&AOJJ_Player::UpdateInventoryRealtime, 
+				0.1f, 
+				true
+			);
+		}
+	}
 
 	// 열 때: 마우스로 위젯과 상호작용 가능하도록 GameAndUI + 커서 표시.
 	PC->SetInputMode(FInputModeGameAndUI());
@@ -829,6 +866,13 @@ void AOJJ_Player::CloseMachineInteractWidget(APlayerController* PC)
 		Widget->RemoveFromParent();
 	}
 	MachineInteractWidgetInstance = nullptr;
+	
+	if (bIsInventoryOpen && InventoryWidgetInstance)
+	{
+		InventoryWidgetInstance->RemoveFromParent();
+		bIsInventoryOpen = false;
+		GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
+	}
 
 	// 닫을 때: 게임 전용 입력 복원 + 커서 숨김.
 	if (PC)

@@ -3,6 +3,7 @@
 #include "Components/TextBlock.h"
 #include "Engine/DataTable.h"
 #include "Resource/ResourceData.h"
+#include "ItemDragDropOperation.h"
 
 void UUI_InventorySlot::UpdateSlot(FName ItemID, int32 ItemCount)
 {
@@ -46,4 +47,21 @@ void UUI_InventorySlot::UpdateSlot(FName ItemID, int32 ItemCount)
 			}
 		}
 	}
+}
+
+void UUI_InventorySlot::NativeOnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& InPointerEvent, UDragDropOperation*& OutOperation)
+{
+	Super::NativeOnDragDetected(MyGeometry, InPointerEvent, OutOperation);
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, TEXT("!!! DRAG DETECTED IN C++ !!!"));
+	//if (CurrentSlotItemID.IsNone() || CurrentSlotItemCount <= 0) return;
+
+	// 1. 드래그 오퍼레이션 오브젝트 인스턴스 생성
+	UItemDragDropOperation* DragOp = NewObject<UItemDragDropOperation>(this, UItemDragDropOperation::StaticClass());
+    
+	// 2. 주머니에 저장해둔 진짜 아이템 ID를 배달부에 패킹
+	DragOp->DraggedItemID = CurrentSlotItemID; 
+	DragOp->Pivot = EDragPivot::MouseDown;
+
+	// 3. 엔진에 리턴하여 공중 부양 시작
+	OutOperation = DragOp; 
 }

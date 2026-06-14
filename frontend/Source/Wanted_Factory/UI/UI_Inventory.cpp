@@ -8,7 +8,7 @@
 void UUI_Inventory::RefreshInventoryWindow()
 {
 	if (!GDP_ItemGrid || !SlotWidgetClass) return;
-	
+    
 	GDP_ItemGrid->ClearChildren(); 
 
 	UGameInstance* GameInstance = GetGameInstance();
@@ -20,9 +20,9 @@ void UUI_Inventory::RefreshInventoryWindow()
 	const TMap<FName, int32>& CurrentItems = WarehouseSubsystem->GetStoredItems();
 	TArray<FName> ItemIDs;
 	CurrentItems.GetKeys(ItemIDs);
-
-	int32 MaxColumns = 6; 
-	int32 TotalSlots = 30; 
+	
+	int32 MaxColumns = 5;  
+	int32 TotalSlots = 30; // 총 슬롯은 30개로 유지 (5칸 * 6줄 = 30)
 
 	for (int32 i = 0; i < TotalSlots; ++i)
 	{
@@ -38,7 +38,7 @@ void UUI_Inventory::RefreshInventoryWindow()
 			{
 				NewSlot->UpdateSlot(NAME_None, 0);
 			}
-
+			
 			int32 Row = i / MaxColumns;
 			int32 Column = i % MaxColumns;
 
