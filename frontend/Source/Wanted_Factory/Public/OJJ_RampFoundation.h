@@ -32,9 +32,11 @@ public:
 
 	// 자동 맞춤 풋프린트(F3.6-1, 계획 §1·§4 — f3_6_autofit_ramp_plan.md): 회전 축(R키 — 축만, ㊁)
 	// 양방향으로 이웃 Foundation 라인을 스캔해 ① 양쪽 발견 → 틈 D칸 × 폭 W(㊀ — CDO FoundationSize.Y)
-	// 풋프린트 + ΔZ=k단 자동 산출(부호 = 이웃 낮→높 자동), 행간 계단 ≤ 45uu 검증(미달 시
+	// 풋프린트 + ΔZ=k단 자동 산출(부호 = 이웃 낮→높 자동), 행간 계단 ≤ MaxRampStepPerRow 검증(미달 시
 	// bValid=false + 최소 칸수 사유) ② 한쪽/무이웃 → 베이스 폴백(고정 램프 — R이 축+부호, F3.5 ③
 	// 엣지 스냅/씨앗은 기존 그대로). ΔZ=0은 평지 브리지(㉿ — RiseSteps 0).
+	// F3.10: 틈 1칸·Δ1단은 특례 허용(1칸 45° 쐐기, 보행 불가 — 컨베이어 전용) — 장부는 Z_low 평판
+	// 단일값(OJJ_BuildPerCellSurfaceZ R<2 폴백), 면/벨트는 쐐기 빗변 훅. Δ≥2단 1칸은 기존대로 거부.
 	virtual FOJJFoundationFitResult OJJ_ComputeHoverFootprint(const AOJJ_Grid& Grid, FIntPoint CursorCell,
 		int32 RotationSteps) const override;
 

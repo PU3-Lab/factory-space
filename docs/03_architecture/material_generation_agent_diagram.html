@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>신물질 생성 에이전트 — 아키텍처 다이어그램</title>
+<script>
+  (function () {
+    const saved = localStorage.getItem('theme');
+    const dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.classList.toggle('dark', dark);
+  })();
+</script>
+<style>
+  :root {
+    --bg: #FAF9F5; --surface: #FFFFFF; --surface2: #F0EEE6;
+    --ink: #141413; --body: #3D3D3A; --muted: #87867F;
+    --line: #D1CFC5; --line-soft: #E6E3DA;
+    --clay: #D97757; --clay-soft: rgba(217,119,87,0.10);
+    --olive: #788C5D; --olive-soft: rgba(120,140,93,0.12);
+    --gold: #C9A45C; --blue: #5B7E96;
+    --zone: rgba(20,20,19,0.025); --zone-line: #D1CFC5;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --serif: ui-serif, Georgia, "Times New Roman", serif;
+  }
+  html.dark {
+    --bg: #141413; --surface: #1F1F1D; --surface2: #2A2A28;
+    --ink: #FAF9F5; --body: #D1CFC5; --muted: #87867F;
+    --line: #3D3D3A; --line-soft: #2A2A28;
+    --clay: #E48A6E; --clay-soft: rgba(228,138,110,0.14);
+    --olive: #9DB07C; --olive-soft: rgba(157,176,124,0.16);
+    --gold: #D4B36F; --blue: #7FA3BC;
+    --zone: rgba(250,249,245,0.03); --zone-line: #3D3D3A;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--body); font-family: var(--sans);
+    -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  /* ── top bar ─────────────────────────────── */
+  .bar {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 12px 20px; border-bottom: 1px solid var(--line-soft); flex: none;
+  }
+  .bar h1 { font-family: var(--serif); font-weight: 500; font-size: 19px; color: var(--ink); letter-spacing: -0.01em; }
+  .bar .sub { font-family: var(--mono); font-size: 10.5px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+  .spacer { flex: 1; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    font-family: var(--sans); font-size: 11px; font-weight: 500;
+    padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px;
+    background: transparent; color: var(--muted); cursor: pointer; transition: all .15s ease;
+  }
+  .chip:hover { color: var(--ink); border-color: var(--muted); }
+  .chip.on { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  #themeToggle {
+    font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 5px 10px; border: 1px solid var(--line); border-radius: 6px;
+    background: transparent; color: var(--muted); cursor: pointer;
+  }
+  #themeToggle:hover { color: var(--ink); border-color: var(--muted); }
+
+  /* ── stage ───────────────────────────────── */
+  .stage { flex: 1; position: relative; min-height: 0; }
+  .stage svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  /* zones */
+  .zone rect { fill: var(--zone); stroke: var(--zone-line); stroke-width: 1; stroke-dasharray: 5 5; rx: 16; }
+  .zone .ztitle {
+    font-family: var(--sans); font-size: 13px; font-weight: 700; letter-spacing: 0.05em; fill: var(--ink);
+    stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; paint-order: stroke fill;
+  }
+  .zone .zsub {
+    font-family: var(--mono); font-size: 10.5px; fill: var(--muted); opacity: 0.75;
+    stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; paint-order: stroke fill;
+  }
+
+  /* nodes */
+  .node { cursor: pointer; }
+  .node rect { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; rx: 10; transition: stroke .15s ease, filter .15s ease; }
+  .node:hover rect { stroke: var(--muted); }
+  .node.sel rect { stroke: var(--clay) !important; stroke-width: 2.2; }
+  .node .t  { font-family: var(--sans); font-size: 13.5px; font-weight: 600; fill: var(--ink); pointer-events: none; }
+  .node .m  { font-family: var(--sans); font-size: 11px; fill: var(--muted); pointer-events: none; }
+  .node .k  { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; fill: var(--clay); pointer-events: none; }
+  .node.gate rect { fill: var(--clay-soft); stroke: var(--clay); }
+  .node.store rect { fill: var(--surface2); }
+  .node.do rect { fill: var(--olive-soft); stroke: var(--olive); }
+  .node.ext rect { stroke-dasharray: 6 3; }
+
+  /* edges */
+  .edge { stroke: var(--muted); stroke-width: 1.6; fill: none; marker-end: url(#a-mut); transition: opacity .2s ease, stroke .2s ease; }
+  .edge.dash { stroke-dasharray: 5 4; }
+  .edge.double-way { marker-end: url(#a-mut); marker-start: url(#a-mut-start); }
+  .edge.ws { stroke-width: 2; }
+  
+  /* 텍스트 가림 및 겹침 방지를 위한 Outlined Text 효과 */
+  .elbl {
+    font-family: var(--sans); font-size: 10px; fill: var(--body);
+    transition: opacity .2s ease, fill .2s ease; font-weight: 600;
+    stroke: var(--bg); stroke-width: 4.5px; stroke-linejoin: round; paint-order: stroke fill;
+  }
+
+  /* flow highlighting */
+  .stage.flowing .edge { opacity: 0.12; }
+  .stage.flowing .elbl { opacity: 0.12; }
+  .stage.flowing .node { opacity: 0.25; }
+  .stage.flowing .zone { opacity: 0.40; }
+  .stage.flowing .edge.lit {
+    opacity: 1; stroke: var(--clay); marker-end: url(#a-clay);
+    stroke-dasharray: 7 5; animation: march 0.9s linear infinite;
+  }
+  .stage.flowing .edge.double-way.lit {
+    marker-start: url(#a-clay-start);
+  }
+  .stage.flowing .elbl.lit {
+    opacity: 1; fill: var(--clay); font-weight: 700;
+    stroke: var(--bg); /* lit 상태에서도 흰 테두리를 유지하여 가려짐 완벽 차단 */
+  }
+  .stage.flowing .node.lit { opacity: 1; }
+  .stage.flowing .node.lit rect { stroke: var(--clay); }
+  @keyframes march { to { stroke-dashoffset: -12; } }
+  @media (prefers-reduced-motion: reduce) { .stage.flowing .edge.lit { animation: none; } }
+
+  .badge { font-family: var(--mono); font-size: 11px; font-weight: 700; }
+  .badge circle { fill: var(--clay); }
+  .badge text { fill: var(--bg); }
+  .stage:not(.flowing) .badge { display: none; }
+
+  /* ── floating cards ──────────────────────── */
+  .card {
+    position: absolute; max-width: 380px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.08);
+    transition: background 0.15s, border-color 0.15s;
+  }
+  #detail { right: 16px; bottom: 16px; width: 360px; }
+  #detail h3 { font-family: var(--serif); font-weight: 500; font-size: 18px; color: var(--ink); margin-bottom: 4px; }
+  #detail .meta { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+  #detail p { font-size: 13px; line-height: 1.6; color: var(--body); }
+  #detail p code, #flowcap code { font-family: var(--mono); font-size: 11.5px; color: var(--clay); background: var(--zone); padding: 1px 4px; border-radius: 4px; }
+  #flowcap { left: 16px; bottom: 16px; max-width: 520px; display: none; }
+  #flowcap.show { display: block; }
+  #flowcap .fname { font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--clay); margin-bottom: 8px; }
+  #flowcap ol { margin-left: 20px; }
+  #flowcap li { font-size: 13px; line-height: 1.6; margin-bottom: 6px; color: var(--body); }
+  .src { position: absolute; top: 10px; right: 20px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); opacity: 0.8; }
+  
+  @media (max-width: 960px) {
+    body { overflow: auto; }
+    .stage { min-height: 80vh; }
+    #detail { position: static; width: auto; margin: 10px 16px; }
+    #flowcap { position: static; margin: 0 16px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <div>
+    <h1>신물질 생성 에이전트 아키텍처</h1>
+    <div class="sub">LangGraph · Validation Retry Loop · Registry Caching · Async Asset Pipeline</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="chips" id="chips">
+    <button class="chip on" data-flow="all">전체 컴포넌트</button>
+    <button class="chip" data-flow="exist_recipe">1. 기존 레시피 매칭</button>
+    <button class="chip" data-flow="cache_hit">2. 실험 캐시 히트</button>
+    <button class="chip" data-flow="failed_val">3. 결정론적 실패</button>
+    <button class="chip" data-flow="new_material">4. 신물질 생성 성공</button>
+    <button class="chip" data-flow="retry_loop">5. 검증 반려/재시도</button>
+  </div>
+  <button id="themeToggle">테마 전환</button>
+</div>
+
+<div class="stage" id="stage">
+<svg viewBox="0 0 1600 860" preserveAspectRatio="xMidYMid meet" role="img" aria-label="New Material Generation Agent Architecture Diagram">
+  <defs>
+    <!-- Markers for edge arrows -->
+    <marker id="a-mut" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--muted)"/>
+    </marker>
+    <marker id="a-mut-start" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M10,0 L0,5 L10,10 z" style="fill: var(--muted)"/>
+    </marker>
+    <marker id="a-clay" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--clay)"/>
+    </marker>
+    <marker id="a-clay-start" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M10,0 L0,5 L10,10 z" style="fill: var(--clay)"/>
+    </marker>
+  </defs>
+
+  <!-- ── ZONES ─────────────────────────────── -->
+  <g class="zone" id="z-clients">
+    <rect x="40" y="80" width="220" height="700"/>
+    <text class="ztitle" x="60" y="115">1. Clients</text>
+    <text class="zsub" x="60" y="135">실시간 & API 통신 계층</text>
+  </g>
+  <g class="zone" id="z-orchestrator">
+    <rect x="300" y="80" width="310" height="700"/>
+    <text class="ztitle" x="320" y="115">2. Agent Orchestrator</text>
+    <text class="zsub" x="320" y="135">LangGraph 워크플로우 제어</text>
+  </g>
+  <g class="zone" id="z-deterministic">
+    <rect x="650" y="80" width="300" height="700"/>
+    <text class="ztitle" x="670" y="115">3. Deterministic Validation</text>
+    <text class="zsub" x="670" y="135">규칙 기반 분류 및 검색</text>
+  </g>
+  <g class="zone" id="z-llm-engine">
+    <rect x="990" y="80" width="280" height="700"/>
+    <text class="ztitle" x="1010" y="115">4. LLM Synthesis Engine</text>
+    <text class="zsub" x="1010" y="135">생성형 기획 및 정책 사후 검증</text>
+  </g>
+  <g class="zone" id="z-registry">
+    <rect x="1310" y="80" width="250" height="700"/>
+    <text class="ztitle" x="1330" y="115">5. Registries & Pipeline</text>
+    <text class="zsub" x="1330" y="135">영속화 캐시 및 비동기 에셋 파이프라인</text>
+  </g>
+
+  <!-- ── EDGES ── -->
+  <!-- Client to Pipeline Runtime -->
+  <path class="edge" id="e-ws-req" d="M 230,245 H 280 V 200 H 330"/>
+  <path class="edge" id="e-rest-req" d="M 230,385 H 280 V 200 H 330"/>
+  
+  <!-- Pipeline Runtime to LangGraph Agent -->
+  <path class="edge" id="e-pip-core" d="M 455,240 L 455,310"/>
+
+  <!-- LangGraph Agent to Deterministic Components -->
+  <path class="edge" id="e-core-norm" d="M 580,335 H 610 V 175 H 675"/>
+  <path class="edge" id="e-core-pre" d="M 580,355 H 630 V 270 H 675"/>
+  <path class="edge" id="e-core-class" d="M 580,365 H 675"/>
+  <path class="edge" id="e-core-sim" d="M 580,385 H 630 V 460 H 675"/>
+
+  <!-- Agent to LLM Proposal / Validation Retry Loop -->
+  <path class="edge" id="e-core-llm" d="M 580,405 H 615 V 515 H 975 V 305 H 1005"/>
+  <path class="edge" id="e-llm-val" d="M 1110,350 L 1110,410"/>
+  <path class="edge" id="e-val-llm" d="M 1150,410 L 1150,350"/>
+  <path class="edge" id="e-val-core" d="M 1005,455 H 975 V 555 H 550 V 415"/>
+
+  <!-- Agent to Registries (상단 우회선 경로를 y=110에서 ztitle을 피해 zbox 외부 상단 y=50으로 대폭 인상) -->
+  <path class="edge" id="e-core-expreg" d="M 580,320 H 600 V 50 H 1300 V 182 H 1335"/>
+  <path class="edge" id="e-core-matreg" d="M 580,410 H 600 V 535 H 1300 V 302 H 1335"/>
+
+  <!-- Registries to DB -->
+  <path class="edge" id="e-expreg-db" d="M 1435,225 L 1435,410"/>
+  <path class="edge" id="e-matreg-db" d="M 1435,345 L 1435,410"/>
+
+  <!-- Agent to Event Publisher & Async Pipeline -->
+  <path class="edge" id="e-core-pub" d="M 455,415 L 455,580"/>
+  <path class="edge" id="e-pub-vis" d="M 580,620 H 1335"/>
+  <path class="edge" id="e-vis-db" d="M 1435,580 L 1435,500"/>
+
+
+  <!-- ── EDGE LABELS ── -->
+  <text class="elbl" data-e="e-ws-req" x="305" y="192" text-anchor="middle">Unreal WS 요청</text>
+  <text class="elbl" data-e="e-rest-req" x="255" y="377" text-anchor="middle">REST API 요청</text>
+  <text class="elbl" data-e="e-pip-core" x="465" y="278" text-anchor="start">세션 바인딩</text>
+  
+  <text class="elbl" data-e="e-core-norm" x="642" y="167" text-anchor="end">정규화 & Hash</text>
+  <text class="elbl" data-e="e-core-pre" x="642" y="262" text-anchor="end">기존 레시피 검사</text>
+  <text class="elbl" data-e="e-core-class" x="628" y="357" text-anchor="middle">실험 유형 분류</text>
+  <text class="elbl" data-e="e-core-sim" x="642" y="452" text-anchor="end">유사 실험 조회</text>
+
+  <text class="elbl" data-e="e-core-llm" x="795" y="507" text-anchor="middle">신물질 초안 요청 (우회)</text>
+  <text class="elbl" data-e="e-llm-val" x="1102" y="380" text-anchor="end">초안 송신</text>
+  <text class="elbl" data-e="e-val-llm" x="1158" y="380">반려 & 보정 가이드</text>
+  <text class="elbl" data-e="e-val-core" x="762" y="547" text-anchor="middle">검증 완료 결과 반환</text>
+
+  <!-- 상단 우회에 따라 라벨 텍스트의 Y좌표도 y=42로 최적화 이동 -->
+  <text class="elbl" data-e="e-core-expreg" x="950" y="42" text-anchor="middle">실험 이력 캐시 조회 (상단 우회)</text>
+  <text class="elbl" data-e="e-core-matreg" x="950" y="527" text-anchor="middle">신물질 명세 등록 (하단 우회)</text>
+
+  <text class="elbl" data-e="e-expreg-db" x="1442" y="375" text-anchor="start">실험 데이터 SQL</text>
+  <text class="elbl" data-e="e-matreg-db" x="1442" y="320" text-anchor="start">신물질 명세 SQL</text>
+
+  <text class="elbl" data-e="e-core-pub" x="465" y="500" text-anchor="start">이벤트 발행</text>
+  <text class="elbl" data-e="e-pub-vis" x="950" y="612" text-anchor="middle">MaterialCreated 이벤트 수신</text>
+  <text class="elbl" data-e="e-vis-db" x="1442" y="540" text-anchor="start">에셋 경로 갱신</text>
+
+
+  <!-- ── NODES: 1. CLIENTS ────────────────────── -->
+  <g class="node" data-k="unreal_ws">
+    <rect x="70" y="200" width="160" height="90"/>
+    <text class="t" x="90" y="232">Unreal Client</text>
+    <text class="m" x="90" y="254">WebSocket 연결</text>
+    <text class="m" x="90" y="272">실시간 합성 요청</text>
+  </g>
+  <g class="node" data-k="rest_api">
+    <rect x="70" y="340" width="160" height="90"/>
+    <text class="t" x="90" y="372">REST Client</text>
+    <text class="m" x="90" y="394">FastAPI Router</text>
+    <text class="m" x="90" y="412">개발/조회 API (/api/v1)</text>
+  </g>
+
+
+  <!-- ── NODES: 2. AGENT ORCHESTRATOR ─────────────────── -->
+  <g class="node" data-k="pipeline">
+    <rect x="330" y="160" width="250" height="80"/>
+    <text class="t" x="350" y="192">AgentPipeline (Runtime)</text>
+    <text class="m" x="350" y="212">FastAPI 의존성 주입 & DB 세션</text>
+    <text class="m" x="350" y="226">요청 정적 유효성 검증</text>
+  </g>
+  <g class="node gate" data-k="agent_core">
+    <rect x="330" y="310" width="250" height="105"/>
+    <text class="t" x="350" y="342">MaterialCreationAgent</text>
+    <text class="k" x="350" y="364">LangGraph orchestrator</text>
+    <text class="m" x="350" y="382">동기 SQLAlchemy 세션 보존</text>
+    <text class="m" x="350" y="396">graph.py / nodes.py</text>
+  </g>
+  <g class="node" data-k="event_pub">
+    <rect x="330" y="580" width="250" height="80"/>
+    <text class="t" x="350" y="612">MaterialEventPublisher</text>
+    <text class="m" x="350" y="632">MaterialCreated 이벤트 발행</text>
+    <text class="m" x="350" y="646">비동기 백그라운드 트리거</text>
+  </g>
+
+
+  <!-- ── NODES: 3. DETERMINISTIC VALIDATION ────────────── -->
+  <g class="node" data-k="normalizer">
+    <rect x="675" y="140" width="250" height="70"/>
+    <text class="t" x="695" y="170">Input Normalizer</text>
+    <text class="m" x="695" y="190">투입 아이템 정렬 및 키 생성</text>
+    <text class="m" x="695" y="202">experiment_hash 생성</text>
+  </g>
+  <g class="node" data-k="prevalidator">
+    <rect x="675" y="235" width="250" height="70"/>
+    <text class="t" x="695" y="265">RecipePreValidator</text>
+    <text class="m" x="695" y="285">기존 Recipe Table 매칭 검사</text>
+    <text class="m" x="695" y="297">알려진 아이템(known_items) 유효성</text>
+  </g>
+  <g class="node" data-k="classifier">
+    <rect x="675" y="330" width="250" height="70"/>
+    <text class="t" x="695" y="360">ExperimentClassifier</text>
+    <text class="m" x="695" y="380">단순변형, 중간재, 실패, 후보</text>
+    <text class="m" x="695" y="392">4가지 타입으로 결정론적 분류</text>
+  </g>
+  <g class="node" data-k="similarity">
+    <rect x="675" y="425" width="250" height="70"/>
+    <text class="t" x="695" y="455">Similarity Service</text>
+    <text class="m" x="695" y="475">동일 머신/동일 계열 유사실험 검색</text>
+    <text class="m" x="695" y="487">LLM 프롬프트용 유사 맥락 제공</text>
+  </g>
+
+
+  <!-- ── NODES: 4. LLM SYNTHESIS ENGINE ───────────────────── -->
+  <g class="node do" data-k="llm_proposal">
+    <rect x="1005" y="260" width="250" height="90"/>
+    <text class="t" x="1025" y="290">Proposal Generator</text>
+    <text class="m" x="1025" y="312">LLM 의미론적 물질 기획</text>
+    <text class="m" x="1025" y="326">이름, 속성, 위험성, 비주얼</text>
+    <text class="m" x="1025" y="338">프롬프트 및 JSON 초안 생성</text>
+  </g>
+  <g class="node do" data-k="result_val">
+    <rect x="1005" y="410" width="250" height="90"/>
+    <text class="t" x="1025" y="440">MaterialResultValidator</text>
+    <text class="m" x="1025" y="462">JSON Schema 검증 & 중복 검사</text>
+    <text class="m" x="1025" y="476">밸런스 기준 & 금지어 필터링</text>
+    <text class="m" x="1025" y="490">반려 시 LLM 피드백 루프 동작</text>
+  </g>
+
+
+  <!-- ── NODES: 5. REGISTRIES & PIPELINE ───────────────────── -->
+  <g class="node store" data-k="exp_registry">
+    <rect x="1335" y="140" width="200" height="85"/>
+    <text class="t" x="1355" y="170">ExperimentRegistry</text>
+    <text class="m" x="1355" y="190">실험 해시 중복 검사</text>
+    <text class="m" x="1355" y="204">실험 성공/실패 기록 캐싱</text>
+    <text class="m" x="1355" y="216">중복 생성 방지</text>
+  </g>
+  <g class="node store" data-k="mat_registry">
+    <rect x="1335" y="260" width="200" height="85"/>
+    <text class="t" x="1355" y="290">MaterialRegistry</text>
+    <text class="m" x="1355" y="310">신물질 material_hash 생성</text>
+    <text class="m" x="1355" y="324">신물질 명세 저장</text>
+    <text class="m" x="1355" y="336">플레이어 발견 이력 등록</text>
+  </g>
+  <g class="node store" data-k="sqlite_db">
+    <rect x="1335" y="410" width="200" height="90"/>
+    <text class="t" x="1355" y="440">SQLite Database</text>
+    <text class="m" x="1355" y="462">generated_experiments</text>
+    <text class="m" x="1355" y="474">generated_materials</text>
+    <text class="m" x="1355" y="486">discoveries 테이블 저장</text>
+  </g>
+  <g class="node store ext" data-k="visual_pipeline">
+    <rect x="1335" y="580" width="200" height="95"/>
+    <text class="t" x="1355" y="610">VisualAssetPipeline</text>
+    <text class="m" x="1355" y="630">AI 비동기 아이콘 생성</text>
+    <text class="m" x="1355" y="644">2D 텍스처, 썸네일 생성</text>
+    <text class="m" x="1355" y="656">완료 시 에셋 key DB 갱신</text>
+  </g>
+</svg>
+
+<div class="src">docs/03_architecture/material_generation_current_structure.md · v1.0.0</div>
+
+<div class="card" id="flowcap">
+  <div class="fname" id="f-name"></div>
+  <ol id="f-steps"></ol>
+</div>
+
+<div class="card" id="detail">
+  <h3 id="d-title">구성 요소를 클릭하세요</h3>
+  <div class="meta" id="d-meta">상세 설명</div>
+  <p id="d-body">각 컴포넌트 박스를 클릭하면 상세 역할이 이곳에 나타납니다. 상단의 흐름 버튼(1 ~ 5)을 누르면 신물질 합성 에이전트의 작동 시나리오가 아키텍처 다이어그램 상에 강조 및 애니메이션됩니다.</p>
+</div>
+</div>
+
+<script>
+const DETAIL = {
+  unreal_ws: {
+    t: "Unreal Client (WebSocket)",
+    m: "정식 실시간 통신 · payload 검증",
+    b: "Unreal Engine 클라이언트에서 WebSocket을 통해 <code>AgentPipeline</code>으로 연결됩니다. 플레이어가 3D 공장 환경에서 합성을 시도하는 즉시 <code>MaterialCreationRequest</code> 메시지를 실시간으로 전송하고 합성 결과를 대기합니다."
+  },
+  rest_api: {
+    t: "REST Client (HTTP)",
+    m: "개발/디버그용 보조 경로 · /api/v1",
+    b: "실시간 웹 콘솔이나 어드민 도구를 지원하기 위한 API 경로입니다. <code>POST /api/v1/experiments/material-creation</code>를 직접 호출하여 WebSocket과 완전히 동일한 백엔드 아키텍처 파이프라인을 실행합니다."
+  },
+  pipeline: {
+    t: "AgentPipeline (Runtime)",
+    m: "요청 수신 및 세션 관리 · runtime.py",
+    b: "WebSocket과 REST API 요청의 페이로드를 받아 공통 규격인 <code>MaterialCreationRequest</code>로 정규화합니다. 플레이어 식별을 위한 세션 세팅 및 트랜잭션 DB 세션을 준비한 후 <code>MaterialCreationAgent</code>를 호출합니다."
+  },
+  agent_core: {
+    t: "MaterialCreationAgent",
+    m: "오케스트레이터 · graph.py / nodes.py",
+    b: "합성 실험의 전체 워크플로우를 관장하는 LangGraph 기반 상태 기계 에이전트입니다. 결정론적 규칙 검증부터 LLM 제안, 검증 재시도 루프, DB 저장 및 이벤트 발행에 이르기까지 복잡한 분기 흐름을 하나의 동기식 DB 트랜잭션 경계 내에서 동기화합니다."
+  },
+  normalizer: {
+    t: "Input Normalizer",
+    m: "입력 데이터 정규화 및 해싱 · normalizer.py",
+    b: "투입된 장비 종류(MachineType), 입력 아이템 목록(정렬된 item_id 및 qty), 공정 조건(온도, 압력, 촉매 등)을 결합하여 고유 식별 해시인 <code>experiment_hash</code>를 생성합니다. 투입 순서가 달라져도 정렬을 통해 재현성을 보장하고 캐시 판정을 수행하게 돕습니다."
+  },
+  prevalidator: {
+    t: "RecipePreValidator",
+    m: "결정론적 사전 검증 · prevalidator.py",
+    b: "Recipe Table을 기반으로 정적 규칙 검사를 수행합니다. 투입된 조합이 완전한 기존 레시피와 100% 매칭되는지 분석하고, 잘못된 장비 형태(예: Smelter에 분말 합성 시도)나 DB에 등록되지 않은 존재하지 않는 아이템 입력을 사전에 차단합니다."
+  },
+  classifier: {
+    t: "ExperimentClassifier",
+    m: "실험 1차 분류기 · classifier.py",
+    b: "기존 레시피에 매칭되지 않은 조합을 분석하여 결정론적으로 분류합니다.<br>• <code>simple_variation</code>: 기존 레시피의 수량 미달/과다 등 단순 변형<br>• <code>intermediate_material</code>: 혼합 금속 분말 등 중간 상태의 재료<br>• <code>failed_result</code>: 명백한 실패 및 쓰레기 부산물<br>• <code>candidate</code>: 신물질 생성을 진행할 가치가 있는 신규 합성 후보"
+  },
+  similarity: {
+    t: "Similarity Service",
+    m: "유사 실험 검색 · similarity.py",
+    b: "데이터베이스의 기존 합성 실험 기록 중, 투입된 조합과 유사한 아이템 계열의 실험 기록을 찾아옵니다. 이를 LLM 호출 시 참고용 맥락 정보로 입력하여, 플레이어가 시도하는 물질 연구 트리가 개연성 있고 일관되게 생성되도록 지원합니다."
+  },
+  llm_proposal: {
+    t: "Proposal Generator",
+    m: "LLM 의미론적 물질 기획 · proposal_generator.py",
+    b: "신물질 후보군에 대해 대규모 언어 모델(LLM)을 호출합니다. 유사 실험 기록과 게임 내 세계관 가이드를 반영하여 물질의 한국어/영어 이름, 발견 스토리(설명), 속성 분포(강도, 전도성, 안정성 등), 취급 위험성 및 AI 에셋 프롬프트(visual_prompt)를 담은 JSON 규격의 물질 기안을 설계합니다."
+  },
+  result_val: {
+    t: "MaterialResultValidator",
+    m: "결과 사후 검증 및 보정 · result_validator.py",
+    b: "LLM이 반환한 초안 JSON을 철저하게 사후 검사합니다. 형식 스키마 에러 여부, 중복된 물질명 검색, 밸런스 정책 제한치 준수 여부, 위험 요소 합리성 등을 점검합니다. 규칙 위반 시 검증 에러 피드백을 수집하여 LLM에게 보정을 강제하는 루프를 구동합니다."
+  },
+  exp_registry: {
+    t: "ExperimentRegistry",
+    m: "실험 등록 관리 · experiment_registry.py",
+    b: "모든 합성 실험 결과(성공 및 실패 모두 포함)를 <code>experiment_hash</code>와 연결하여 영속적으로 저장합니다. 이 저장소는 일종의 캐시 역할을 하여, 차후 동일 조합에 대한 요청이 들어오면 LLM의 불필요한 재호출 없이 캐시된 결과를 제공합니다."
+  },
+  mat_registry: {
+    t: "MaterialRegistry",
+    m: "신물질 등록 관리 · material_registry.py",
+    b: "최종 검증을 마쳐 확정된 신물질의 고유 식별 해시(<code>material_hash</code>)를 부여하고 사양 정보를 등록합니다. 또한 이를 발견한 플레이어의 도감 기록(generated_material_discoveries)을 연결하여 중복 발견 검증 및 공유를 처리합니다."
+  },
+  sqlite_db: {
+    t: "SQLite Database",
+    m: "관계형 데이터베이스 저장소 · models.py",
+    b: "<code>generated_experiments</code>, <code>generated_materials</code>, <code>generated_material_discoveries</code> 테이블을 통해 모든 합성 기록과 물질 명세, 플레이어별 도감 데이터를 안전하게 로컬 디스크에 기록하고 조회합니다."
+  },
+  event_pub: {
+    t: "MaterialEventPublisher",
+    m: "비동기 이벤트 발행기 · events.py",
+    b: "신물질이 데이터베이스에 정상적으로 기재되면 트랜잭션 커밋 직후 <code>MaterialCreated</code> 도메인 이벤트를 발행합니다. 비주얼 에셋 파이프라인이나 퀘스트 생성 에이전트와 같이 주 스레드 바깥에서 비동기로 실행되어야 하는 모듈들을 트리거합니다."
+  },
+  visual_pipeline: {
+    t: "VisualAssetPipeline",
+    m: "비동기 에셋 생성 · visual_pipeline.py",
+    b: "신물질 생성 이벤트를 비동기로 구독하여 작동하는 백그라운드 프로세스입니다. LLM이 생성한 <code>visual_prompt</code>를 기반으로 이미지 생성 모델을 트리거하여 아이콘, 2D 텍스처, 썸네일을 비동기 백그라운드에서 제작합니다. 완료 시 에셋 Key가 DB에 갱신되며 실패 시 기본 대체 아이콘이 사용됩니다."
+  }
+};
+
+const FLOWS = {
+  exist_recipe: {
+    name: "1. 기존 레시피 매칭 (Existing Recipe)",
+    edges: ["e-ws-req", "e-pip-core", "e-core-norm", "e-core-pre", "e-core-expreg", "e-expreg-db"],
+    nodes: ["unreal_ws", "pipeline", "agent_core", "normalizer", "prevalidator", "exp_registry", "sqlite_db"],
+    steps: [
+      "플레이어가 기존 레시피 테이블에 정의된 정규 조합(예: Smelter + 철광석 2개)을 투입합니다.",
+      "<code>Input Normalizer</code>가 입력 데이터를 표준 포맷으로 변경하고 <code>experiment_hash</code>를 연산합니다.",
+      "<code>RecipePreValidator</code>가 기존 레시피 테이블을 검색하여 완전 매칭(Exact Match)을 감지합니다.",
+      "LLM 리소스를 소비하지 않고 결정론적으로 기존 출력 아이템(예: 철 주괴 1개)을 확정합니다.",
+      "실험 이력을 <code>ExperimentRegistry</code>를 통해 DB에 저장한 후 플레이어에게 산출 결과를 즉시 반환합니다."
+    ]
+  },
+  cache_hit: {
+    name: "2. 실험 캐시 히트 (Cached Experiment)",
+    edges: ["e-ws-req", "e-pip-core", "e-core-norm", "e-core-expreg"],
+    nodes: ["unreal_ws", "pipeline", "agent_core", "normalizer", "exp_registry", "sqlite_db"],
+    steps: [
+      "플레이어가 합성기에 이전에 누군가 시도한 기록이 있는 새로운 원료 조합을 투입합니다.",
+      "정규화 과정에서 산출된 <code>experiment_hash</code>를 검색 키로 삼아 <code>ExperimentRegistry</code> 캐시 조회를 진행합니다.",
+      "일치하는 해시의 기등록 데이터가 있으므로, 이전에 확정된 신물질 정보를 즉시 매핑하여 <code>cached_experiment</code> 응답을 만듭니다.",
+      "LLM Proposal Generator 및 후속 검증 과정을 완전히 바이패스하여 지연 시간과 AI 토큰 비용을 극적으로 절감합니다."
+    ]
+  },
+  failed_val: {
+    name: "3. 결정론적 실패 (Deterministic Failure)",
+    edges: ["e-ws-req", "e-pip-core", "e-core-norm", "e-core-pre", "e-core-class", "e-core-expreg", "e-expreg-db"],
+    nodes: ["unreal_ws", "pipeline", "agent_core", "normalizer", "prevalidator", "classifier", "exp_registry", "sqlite_db"],
+    steps: [
+      "플레이어가 합성 규칙에 맞지 않는 엉뚱한 조합을 투입하거나(예: Smelter에 2개 이상의 주괴 합금 제작), 수량이 부족합니다.",
+      "<code>RecipePreValidator</code>를 통과한 후 <code>ExperimentClassifier</code>에서 입력의 특성을 판별합니다.",
+      "분류기가 이 실험을 <code>failed_result</code>(실패 부산물) 혹은 <code>simple_variation</code>(단순 변형 실패)으로 판정합니다.",
+      "이 또한 LLM 호출 없이 자체적으로 처리 가능한 영역이므로 '불완전 제련물' 또는 '실패 부산물'로 결과를 즉시 확정합니다.",
+      "결과를 <code>ExperimentRegistry</code>에 등록하여 재시도 시 캐싱되게 처리한 후 요청을 종료합니다."
+    ]
+  },
+  new_material: {
+    name: "4. 신물질 생성 성공 (New Material Creation)",
+    edges: ["e-ws-req", "e-pip-core", "e-core-norm", "e-core-pre", "e-core-class", "e-core-sim", "e-core-llm", "e-llm-val", "e-val-core", "e-core-matreg", "e-core-expreg", "e-matreg-db", "e-expreg-db", "e-core-pub", "e-pub-vis", "e-vis-db"],
+    nodes: ["unreal_ws", "pipeline", "agent_core", "normalizer", "prevalidator", "classifier", "similarity", "llm_proposal", "result_val", "mat_registry", "exp_registry", "sqlite_db", "event_pub", "visual_pipeline"],
+    steps: [
+      "플레이어가 합성기(Synthesizer)에 레시피에 존재하지 않는 창의적인 조합을 투입하여 실험을 실시합니다.",
+      "<code>Classifier</code>가 이를 분석하여 <code>candidate</code>(신물질 타당 후보)로 유형을 정의합니다.",
+      "<code>Similarity Service</code>가 DB에서 철동 합금 등 가장 유사한 기존 재료 실험 계열 정보를 찾아 프롬프트 컨텍스트를 풍부하게 합니다.",
+      "<code>Proposal Generator</code>가 LLM을 호출하여 '전도성 황동 합금' 등의 이름과 강도 수치, 상세 텍스트 및 에셋 묘사가 포함된 JSON 초안을 제안합니다.",
+      "<code>ResultValidator</code>의 규격/수치 한도 검증을 최종 통과하면, <code>MaterialRegistry</code>에서 신규 물질 ID와 <code>material_hash</code>를 발급해 등록합니다.",
+      "실험 이력 캐시 및 물질을 SQL DB에 일괄 저장하고 <code>EventPublisher</code>를 통해 <code>MaterialCreated</code> 비동기 이벤트를 발행합니다.",
+      "클라이언트에겐 즉시 신물질 성공 패킷을 발송하고, 백그라운드 <code>VisualAssetPipeline</code>이 비동기로 아이콘 이미지 생성을 완수하여 경로를 업데이트합니다."
+    ]
+  },
+  retry_loop: {
+    name: "5. 검증 반려 및 재시도 루프 (Validation Retry Loop)",
+    edges: ["e-core-llm", "e-llm-val", "e-val-llm"],
+    nodes: ["agent_core", "llm_proposal", "result_val"],
+    steps: [
+      "LLM이 생성한 신물질 제안 정보의 JSON 스키마 구조가 깨졌거나, 기획 밸런스 점수 상한선을 크게 초과했습니다.",
+      "<code>MaterialResultValidator</code>가 이를 인지하고 트랜잭션 저장을 보류하며, 발생한 검증 오류들을 취합합니다.",
+      "오류 메타데이터를 포함한 보정 피드백 프롬프트를 <code>Proposal Generator</code>에 재주입하여 신물질 재생성(Retry)을 유도합니다.",
+      "이 검증-반려-재생성 루프는 규칙을 준수하는 무결한 신물질 제안이 도출될 때까지(또는 최대 시도 한도까지) 반복 작동합니다."
+    ]
+  }
+};
+
+const stage = document.getElementById('stage');
+const nodes = document.querySelectorAll('.node');
+const edges = document.querySelectorAll('.edge');
+const elbls = document.querySelectorAll('.elbl');
+const chips = document.querySelectorAll('.chip');
+const fcap = document.getElementById('flowcap');
+
+function setFlow(key) {
+  chips.forEach(c => c.classList.toggle('on', c.dataset.flow === key));
+  edges.forEach(e => {
+    e.classList.remove('lit');
+  });
+  elbls.forEach(l => l.classList.remove('lit'));
+  nodes.forEach(n => n.classList.remove('lit'));
+  
+  if (key === 'all') {
+    stage.classList.remove('flowing');
+    fcap.classList.remove('show');
+    return;
+  }
+  
+  const f = FLOWS[key];
+  stage.classList.add('flowing');
+  f.edges.forEach(id => {
+    const edgeEl = document.getElementById(id);
+    if (edgeEl) {
+      edgeEl.classList.add('lit');
+    }
+  });
+  
+  elbls.forEach(l => {
+    if (f.edges.includes(l.dataset.e)) {
+      l.classList.add('lit');
+    }
+  });
+  
+  f.nodes.forEach(k => {
+    const nodeEl = document.querySelector(`.node[data-k="${k}"]`);
+    if (nodeEl) {
+      nodeEl.classList.add('lit');
+    }
+  });
+  
+  document.getElementById('f-name').textContent = f.name;
+  document.getElementById('f-steps').innerHTML = f.steps.map(s => `<li>${s}</li>`).join('');
+  fcap.classList.add('show');
+}
+
+chips.forEach(c => c.addEventListener('click', () => setFlow(c.dataset.flow)));
+
+nodes.forEach(n => n.addEventListener('click', () => {
+  nodes.forEach(x => x.classList.remove('sel'));
+  n.classList.add('sel');
+  const d = DETAIL[n.dataset.k];
+  if (!d) return;
+  document.getElementById('d-title').textContent = d.t;
+  document.getElementById('d-meta').textContent = d.m;
+  document.getElementById('d-body').innerHTML = d.b;
+}));
+
+document.getElementById('themeToggle').addEventListener('click', () => {
+  const dark = !document.documentElement.classList.contains('dark');
+  document.documentElement.classList.toggle('dark', dark);
+  localStorage.setItem('theme', dark ? 'dark' : 'light');
+});
+</script>
+</body>
+</html>

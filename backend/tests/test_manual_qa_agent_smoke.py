@@ -99,7 +99,10 @@ def test_manual_qa_proto_uses_operator_guide_package_name() -> None:
     import importlib.util
 
     assert importlib.util.find_spec("agents.operator_guide.service") is not None
-    assert importlib.util.find_spec("agents.operator_guide.question_classifier") is not None
+    assert (
+        importlib.util.find_spec("agents.operator_guide.question_classifier")
+        is not None
+    )
     assert importlib.util.find_spec("agents.qa_chatbot") is None
 
 

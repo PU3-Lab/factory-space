@@ -125,9 +125,16 @@ FOJJFoundationFitResult AOJJ_RampFoundation::OJJ_ComputeHoverFootprint(const AOJ
 
 	// 행간 계단 검증(F3.7' 개정): 한계 = MaxRampStepPerRow 프로퍼티(보행 기준 45 고정에서 완화 —
 	// 짧은 틈 급경사 수용). 틈의 D−1 구간이 k×100을 분담, 미달이면 빨강 + 최소 칸수 사유(㊂).
-	// Δ1단 1칸은 산식상 불능(단일 행이 양 끝 동시 정합 불가) — RequiredIntervals ≥ 1이 자동 거부.
+	// F3.10 1칸 특례: 틈 1칸·Δ1단은 행간 구간이 0개지만 쐐기가 셀 안에서 100uu를 다 올린다(45°,
+	// 보행 불가 — 컨베이어 전용). 등록은 PerCell R<2 폴백 = Z_low 평판 단일값 → 높은쪽 인접
+	// ΔZ=100 ≤ 컨베이어 게이트(기본 100, OJJ_MaxConveyorStepZ). 일반식을 행간→칸당으로 재해석하면
+	// D=2·Δ2(행간 200uu — 등록 계단의 인접 ΔZ가 컨베이어 게이트 초과 = 벨트 못 타는 램프)까지
+	// 열리므로 정확히 (1칸, 1단)만 허용. 한계를 45로 내린 맵(보행 전용 정책)에선 특례도 같이
+	// 닫힘 — SnapStep ≤ 한계 조건.
 	const float StepLimit = FMath::Max(1.0f, MaxRampStepPerRow);
-	if (Result.RiseSteps >= 1)
+	const bool bSingleCellWedge = GapLength == 1 && Result.RiseSteps == 1
+		&& AOJJ_Grid::OJJ_FoundationSnapStep <= StepLimit + KINDA_SMALL_NUMBER;
+	if (Result.RiseSteps >= 1 && !bSingleCellWedge)
 	{
 		const int32 RequiredIntervals = FMath::CeilToInt(
 			Result.RiseSteps * AOJJ_Grid::OJJ_FoundationSnapStep / StepLimit - KINDA_SMALL_NUMBER);
@@ -140,7 +147,13 @@ FOJJFoundationFitResult AOJJ_RampFoundation::OJJ_ComputeHoverFootprint(const AOJ
 	}
 
 	// 방향 출처(㊁) + 보행 가능 여부(F3.7' 개정 — 거부 대신 경고: 플레이어가 알고 깔게).
-	if (Result.RiseSteps >= 1 && GapLength >= 2)
+	// 1칸 특례는 행당 산식(÷(D−1))이 정의 안 됨 — 전용 라벨(0 나눗셈 가드 겸).
+	if (bSingleCellWedge)
+	{
+		Result.DirectionSource = FString::Printf(
+			TEXT("방향 자동(이웃 낮→높) — 1칸 쐐기 Δ%d단 (보행 불가 — 컨베이어 전용)"), Result.RiseSteps);
+	}
+	else if (Result.RiseSteps >= 1 && GapLength >= 2)
 	{
 		const float StepPerRow =
 			Result.RiseSteps * AOJJ_Grid::OJJ_FoundationSnapStep / (float)(GapLength - 1);
@@ -179,7 +192,10 @@ bool AOJJ_RampFoundation::OJJ_BuildPerCellSurfaceZ(FIntPoint EffSize, int32 Rota
 	const int32 R = (Step % 2 == 0) ? EffSize.X : EffSize.Y;
 	if (R < 2 || RiseSteps < 1 || EffSize.X < 1 || EffSize.Y < 1)
 	{
-		// 1행 램프는 경사 불능, RiseSteps<1은 평지 퇴화(㉿) — 평판 단일값 경로 폴백.
+		// 1행 램프는 셀별 계단 표현 불능(낮은끝 행 = 높은끝 행 — 셀당 SurfaceZ 1값) → 평판 단일값
+		// 폴백. F3.10 1칸 쐐기는 이 폴백이 **정식 경로**: 장부 = Z_low(BaseSurfaceZ — 컨트롤러
+		// TryPlaceFoundation 평탄 등록), 면/벨트 = 쐐기 빗변 훅(OJJ_GetVisualSurfaceZAtWorld, R=1 성립).
+		// RiseSteps<1은 평지 퇴화(㉿).
 		return false;
 	}
 

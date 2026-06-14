@@ -19,7 +19,7 @@ public:
 	virtual bool CanReceiveConveyorItem(FName ItemID, int32 Count = 1) const override;
 
 	UFUNCTION(BlueprintPure, Category = "Machine | Power Plant")
-	bool CanGeneratePower() const;
+	virtual bool CanGeneratePower() const;
 
 	UFUNCTION(BlueprintPure, Category = "Machine | Power Plant")
 	float GetCurrentPowerOutput() const;

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from agents.base import Agent
-from agents.new_material_generator import NewMaterialGeneratorAgent
+from agents.material_generation.agent import MaterialCreationAgent
 from agents.operator_guide.machine_help import MachineHelpAgent
 from agents.operator_guide.recipe_explainer import RecipeExplainerAgent
 from agents.operator_guide.troubleshooter import TroubleshooterAgent
@@ -52,7 +52,7 @@ def create_default_agent_router() -> AgentRouter:
     router = AgentRouter()
     for agent in (
         ProcessOptimizerAgent(),
-        NewMaterialGeneratorAgent(),
+        MaterialCreationAgent(),
         RecipeExplainerAgent(),
         MachineHelpAgent(),
         TroubleshooterAgent(),

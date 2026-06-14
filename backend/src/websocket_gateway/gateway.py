@@ -78,7 +78,7 @@ async def agent_websocket(websocket: WebSocket) -> None:
                             "INVALID_JSON",
                             "WebSocket message must be valid JSON.",
                         ),
-                    }
+                    },
                 )
                 continue
 
