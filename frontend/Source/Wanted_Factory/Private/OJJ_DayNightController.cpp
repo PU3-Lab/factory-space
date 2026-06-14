@@ -5,6 +5,8 @@
 #include "Components/LightComponent.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/World.h"
+#include "Kismet/KismetMaterialLibrary.h"
+#include "Materials/MaterialParameterCollection.h"
 #include "PlanetEventManagerSubsystem.h"
 #include "Wanted_Factory.h"
 
@@ -77,6 +79,7 @@ void AOJJ_DayNightController::Tick(float DeltaSeconds)
 	const float SunPitch = ProgressToSunPitch(Progress01);
 	ApplySunRotation(SunPitch, DeltaSeconds);
 	ApplyMoon(CurrentSunPitch);
+	ApplyStars(CurrentSunPitch);
 }
 
 void AOJJ_DayNightController::ApplySunRotation(float TargetSunPitch, float DeltaSeconds)
@@ -114,9 +117,8 @@ void AOJJ_DayNightController::ApplyMoon(float SunPitch)
 	const float MoonPitch = -SunPitch;
 
 	// 밤(SunPitch>0 = 태양이 지평선 아래)일 때만 점등. 일몰 순간 SunPitch=0 → NightFactor=0 → 강도 0에서
-	// 연속 시작(점프 없음). TwilightBlend 구간에 걸쳐 0↔MoonIntensity 선형 페이드. 0 division 가드.
-	const float Denom = FMath::Max(KINDA_SMALL_NUMBER, 90.0f * TwilightBlend);
-	const float NightFactor = FMath::Clamp(SunPitch / Denom, 0.0f, 1.0f);
+	// 연속 시작(점프 없음). TwilightBlend 구간에 걸쳐 0↔MoonIntensity 선형 페이드.
+	const float NightFactor = ComputeNightFactor(SunPitch);
 	const float TargetIntensity = MoonIntensity * NightFactor;
 
 	// 회전: skip-if-unchanged(달 전용 캐시 — 태양 Yaw 갱신과 무관하게 판단).
@@ -137,6 +139,40 @@ void AOJJ_DayNightController::ApplyMoon(float SunPitch)
 			LastMoonIntensity = TargetIntensity;
 		}
 	}
+}
+
+float AOJJ_DayNightController::ComputeNightFactor(float SunPitch) const
+{
+	// SunPitch>0 = 태양이 지평선 아래(밤). 일몰 순간(0)부터 TwilightBlend 폭(90°×값)에 걸쳐 0→1 선형 상승.
+	// 달빛/별이 공유 → 둘의 페이드 타이밍이 항상 일치. 0 division 가드.
+	const float Denom = FMath::Max(KINDA_SMALL_NUMBER, 90.0f * TwilightBlend);
+	return FMath::Clamp(SunPitch / Denom, 0.0f, 1.0f);
+}
+
+void AOJJ_DayNightController::ApplyStars(float SunPitch)
+{
+	if (!StarCollection)
+	{
+		return; // 별은 선택 기능 — MPC 미지정이면 조용히 skip(태양/달만 동작).
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 낮 0 / 밤 1(달빛과 동일한 박명 페이드)에 상한을 곱한 목표 강도. 낮엔 0이라 별이 완전히 사라진다.
+	const float TargetStarIntensity = MaxStarIntensity * ComputeNightFactor(SunPitch);
+
+	// skip-if-unchanged: 강도 변화가 미미하면 MPC 갱신 생략(매 프레임 머티리얼 파라미터 push 방지).
+	if (FMath::IsNearlyEqual(TargetStarIntensity, LastStarIntensity, 0.001f))
+	{
+		return;
+	}
+
+	UKismetMaterialLibrary::SetScalarParameterValue(World, StarCollection, StarIntensityParam, TargetStarIntensity);
+	LastStarIntensity = TargetStarIntensity;
 }
 
 bool AOJJ_DayNightController::ResolveProgress(float& OutProgress01) const

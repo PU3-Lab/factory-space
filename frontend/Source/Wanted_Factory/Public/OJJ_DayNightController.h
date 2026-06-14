@@ -8,6 +8,7 @@
 
 class ADirectionalLight;
 class UPlanetEventManagerSubsystem;
+class UMaterialParameterCollection;
 
 /**
  * 낮밤 사이클 — PlanetEventManagerSubsystem의 게임 내 시각에 맞춰 태양(Directional Light)을 회전시키는
@@ -86,6 +87,21 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Day Night|Moon", meta = (ClampMin = "0.0", ClampMax = "0.5"))
 	float TwilightBlend = 0.05f;
 
+	// 밤하늘 별 강도 연동(선택). 절차적 별 머티리얼이 참조하는 Material Parameter Collection을 지정하면,
+	// 매 틱 NightFactor(낮 0 / 밤 1, 달빛과 동일한 박명 페이드)를 StarIntensityParam 스칼라에 써준다.
+	// 미지정이면 별 로직 전체 skip(태양/달만 동작). 돔 메시 + 절차적 별 머티리얼은 에디터 측 에셋.
+	// ⚠️ 별 돔은 카메라를 따라다니되 회전 고정 + Collision=NoCollision(빌드 레이캐스트 통과)으로 둘 것.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Day Night|Stars")
+	TObjectPtr<UMaterialParameterCollection> StarCollection;
+
+	// StarCollection 안에서 별 전체 강도를 받는 스칼라 파라미터 이름. 머티리얼이 같은 이름으로 샘플해야 함.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Day Night|Stars")
+	FName StarIntensityParam = TEXT("StarIntensity");
+
+	// 한밤(NightFactor=1)에서의 별 강도 상한. 0~1 기준. 머티리얼 emissive 배율과 곱해진다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Day Night|Stars", meta = (ClampMin = "0.0"))
+	float MaxStarIntensity = 1.0f;
+
 private:
 	// 시간 소스. BeginPlay에서 캐시(WorldSubsystem이라 월드 수명과 동일). 미존재 월드 가드.
 	TWeakObjectPtr<UPlanetEventManagerSubsystem> EventManager;
@@ -106,6 +122,9 @@ private:
 	float CurrentSunPitch = 0.0f;
 	bool bHasInitializedRotation = false;
 
+	// 직전에 적용한 별 강도. skip-if-unchanged용(변화 없으면 MPC 갱신 생략).
+	float LastStarIntensity = TNumericLimits<float>::Max();
+
 	// progress(0~1)를 태양 Pitch(도)로 변환. Pitch = -90 * sin(progress * 2π).
 	static float ProgressToSunPitch(float Progress01);
 
@@ -117,4 +136,11 @@ private:
 
 	// 달 회전+강도 적용. 태양과 반대 위상, 밤에만 점등. MoonLight 미지정이면 no-op.
 	void ApplyMoon(float SunPitch);
+
+	// 밤 정도(0=낮/일몰순간 ~ 1=한밤). SunPitch>0(태양 지평선 아래)에서 TwilightBlend 폭에 걸쳐 선형 상승.
+	// 달빛과 별 강도가 공유하는 단일 정의(점프 없는 박명 페이드).
+	float ComputeNightFactor(float SunPitch) const;
+
+	// 별 강도 적용. NightFactor×MaxStarIntensity를 StarCollection의 StarIntensityParam에 기록. 미지정이면 no-op.
+	void ApplyStars(float SunPitch);
 };
