@@ -919,6 +919,26 @@ _TEST_PAGE_TEMPLATE = """<!doctype html>
     #history-table td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
     #history-table tr:last-child td { border-bottom: none; }
     #history-table tr:hover td { background: #f8fafc; }
+    /* ── 합성 결과 ── */
+    .mat-result { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 14px; overflow: hidden; }
+    .mr-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+               background: var(--accent-soft); border-bottom: 1px solid var(--line); }
+    .mr-kind { font-size: 13px; font-weight: 800; color: var(--accent); }
+    .mr-hash { margin-left: auto; font-size: 11px; font-family: monospace; color: var(--muted); }
+    .mr-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+    .mr-row { display: flex; gap: 8px; font-size: 13px; }
+    .mr-row .mr-k { min-width: 96px; font-weight: 700; color: var(--muted); }
+    .mr-row .mr-v { color: var(--ink); }
+    .mr-outputs { display: flex; flex-wrap: wrap; gap: 6px; }
+    .mr-chip { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 5px;
+               background: #eef2ff; color: #3730a3; font-family: monospace; }
+    .mr-props { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .mr-prop { text-align: center; padding: 7px 4px; background: #f8fafc;
+               border: 1px solid var(--line); border-radius: 6px; }
+    .mr-prop .mp-l { font-size: 10px; font-weight: 700; color: var(--muted);
+                     text-transform: uppercase; letter-spacing: .4px; }
+    .mr-prop .mp-v { font-size: 14px; font-weight: 700; font-family: monospace; color: var(--ink); margin-top: 2px; }
+    .mr-fail { color: #991b1b; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -999,8 +1019,9 @@ _TEST_PAGE_TEMPLATE = """<!doctype html>
             <option value="quest_generator.production_quest">생산 퀘스트</option>
             <option value="quest_generator.economy_quest">경제 퀘스트</option>
           </optgroup>
-          <optgroup label="new_material_generator">
-            <option value="new_material_generator">신소재 생성</option>
+          <optgroup label="material_generation">
+            <option value="material_generation.recipe_match">레시피 매칭 (기존 레시피)</option>
+            <option value="material_generation.new_material">신물질 합성 (새 물질)</option>
           </optgroup>
         </select>
         <button class="btn btn-ghost btn-sm" onclick="newId()">ID 갱신</button>
@@ -1057,6 +1078,8 @@ _TEST_PAGE_TEMPLATE = """<!doctype html>
         <button id="btn-retry" class="btn btn-ghost btn-sm" onclick="doRetry()"
                 style="margin-left:auto" disabled>오류 재시도</button>
       </div>
+
+      <div id="mat-result" class="mat-result" style="display:none"></div>
 
       <div class="resp-title">
         <h2>응답 로그</h2>
@@ -1134,6 +1157,7 @@ function toggleConn() {
     addCard(e.data, false);
     updateMetrics(e.data);
     updateAnalysis(e.data);
+    renderMaterialResult(e.data);
   };
 }
 
@@ -1202,6 +1226,74 @@ function resetAnalysis() {
   document.getElementById('an-json').innerHTML = '—';
   document.getElementById('an-schema').innerHTML = '—';
   document.getElementById('an-quality').innerHTML = '—';
+  clearMatResult();
+}
+
+function clearMatResult() {
+  var box = document.getElementById('mat-result');
+  box.style.display = 'none';
+  box.innerHTML = '';
+}
+
+const MR_KIND_LABEL = {
+  existing_recipe: '레시피 결과 (기존 레시피)',
+  cached_experiment: '레시피 결과 (캐시된 실험)',
+  new_material: '합성 물질 결과 (신물질)',
+  failed_result: '합성 실패',
+  invalid_input: '잘못된 입력'
+};
+
+function mrRow(k, v) {
+  return '<div class="mr-row"><span class="mr-k">' + esc(k) + '</span>' +
+         '<span class="mr-v">' + esc(v) + '</span></div>';
+}
+
+function renderMaterialResult(rawJson) {
+  var parsed; try { parsed = JSON.parse(rawJson); } catch(_) { clearMatResult(); return; }
+  var p = parsed && parsed.payload;
+  if (!p || typeof p.result_type !== 'string') { clearMatResult(); return; }
+  var kind = p.result_type;
+  var label = MR_KIND_LABEL[kind] || kind;
+  var rows = '';
+
+  if (kind === 'existing_recipe' || kind === 'cached_experiment') {
+    if (p.recipe_name) rows += mrRow('레시피', p.recipe_name);
+    if (Array.isArray(p.outputs) && p.outputs.length) {
+      var chips = p.outputs.map(function(o) {
+        return '<span class="mr-chip">' + esc(o.item_id) + ' &times; ' + esc(o.qty) + '</span>';
+      }).join('');
+      rows += '<div class="mr-row"><span class="mr-k">산출물</span>' +
+              '<span class="mr-v"><span class="mr-outputs">' + chips + '</span></span></div>';
+    }
+    if (p.cached) rows += mrRow('캐시', '예');
+  } else if (kind === 'new_material') {
+    if (p.name) rows += mrRow('이름', p.name);
+    if (p.rarity) rows += mrRow('희귀도', p.rarity);
+    if (p.material_id) rows += mrRow('물질 ID', p.material_id);
+    if (p.generation_status) rows += mrRow('생성 상태', p.generation_status);
+    if (p.visual_status) rows += mrRow('비주얼 상태', p.visual_status);
+    if (p.fallback_icon) rows += mrRow('대체 아이콘', p.fallback_icon);
+    if (p.message) rows += mrRow('메시지', p.message);
+    if (p.properties && typeof p.properties === 'object') {
+      var order = [['strength','강도'],['conductivity','전도도'],['stability','안정성'],['reactivity','반응성']];
+      var grid = order.map(function(pair) {
+        var val = p.properties[pair[0]];
+        return '<div class="mr-prop"><div class="mp-l">' + pair[1] + '</div>' +
+               '<div class="mp-v">' + (val == null ? '—' : esc(val)) + '</div></div>';
+      }).join('');
+      rows += '<div class="mr-row"><span class="mr-k">속성</span>' +
+              '<span class="mr-v" style="flex:1"><div class="mr-props">' + grid + '</div></span></div>';
+    }
+  } else {
+    rows += '<div class="mr-fail">' + esc(p.failure_reason || p.message || '결과를 생성하지 못했습니다.') + '</div>';
+  }
+
+  var box = document.getElementById('mat-result');
+  box.innerHTML =
+    '<div class="mr-head"><span class="mr-kind">' + esc(label) + '</span>' +
+    (p.experiment_hash ? '<span class="mr-hash">' + esc(p.experiment_hash) + '</span>' : '') +
+    '</div><div class="mr-body">' + rows + '</div>';
+  box.style.display = 'block';
 }
 
 function updateMetrics(rawJson) {
@@ -1511,11 +1603,32 @@ def _render_test_page() -> str:
                 "sub_agent": "quest_generator.economy_quest",
             },
         },
-        "new_material_generator": {
+        "material_generation.recipe_match": {
             "type": "agent.request",
-            "agent": "new_material_generator",
+            "agent": "material_generation",
             "payload": {
-                "goal": "내열성이 높은 희귀 소재 아이디어가 필요해.",
+                "machine_type": "Smelter",
+                "inputs": [
+                    {"item_id": "iron_ore", "qty": 2},
+                ],
+                "generate_visual_asset": True,
+            },
+        },
+        "material_generation.new_material": {
+            "type": "agent.request",
+            "agent": "material_generation",
+            "payload": {
+                "machine_type": "Synthesizer",
+                "inputs": [
+                    {"item_id": "iron_ingot", "qty": 2},
+                    {"item_id": "copper_ingot", "qty": 1},
+                ],
+                "process_conditions": {
+                    "temperature": "1200C",
+                    "pressure": "5atm",
+                    "catalyst": "palladium",
+                },
+                "generate_visual_asset": True,
             },
         },
     }

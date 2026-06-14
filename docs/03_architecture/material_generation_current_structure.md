@@ -81,6 +81,123 @@ flowchart LR
 
 두 호출 경로는 모두 동기 SQLAlchemy 세션과 같은 `MaterialCreationAgent`를 사용한다.
 
+### 2.3 입/출력 계약 (필드 명세)
+
+정본은 [`schemas.py`](../../backend/src/agents/material_generation/schemas.py)와 [`messages.py`](../../backend/src/protocol/messages.py)이며, 아래 표는 그 요약이다.
+
+#### WS 요청 봉투 (`AgentRequestEnvelope`)
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `type` | `"agent.request"` | 예 | 메시지 종류 고정값 |
+| `agent` | `str` | 예 | 대상 에이전트. 합성은 `"material_generation"` |
+| `request_id` | `str` | 아니오 | 미지정 시 서버가 UUID 생성 |
+| `session_id` | `str \| null` | 아니오 | 합성의 `player_id`로 사용됨 |
+| `client_id` | `str \| null` | 아니오 | 호출 클라이언트 식별자 |
+| `payload` | `object` | 예 | 합성 요청 본문(아래 표) |
+| `context` | `object` | 아니오 | 모델/프롬프트 오버라이드 등 |
+
+#### 요청 payload (`MaterialCreationRequest`)
+
+| 필드 | 타입 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| `machine_type` | `str` | 예 | — | 합성 장비. Recipe Table의 `MachineType` (예: `Smelter`, `Synthesizer`) |
+| `inputs` | `InputItem[]` | 예 | — | 투입 아이템 목록 |
+| `inputs[].item_id` | `str` | 예 | — | 아이템 ID |
+| `inputs[].qty` | `int` | 예 | — | 수량 |
+| `process_conditions` | `object` | 아니오 | 전체 기본값 | 공정 조건 |
+| `process_conditions.temperature` | `str` | 아니오 | `"default"` | 온도 |
+| `process_conditions.pressure` | `str` | 아니오 | `"default"` | 압력 |
+| `process_conditions.catalyst` | `str \| null` | 아니오 | `null` | 촉매 |
+| `player_id` | `str` | REST만 | — | 요청 플레이어. **WS 경로에서는 `session_id`로 대체되어 payload 값은 무시된다** |
+| `generate_visual_asset` | `bool` | 아니오 | `true` | 비주얼 에셋 생성 여부 |
+
+#### WS 응답 봉투 (`AgentResponseEnvelope`)
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `type` | `"agent.response"` | 정상 응답 고정값 (오류는 `"agent.error"`) |
+| `request_id` / `session_id` / `client_id` | `str` | 요청 값 반향 |
+| `agent` | `str` | `"material_generation"` |
+| `payload` | `object` | 합성 결과(아래 표) + `metadata`(`selectedAgent`, `selectedLeafAgent` 등) |
+| `streams` | `array` | 합성 경로에서는 비어 있음 |
+
+#### 응답 payload (`MaterialCreationResponse`)
+
+| 필드 | 타입 | 채워지는 `result_type` | 설명 |
+| --- | --- | --- | --- |
+| `result_type` | `str` | 항상 | 결과 유형 (§8 참조) |
+| `experiment_hash` | `str` | 항상 | 실험 식별 해시 |
+| `recipe_name` | `str \| null` | `existing_recipe` | 일치한 레시피 이름 |
+| `outputs` | `OutputItem[] \| null` | `existing_recipe` | 산출물 목록 (`item_id`, `qty`) |
+| `material_id` | `str \| null` | `new_material`, `cached_experiment` | 생성 물질 ID |
+| `material_hash` | `str \| null` | `new_material`, `cached_experiment` | 물질 식별 해시 |
+| `name` | `str \| null` | `new_material` | 물질 이름 |
+| `rarity` | `str \| null` | `new_material` | 희귀도 |
+| `generation_status` | `str \| null` | `new_material` | 생성 상태 |
+| `visual_status` | `str \| null` | `new_material` | 비주얼 상태 (`pending` / `skipped` 등) |
+| `fallback_icon` | `str \| null` | `new_material` | 대체 아이콘 |
+| `message` | `str \| null` | 선택 | 부가 메시지 |
+| `cached` | `bool \| null` | `cached_experiment` | 캐시 재사용 여부 |
+| `failure_reason` | `str \| null` | `failed_result`, `invalid_input` | 실패 사유 |
+
+#### JSON 예시
+
+레시피 매칭 요청 → `existing_recipe` 응답:
+
+```jsonc
+// 요청
+{
+  "type": "agent.request",
+  "agent": "material_generation",
+  "session_id": "player-001",
+  "payload": {
+    "machine_type": "Smelter",
+    "inputs": [{ "item_id": "iron_ore", "qty": 2 }],
+    "generate_visual_asset": true
+  }
+}
+// 응답 payload
+{
+  "result_type": "existing_recipe",
+  "experiment_hash": "…",
+  "recipe_name": "Smelt_Iron",
+  "outputs": [{ "item_id": "iron_ingot", "qty": 1 }]
+}
+```
+
+신물질 합성 요청 → `new_material` 응답:
+
+```jsonc
+// 요청
+{
+  "type": "agent.request",
+  "agent": "material_generation",
+  "session_id": "player-001",
+  "payload": {
+    "machine_type": "Synthesizer",
+    "inputs": [
+      { "item_id": "iron_ingot", "qty": 2 },
+      { "item_id": "copper_ingot", "qty": 1 }
+    ],
+    "process_conditions": { "temperature": "1200C", "pressure": "5atm", "catalyst": "palladium" },
+    "generate_visual_asset": true
+  }
+}
+// 응답 payload
+{
+  "result_type": "new_material",
+  "experiment_hash": "…",
+  "material_id": "…",
+  "name": "…",
+  "rarity": "…",
+  "generation_status": "…",
+  "visual_status": "pending"
+}
+```
+
+> 위 예시 payload는 `/agent-test` 테스트 콘솔의 `material_generation.recipe_match` / `material_generation.new_material` 프리셋과 동일하다.
+
 ## 3. LangGraph 실행 흐름
 
 ```mermaid
