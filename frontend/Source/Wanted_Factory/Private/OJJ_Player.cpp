@@ -355,12 +355,27 @@ void AOJJ_Player::Look(const FInputActionValue& Value)
 void AOJJ_Player::Zoom(const FInputActionValue& Value)
 {
 	const float Scroll = Value.Get<float>();
-	if (!SpringArm || FMath::IsNearlyZero(Scroll))
+	if (FMath::IsNearlyZero(Scroll))
 	{
 		return;
 	}
 
-	// 스크롤 업(+) → 줌인(팔 길이 감소)
+	// 빌드모드면 뷰타겟인 BuildCamera를 줌(플레이어 SpringArm은 안 보이므로). 양쪽 모드 동일 휠 UX.
+	if (BuildController && BuildController->IsInBuildMode())
+	{
+		if (BuildCamera)
+		{
+			BuildCamera->Zoom(Scroll);
+		}
+		return;
+	}
+
+	if (!SpringArm)
+	{
+		return;
+	}
+
+	// TPS: 스크롤 업(+) → 줌인(팔 길이 감소)
 	const float NewLength = SpringArm->TargetArmLength - Scroll * ZoomStep;
 	SpringArm->TargetArmLength = FMath::Clamp(NewLength, MinArmLength, MaxArmLength);
 }
