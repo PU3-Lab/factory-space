@@ -46,3 +46,41 @@ void UUI_Inventory::RefreshInventoryWindow()
 		}
 	}
 }
+void UUI_Inventory::UpdateSlotQuantitiesOnly()
+{
+	if (!GDP_ItemGrid) return;
+
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!GameInstance) return;
+
+	UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>();
+	if (!WarehouseSubsystem) return;
+
+	// 현재 서브시스템에 담긴 최신 물품 내역 가져오기
+	const TMap<FName, int32>& CurrentItems = WarehouseSubsystem->GetStoredItems();
+	TArray<FName> ItemIDs;
+	CurrentItems.GetKeys(ItemIDs);
+
+	// 격자판에 생성되어 있는 자식 슬롯 개수를 파악합니다
+	int32 ChildCount = GDP_ItemGrid->GetChildrenCount();
+
+	for (int32 i = 0; i < ChildCount; ++i)
+	{
+		// 런타임에 메모리에 살아있는 진짜 슬롯 위젯을 콕 집어 꺼냅니다.
+		UUI_InventorySlot* SlotWidget = Cast<UUI_InventorySlot>(GDP_ItemGrid->GetChildAt(i));
+		if (SlotWidget)
+		{
+			// 슬롯 위젯을 부수지 않고, 내부의 UpdateSlot 함수만 다시 호출하여 이미지와 숫자만 싹 갈아 끼웁니다
+			if (i < ItemIDs.Num())
+			{
+				FName Key = ItemIDs[i];
+				SlotWidget->UpdateSlot(Key, CurrentItems[Key]);
+			}
+			else
+			{
+				// 데이터가 없는 남은 빈 칸들 깔끔하게 초기화
+				SlotWidget->UpdateSlot(NAME_None, 0);
+			}
+		}
+	}
+}

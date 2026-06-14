@@ -7,6 +7,8 @@
 #include "Resource/ResourceData.h"
 #include "Machines/MachineTable.h"
 #include "ItemDragDropOperation.h"
+#include "OJJ_Player.h"
+#include "UI/UI_Inventory.h"
 #include "PlayerWarehouseSubsystem.h"
 
 void UUI_MachineInteract::SetTargetMachine(AMachineBase* InMachine)
@@ -305,8 +307,22 @@ bool UUI_MachineInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDragD
             
             if (bSuccess)
             {
-                // 4. 서브시스템에서 차감 완료되었으니, 실제 기계 데이터 인벤토리에 1개 가산!!
+                // 4. 서브시스템에서 차감 완료되었으니, 실제 기계 데이터 인벤토리에 1개 가산
                 TargetMachine->AddItem(DroppedItemID, 1);
+                
+                // 오타가 난 네임스페이스 범위를 지우고 정석 포인터 타입으로 교체
+                APlayerController* PC = GetOwningPlayer();
+                if (PC)
+                {
+                    AOJJ_Player* OJJPlayer = Cast<AOJJ_Player>(PC->GetPawn());
+                    
+                    if (OJJPlayer && OJJPlayer->GetInventoryWidgetInstance()) 
+                    {
+                        // 유저님의 플레이어 가방 위젯 인스턴스에 접근해 강제 1회 리프레시
+                        OJJPlayer->GetInventoryWidgetInstance()->RefreshInventoryWindow();
+                    }
+                }
+                
                 return true; 
             }
         }
