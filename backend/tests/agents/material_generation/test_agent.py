@@ -143,8 +143,9 @@ def test_material_creation_api_persists_material_without_duplicates(
             assert persisted_material.name == first_response["name"]
             assert persisted_material.category == "alloy"
             assert persisted_material.properties_json
-            assert persisted_material.source_experiment_hash == (
-                first_response["experiment_hash"]
+            assert (
+                persisted_material.source_experiment_hash
+                == (first_response["experiment_hash"])
             )
             assert persisted_material.visual_status == "skipped"
             material_count = read_session.scalar(
