@@ -164,8 +164,12 @@ TDD 순서:
 - 2026-06-11: `.env.prod` 기준 RAG dry-run 실행 조건을 확인했다.
 - 2026-06-11: `uv run --env-file .env.prod python scripts/ingest_manual_rag.py --dry-run` 실행 결과 `inserted=142, updated=0, skipped=0, deactivated=0, failed=0`을 확인했다.
 - 2026-06-11: CSV가 계속 수정 중이므로 실제 ingestion은 미루고 runtime retriever 구조를 먼저 설계하기로 했다.
+- 2026-06-15: `ManualRagRetriever`, `ManualRagSearchResult`, `ManualRagRetrievalResult`, `ManualRagSearchStore`를 구현했다.
+- 2026-06-15: `SqlAlchemyManualRagStore.search_similar()`를 추가해 pgvector cosine distance 기반 top-k 검색을 연결했다.
+- 2026-06-15: 실제 DB 스모크 테스트에서 `"철괴는 어떻게 만들어?"` 질문으로 `matched_documents=3` 검색을 확인했다.
 
 ## 트러블슈팅 로그
 
 - 2026-06-11: Docker 상태 확인에서 Docker API 권한 문제가 발생했다. dry-run은 DB 접속이 가능해 성공했으므로, Docker 상태 확인은 이번 단계의 blocker로 보지 않았다.
 - 2026-06-11: `--dry-run`도 기존 content_hash 비교를 위해 `FACTORY_DATABASE_URL`이 필요하다는 점을 확인했다.
+- 2026-06-15: retriever 테스트를 먼저 작성했을 때 `agents.operator_guide.rag_retriever` 모듈이 없어 실패했다. 이후 모듈을 추가해 TDD 흐름으로 통과시켰다.

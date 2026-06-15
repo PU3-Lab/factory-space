@@ -11,6 +11,7 @@ from sqlalchemy import Engine, Select, create_engine, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from agents.operator_guide.rag_ingestion import ManualRagIngestionRecord
+from agents.operator_guide.rag_retriever import ManualRagSearchResult
 from agents.operator_guide.rag_schema import manual_rag_documents
 
 
@@ -67,6 +68,54 @@ class SqlAlchemyManualRagStore:
         )
         with self._engine.begin() as connection:
             connection.execute(statement)
+
+    def search_similar(
+        self,
+        query_embedding: list[float],
+        *,
+        top_k: int,
+    ) -> list[ManualRagSearchResult]:
+        """질문 embedding과 가장 가까운 active RAG 문서를 찾는다.
+
+        pgvector의 cosine distance는 값이 작을수록 더 비슷하다.
+        응답에서는 사람이 이해하기 쉽게 `score = 1 - distance` 형태로 반환한다.
+        """
+
+        if top_k <= 0:
+            return []
+
+        distance = manual_rag_documents.c.embedding.cosine_distance(
+            query_embedding,
+        ).label("distance")
+        statement = (
+            select(
+                manual_rag_documents.c.doc_id,
+                manual_rag_documents.c.title,
+                manual_rag_documents.c.content,
+                manual_rag_documents.c.source_file,
+                manual_rag_documents.c.source_row_id,
+                manual_rag_documents.c.metadata_json,
+                distance,
+            )
+            .where(manual_rag_documents.c.is_active.is_(True))
+            .order_by(distance)
+            .limit(top_k)
+        )
+        with self._engine.begin() as connection:
+            rows = connection.execute(statement).all()
+
+        return [
+            ManualRagSearchResult(
+                doc_id=row.doc_id,
+                title=row.title,
+                content=row.content,
+                source_file=row.source_file,
+                source_row_id=row.source_row_id,
+                metadata=dict(row.metadata_json),
+                score=1.0 - float(row.distance),
+            )
+            for row in rows
+        ]
 
 
 def create_manual_rag_store(database_url: str) -> SqlAlchemyManualRagStore:
