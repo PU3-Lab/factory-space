@@ -21,4 +21,5 @@ public:
 	// 인벤토리가 열릴 때마다 창고 서브시스템을 읽어와서 화면을 갱신
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	void RefreshInventoryWindow();
+	void UpdateSlotQuantitiesOnly();
 };
