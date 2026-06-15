@@ -11,6 +11,7 @@ from agents.material_generation.derivation import (
     combine_properties,
     compute_rarity,
     derive_category,
+    derive_material_attributes,
     derive_state,
 )
 from agents.material_generation.schemas import ProcessConditionsSchema
@@ -157,3 +158,30 @@ def test_compute_rarity_epic_boundary() -> None:
     """합성 점수가 epic 경계선(8.5) 이상일 때 epic(영웅) 등급으로 계산되는지 테스트합니다."""
     # avg=8.5, peak=8.5 -> score 8.5
     assert compute_rarity((8.5, 8.5, 8.5, 8.5)) == "epic"
+
+
+def test_derive_material_attributes_integration() -> None:
+    """합성 결과 속성, 카테고리, 상태, 희귀도가 결정론적으로 산출 및 통합되는지 확인합니다."""
+    inputs = [
+        {"item_id": "iron_ingot", "qty": 1},
+        {"item_id": "copper_ingot", "qty": 1},
+    ]
+    attrs = derive_material_attributes(inputs, ProcessConditionsSchema())
+    # 속성 (5.5,7,6.5,4)
+    assert attrs.properties.strength == 5.5
+    assert attrs.properties.conductivity == 7.0
+    assert attrs.category == "alloy"
+    assert attrs.state == "solid"
+    # avg=(5.5+7+6.5)/3=6.333..., peak=7 -> 0.7*6.333+0.3*7=6.533 -> uncommon
+    assert attrs.rarity == "uncommon"
+
+
+def test_derive_material_attributes_is_deterministic() -> None:
+    """동일한 조건이 주어졌을 때 산출되는 신물질 정보가 항상 일치하는지 테스트합니다."""
+    inputs = [
+        {"item_id": "magnesium_powder", "qty": 1},
+        {"item_id": "sulfur_powder", "qty": 1},
+    ]
+    a1 = derive_material_attributes(inputs, ProcessConditionsSchema(catalyst="x"))
+    a2 = derive_material_attributes(inputs, ProcessConditionsSchema(catalyst="x"))
+    assert a1 == a2

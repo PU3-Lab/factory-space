@@ -164,3 +164,29 @@ def compute_rarity(props: tuple[float, float, float, float]) -> str:
     if score >= 5.0:
         return "uncommon"
     return "common"
+
+
+def derive_material_attributes(
+    normalized_inputs: list[dict[str, Any]],
+    conditions: ProcessConditionsSchema,
+) -> DerivedAttributes:
+    """입력과 공정으로부터 속성·category·state·rarity를 한 번에 산출합니다.
+
+    1. 입력 재료들의 고유 속성을 수량 가중 평균으로 합성합니다.
+    2. 공정 조건(온도, 압력, 촉매 등)에 따라 속성을 가감 보정합니다.
+    3. 최종 보정된 속성과 입력 구성을 기반으로 카테고리(category), 물리적 상태(state), 희귀도(rarity)를 판정합니다.
+    """
+    combined = combine_properties(normalized_inputs)
+    adjusted = apply_process(combined, conditions)
+    properties = MaterialProperties(
+        strength=adjusted[0],
+        conductivity=adjusted[1],
+        stability=adjusted[2],
+        reactivity=adjusted[3],
+    )
+    return DerivedAttributes(
+        properties=properties,
+        category=derive_category(normalized_inputs),
+        state=derive_state(adjusted),
+        rarity=compute_rarity(adjusted),
+    )
