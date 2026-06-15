@@ -160,3 +160,36 @@ def test_pipeline_returns_noop_storage_on_noop_backend(
     monkeypatch.setenv("FACTORY_IMAGE_STORAGE_BACKEND", "noop")
     adapter = _default_storage_adapter()
     assert isinstance(adapter, NoopStorageAdapter)
+
+
+def test_default_storage_path_is_persistent_not_tmp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # m4 회귀 방지: 기본 저장 경로가 휘발성 /tmp 로 되돌아가지 않아야 한다.
+    from agents.material_generation.visual_pipeline import (
+        _DEFAULT_STORAGE_PATH,
+        _default_storage_adapter,
+    )
+    from visual.storage import LocalFileStorageAdapter
+
+    monkeypatch.delenv("FACTORY_IMAGE_STORAGE_BACKEND", raising=False)
+    adapter = _default_storage_adapter()
+    assert isinstance(adapter, LocalFileStorageAdapter)
+    assert not _DEFAULT_STORAGE_PATH.startswith("/tmp")
+    assert adapter.base_path == _DEFAULT_STORAGE_PATH
+
+
+def test_default_image_adapter_warns_when_provider_unset(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # m3: lifecycle(placeholder→visual_ready)은 유지하되 미설정 시 경고가 남아야 한다.
+    from agents.material_generation.visual_pipeline import _default_image_adapter
+    from visual.adapter import PlaceholderImageAdapter
+
+    monkeypatch.delenv("FACTORY_IMAGE_GEN_PROVIDER", raising=False)
+    with caplog.at_level("WARNING"):
+        adapter = _default_image_adapter()
+
+    assert isinstance(adapter, PlaceholderImageAdapter)
+    assert any("not configured" in record.message for record in caplog.records)

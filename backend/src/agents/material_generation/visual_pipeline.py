@@ -26,9 +26,13 @@ from visual.storage import (
 
 logger = logging.getLogger(__name__)
 
+# 영속 자산 저장 경로. 프로덕션에서는 FACTORY_IMAGE_STORAGE_PATH로 영속 절대 경로를
+# 반드시 지정한다. 기본값은 db/engine.py의 SQLite(./factory_space.db)와 동일하게
+# 실행 디렉터리(backend/) 기준 상대 경로 var/assets 를 사용한다(.gitignore 처리됨).
+# /tmp 대신 상대 영속 경로를 기본값으로 둬서 재부팅 시 자산이 소실되지 않게 한다.
 _DEFAULT_STORAGE_PATH = os.environ.get(
     "FACTORY_IMAGE_STORAGE_PATH",
-    "/tmp/factory-space/assets",
+    "var/assets",
 )
 
 
@@ -111,6 +115,15 @@ def _default_image_adapter() -> ImageGenerationAdapter:
         settings = ImageGenSettings.from_env()
     except ValueError:
         settings = ImageGenSettings(provider="none")
+    if settings.provider == "none":
+        # 프로바이더 미설정 시 단색 placeholder가 생성되고 visual_ready로 마킹된다.
+        # lifecycle 자체는 유지하되(placeholder도 유효한 PNG 자산), 프로덕션 오설정을
+        # 조기에 인지할 수 있도록 경고를 남긴다.
+        logger.warning(
+            "Image generation provider is not configured "
+            "(FACTORY_IMAGE_GEN_PROVIDER unset); using a solid-color placeholder. "
+            "Materials will be marked visual_ready with placeholder assets."
+        )
     return create_image_adapter(settings)
 
 
