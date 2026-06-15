@@ -79,7 +79,7 @@ void UUI_MachineInteract::NativeTick(const FGeometry& MyGeometry, float InDeltaT
     
     if (!TargetMachine) return;
     
-    // 🌟 [핵심 수정] 기계가 고집하는 레시피 대신, 기계 입력 인벤토리에 '진짜 들어있는 재료'를 직접 긁어옵니다!
+    // 기계가 고집하는 레시피 대신, 기계 입력 인벤토리에 '진짜 들어있는 재료'를 직접 긁어옵니다
     FName InputName = NAME_None;
     int32 InputAmount = 0;
 
@@ -153,7 +153,7 @@ void UUI_MachineInteract::UpdateInputUI(FName ItemName, int32 CurrentAmount, int
         return;
     }
 
-    // 🌟 [디버그 구역] 왜 이미지가 안 바뀌는지 원격 추적
+    // 왜 이미지가 안 바뀌는지 원격 추적
     if (!ResourceDataTable)
     {
         UE_LOG(LogTemp, Error, TEXT("[UI 에러] ResourceDataTable 변수가 Null입니다! WBP_MachineInteract 블루프린트 디테일 창에서 아이템 데이터 테이블을 할당했는지 확인하세요."));
@@ -299,23 +299,11 @@ void UUI_MachineInteract::UpdateDurabilityUI(float CurrentDurability, float MaxD
 
 bool UUI_MachineInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
+    // 1. 마우스 드래그 오퍼레이션 검사
     UItemDragDropOperation* ItemDragOp = Cast<UItemDragDropOperation>(InOperation);
     if (!ItemDragOp || !TargetMachine) return false;
-    
-    // 1. 마우스가 이미지 칸(DropZone) 위에 있는지 검사
-    if (B_InputDropZone)
-    {
-        FVector2D DropScreenPos = InDragDropEvent.GetScreenSpacePosition();
-        if (!USlateBlueprintLibrary::IsUnderLocation(B_InputDropZone->GetCachedGeometry(), DropScreenPos))
-        {
-            return false; 
-        }
-    }
 
     FName DroppedItemID = ItemDragOp->DraggedItemID;
-
-    // 기계가 원하는 걸 검사하는 멍청한 비교문(CurrentRecipe 대조)을 흔적도 없이 삭제했습니다
-    // 이제 유저가 던진 아이템이 무엇이든(iron_ore든, copper_ore든) 무조건 통과합니다.
 
     // 2. 수량 제한 검사 (기계 수용량이 꽉 찬 게 아니라면 허용)
     int32 CurrentInputAmount = TargetMachine->GetInputInventory().FindRef(DroppedItemID);
@@ -333,7 +321,6 @@ bool UUI_MachineInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDragD
         {
             TargetMachine->AddItem(DroppedItemID, 1);
             
-            // 가방 UI 새로고침
             APlayerController* PC = GetOwningPlayer();
             if (PC)
             {
@@ -344,7 +331,7 @@ bool UUI_MachineInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDragD
                 }
             }
             
-            UE_LOG(LogTemp, Log, TEXT("[드롭 성공] 유저가 원하는 아이템(%s)을 기계에 성공적으로 투입했습니다"), *DroppedItemID.ToString());
+            UE_LOG(LogTemp, Log, TEXT("[드롭 성공] 창고 투입 성공: %s"), *DroppedItemID.ToString());
             return true; 
         }
     }

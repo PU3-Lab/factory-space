@@ -54,31 +54,43 @@ void UUI_InventorySlot::NativeOnDragDetected(const FGeometry& MyGeometry, const 
 {
    Super::NativeOnDragDetected(MyGeometry, InPointerEvent, OutOperation);
     
-   // (테스트가 완전히 끝났다면 가드 조건을 다시 활성화하셔도 좋습니다!)
    if (CurrentSlotItemID.IsNone() || CurrentSlotItemCount <= 0) return;
 
-   // 1. 드래그 오퍼레이션 오브젝트 인스턴스 생성
+   // 1. 드래그 오퍼레이션 생성
    UItemDragDropOperation* DragOp = NewObject<UItemDragDropOperation>(this, UItemDragDropOperation::StaticClass());
    DragOp->DraggedItemID = CurrentSlotItemID; 
-   DragOp->Pivot = EDragPivot::MouseDown; // 마우스 누른 지점을 기점으로 아이콘이 매달립니다.
+   DragOp->Pivot = EDragPivot::MouseDown;
 
-   // 런타임에 마우스 따라다닐 투명한 껍데기 전용 가짜 Image 컴포넌트 생성
    if (IMG_ItemIcon)
    {
-      UImage* DragVisualImage = NewObject<UImage>(this, UImage::StaticClass());
+      // 생성 소유자(Outer)를 안전한 PlayerController(GetOwningPlayer)로 지정합니다
+      UImage* DragVisualImage = NewObject<UImage>(GetOwningPlayer(), UImage::StaticClass());
       if (DragVisualImage)
       {
-         // 현재 내 슬롯이 띄우고 있는 텍스처(철광석 등) 이미지 리소스를 가짜 이미지에 그대로 복사
          DragVisualImage->SetBrush(IMG_ItemIcon->GetBrush());
-            
-         // 드래그해서 움직일 때 아이콘 크기가 너무 거대해지거나 찌그러지지 않도록 크기 고정
          DragVisualImage->SetDesiredSizeOverride(FVector2D(64.f, 64.f));
-
-         // 복사 처리가 완료된 산뜻한 가짜 이미지를 배달부 비주얼에 탁 안겨줍니다.
          DragOp->DefaultDragVisual = DragVisualImage;
       }
    }
 
-   // 3. 엔진에 리턴하여 공중 부양 시작
    OutOperation = DragOp; 
+}
+
+// 슬롯 마우스 다운 강제 감지 규칙
+FReply UUI_InventorySlot::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+   FReply Reply = Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+
+   // 슬롯에 진짜 아이템이 들어있을 때만 드래그 감지 락을 캡처합니다.
+   if (!CurrentSlotItemID.IsNone() && CurrentSlotItemCount > 0)
+   {
+      // 유저가 마우스 왼쪽 버튼을 누르는 '그 즉시' 엔진에게 드래그를 예약시킵니다.
+      // 이 조치가 들어가면 0.1초 타이머가 백그라운드에서 백번을 리프레시해도 내 마우스 신호가 씹히지 않습니다.
+      if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+      {
+         return Reply.DetectDrag(this->TakeWidget(), EKeys::LeftMouseButton);
+      }
+   }
+
+   return Reply;
 }

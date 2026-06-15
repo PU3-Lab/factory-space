@@ -96,7 +96,7 @@ void UUI_MainHUD::ToggleAIGuideWindow()
         
         if (TXT_ToggleText)
         {
-            TXT_ToggleText->SetText(FText::FromString(TEXT("▲ AI 가이드 접기")));
+            TXT_ToggleText->SetText(FText::FromString(TEXT("▲ Tab")));
         }
 
         if (PC)
@@ -116,7 +116,7 @@ void UUI_MainHUD::ToggleAIGuideWindow()
         
         if (TXT_ToggleText)
         {
-            TXT_ToggleText->SetText(FText::FromString(TEXT("▼ AI 가이드 열기")));
+            TXT_ToggleText->SetText(FText::FromString(TEXT("▼ Tab 열기")));
         }
 
         if (PC)

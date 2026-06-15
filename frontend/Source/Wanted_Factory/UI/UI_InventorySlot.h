@@ -23,7 +23,7 @@ protected:
 	
 	FName CurrentSlotItemID = NAME_None;
 	int32 CurrentSlotItemCount = 0;
-
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	// 드래그가 감지되었을 때 엔진이 호출해 주는 가상 함수 오버라이드
 	virtual void NativeOnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& InPointerEvent,
 									  UDragDropOperation*& OutOperation) override;
