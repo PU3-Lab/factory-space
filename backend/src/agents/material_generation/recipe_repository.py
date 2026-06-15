@@ -1,4 +1,4 @@
-"""Repository for querying and matching system recipes from the database."""
+"""데이터베이스로부터 시스템 레시피를 쿼리하고 매칭하기 위한 레포지토리입니다."""
 
 from __future__ import annotations
 
@@ -11,11 +11,11 @@ from db.models import RecipeModel
 
 
 class RecipeRepository:
-    """Manages cached known items and handles matching of authored recipes."""
+    """캐시된 알려진 아이템들을 관리하고 작성된 레시피들의 매칭을 처리합니다."""
 
     @classmethod
     def reload_cache(cls, session: Session) -> None:
-        """Load all recipes from DB and populate session memory cache."""
+        """DB에서 모든 레시피를 로드하고 세션 메모리 캐시를 구성합니다."""
         result = session.execute(select(RecipeModel))
         recipes = list(result.scalars().all())
         session.info["recipes_cache"] = recipes
@@ -35,14 +35,14 @@ class RecipeRepository:
 
     @classmethod
     def get_known_items(cls, session: Session) -> set[str]:
-        """Return the set of all item IDs present in existing recipes."""
+        """기존 레시피에 존재하는 모든 아이템 ID 세트를 반환합니다."""
         if "known_items" not in session.info:
             cls.reload_cache(session)
         return session.info["known_items"]
 
     @classmethod
     def get_recipes(cls, session: Session) -> list[RecipeModel]:
-        """Return the list of all recipes."""
+        """모든 레시피 목록을 반환합니다."""
         if "recipes_cache" not in session.info:
             cls.reload_cache(session)
         return session.info["recipes_cache"]
@@ -54,7 +54,7 @@ class RecipeRepository:
         machine_type: str,
         normalized_inputs: list[dict[str, Any]],
     ) -> RecipeModel | None:
-        """Find a recipe completely matching the given machine and input items/quantities."""
+        """주어진 장비 및 입력 아이템/수량과 완전히 일치하는 레시피를 찾습니다."""
         recipes = cls.get_recipes(session)
         input_map = {item["item_id"]: item["qty"] for item in normalized_inputs}
 

@@ -1,4 +1,4 @@
-"""State definition for the material generation StateGraph."""
+"""재료 생성 StateGraph를 위한 상태(State) 정의입니다."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from agents.material_generation.schemas import (
 
 
 class MaterialGraphState(TypedDict):
-    """State dictionary passed between nodes in the material generation subgraph."""
+    """재료 생성 서브그래프의 노드들 사이에서 전달되는 상태 딕셔너리입니다."""
 
     db: Session
     request: MaterialCreationRequest

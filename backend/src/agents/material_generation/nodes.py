@@ -1,4 +1,4 @@
-"""LangGraph node and routing function definitions for the material generation subgraph."""
+"""재료 생성 서브그래프를 위한 LangGraph 노드 및 라우팅 함수 정의입니다."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ _proposal_generator = None
 
 
 def get_proposal_generator() -> MaterialProposalGenerator:
-    """Lazy initialization of the proposal generator."""
+    """제안 생성기(Proposal Generator)의 지연 초기화(Lazy initialization)입니다."""
     global _proposal_generator
     if _proposal_generator is None:
         _proposal_generator = MaterialProposalGenerator()
@@ -48,7 +48,7 @@ def get_proposal_generator() -> MaterialProposalGenerator:
 
 
 def normalize_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Normalize input items and compute experiment hash."""
+    """노드: 입력 아이템을 정규화하고 실험 해시를 계산합니다."""
     request = state["request"]
     normalized = normalize_inputs(request.inputs)
     exp_hash = generate_experiment_hash(
@@ -64,7 +64,7 @@ def normalize_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def lookup_cache_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Check experiment registry for cached results."""
+    """노드: 캐시된 결과가 있는지 실험 레지스트리를 확인합니다."""
     session = state["db"]
     exp_hash = state["experiment_hash"]
 
@@ -120,7 +120,7 @@ def lookup_cache_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def recipe_match_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Search authored system recipes."""
+    """노드: 시스템에 작성된 레시피를 검색합니다."""
     if state.get("response"):
         return {}
 
@@ -176,7 +176,7 @@ def recipe_match_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def prevalidate_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Deterministic validation checks."""
+    """노드: 결정론적 검증 검사를 수행합니다."""
     if state.get("response"):
         return {}
 
@@ -212,7 +212,7 @@ def prevalidate_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def classify_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Classify experiment configuration."""
+    """노드: 실험 구성을 분류합니다."""
     if state.get("response"):
         return {}
 
@@ -227,7 +227,7 @@ def classify_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def handle_rule_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Fast-fail non-synthesis categories."""
+    """노드: 합성이 아닌 카테고리에 대해 빠르게 실패(Fast-fail) 처리를 수행합니다."""
     if state.get("response"):
         return {}
 
@@ -282,7 +282,7 @@ def handle_rule_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def similarity_context_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Retrieve history of similar experiments for context."""
+    """노드: 컨텍스트 분석을 위해 유사한 실험 이력을 검색합니다."""
     if state.get("response"):
         return {}
 
@@ -297,7 +297,7 @@ def similarity_context_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def llm_propose_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Query LLM for material proposal."""
+    """노드: 재료 제안을 받기 위해 LLM을 쿼리합니다."""
     if state.get("response"):
         return {}
 
@@ -312,7 +312,7 @@ def llm_propose_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def validate_result_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Enforce rules, sanitization, and manage retry state."""
+    """노드: 규칙 강제 적용, 새니타이징 및 재시도 상태를 관리합니다."""
     if state.get("response"):
         return {}
 
@@ -365,7 +365,7 @@ def validate_result_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Deduplicate attributes by checking existing material hashes."""
+    """노드: 기존 재료 해시를 확인하여 속성을 중복 제거합니다."""
     if state.get("response"):
         return {}
 
@@ -415,7 +415,7 @@ def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def register_material_node(state: MaterialGraphState) -> dict[str, Any]:
-    """Node: Commit new material and discoveries, publishing asset pipeline events."""
+    """노드: 새로운 재료 및 발견 사항을 커밋하고, 자산 파이프라인 이벤트를 게시합니다."""
     session = state["db"]
     request = state["request"]
     proposal = state["proposal"]

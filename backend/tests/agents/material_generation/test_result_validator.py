@@ -1,4 +1,4 @@
-"""Unit tests for the MaterialResultValidator class."""
+"""MaterialResultValidator 클래스에 대한 단위 테스트입니다."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def test_validator_defaults_invalid_rarity() -> None:
             id_hint="alloy_rarity",
             name="Alloy Rarity",
             category="alloy",
-            rarity="legendary",  # Invalid rarity
+            rarity="legendary",  # 유효하지 않은 희귀도
             description="Legendary is not a valid rarity.",
             properties=MaterialProperties(
                 strength=5.0, conductivity=5.0, stability=5.0, reactivity=5.0
@@ -92,11 +92,11 @@ def test_validator_cleans_forbidden_keywords() -> None:
 
     validated = MaterialResultValidator.validate_and_correct(proposal)
     assert validated.result is not None
-    # 'dummy', 'test', 'shit' in id_hint replaced by 'alloy'
+    # id_hint 내의 'dummy', 'test', 'shit'이 'alloy'로 대체됨
     assert "dummy" not in validated.result.id_hint
     assert "test" not in validated.result.id_hint
     assert "shit" not in validated.result.id_hint
-    # 'Trash', 'Dummy', 'Invalid' in name replaced by 'Alloy' or 'alloy'
+    # name 내의 'Trash', 'Dummy', 'Invalid'가 'Alloy' 또는 'alloy'로 대체됨
     assert "trash" not in validated.result.name.lower()
     assert "dummy" not in validated.result.name.lower()
     assert "invalid" not in validated.result.name.lower()
