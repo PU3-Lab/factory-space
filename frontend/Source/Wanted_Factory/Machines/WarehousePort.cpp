@@ -8,7 +8,6 @@ AWarehousePort::AWarehousePort()
 	PrimaryActorTick.bCanEverTick = true;
 
 	MachineType = TEXT("WarehousePort");
-	SelectedOutputItemID = TEXT("iron_ore");
 	bNeedPower = false;
 	bDisableWhenBroken = true;
 }
