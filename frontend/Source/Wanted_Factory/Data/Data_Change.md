@@ -26,3 +26,9 @@
 - `ThermalPowerPlant`, `NuclearPowerPlant`는 연료 투입형 발전기이므로 입력 포트 `1`, 입력 버퍼 `1`로 설정했다.
 - `HydroPowerPlant`, `WindPowerPlant`, `SolarPowerPlant`는 비투입형 발전기이므로 입력 포트 `0`, 입력 버퍼 `0`으로 설정했다.
 - 신규 행의 `ImgAsset`, `StaticMeshAsset`, `MaterialAsset` 값은 비워 두었다.
+## 2026-06-14
+
+### `Source/Wanted_Factory/Data/ResouceTable.csv`
+- 파이프 액체 색상 원본 관리를 위해 `PipeColor` 컬럼을 추가했다.
+- 비액체 row는 `PipeColor`를 비워 두고, 액체 5종만 색상을 기록했다.
+- 적용 대상은 `water`, `waste_water`, `acid`, `petrolium`, `mercury`다.
