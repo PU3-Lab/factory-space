@@ -172,6 +172,29 @@ uv run --env-file .env python scripts/ingest_manual_rag.py --dry-run
 uv run --env-file .env python scripts/ingest_manual_rag.py
 ```
 
+## Sprint 8 보강 메모: Multi-question Handling
+
+한 문장 안에 여러 질문이 들어오는 경우를 Sprint 8 runtime integration 범위에 포함한다.
+
+예시:
+
+```text
+분쇄기가 뭐야? 그리고 철괴를 만들려면 어떻게 해야 돼?
+```
+
+처리 방향:
+
+```text
+Player Question
+-> Question Decomposer
+-> sub-question 1: 분쇄기가 뭐야?
+-> sub-question 2: 철괴를 만들려면 어떻게 해야 돼?
+-> 각 sub-question별 RAG 검색
+-> 검색 근거를 합쳐 LLM 답변 생성
+```
+
+초기 구현은 `operator_guide_rag_sprint_8_multi_question_plan.md`를 기준으로 한다.
+
 `--dry-run` 결과는 실제 반영 명령어를 함께 보여준다.
 
 ```text
