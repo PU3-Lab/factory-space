@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "PlayerWarehouseSubsystem.h"
 #include "OJJ_Player.generated.h"
 
 class USpringArmComponent;
@@ -53,6 +54,9 @@ protected:
 	TSubclassOf<UUserWidget> MainHUDWidgetClass;
 	UPROPERTY()
 	UUserWidget* MainHUDWidgetInstance;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player Warehouse")
+	TArray<FWarehouseItemStack> InitialWarehouseItems;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
 	TSubclassOf<class UUI_Inventory> InventoryWidgetClass;
