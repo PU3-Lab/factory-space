@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 
 from agents.operator_guide.manual_context_builder import ManualQAPromptContext
+from agents.operator_guide.retrieved_context_guard import wrap_retrieved_context
 from agents.operator_guide.system_prompt import OPERATOR_GUIDE_SYSTEM_PROMPT
 
 
@@ -115,8 +116,9 @@ Use exactly these keys:
             ensure_ascii=False,
             indent=2,
         )
+        guarded_context = wrap_retrieved_context(context.rag_context_text)
         return f"""[RAG_RETRIEVAL_CONTEXT]
-{context.rag_context_text}
+{guarded_context}
 
 [RAG_RETRIEVAL_METADATA]
 {metadata_json}
