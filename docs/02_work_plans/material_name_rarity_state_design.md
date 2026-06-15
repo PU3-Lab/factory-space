@@ -181,8 +181,8 @@ material_hash = sha256( machine_type | 정규화_입력(item:qty 정렬) | temp 
 - 형태(ingot/powder) 세분 보정
 - 아이콘/텍스처 실제 이미지 생성
 
-## 8. 열린 항목 (스펙 리뷰에서 확정)
+## 8. 확정된 결정 (구 열린 항목)
 
-- 기초 재료 속성 테이블의 **실제 수치**(4.1은 제안 기본값) — 기획 확정 필요
-- 속성 테이블 저장 위치: 신규 Python 상수 vs 시드 CSV vs DB 테이블
-- `material_hash` ≡ `experiment_hash` 통합 여부(중복 정의 정리)
+- 기초 재료 속성 테이블의 실제 수치: **§4.1 제안값 채택**, 추후 기획 튜닝 가능.
+- 저장 위치: **백엔드 Python 상수 모듈**(`material_properties.py`). 테스트 용이·마이그레이션 불필요. v1 채택.
+- `material_hash`: **함수(`generate_material_hash`)는 분리 유지**하되 합성 정체성 기반으로 계산. `experiment_hash`와 값은 동일하지만 함수는 통합하지 않는다(변경 범위 최소화).
