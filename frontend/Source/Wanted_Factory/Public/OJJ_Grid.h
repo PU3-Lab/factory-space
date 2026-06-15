@@ -10,6 +10,7 @@
 class AMachineBase;
 class AConveyor;
 class APipe;
+class AOJJ_Foundation;
 class UStaticMeshComponent;
 class UInstancedStaticMeshComponent;
 class UMaterialInterface;
@@ -381,6 +382,23 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Hover")
 	TObjectPtr<UInstancedStaticMeshComponent> InvalidHoverISM;
 
+	// === 고스트 프리뷰(#187) — 호버 셀을 따라다니는 반투명 미리보기 메시 ===
+	// 액터 spawn 없이 단일 컴포넌트로 그린다(설계 원칙: 프리뷰용 머신/Foundation 액터 미스폰).
+	// 머신(전 서브모드) + 평판 Foundation만 대상. 셀 변경 시에만 갱신(매 프레임 Tick 없음).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Ghost")
+	TObjectPtr<UStaticMeshComponent> GhostMeshComp;
+
+	// 고스트용 반투명 베이스 머티리얼(사용자가 에디터에서 지정 — 벡터 파라미터 TintColor, 스칼라 Opacity 가정).
+	// 미지정이면 고스트 비활성(안전한 no-op) — OJJ_EnsureGhostMIDs가 1회 경고.
+	UPROPERTY(EditAnywhere, Category = "Grid|Ghost")
+	TObjectPtr<UMaterialInterface> GhostBaseMaterial;
+
+	// 배치 가능(초록 틴트) / 불가(빨강 틴트) 고스트 MID. OJJ_EnsureGhostMIDs에서 lazy 생성.
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> GhostValidMID;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> GhostInvalidMID;
+
 	// === 포트 방향 화살표 (빌드모드 전용 시각화) ===
 	// 입력=파랑 계열 / 출력=주황 계열. 배치 머신용(Placed*)과 호버 프리뷰용(Hover*)을 분리해
 	// 수명주기를 독립시킨다: Placed는 진입~퇴장 상시(커서 무관), Hover는 커서 프리뷰와 동반 생멸.
@@ -562,6 +580,10 @@ private:
 	// 단일 MID에 채움/선을 독립 세팅 — 채움(BaseColor/Opacity)=인자(분류색·연하게), 선(LineColor/LineOpacity)=
 	// 공유 GridLineColor/GridLineOpacity(스냅 기준선·선명). 채움 투명도가 선을 흐리지 않게 분리. MID==null/없는 파라미터는 무시.
 	void OJJ_SetTileParams(UMaterialInstanceDynamic* MID, const FLinearColor& FillColor, float FillOpacity) const;
+
+	// 고스트 프리뷰(#187) MID lazy 생성. GhostBaseMaterial 미지정이면 1회 경고 후 비활성(크래시 금지).
+	// 생성 시 Valid=HoverValidColor / Invalid=HoverInvalidColor 틴트, 둘 다 Opacity=HoverOpacity 세팅.
+	void OJJ_EnsureGhostMIDs();
 
 #if WITH_EDITOR
 	// 디테일 패널/PIE에서 Visual Hierarchy 값 변경 시 MID에 즉시 재적용 + 오버레이 갱신(실시간 튜닝).
@@ -986,6 +1008,20 @@ public:
 	// 호버 미리보기 모두 제거 (머신 placement 완료 / 호버 해제 시 호출). 호버 포트 화살표도 함께 제거.
 	UFUNCTION(BlueprintCallable, Category = "Grid|Hover")
 	void ClearHoverPreview();
+
+	// === 고스트 프리뷰(#187) — 호버 셀 위 반투명 미리보기 메시 ===
+
+	// 머신 CDO의 메시를 호버 셀(Origin/회전)에 반투명으로 그린다. bValid=배치 가능(초록)/불가(빨강) 틴트.
+	// 메시 fit·XY 중심·BaseZ는 GetMachinePlacementLocation 산식 재사용, ZOffset은 CDO-safe(라이브 트랜스폼 무의존).
+	// MachineCDO/메시/MID 미비 시 안전하게 고스트 숨김.
+	void OJJ_ShowGhostForMachine(AMachineBase* MachineCDO, FIntPoint Origin, int32 RotationSteps, bool bValid);
+
+	// 평판 Foundation CDO의 슬래브(엔진 Cube)를 호버 풋프린트에 반투명으로 그린다. UpdateSlabVisual 산식 재현.
+	// 평판 전용(램프는 호출하지 않음). MID 미비 시 안전하게 고스트 숨김.
+	void OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize, bool bValid);
+
+	// 고스트 숨김(ClearHoverPreview / 램프 선택 / 미지정 머티리얼 등).
+	void OJJ_HideGhost();
 
 	// === 포트 방향 화살표 (빌드모드 전용) ===
 

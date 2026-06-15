@@ -80,3 +80,15 @@ void AOJJ_BuildCamera::Rotate(float Axis)
 
 	AddActorWorldRotation(FRotator(0.f, Axis * RotateSpeed * Delta, 0.f));
 }
+
+void AOJJ_BuildCamera::Zoom(float ScrollDelta)
+{
+	if (!SpringArm || FMath::IsNearlyZero(ScrollDelta))
+	{
+		return;
+	}
+
+	// 스크롤 업(+) → 줌인(팔 길이 감소). ArmLength를 현재값으로 갱신해 BeginPlay 재적용/재진입과 정합.
+	ArmLength = FMath::Clamp(SpringArm->TargetArmLength - ScrollDelta * ZoomStep, MinArmLength, MaxArmLength);
+	SpringArm->TargetArmLength = ArmLength;
+}

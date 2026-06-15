@@ -604,31 +604,32 @@ FLinearColor APipe::GetFilledPipeColor() const
 		return FilledPipeColor;
 	}
 
-	FLinearColor ResultColor = Resource->PipeColor;
-	ResultColor.A = FilledPipeColor.A;
-	return ResultColor;
+	return Resource->PipeColor;
 }
 
 UMaterialInterface* APipe::GetPipeMaterial(bool bHasLiquid)
 {
-	if (bHasLiquid && FilledPipeMaterial)
-	{
-		return FilledPipeMaterial;
-	}
-
-	if (!bHasLiquid && EmptyPipeMaterial)
-	{
-		return EmptyPipeMaterial;
-	}
-
-	UMaterialInterface* BaseMaterial = PipeMaterialBase
-		? PipeMaterialBase.Get()
-		: UMaterial::GetDefaultMaterial(MD_Surface);
 	TObjectPtr<UMaterialInstanceDynamic>& MaterialInstance = bHasLiquid
 		? FilledPipeMaterialInstance
 		: EmptyPipeMaterialInstance;
+	UMaterialInterface* BaseMaterial = nullptr;
 
-	if (!MaterialInstance)
+	if (bHasLiquid && FilledPipeMaterial)
+	{
+		BaseMaterial = FilledPipeMaterial;
+	}
+	else if (!bHasLiquid && EmptyPipeMaterial)
+	{
+		BaseMaterial = EmptyPipeMaterial;
+	}
+	else
+	{
+		BaseMaterial = PipeMaterialBase
+			? PipeMaterialBase.Get()
+			: UMaterial::GetDefaultMaterial(MD_Surface);
+	}
+
+	if (!MaterialInstance || MaterialInstance->Parent != BaseMaterial)
 	{
 		MaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
 	}

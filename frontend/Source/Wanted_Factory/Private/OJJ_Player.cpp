@@ -25,11 +25,11 @@
 #include "OJJ_Grid.h"
 #include "Blueprint/UserWidget.h"
 #include "MachineBase.h"
-#include "Machines/WarehousePort.h"
 #include "UI/UI_MachineInteract.h"
 #include "UI/UI_MainHUD.h"
 #include "UI/UI_Inventory.h"
-
+#include "Machines/WarehousePort.h"
+#include "PlayerWarehouseSubsystem.h"
 
 AOJJ_Player::AOJJ_Player()
 {
@@ -65,6 +65,14 @@ AOJJ_Player::AOJJ_Player()
 void AOJJ_Player::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>())
+		{
+			WarehouseSubsystem->GrantInitialItems(InitialWarehouseItems);
+		}
+	}
 
 	// 걷기 속도를 권위 있게 적용(BP CharacterMovement의 MaxWalkSpeed 기본값을 덮음 — 단일 출처).
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
@@ -242,6 +250,14 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	{
 		EnhancedInput->BindAction(IA_SetTankMode, ETriggerEvent::Started, this, &AOJJ_Player::SetTankMode);
 	}
+	if (IA_SetFoundationMode)
+	{
+		EnhancedInput->BindAction(IA_SetFoundationMode, ETriggerEvent::Started, this, &AOJJ_Player::SetFoundationMode);
+	}
+	if (IA_SetRampMode)
+	{
+		EnhancedInput->BindAction(IA_SetRampMode, ETriggerEvent::Started, this, &AOJJ_Player::SetRampFoundationMode);
+	}
 	if (IA_SetPowerNodeMode)
 	{
 		EnhancedInput->BindAction(IA_SetPowerNodeMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerNodeMode);
@@ -307,9 +323,8 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
 	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
-	// Foundation 모드(F1-b) — 직접 바인딩(M/J/I 패턴). IA/IMC 에셋 전환은 키 정리 백로그.
-	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AOJJ_Player::SetFoundationMode);
-	PlayerInputComponent->BindKey(EKeys::H, IE_Pressed, this, &AOJJ_Player::SetRampFoundationMode);
+	// Foundation G/H는 #196에서 Enhanced Input(IA_SetFoundationMode/IA_SetRampMode)로 전환 —
+	// 레거시 BindKey 제거(이중발화 차단). 바인딩은 위 BindAction 블록 + IMC_Build/BP 매핑(에디터).
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -349,12 +364,27 @@ void AOJJ_Player::Look(const FInputActionValue& Value)
 void AOJJ_Player::Zoom(const FInputActionValue& Value)
 {
 	const float Scroll = Value.Get<float>();
-	if (!SpringArm || FMath::IsNearlyZero(Scroll))
+	if (FMath::IsNearlyZero(Scroll))
 	{
 		return;
 	}
 
-	// 스크롤 업(+) → 줌인(팔 길이 감소)
+	// 빌드모드면 뷰타겟인 BuildCamera를 줌(플레이어 SpringArm은 안 보이므로). 양쪽 모드 동일 휠 UX.
+	if (BuildController && BuildController->IsInBuildMode())
+	{
+		if (BuildCamera)
+		{
+			BuildCamera->Zoom(Scroll);
+		}
+		return;
+	}
+
+	if (!SpringArm)
+	{
+		return;
+	}
+
+	// TPS: 스크롤 업(+) → 줌인(팔 길이 감소)
 	const float NewLength = SpringArm->TargetArmLength - Scroll * ZoomStep;
 	SpringArm->TargetArmLength = FMath::Clamp(NewLength, MinArmLength, MaxArmLength);
 }
@@ -694,9 +724,9 @@ void AOJJ_Player::SetDemolishMode(const FInputActionValue& Value)
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Demolish);
 }
 
-// 평판 Foundation 모드 직행(G키 — F1-b, F3.7' 키 개편으로 종류까지 확정). 다른 모드 핸들러와
-// 동일하게 BuildController 위임만 — 모드 진입/호버 갱신/빌드모드 밖 무해성은 컨트롤러 소관.
-void AOJJ_Player::SetFoundationMode()
+// 평판 Foundation 모드 진입(G키 — #196 IA 전환). 다른 모드 핸들러(탱크/파이프)와 동일 구조 —
+// BuildController 위임만. 모드 진입/호버 갱신/빌드모드 밖 무해성은 컨트롤러 소관.
+void AOJJ_Player::SetFoundationMode(const FInputActionValue& Value)
 {
 	if (!BuildController)
 	{
@@ -705,8 +735,8 @@ void AOJJ_Player::SetFoundationMode()
 	BuildController->OJJ_SelectFoundationKind(false);
 }
 
-// 램프 Foundation 모드 직행(H키 — F3.7' 키 개편, F3-2.5 T 토글 대체).
-void AOJJ_Player::SetRampFoundationMode()
+// 램프 Foundation 모드 진입(H키 — #196 IA 전환, F3-2.5 T 토글 대체).
+void AOJJ_Player::SetRampFoundationMode(const FInputActionValue& Value)
 {
 	if (!BuildController)
 	{
@@ -820,12 +850,6 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 	// (자체 닫기 시 입력모드/커서 즉시 복원은 위젯 OnClosed 델리게이트 → RestoreGameInputMode가 처리.)
 	if (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport())
 	{
-		if (bIsInventoryOpen && InventoryWidgetInstance)
-		{
-			InventoryWidgetInstance->RemoveFromParent();
-			bIsInventoryOpen = false;
-			GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
-		}
 		CloseMachineInteractWidget(PC);
 		return;
 	}
@@ -873,44 +897,9 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 	// 머신 참조 전달 — 위젯의 모든 실데이터(입출력/상태/진행도/내구도) 표시가 이 참조에 의존.
 	Widget->SetTargetMachine(Machine);
 	MachineInteractWidgetInstance = Widget;
-	
-	// 창고 포트인 경우
-	if (AWarehousePort* Warehouse = Cast<AWarehousePort>(Machine))
-	{
-		if (!InventoryWidgetInstance && InventoryWidgetClass)
-		{
-			InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
-		}
 
-		if (InventoryWidgetInstance)
-		{
-			if (AController* PlayerController = GetController())
-			{
-				PlayerController->StopMovement();
-			}
-
-			InventoryWidgetInstance->RefreshInventoryWindow();
-			InventoryWidgetInstance->AddToViewport();
-			bIsInventoryOpen = true;
-			
-			GetWorldTimerManager().SetTimer(
-			 InventoryRefreshTimerHandle, 
-			 this, 
-			 &AOJJ_Player::UpdateInventoryRealtime, 
-			 0.1f, 
-			 true
-		  );
-		}
-	}
-
-	// 열 때 전체 마우스 락 및 인풋 포커스 설정 일원화
-	FInputModeGameAndUI InputModeData;
-	if (bIsInventoryOpen && InventoryWidgetInstance)
-	{
-		InputModeData.SetWidgetToFocus(InventoryWidgetInstance->TakeWidget());
-	}
-	InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	PC->SetInputMode(InputModeData);
+	// 열 때: 마우스로 위젯과 상호작용 가능하도록 GameAndUI + 커서 표시.
+	PC->SetInputMode(FInputModeGameAndUI());
 	PC->SetShowMouseCursor(true);
 }
 
@@ -921,13 +910,6 @@ void AOJJ_Player::CloseMachineInteractWidget(APlayerController* PC)
 		Widget->RemoveFromParent();
 	}
 	MachineInteractWidgetInstance = nullptr;
-	
-	if (bIsInventoryOpen && InventoryWidgetInstance)
-	{
-		InventoryWidgetInstance->RemoveFromParent();
-		bIsInventoryOpen = false;
-		GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
-	}
 
 	// 닫을 때: 게임 전용 입력 복원 + 커서 숨김.
 	if (PC)
@@ -1005,7 +987,7 @@ void AOJJ_Player::TriggerInventoryToggle()
 	APlayerController* PC = Cast<APlayerController>(GetController());
 	if (!PC) return;
 
-	// 이미 열려 있다면 닫기
+	// 1. 이미 열려 있다면 닫기
 	if (bIsInventoryOpen)
 	{
 		if (InventoryWidgetInstance)
@@ -1013,12 +995,30 @@ void AOJJ_Player::TriggerInventoryToggle()
 			InventoryWidgetInstance->RemoveFromParent();
 			bIsInventoryOpen = false;
 		}
-		// 실시간 타이머 종료
+		
+		PC->SetInputMode(FInputModeGameOnly());
+		PC->SetShowMouseCursor(false);
+
 		GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
 		return;
 	}
 
-	// I키를 누르면 인벤토리 즉시 오픈
+	// 2. 레이저 검사 (창고 포트인지 확인)
+	UWorld* World = GetWorld();
+	if (!Camera || !World) return;
+
+	FVector TraceStart = Camera->GetComponentLocation();
+	FVector TraceEnd = TraceStart + Camera->GetForwardVector() * MaxInteractDistance;
+	FHitResult Hit;
+	FCollisionQueryParams TraceParams(FName(TEXT("OJJInventoryInteract")), false, this);
+
+	bool bHit = World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, TraceParams);
+	if (!bHit) return;
+
+	AWarehousePort* WarehouseMachine = Cast<AWarehousePort>(Hit.GetActor());
+	if (!WarehouseMachine) return;
+
+	// 3. 창고 포트 확인 완료 시 인벤토리 오픈
 	if (!InventoryWidgetInstance && InventoryWidgetClass)
 	{
 		InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
@@ -1026,15 +1026,13 @@ void AOJJ_Player::TriggerInventoryToggle()
 
 	if (InventoryWidgetInstance)
 	{
-		// 캐릭터가 달리는 도중 켰을 때 관성으로 계속 직진하는 버그 방지
-		if (AController* PlayerController = GetController())
-		{
-			PlayerController->StopMovement();
-		}
-
 		InventoryWidgetInstance->RefreshInventoryWindow();
 		InventoryWidgetInstance->AddToViewport();
 		bIsInventoryOpen = true;
+		
+		PC->SetInputMode(FInputModeGameAndUI());
+		PC->SetShowMouseCursor(true);
+
 		GetWorldTimerManager().SetTimer(
 			InventoryRefreshTimerHandle, 
 			this, 
@@ -1049,7 +1047,7 @@ void AOJJ_Player::UpdateInventoryRealtime()
 {
 	if (bIsInventoryOpen && InventoryWidgetInstance)
 	{
-		InventoryWidgetInstance->UpdateSlotQuantitiesOnly();
+		InventoryWidgetInstance->RefreshInventoryWindow();
 	}
 	else
 	{
