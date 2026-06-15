@@ -70,6 +70,7 @@ class ManualQAResult(BaseModel):
     primary_manual: str
     supporting_manuals: list[str] = Field(default_factory=list)
     target_ids: list[str] = Field(default_factory=list)
+    retrieval: dict[str, object] = Field(default_factory=dict)
 
     @computed_field
     @property
@@ -92,4 +93,5 @@ class ManualQAResult(BaseModel):
             "primary_manual": self.primary_manual,
             "supporting_manuals": self.supporting_manuals,
             "target_ids": self.target_ids,
+            "retrieval": self.retrieval,
         }
