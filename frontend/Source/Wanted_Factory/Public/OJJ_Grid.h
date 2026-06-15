@@ -160,7 +160,7 @@ protected:
 
 	// 바닥 분류 오버레이(빨강/초록/파랑) 공통 불투명도 — "정보는 주되 시끄럽지 않게". 낮게.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float OverlayOpacity = 0.30f;
+	float OverlayOpacity = 0.0f; // #215 윤곽선 그리드: 채움 0(바닥 비침). 선만 분류색으로 표시.
 
 	// 오버레이 건설가능(초록) — 차분한 톤(저채도/저명도).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
@@ -201,6 +201,19 @@ protected:
 	// 격자 선 불투명도 — 채움(Overlay/Hover Opacity)과 독립. 스냅 기준선이라 높게 유지.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float GridLineOpacity = 0.90f;
+
+	// 윤곽선 그리드 스타일(#215) — true면 셀 경계선을 **분류색(FillColor)** 으로 그린다
+	// (buildable=초록선 / water=청선 / blocked=적선). false면 기존 동작(공유 GridLineColor 선 + 채움).
+	// 채움(면) 제거는 별개 — Overlay/HoverOpacity를 0으로 내리면 순수 윤곽선(바닥 비침)이 된다.
+	// 기본 false = 회귀 안전(기존 채움 그리드 유지). 레벨 인스턴스에서 켜고 PIE 비교/튜닝.
+	// PostEditChangeProperty로 라이브 반영. 부수: 윤곽선만 그리면 면적이 줄어 지형 z-fighting 체감도 완화.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
+	bool bOutlineGridStyle = true; // #215 확정: 윤곽선 그리드를 기본 스타일로(모든 그리드/레벨 일관).
+
+	// 윤곽선 두께(#215) — M_OJJ_GridFloor의 LineWidth 파라미터를 라이브로 구동(슬라이더 노출). 윤곽선 모드일
+	// 때만 주입 — 끄면 마스터 기본값 유지(회귀 0). 셀 경계 기준 폭(작을수록 얇은 선). PIE에서 슬라이더로 튜닝.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.001", ClampMax = "0.5"))
+	float GridLineWidth = 0.06f; // #215 확정 윤곽 두께.
 
 	// === 지형 높낮이 건설 제약 (정적 지형 — BeginPlay 1회 베이크) ===
 	// BeginPlay에서 GridSize 전 셀 중심에서 ↓라인트레이스 → 지형 높이가 그리드 평면 Z와
