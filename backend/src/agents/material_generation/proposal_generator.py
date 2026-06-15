@@ -7,7 +7,6 @@ import logging
 from typing import Any
 
 from agents.material_generation.schemas import (
-    MaterialProperties,
     MaterialProposal,
     MaterialProposalResult,
     ProcessConditionsSchema,
@@ -81,22 +80,13 @@ class MaterialProposalGenerator:
             '  "result": {\n'
             '    "id_hint": "alloy_iron_copper",\n'
             '    "name": "제안된 신소재 한글 명칭",\n'
-            '    "category": "alloy 또는 chemical 또는 organic 또는 composite 등",\n'
-            '    "rarity": "common 또는 uncommon 또는 rare 또는 epic",\n'
             '    "description": "세계관에 부합하는 멋지고 상세한 설명",\n'
-            '    "properties": {\n'
-            '      "strength": 5.0,\n'
-            '      "conductivity": 5.0,\n'
-            '      "stability": 5.0,\n'
-            '      "reactivity": 5.0\n'
-            "    },\n"
             '    "risks": ["oxidation", "instability" 등 발생 가능한 리스크 리스트],\n'
             '    "usage": ["전선", "프레임" 등 주요 활용처 태그 리스트],\n'
             '    "next_recipe_candidates": ["다음 공정에 활용할 수 있는 가상의 아이템 ID 후보군"],\n'
             '    "visual_prompt": "아이콘 및 2D 텍스처 생성을 위한 영문 프롬프트 (예: \'reddish brown metal ingot, sci-fi style\')"\n'
             "  }\n"
             "}\n"
-            "주의: properties(강도, 전도도, 안정성, 반응성), category, rarity 필드는 시스템 백엔드에서 결정론적으로 자동 연산 및 대체되므로, JSON 구조 정합성을 위해 properties 내부 각 속성은 5.0 등 임의의 실수로 채워주시고, category와 rarity 역시 임의의 더미 문자열을 채워 반환하십시오.\n"
         )
         return prompt
 
@@ -165,16 +155,7 @@ class MaterialProposalGenerator:
             result=MaterialProposalResult(
                 id_hint=f"mat_{id_hint}_alloy",
                 name=f"{compound_name} 합금",
-                category="alloy",
-                state="solid",
-                rarity="common",
                 description="기본 합성 공정으로 생성된 대체 합금 물질입니다.",
-                properties=MaterialProperties(
-                    strength=5.0,
-                    conductivity=5.0,
-                    stability=5.0,
-                    reactivity=2.0,
-                ),
                 risks=["none"],
                 usage=["basic_structure"],
                 next_recipe_candidates=[],

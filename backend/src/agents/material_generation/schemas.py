@@ -35,10 +35,10 @@ class MaterialCreationRequest(BaseModel):
 class MaterialProperties(BaseModel):
     """재료의 물리적 속성을 정의하는 특성들입니다."""
 
-    strength: float
-    conductivity: float
-    stability: float
-    reactivity: float
+    strength: float = 0.0
+    conductivity: float = 0.0
+    stability: float = 0.0
+    reactivity: float = 0.0
 
 
 class MaterialProposalResult(BaseModel):
@@ -46,11 +46,11 @@ class MaterialProposalResult(BaseModel):
 
     id_hint: str
     name: str
-    category: str
+    category: str = "alloy"
     state: str = "solid"
-    rarity: str
+    rarity: str = "common"
     description: str
-    properties: MaterialProperties
+    properties: MaterialProperties = Field(default_factory=MaterialProperties)
     risks: list[str] = Field(default_factory=list)
     usage: list[str] = Field(default_factory=list)
     next_recipe_candidates: list[str] = Field(default_factory=list)

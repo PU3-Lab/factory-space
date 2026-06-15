@@ -107,3 +107,16 @@ def test_sanitize_does_not_strip_substring_keywords() -> None:
     assert out.result is not None
     assert out.result.name == "Latest Protest"
     assert out.result.id_hint == "latest_protest"
+
+
+def test_sanitize_forbidden_keywords_on_boundaries() -> None:
+    """언더스코어로 연결된 id_hint나 한글에 접한 금지 키워드가 단어 경계 문제 없이 정상 정화되는지 테스트합니다."""
+    out1 = MaterialResultValidator.validate_and_correct(
+        _make("정상물질", id_hint="dummy_alloy")
+    )
+    assert out1.result is not None
+    assert out1.result.id_hint == "alloy_alloy"
+
+    out2 = MaterialResultValidator.validate_and_correct(_make("철test합금"))
+    assert out2.result is not None
+    assert out2.result.name == "철합금합금"
