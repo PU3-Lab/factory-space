@@ -29,6 +29,7 @@
 #include "UI/UI_MainHUD.h"
 #include "UI/UI_Inventory.h"
 #include "Machines/WarehousePort.h"
+#include "PlayerWarehouseSubsystem.h"
 
 AOJJ_Player::AOJJ_Player()
 {
@@ -64,6 +65,14 @@ AOJJ_Player::AOJJ_Player()
 void AOJJ_Player::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>())
+		{
+			WarehouseSubsystem->GrantInitialItems(InitialWarehouseItems);
+		}
+	}
 
 	// 걷기 속도를 권위 있게 적용(BP CharacterMovement의 MaxWalkSpeed 기본값을 덮음 — 단일 출처).
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())

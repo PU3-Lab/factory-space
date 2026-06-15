@@ -3,10 +3,6 @@
 void UPlayerWarehouseSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-
-	AddItem(TEXT("iron_ore"), 30);
-	AddItem(TEXT("copper_ore"), 30);
-	AddItem(TEXT("iron_ingot"), 20);
 }
 
 bool UPlayerWarehouseSubsystem::AddItem(FName ItemID, int32 Count)
@@ -57,4 +53,12 @@ int32 UPlayerWarehouseSubsystem::GetItemCount(FName ItemID) const
 void UPlayerWarehouseSubsystem::ClearWarehouse()
 {
 	StoredItems.Reset();
+}
+
+void UPlayerWarehouseSubsystem::GrantInitialItems(const TArray<FWarehouseItemStack>& Items)
+{
+	for (const FWarehouseItemStack& Item : Items)
+	{
+		AddItem(Item.ItemID, Item.Count);
+	}
 }
