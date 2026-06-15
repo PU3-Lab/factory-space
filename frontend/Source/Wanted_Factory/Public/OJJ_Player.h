@@ -305,6 +305,12 @@ public:
 	UFUNCTION(Exec)
 	void OJJ_SetBuildMode(const FString& ModeName);
 
+	UFUNCTION(Exec)
+	void OJJ_TutorialAdvance();
+
+	UFUNCTION(Exec)
+	void OJJ_TutorialLog();
+
 protected:
 	void SetPowerNodeMode(const FInputActionValue& Value);
 	void SetShieldMode(const FInputActionValue& Value);

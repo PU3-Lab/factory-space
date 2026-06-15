@@ -77,6 +77,51 @@ struct FQuestState
 	EQuestStatus Status = EQuestStatus::Inactive;
 };
 
+USTRUCT(BlueprintType)
+struct FTutorialQuestStep
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest|Tutorial")
+	FString QuestId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest|Tutorial")
+	FString NextQuestId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest|Tutorial")
+	FString Group;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest|Tutorial")
+	FString Title;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest|Tutorial")
+	FString Description;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest|Tutorial")
+	FString Reward;
+};
+
+USTRUCT(BlueprintType)
+struct FTutorialQuestDialogueLine
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest|Tutorial")
+	FString QuestId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest|Tutorial")
+	FString TriggerType;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest|Tutorial")
+	int32 LineOrder = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest|Tutorial")
+	FString Speaker;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest|Tutorial")
+	FString Dialogue;
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMainQuestChanged, const FQuestState&, Quest);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSubQuestRequestStarted, const FString&, RequestId, const FString&, Agent);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSubQuestsGenerated, const FString&, RequestId, const TArray<FQuestState>&, Quests);
@@ -161,6 +206,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Quest|Sub")
 	FString RequestProductionSubQuests(const FString& Question);
 
+	UFUNCTION(BlueprintCallable, Category = "Quest|Tutorial")
+	void StartTutorialQuestTest();
+
+	UFUNCTION(BlueprintCallable, Category = "Quest|Tutorial")
+	bool CompleteCurrentTutorialQuestForTest();
+
+	UFUNCTION(BlueprintCallable, Category = "Quest|Tutorial")
+	void LogCurrentTutorialQuestTestState() const;
+
+	void NotifyTutorialEvent(FName EventId, FName TargetId = NAME_None, int32 DeltaCount = 1);
+
 private:
 	int32 CurrentMainQuestIndex = 0;
 
@@ -176,12 +232,23 @@ private:
 	UPROPERTY()
 	TObjectPtr<UPlayerWarehouseSubsystem> WarehouseSubsystem;
 
+	UPROPERTY()
+	TArray<FTutorialQuestStep> TutorialQuestSteps;
+
+	UPROPERTY()
+	TArray<FTutorialQuestDialogueLine> TutorialDialogueLines;
+
 	TSet<FString> PendingSubQuestRequestIds;
+	TMap<FString, int32> TutorialQuestStepIndexById;
+	TMap<FString, TArray<FTutorialQuestDialogueLine>> TutorialDialogueByQuestId;
+	FString CurrentTutorialQuestId;
+	bool bTutorialQuestTestActive = false;
 
 	void ActivateCurrentMainQuest();
 	void BindAgentClient();
 	void BindWarehouse();
 	void LoadMainQuestSequence();
+	void LoadTutorialQuestTestData();
 	void AppendMainQuestObjective(TArray<FQuestObjective>& Objectives, EQuestObjectiveType ObjectiveType, FName TargetId, int32 RequiredCount) const;
 	void AppendMainQuestReward(TArray<FQuestRewardItem>& Rewards, FName ItemId, int32 Quantity) const;
 	void RefreshMainQuestCompletion();
@@ -191,6 +258,9 @@ private:
 	FString SendSubQuestRequest(const FString& PayloadJson);
 	void RefreshSubQuestCompletion();
 	bool IsQuestCompletedByWarehouse(const FQuestState& Quest) const;
+	bool AdvanceTutorialQuestStep(bool bFromManualTest);
+	void LogTutorialDialogue(const FString& QuestId, const FString& TriggerType) const;
+	const FTutorialQuestStep* FindCurrentTutorialQuestStep() const;
 
 	UFUNCTION()
 	void HandleWarehouseItemAdded(FName ItemID, int32 AddedCount, int32 NewTotalCount);

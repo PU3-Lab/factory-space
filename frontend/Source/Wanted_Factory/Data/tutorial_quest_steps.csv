@@ -6,29 +6,28 @@ TUT_BASIC_004,TUT_BASIC_005,tutorial_basic,인벤토리 열기,"I를 눌러 인�
 TUT_BASIC_005,TUT_BUILD_001,tutorial_basic,인벤토리 닫기,"I를 다시 눌러 인벤토리를 닫으세요.",
 TUT_BUILD_001,TUT_BUILD_002,tutorial_build,빌드 모드 진입,"B를 눌러 빌드 모드로 전환하세요.",
 TUT_BUILD_002,TUT_BUILD_003,tutorial_build,설치물 미리보기 확인,"빌드 모드에서 설치물 미리보기를 확인하세요.",
-TUT_BUILD_003,TUT_BUILD_004,tutorial_build,설치물 왼쪽 회전,"Q를 눌러 설치물 방향을 회전하세요.",
-TUT_BUILD_004,TUT_BUILD_005,tutorial_build,설치물 오른쪽 회전,"E를 눌러 설치물 방향을 회전하세요.",
-TUT_BUILD_005,TUT_BUILD_006,tutorial_build,철거 모드 진입,"X를 눌러 철거 모드로 전환하세요.",
-TUT_BUILD_006,TUT_BUILD_007,tutorial_build,탈출 포드 선택,"철거할 탈출 포드를 선택하세요.",
-TUT_BUILD_007,TUT_MINING_001,tutorial_build,탈출 포드 철거,"탈출 포드를 철거해 자재를 회수하세요.",iron ingot 10
+TUT_BUILD_003,TUT_BUILD_004,tutorial_build,화면 왼쪽 회전,"Q를 눌러 화면을 왼쪽으로 회전하세요.",
+TUT_BUILD_004,TUT_BUILD_005,tutorial_build,화면 오른쪽 회전,"E를 눌러 화면을 오른쪽으로 회전하세요.",
+TUT_BUILD_005,TUT_BUILD_006,tutorial_build,설치물 회전,"R을 눌러 설치물 방향을 회전하세요.",
+TUT_BUILD_006,TUT_BUILD_007,tutorial_build,철거 모드 진입,"X를 눌러 철거 모드로 전환하세요.",
+TUT_BUILD_007,TUT_BUILD_008,tutorial_build,탈출 포드 선택,"철거할 탈출 포드를 선택하세요.",
+TUT_BUILD_008,TUT_MINING_001,tutorial_build,탈출 포드 철거,"탈출 포드를 철거해 자재를 회수하세요.",iron ingot 10
 TUT_MINING_001,TUT_MINING_002,tutorial_mining,철 광맥 찾기,"주변에서 철 광맥을 찾으세요.",
 TUT_MINING_002,TUT_MINING_003,tutorial_mining,채굴기 선택,"하단 UI 또는 단축키로 채굴기를 선택하세요.",
 TUT_MINING_003,TUT_MINING_004,tutorial_mining,채굴기 배치,"철 광맥 근처에 채굴기를 배치하세요.",
 TUT_MINING_004,TUT_POWER_001,tutorial_mining,채굴기 설치 완료,"채굴기를 설치해 자원 채굴을 시작할 준비를 마치세요.",iron ingot 10
 TUT_POWER_001,TUT_POWER_002,tutorial_power,발전소 선택,"하단 UI 또는 단축키로 발전소를 선택하세요.",
-TUT_POWER_002,TUT_POWER_003,tutorial_power,발전소 위치 지정,"발전소를 설치할 위치를 지정하세요.",
-TUT_POWER_003,TUT_POWER_004,tutorial_power,발전소 설치 완료,"발전소를 설치해 전력 생산 기반을 확보하세요.",iron ingot 10
-TUT_POWER_004,TUT_POWER_005,tutorial_power,송전탑 선택,"하단 UI 또는 단축키로 송전탑을 선택하세요.",
-TUT_POWER_005,TUT_POWER_006,tutorial_power,송전탑 배치,"채굴기 근처에 송전탑을 배치하세요.",
-TUT_POWER_006,TUT_POWER_007,tutorial_power,송전탑 설치 완료,"송전탑을 설치해 전력 전달 준비를 마치세요.",iron ingot 10
-TUT_POWER_007,TUT_POWER_008,tutorial_power,송전선 연결 시작,"발전소에서 송전선 연결을 시작하세요.",
-TUT_POWER_008,TUT_POWER_009,tutorial_power,송전선 연결 완료,"발전소와 송전탑을 송전선으로 연결하세요.",
-TUT_POWER_009,TUT_POWER_010,tutorial_power,전력 공급 확인,"채굴기에 전력이 공급되는지 확인하세요.",iron ingot 10
-TUT_POWER_010,TUT_SMELT_001,tutorial_power,철 광석 첫 생산,"채굴기에서 철 광석 1개가 생산되는지 확인하세요.",
+TUT_POWER_002,TUT_POWER_003,tutorial_power,발전소 설치 완료,"발전소를 설치해 전력 생산 기반을 확보하세요.",iron ingot 10
+TUT_POWER_003,TUT_POWER_004,tutorial_power,송전탑 선택,"하단 UI 또는 단축키로 송전탑을 선택하세요.",
+TUT_POWER_004,TUT_POWER_005,tutorial_power,송전탑 배치,"채굴기 근처에 송전탑을 배치하세요.",
+TUT_POWER_005,TUT_POWER_006,tutorial_power,송전탑 설치 완료,"송전탑을 설치해 전력 전달 준비를 마치세요.",iron ingot 10
+TUT_POWER_006,TUT_POWER_007,tutorial_power,송전선 연결 시작,"발전소에서 송전선 연결을 시작하세요.",
+TUT_POWER_007,TUT_POWER_008,tutorial_power,송전선 연결 완료,"발전소와 송전탑을 송전선으로 연결하세요.",
+TUT_POWER_008,TUT_POWER_009,tutorial_power,전력 공급 확인,"채굴기에 전력이 공급되는지 확인하세요.",iron ingot 10
+TUT_POWER_009,TUT_SMELT_001,tutorial_power,철 광석 첫 생산,"채굴기에서 철 광석 1개가 생산되는지 확인하세요.",
 TUT_SMELT_001,TUT_SMELT_002,tutorial_smelting,철 광석 10개 생산,"채굴기로 철 광석 10개를 생산하세요.",iron ingot 10
 TUT_SMELT_002,TUT_SMELT_003,tutorial_smelting,제련기 선택,"하단 UI 또는 단축키로 제련기를 선택하세요.",
-TUT_SMELT_003,TUT_SMELT_004,tutorial_smelting,제련기 위치 지정,"제련기를 설치할 위치를 지정하세요.",
-TUT_SMELT_004,TUT_LOGI_001,tutorial_smelting,제련기 설치 완료,"제련기를 설치해 가공 설비를 준비하세요.",iron ingot 10
+TUT_SMELT_003,TUT_LOGI_001,tutorial_smelting,제련기 설치 완료,"제련기를 설치해 가공 설비를 준비하세요.",iron ingot 10
 TUT_LOGI_001,TUT_LOGI_002,tutorial_logistics,출력 창고 포트 선택,"출력용 창고 포트를 선택하세요.",
 TUT_LOGI_002,TUT_LOGI_003,tutorial_logistics,출력 창고 포트 배치,"채굴기 출력 포트 근처에 창고 포트를 설치하세요.",
 TUT_LOGI_003,TUT_LOGI_004,tutorial_logistics,출력 자원 선택,"출력 창고 포트의 자원을 철 광석으로 설정하세요.",
