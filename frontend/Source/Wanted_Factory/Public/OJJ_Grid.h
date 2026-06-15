@@ -160,7 +160,7 @@ protected:
 
 	// 바닥 분류 오버레이(빨강/초록/파랑) 공통 불투명도 — "정보는 주되 시끄럽지 않게". 낮게.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float OverlayOpacity = 0.0f; // #215 윤곽선 그리드: 채움 0(바닥 비침). 선만 분류색으로 표시.
+	float OverlayOpacity = 0.1f; // #215 윤곽선 그리드: 선(분류색) + 아주 옅은 면(0.1)로 바닥 살짝 톤.
 
 	// 오버레이 건설가능(초록) — 차분한 톤(저채도/저명도).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
