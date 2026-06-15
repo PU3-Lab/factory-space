@@ -406,6 +406,17 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Grid|Ghost")
 	TObjectPtr<UMaterialInterface> GhostBaseMaterial;
 
+	// 고스트 틴트(#187) — PIE 디테일 슬라이더 튜닝용(그리드 Visual Hierarchy 패턴). OJJ_EnsureGhostMIDs가
+	// GhostValidMID/InvalidMID의 TintColor/Opacity에 주입(PostEditChangeProperty로 라이브 반영).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Ghost", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float GhostOpacity = 0.1f; // #187 확정 — 텍스처 거의 그대로, 아주 옅은 틴트.
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Ghost")
+	FLinearColor GhostValidTint = FLinearColor(0.2f, 0.9f, 0.3f);   // 배치 가능(부드러운 초록)
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Ghost")
+	FLinearColor GhostInvalidTint = FLinearColor(1.0f, 0.2f, 0.2f); // 배치 불가(부드러운 빨강)
+
 	// 배치 가능(초록 틴트) / 불가(빨강 틴트) 고스트 MID. OJJ_EnsureGhostMIDs에서 lazy 생성.
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> GhostValidMID;
