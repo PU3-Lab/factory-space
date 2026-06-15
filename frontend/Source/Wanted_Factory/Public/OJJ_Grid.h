@@ -164,15 +164,15 @@ protected:
 
 	// 오버레이 건설가능(초록) — 차분한 톤(저채도/저명도).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
-	FLinearColor OverlayBuildableColor = FLinearColor(0.10f, 0.45f, 0.13f);
+	FLinearColor OverlayBuildableColor = FLinearColor(0.103158f, 0.288191f, 1.0f, 1.0f); // #215 윤곽선: 청색 선
 
 	// 오버레이 건설불가/blocked(빨강) — 차분한 톤.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
-	FLinearColor OverlayBlockedColor = FLinearColor(0.50f, 0.10f, 0.09f);
+	FLinearColor OverlayBlockedColor = FLinearColor(0.5f, 0.1f, 0.09f, 1.0f); // #215 윤곽선: 적색 선
 
 	// 오버레이 물(파랑) — 차분한 톤.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
-	FLinearColor OverlayWaterColor = FLinearColor(0.10f, 0.35f, 0.60f);
+	FLinearColor OverlayWaterColor = FLinearColor(0.007655f, 0.030338f, 0.6f, 1.0f); // #215 윤곽선: 파랑 선
 
 	// 캐릭터 점유 셀(노랑) — 빌드모드 중 플레이어 캡슐이 걸친 셀 표시(F2-4 후속 ② — 시각 전용, 점유 비등록).
 	// 정보 계층이라 OverlayOpacity 공유, 색은 오버레이 3색과 구분되는 밝은 노랑.
@@ -181,7 +181,7 @@ protected:
 
 	// 호버 공통 불투명도 — "지금 액션이 주인공". 높게(아래 오버레이를 거의 가림 → 색 섞임 제거).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float HoverOpacity = 0.90f;
+	float HoverOpacity = 0.1f; // #215 윤곽선: 호버도 옅게(채움 거의 없음).
 
 	// 호버 가능(밝은 초록 + 살짝 에미시브) — Unlit이라 채널>1이 글로우.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
@@ -200,7 +200,7 @@ protected:
 
 	// 격자 선 불투명도 — 채움(Overlay/Hover Opacity)과 독립. 스냅 기준선이라 높게 유지.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float GridLineOpacity = 0.90f;
+	float GridLineOpacity = 0.6f; // #215 윤곽선: 선 불투명도.
 
 	// 윤곽선 그리드 스타일(#215) — true면 셀 경계선을 **분류색(FillColor)** 으로 그린다
 	// (buildable=초록선 / water=청선 / blocked=적선). false면 기존 동작(공유 GridLineColor 선 + 채움).
