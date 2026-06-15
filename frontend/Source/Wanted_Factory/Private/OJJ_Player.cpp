@@ -1207,7 +1207,8 @@ void AOJJ_Player::TriggerInventoryToggle()
 			0.1f, 
 			true
 		);
-    }
+	}
+}
 }
 
 void AOJJ_Player::OJJ_TutorialAdvance()
