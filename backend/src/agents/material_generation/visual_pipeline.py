@@ -14,6 +14,7 @@ from db.models import GeneratedMaterialModel
 from visual.adapter import (
     ImageGenerationAdapter,
     create_image_adapter,
+    resize_to_profile,
 )
 from visual.profile import ICON, TEXTURE, THUMBNAIL
 from visual.settings import ImageGenSettings
@@ -26,7 +27,8 @@ from visual.storage import (
 logger = logging.getLogger(__name__)
 
 _DEFAULT_STORAGE_PATH = os.environ.get(
-    "FACTORY_IMAGE_STORAGE_PATH", "/tmp/factory-space/assets"
+    "FACTORY_IMAGE_STORAGE_PATH",
+    "/tmp/factory-space/assets",
 )
 
 
@@ -65,8 +67,9 @@ class VisualAssetPipeline:
                     )
                     return
 
-                icon_data = image_adapter.generate(visual_prompt, ICON)
-                if icon_data is None:
+                # Generate ONE master image, then downscale to every profile.
+                master_data = image_adapter.generate(visual_prompt)
+                if master_data is None:
                     logger.warning(
                         "VisualAssetPipeline: image generation returned None for %s",
                         material_id,
@@ -79,15 +82,13 @@ class VisualAssetPipeline:
                     texture_key = f"materials/{material_id}/texture.png"
                     thumbnail_key = f"materials/{material_id}/thumbnail.png"
 
-                    storage_adapter.save(icon_key, icon_data)
-
-                    texture_data = image_adapter.generate(visual_prompt, TEXTURE)
-                    if texture_data:
-                        storage_adapter.save(texture_key, texture_data)
-
-                    thumbnail_data = image_adapter.generate(visual_prompt, THUMBNAIL)
-                    if thumbnail_data:
-                        storage_adapter.save(thumbnail_key, thumbnail_data)
+                    storage_adapter.save(icon_key, resize_to_profile(master_data, ICON))
+                    storage_adapter.save(
+                        texture_key, resize_to_profile(master_data, TEXTURE)
+                    )
+                    storage_adapter.save(
+                        thumbnail_key, resize_to_profile(master_data, THUMBNAIL)
+                    )
 
                     material.visual_status = "visual_ready"
                     material.visual_asset_key = icon_key

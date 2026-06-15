@@ -18,3 +18,7 @@ class ImageProfile:
 ICON = ImageProfile(name="icon", width=512, height=512, format="PNG")
 TEXTURE = ImageProfile(name="texture", width=1024, height=1024, format="PNG")
 THUMBNAIL = ImageProfile(name="thumbnail", width=128, height=128, format="PNG")
+
+# MASTER is the single high-resolution image the adapter generates once;
+# ICON/TEXTURE/THUMBNAIL are downscaled from it (one API call per material).
+MASTER = ImageProfile(name="master", width=1024, height=1024, format="PNG")

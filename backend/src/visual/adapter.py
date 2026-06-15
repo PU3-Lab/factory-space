@@ -10,48 +10,47 @@ from typing import Protocol
 
 from PIL import Image
 
-from visual.profile import ImageProfile
+from visual.profile import MASTER, ImageProfile
 from visual.settings import ImageGenSettings
 
 logger = logging.getLogger(__name__)
 
 
 class ImageGenerationAdapter(Protocol):
-    """Common contract for generating image bytes from a text prompt."""
+    """Common contract for generating a single master image from a text prompt."""
 
-    def generate(self, prompt: str, profile: ImageProfile) -> bytes | None:
-        """Return PNG bytes at the profile's dimensions, or None on failure."""
+    def generate(self, prompt: str) -> bytes | None:
+        """Return master PNG bytes (large, ready to downscale), or None on failure."""
 
 
 @dataclass(frozen=True)
 class PlaceholderImageAdapter:
-    """Creates a solid-color PNG using Pillow — no API calls required."""
+    """Creates a solid-color master PNG using Pillow — no API calls required."""
 
     color: tuple[int, int, int] = (128, 128, 128)
 
-    def generate(self, prompt: str, profile: ImageProfile) -> bytes | None:
-        img = Image.new("RGB", (profile.width, profile.height), self.color)
+    def generate(self, prompt: str) -> bytes | None:
+        img = Image.new("RGB", (MASTER.width, MASTER.height), self.color)
         buf = io.BytesIO()
-        img.save(buf, format=profile.format)
+        img.save(buf, format=MASTER.format)
         return buf.getvalue()
 
 
 @dataclass(frozen=True)
 class OpenAIImageAdapter:
-    """Generates images via OpenAI DALL-E 3, then resizes to the profile dimensions."""
+    """Generates a single master image via OpenAI DALL-E 3 (no resizing here)."""
 
     settings: ImageGenSettings
     client: object = field(default=None, compare=False)
 
-    def generate(self, prompt: str, profile: ImageProfile) -> bytes | None:
+    def generate(self, prompt: str) -> bytes | None:
         if not self.settings.api_key:
             return None
         if not self.settings.model:
             return None
         logger.info(
-            "OpenAIImageAdapter: generating image (model=%s, profile=%s)",
+            "OpenAIImageAdapter: generating master image (model=%s)",
             self.settings.model,
-            profile.name,
         )
         try:
             client = self.client or _create_openai_client(self.settings)
@@ -65,8 +64,7 @@ class OpenAIImageAdapter:
                 response_format="b64_json",
             )
             b64_data = response.data[0].b64_json
-            raw_bytes = base64.b64decode(b64_data)
-            return _resize_to_profile(raw_bytes, profile)
+            return base64.b64decode(b64_data)
         except Exception as exc:
             logger.warning("OpenAIImageAdapter: generation failed: %s", exc)
             return None
@@ -81,19 +79,20 @@ def create_image_adapter(settings: ImageGenSettings) -> ImageGenerationAdapter:
     return PlaceholderImageAdapter()
 
 
+def resize_to_profile(master_bytes: bytes, profile: ImageProfile) -> bytes:
+    """Downscale a master image to the given profile's dimensions and format."""
+    img = Image.open(io.BytesIO(master_bytes)).resize(
+        (profile.width, profile.height),
+        Image.Resampling.LANCZOS,
+    )
+    buf = io.BytesIO()
+    img.save(buf, format=profile.format)
+    return buf.getvalue()
+
+
 def _create_openai_client(settings: ImageGenSettings) -> object | None:
     if not settings.api_key:
         return None
     from openai import OpenAI
 
     return OpenAI(api_key=settings.api_key)
-
-
-def _resize_to_profile(raw_bytes: bytes, profile: ImageProfile) -> bytes:
-    img = Image.open(io.BytesIO(raw_bytes)).resize(
-        (profile.width, profile.height),
-        Image.LANCZOS,
-    )
-    buf = io.BytesIO()
-    img.save(buf, format=profile.format)
-    return buf.getvalue()

@@ -2,29 +2,36 @@
 
 from __future__ import annotations
 
+import io
 from collections.abc import Iterator
 from dataclasses import dataclass
 
 import pytest
+from PIL import Image
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from agents.material_generation.visual_pipeline import VisualAssetPipeline
 from db.models import GeneratedMaterialModel
-from visual.profile import ImageProfile
+from visual.profile import MASTER
 from visual.storage import NoopStorageAdapter
 
 
 @dataclass(frozen=True)
 class _AlwaysSucceedsAdapter:
-    def generate(self, prompt: str, profile: ImageProfile) -> bytes | None:
-        return b"PNG_STUB"
+    """Returns a real master PNG so the pipeline can resize it."""
+
+    def generate(self, prompt: str) -> bytes | None:
+        img = Image.new("RGB", (MASTER.width, MASTER.height), (10, 20, 30))
+        buf = io.BytesIO()
+        img.save(buf, format=MASTER.format)
+        return buf.getvalue()
 
 
 @dataclass(frozen=True)
 class _AlwaysFailsAdapter:
-    def generate(self, prompt: str, profile: ImageProfile) -> bytes | None:
+    def generate(self, prompt: str) -> bytes | None:
         return None
 
 
