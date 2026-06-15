@@ -10,6 +10,8 @@
 #include "OJJ_Player.h"
 #include "UI/UI_Inventory.h"
 #include "PlayerWarehouseSubsystem.h"
+#include "Blueprint/SlateBlueprintLibrary.h"
+#include "Components/Border.h"
 
 void UUI_MachineInteract::SetTargetMachine(AMachineBase* InMachine)
 {
@@ -77,13 +79,26 @@ void UUI_MachineInteract::NativeTick(const FGeometry& MyGeometry, float InDeltaT
     
     if (!TargetMachine) return;
     
-    FRecipeTable Recipe = TargetMachine->GetCurrentRecipe();
+    // 🌟 [핵심 수정] 기계가 고집하는 레시피 대신, 기계 입력 인벤토리에 '진짜 들어있는 재료'를 직접 긁어옵니다!
+    FName InputName = NAME_None;
+    int32 InputAmount = 0;
+
+    // 기계 내부 입력 주머니를 순회하여 가장 먼저 발견되는 아이템을 UI 표적으로 삼습니다.
+    const TMap<FName, int32>& InputInv = TargetMachine->GetInputInventory();
+    for (const auto& Pair : InputInv)
+    {
+        if (Pair.Value > 0)
+        {
+            InputName = Pair.Key;
+            InputAmount = Pair.Value;
+            break; // 재료를 찾았으니 루프 탈출
+        }
+    }
 
     // 좌측 입력(Input) UI 갱신
-    FName InputName = Recipe.InputItem1;
-    int32 InputAmount = TargetMachine->GetInputInventory().FindRef(InputName);
     UpdateInputUI(InputName, InputAmount, TargetMachine->GetMaxInput());
 
+    FRecipeTable Recipe = TargetMachine->GetCurrentRecipe();
     // 우측 출력(Output) UI 갱신
     FName OutputName = Recipe.OutputItem1;
     int32 OutputAmount = TargetMachine->GetOutputBuffer().FindRef(OutputName);
@@ -131,17 +146,26 @@ void UUI_MachineInteract::UpdateInputUI(FName ItemName, int32 CurrentAmount, int
         float FillPercent = (MaxAmount > 0) ? (float)CurrentAmount / MaxAmount : 0.0f;
         PB_InputBuffer->SetPercent(FillPercent);
     }
+
     if (ItemName.IsNone())
     {
         if (IMG_InputIcon) IMG_InputIcon->SetVisibility(ESlateVisibility::Hidden);
         return;
     }
 
-    if (ResourceDataTable && IMG_InputIcon)
+    // 🌟 [디버그 구역] 왜 이미지가 안 바뀌는지 원격 추적
+    if (!ResourceDataTable)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[UI 에러] ResourceDataTable 변수가 Null입니다! WBP_MachineInteract 블루프린트 디테일 창에서 아이템 데이터 테이블을 할당했는지 확인하세요."));
+        return;
+    }
+
+    if (IMG_InputIcon)
     {
         IMG_InputIcon->SetVisibility(ESlateVisibility::Visible);
         
-        if (FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("FindInputIconContext")))
+        FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("FindInputIconContext"));
+        if (RowData)
         {
             if (RowData->ImgAsset.IsValid()) IMG_InputIcon->SetBrushFromTexture(RowData->ImgAsset.Get());
             else
@@ -149,14 +173,15 @@ void UUI_MachineInteract::UpdateInputUI(FName ItemName, int32 CurrentAmount, int
                 UTexture2D* LoadedTexture = RowData->ImgAsset.LoadSynchronous();
                 if (LoadedTexture) IMG_InputIcon->SetBrushFromTexture(LoadedTexture);
             }
-            if (CurrentAmount <= 0)
-            {
-                IMG_InputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.15f));
-            }
-            else
-            {
-                IMG_InputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
-            }
+            
+            if (CurrentAmount <= 0) IMG_InputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.15f));
+            else                    IMG_InputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
+            
+            UE_LOG(LogTemp, Log, TEXT("[UI 성공] %s 아이템의 아이콘을 데이터 테이블에서 찾아 성공적으로 갱신했습니다!"), *ItemName.ToString());
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[UI 경고] 데이터 테이블에서 '%s' 라는 이름의 행(Row)을 찾을 수 없습니다. 대소문자나 이름을 확인하세요."), *ItemName.ToString());
         }
     }
 }
@@ -274,57 +299,53 @@ void UUI_MachineInteract::UpdateDurabilityUI(float CurrentDurability, float MaxD
 
 bool UUI_MachineInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
-    // 1. 공중에 떠돌던 마우스 오퍼레이션을 아이템용 클래스로 캐스팅
     UItemDragDropOperation* ItemDragOp = Cast<UItemDragDropOperation>(InOperation);
     if (!ItemDragOp || !TargetMachine) return false;
+    
+    // 1. 마우스가 이미지 칸(DropZone) 위에 있는지 검사
+    if (B_InputDropZone)
+    {
+        FVector2D DropScreenPos = InDragDropEvent.GetScreenSpacePosition();
+        if (!USlateBlueprintLibrary::IsUnderLocation(B_InputDropZone->GetCachedGeometry(), DropScreenPos))
+        {
+            return false; 
+        }
+    }
 
     FName DroppedItemID = ItemDragOp->DraggedItemID;
 
-    // 2. 현재 기계가 돌고 있는 레시피 구조체 가져오기
-    FRecipeTable CurrentRecipe = TargetMachine->GetCurrentRecipe();
-    
-    // 유저가 던진 아이템이 이 기계가 '요구하는 재료1번'과 일치하는가?
-    if (DroppedItemID != CurrentRecipe.InputItem1)
-    {
-        return false; 
-    }
+    // 기계가 원하는 걸 검사하는 멍청한 비교문(CurrentRecipe 대조)을 흔적도 없이 삭제했습니다
+    // 이제 유저가 던진 아이템이 무엇이든(iron_ore든, copper_ore든) 무조건 통과합니다.
 
-    // 이미 기계 입력 버퍼가 가득 차 있다면 투입 거부
+    // 2. 수량 제한 검사 (기계 수용량이 꽉 찬 게 아니라면 허용)
     int32 CurrentInputAmount = TargetMachine->GetInputInventory().FindRef(DroppedItemID);
     if (CurrentInputAmount >= TargetMachine->GetMaxInput())
     {
         return false;
     }
 
-    // 3. 서브시스템에 접근하여 내 가방(유저 인벤토리)에서 해당 아이템 1개 빼기
+    // 3. 내 가방에서 1개 빼고 기계에 1개 넣기
     UGameInstance* GI = GetGameInstance();
     if (GI)
     {
         UPlayerWarehouseSubsystem* WarehouseSubsystem = GI->GetSubsystem<UPlayerWarehouseSubsystem>();
-        if (WarehouseSubsystem)
+        if (WarehouseSubsystem && WarehouseSubsystem->TakeItem(DroppedItemID, 1)) 
         {
-            bool bSuccess = WarehouseSubsystem->TakeItem(DroppedItemID, 1); 
+            TargetMachine->AddItem(DroppedItemID, 1);
             
-            if (bSuccess)
+            // 가방 UI 새로고침
+            APlayerController* PC = GetOwningPlayer();
+            if (PC)
             {
-                // 4. 서브시스템에서 차감 완료되었으니, 실제 기계 데이터 인벤토리에 1개 가산
-                TargetMachine->AddItem(DroppedItemID, 1);
-                
-                // 오타가 난 네임스페이스 범위를 지우고 정석 포인터 타입으로 교체
-                APlayerController* PC = GetOwningPlayer();
-                if (PC)
+                AOJJ_Player* OJJPlayer = Cast<AOJJ_Player>(PC->GetPawn());
+                if (OJJPlayer && OJJPlayer->GetInventoryWidgetInstance()) 
                 {
-                    AOJJ_Player* OJJPlayer = Cast<AOJJ_Player>(PC->GetPawn());
-                    
-                    if (OJJPlayer && OJJPlayer->GetInventoryWidgetInstance()) 
-                    {
-                        // 유저님의 플레이어 가방 위젯 인스턴스에 접근해 강제 1회 리프레시
-                        OJJPlayer->GetInventoryWidgetInstance()->RefreshInventoryWindow();
-                    }
+                    OJJPlayer->GetInventoryWidgetInstance()->RefreshInventoryWindow();
                 }
-                
-                return true; 
             }
+            
+            UE_LOG(LogTemp, Log, TEXT("[드롭 성공] 유저가 원하는 아이템(%s)을 기계에 성공적으로 투입했습니다"), *DroppedItemID.ToString());
+            return true; 
         }
     }
 

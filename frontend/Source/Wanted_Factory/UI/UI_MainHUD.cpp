@@ -4,12 +4,13 @@
 #include "Engine/GameInstance.h"
 #include "QuestManagerSubsystem.h"
 #include "PlanetEventManagerSubsystem.h"
-#include "FactoryAgentClientSubsystem.h" // 웹소켓 서브시스템 헤더
-#include "FactoryAgentJsonUtils.h"       // JSON 파싱 유틸리티 헤더
+#include "FactoryAgentClientSubsystem.h" 
+#include "FactoryAgentJsonUtils.h"       
 #include "Dom/JsonObject.h"
 #include "Components/Border.h"
 #include "Components/VerticalBox.h"
 #include "GameFramework/PlayerController.h"
+#include "UI_QuestNotify.h"
 #include "Animation/WidgetAnimation.h"
 #include "Blueprint/UserWidget.h"
 #include "UMG.h"
@@ -19,19 +20,16 @@ void UUI_MainHUD::NativeConstruct()
 {
     Super::NativeConstruct();
     
-    // 퀘스트 요청 버튼 바인딩
     if (BTN_RequestQuests)
     {
         BTN_RequestQuests->OnClicked.AddDynamic(this, &UUI_MainHUD::OnRequestQuestsClicked);
     }
 
-    // 오퍼레이터 채팅 입력창 바인딩
     if (ET_OperatorInput)
     {
         ET_OperatorInput->OnTextCommitted.AddDynamic(this, &UUI_MainHUD::HandleOnTextCommitted);
     }
 
-    // 토글 버튼 클릭 이벤트를 바인딩
     if (BTN_ToggleGuide)
     {
         BTN_ToggleGuide->OnClicked.AddDynamic(this, &UUI_MainHUD::OnToggleGuideClicked);
@@ -43,10 +41,10 @@ void UUI_MainHUD::NativeConstruct()
         UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>();
         if (QuestManager)
         {
-            // 퀘스트 생성 성공 이벤트 바인딩
             QuestManager->OnSubQuestsGenerated.AddDynamic(this, &UUI_MainHUD::HandleOnSubQuestsGenerated);
-            
             QuestManager->OnSubQuestRequestFailed.AddDynamic(this, &UUI_MainHUD::HandleOnSubQuestRequestFailed);
+            
+            QuestManager->OnMainQuestChanged.AddDynamic(this, &UUI_MainHUD::HandleOnMainQuestChanged);
         }
 
         UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>();
@@ -67,14 +65,12 @@ void UUI_MainHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
         UPlanetEventManagerSubsystem* PlanetManager = GetWorld()->GetSubsystem<UPlanetEventManagerSubsystem>();
         if (PlanetManager)
         {
-            // 1. 몇 일차 갱신
             if (TXT_DisasterDay)
             {
                 int32 CurrentDay = PlanetManager->GetCurrentDayIndex();
                 TXT_DisasterDay->SetText(FText::FromString(FString::Printf(TEXT("DAY %02d"), CurrentDay)));
             }
 
-            // 2. 인게임 시간 갱신
             if (TXT_InGameTime)
             {
                 TXT_InGameTime->SetText(FText::FromString(PlanetManager->GetCurrentTime24String()));
@@ -94,7 +90,6 @@ void UUI_MainHUD::ToggleAIGuideWindow()
     
     APlayerController* PC = GetOwningPlayer();
 
-    // 현재 가이드 창이 꺼져 있다면
     if (B_ChatBackground->GetVisibility() == ESlateVisibility::Collapsed)
     {
         B_ChatBackground->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
@@ -115,7 +110,6 @@ void UUI_MainHUD::ToggleAIGuideWindow()
             ET_OperatorInput->SetFocus();
         }
     }
-    // 현재 가이드 창이 켜져 있다면
     else
     {
         B_ChatBackground->SetVisibility(ESlateVisibility::Collapsed);
@@ -133,7 +127,6 @@ void UUI_MainHUD::ToggleAIGuideWindow()
     }
 }
 
-// 입력창에 포커스가 가 있을 때 Tab 키를 누르면 focus navigation을 씹고 창을 닫아버립니다.
 FReply UUI_MainHUD::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
     if (InKeyEvent.GetKey() == EKeys::Tab)
@@ -141,34 +134,21 @@ FReply UUI_MainHUD::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FK
         ToggleAIGuideWindow();
         return FReply::Handled();
     }
-
     return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
 }
 
 void UUI_MainHUD::HandleOnTextCommitted(const FText& Text, ETextCommit::Type CommitType)
 {
-    if (CommitType != ETextCommit::OnEnter)
-    {
-        return;
-    }
+    if (CommitType != ETextCommit::OnEnter) return;
 
     const FString QuestionStr = Text.ToString().TrimStartAndEnd();
-    if (QuestionStr.IsEmpty())
-    {
-        return;
-    }
+    if (QuestionStr.IsEmpty()) return;
 
     UGameInstance* GameInstance = GetGameInstance();
-    if (!GameInstance)
-    {
-        return;
-    }
+    if (!GameInstance) return;
 
     UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>();
-    if (!AgentClient)
-    {
-        return;
-    }
+    if (!AgentClient) return;
 
     const bool bSent = AgentClient->SendOperatorGuideQuestion(QuestionStr, TEXT("unreal-ui-001"));
     if (!bSent)
@@ -187,19 +167,15 @@ void UUI_MainHUD::HandleOnTextCommitted(const FText& Text, ETextCommit::Type Com
     }
 }
 
-//  question 답변 데이터 파싱해서 출력
 void UUI_MainHUD::HandleOnOperatorGuideResponse(const FString& RequestId, const FString& Agent, const FString& PayloadJson, const FString& RawMessage)
 {
-    // namespace 규칙에 적혀있던 "operator_guide" 에이전트 신호인지 필터링
     if (Agent != TEXT("operator_guide")) return;
 
     TSharedPtr<FJsonObject> PayloadObject;
-    // 페이로드 JSON을 오브젝트화합니다.
     if (FactoryAgentJsonUtils::ParseJsonObject(PayloadJson, PayloadObject) && PayloadObject.IsValid())
     {
         FString Answer;
-        if (
-            PayloadObject->TryGetStringField(TEXT("final_answer"), Answer) ||
+        if (PayloadObject->TryGetStringField(TEXT("final_answer"), Answer) ||
             PayloadObject->TryGetStringField(TEXT("answer"), Answer) ||
             PayloadObject->TryGetStringField(TEXT("text"), Answer))
         {
@@ -211,17 +187,9 @@ void UUI_MainHUD::HandleOnOperatorGuideResponse(const FString& RequestId, const 
     }
 }
 
-void UUI_MainHUD::HandleOnOperatorGuideError(
-    const FString& RequestId,
-    const FString& Agent,
-    const FString& ErrorCode,
-    const FString& ErrorMessage,
-    const FString& RawMessage)
+void UUI_MainHUD::HandleOnOperatorGuideError(const FString& RequestId, const FString& Agent, const FString& ErrorCode, const FString& ErrorMessage, const FString& RawMessage)
 {
-    if (Agent != TEXT("operator_guide"))
-    {
-        return;
-    }
+    if (Agent != TEXT("operator_guide")) return;
 
     if (TXT_GuideResponse)
     {
@@ -232,10 +200,10 @@ void UUI_MainHUD::HandleOnOperatorGuideError(
     }
 }
 
-// 버튼을 누르는 순간 에이전트 팀 전송 파이프라인 트리거
+// 버튼 누를 때 옛날 이름(TXT_Quest) 대신 새로 개편한 서브 퀘스트 칸들을 제어합니다
 void UUI_MainHUD::OnRequestQuestsClicked()
 {
-    UE_LOG(LogTemp, Log, TEXT("[HUD 퀘스트] OnRequestQuestsClicked() 함수 내부 진ip 성공"));
+    UE_LOG(LogTemp, Log, TEXT("[HUD 퀘스트] OnRequestQuestsClicked() 진입"));
 
     UGameInstance* GameInstance = GetGameInstance();
     if (GameInstance)
@@ -243,60 +211,51 @@ void UUI_MainHUD::OnRequestQuestsClicked()
         UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>();
         if (QuestManager)
         {
-            // 텍스트가 안 바뀌는 버그 추적용 (위젯 유효성 검사)
-            UE_LOG(LogTemp, Log, TEXT("[HUD 퀘스트] 텍스트 위젯 상태 체크 - TXT_Quest_1 유효성: %s"), TXT_Quest_1 ? TEXT("True") : TEXT("Null"));
+            UE_LOG(LogTemp, Log, TEXT("[HUD 퀘스트] 서브 퀘스트 슬롯 대기 문구 출력 시작"));
+            
+            if (TXT_SubQuest_1) TXT_SubQuest_1->SetText(FText::FromString(TEXT("AI 응답 대기 중...")));
+            if (TXT_SubQuest_2) TXT_SubQuest_2->SetText(FText::GetEmpty());
+            if (TXT_SubQuest_3) TXT_SubQuest_3->SetText(FText::GetEmpty());
+            if (TXT_SubQuest_4) TXT_SubQuest_4->SetText(FText::GetEmpty());
+            if (TXT_SubQuest_5) TXT_SubQuest_5->SetText(FText::GetEmpty());
 
-            if (TXT_Quest_1) TXT_Quest_1->SetText(FText::FromString(TEXT("AI 응답 대기 중...")));
-            if (TXT_Quest_2) TXT_Quest_2->SetText(FText::FromString(TEXT("")));
-            if (TXT_Quest_3) TXT_Quest_3->SetText(FText::FromString(TEXT("")));
-            if (TXT_Quest_4) TXT_Quest_4->SetText(FText::FromString(TEXT("")));
-            if (TXT_Quest_5) TXT_Quest_5->SetText(FText::FromString(TEXT("")));
-
-            // 에이전트에 서버 연결 명령 후 요청 시도
             QuestManager->ConnectQuestAgent(); 
             QuestManager->RequestSubQuests();
-        }
-        else
-        {
-            UE_LOG(LogTemp, Error, TEXT("[HUD 퀘스트] QuestManagerSubsystem을 찾을 수 없습니다"));
         }
     }
 }
 
 void UUI_MainHUD::HandleOnSubQuestsGenerated(const FString& RequestId, const TArray<FQuestState>& Quests)
 {
-    TArray<UTextBlock*> QuestTextBoxes;
-    if (TXT_Quest_1) QuestTextBoxes.Add(TXT_Quest_1);
-    if (TXT_Quest_2) QuestTextBoxes.Add(TXT_Quest_2);
-    if (TXT_Quest_3) QuestTextBoxes.Add(TXT_Quest_3);
-    if (TXT_Quest_4) QuestTextBoxes.Add(TXT_Quest_4);
-    if (TXT_Quest_5) QuestTextBoxes.Add(TXT_Quest_5);
+    TArray<UTextBlock*> SubBoxes;
+    if (TXT_SubQuest_1) SubBoxes.Add(TXT_SubQuest_1);
+    if (TXT_SubQuest_2) SubBoxes.Add(TXT_SubQuest_2);
+    if (TXT_SubQuest_3) SubBoxes.Add(TXT_SubQuest_3);
+    if (TXT_SubQuest_4) SubBoxes.Add(TXT_SubQuest_4);
+    if (TXT_SubQuest_5) SubBoxes.Add(TXT_SubQuest_5);
 
-    for (int32 i = 0; i < QuestTextBoxes.Num(); ++i)
+    for (UTextBlock* Box : SubBoxes)
     {
-        if (i < Quests.Num())
-        {
-            FText QuestTitle = Quests[i].Title;
-            
-            // 자동 줄바꿈 
-            QuestTextBoxes[i]->SetAutoWrapText(true);
-            
-            QuestTextBoxes[i]->SetText(QuestTitle);
-            QuestTextBoxes[i]->SetVisibility(ESlateVisibility::Visible);
-        }
-        else
-        {
-            QuestTextBoxes[i]->SetVisibility(ESlateVisibility::Collapsed);
-        }
+        if (Box) Box->SetText(FText::GetEmpty());
+    }
+
+    for (int32 i = 0; i < Quests.Num(); ++i)
+    {
+        if (!SubBoxes.IsValidIndex(i) || !SubBoxes[i]) continue;
+
+        FString StatusIndicator = (Quests[i].Status == EQuestStatus::Completed) ? TEXT(" [완료]") : TEXT(" [진행 중]");
+        FString FormattedLine = FString::Printf(TEXT("• %s%s"), *Quests[i].Title.ToString(), *StatusIndicator);
+        
+        SubBoxes[i]->SetText(FText::FromString(FormattedLine));
     }
 }
 
-// 서버가 꺼져있거나 통신 에러 시 텍스트 처리 규칙
+// 실패 시에도 옛날 변수 대신 첫 번째 서브 퀘스트 박스에 에러를 안전하게 띄웁니다.
 void UUI_MainHUD::HandleOnSubQuestRequestFailed(const FString& RequestId, const FString& ErrorMessage)
 {
-    if (TXT_Quest_1)
+    if (TXT_SubQuest_1)
     {
-        TXT_Quest_1->SetText(FText::FromString(TEXT("서버 연결 실패")));
+        TXT_SubQuest_1->SetText(FText::FromString(TEXT("서버 연결 실패")));
     }
 }
 
@@ -315,8 +274,54 @@ void UUI_MainHUD::ToggleQuestWindow()
     else
     {
         VB_QuestLayout->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-        
         bIsQuestWindowOpen = true;
         K2_PlayQuestAnimation(true);
+    }
+}
+
+void UUI_MainHUD::UpdateMainQuestUI(const FQuestState& MainQuest)
+{
+    if (!TXT_MainQuestTitle || !TXT_MainQuestDesc) return;
+
+    if (MainQuest.Status != EQuestStatus::Active)
+    {
+        TXT_MainQuestTitle->SetText(FText::FromString(TEXT("진행 중인 메인 미션 없음")));
+        TXT_MainQuestDesc->SetText(FText::GetEmpty());
+        return;
+    }
+
+    TXT_MainQuestTitle->SetText(MainQuest.Title);
+    TXT_MainQuestDesc->SetText(MainQuest.Description);
+}
+
+void UUI_MainHUD::HandleOnMainQuestChanged(const FQuestState& NewQuest)
+{
+    // 게임 시작 시 최초 0번 인덱스가 로드될 때 팝업이 기습 생성되는 현상을 차단합니다.
+    UGameInstance* GI = GetGameInstance();
+    if (!GI) return;
+
+    UQuestManagerSubsystem* QM = GI->GetSubsystem<UQuestManagerSubsystem>();
+    if (!QM || QM->GetCurrentMainQuestIndex() == 0) 
+    {
+        return; 
+    }
+    
+    if (QuestNotifyWidgetClass)
+    {
+        APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+        if (PC)
+        {
+            // 순수 독립형 알림 위젯 인스턴스
+            UUI_QuestNotify* NotifyWidget = CreateWidget<UUI_QuestNotify>(PC, QuestNotifyWidgetClass);
+            if (NotifyWidget)
+            {
+                NotifyWidget->AddToViewport(100);
+                
+                FString QuestTitle = NewQuest.Title.ToString();
+                FString RewardStr = TEXT("새로운 메인 미션 해제!");
+
+                NotifyWidget->PlayNotify(QuestTitle, RewardStr);
+            }
+        }
     }
 }

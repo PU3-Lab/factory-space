@@ -88,6 +88,9 @@ protected:
 	class UDataTable* ResourceDataTable;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Data")
 	class UDataTable* MachineDataTable;
+	
+	UPROPERTY(meta = (BindWidget))
+	class UBorder* B_InputDropZone;
 
 private:
 	// 테스트하기 위한 임시 변수
