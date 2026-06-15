@@ -24,6 +24,7 @@ class RecipeExplainerAgent:
             question,
             topic="recipe",
             sub_agent=self.agent_id,
+            context=context.metadata,
         )
 
     def build_prompt_messages(
@@ -36,6 +37,7 @@ class RecipeExplainerAgent:
             question,
             topic="recipe",
             sub_agent=self.agent_id,
+            context=context.metadata,
         )
 
     def fallback(

@@ -74,10 +74,13 @@ class ManualQAPromptBuilder:
             ensure_ascii=False,
             indent=2,
         )
+        recent_conversation_section = self._recent_conversation_section(context)
         rag_context_section = self._rag_context_section(context)
         return f"""Answer this {self._topic_label(topic)}.
 [PLAYER_QUESTION]
 {question}
+
+{recent_conversation_section}
 
 [LEAF_AGENT]
 {sub_agent}
@@ -104,6 +107,25 @@ Use exactly these keys:
   "topic": "{topic}"
 }}
 """
+
+    def _recent_conversation_section(self, context: ManualQAPromptContext) -> str:
+        """같은 세션의 최근 대화를 LLM이 참고할 수 있는 prompt 섹션으로 만든다.
+
+        초보자용 설명:
+            후속 질문은 "그럼?", "그 장비는?"처럼 앞 대화를 알아야 이해됩니다.
+            그래서 최근 질문/답변을 짧은 목록으로 넣어주되, 사용자가 처음 질문한
+            경우에는 이 섹션을 아예 만들지 않습니다.
+        """
+
+        if not context.recent_conversation:
+            return ""
+
+        lines = ["[RECENT_CONVERSATION_CONTEXT]"]
+        for index, turn in enumerate(context.recent_conversation, start=1):
+            lines.append(f"Turn {index}")
+            lines.append(f"Player: {turn.get('question', '')}")
+            lines.append(f"Operator: {turn.get('answer', '')}")
+        return "\n".join(lines)
 
     def _rag_context_section(self, context: ManualQAPromptContext) -> str:
         """RAG 검색 결과가 있을 때만 prompt에 검색 근거 섹션을 추가한다."""
