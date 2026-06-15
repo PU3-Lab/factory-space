@@ -71,27 +71,37 @@ class VisualAssetPipeline:
                     )
                     return
 
-                # Generate ONE master image, then downscale to every profile.
-                master_data = image_adapter.generate(visual_prompt)
-                if master_data is None:
+                # Generate two separate master images: one for icon/thumbnail, one for texture.
+                icon_prompt = f"A standalone icon of {visual_prompt}, sci-fi game item asset, isolated on black background, high resolution"
+                texture_prompt = f"A seamless, tileable texture of {visual_prompt} surface, flat top-down orthographic view, realistic game material texture, unreal engine style"
+
+                logger.info("VisualAssetPipeline: generating icon master image")
+                icon_master = image_adapter.generate(icon_prompt)
+
+                logger.info("VisualAssetPipeline: generating texture master image")
+                texture_master = image_adapter.generate(texture_prompt)
+
+                if icon_master is None or texture_master is None:
                     logger.warning(
-                        "VisualAssetPipeline: image generation returned None for %s",
+                        "VisualAssetPipeline: image generation returned None for %s (icon=%s, texture=%s)",
                         material_id,
+                        "OK" if icon_master else "FAILED",
+                        "OK" if texture_master else "FAILED",
                     )
                     material.visual_status = "failed"
-                    material.visual_error = "Image generation returned no data."
+                    material.visual_error = "Image generation returned no data for one or more assets."
                     material.fallback_icon = f"materials/default/{category}.png"
                 else:
                     icon_key = f"materials/{material_id}/icon.png"
                     texture_key = f"materials/{material_id}/texture.png"
                     thumbnail_key = f"materials/{material_id}/thumbnail.png"
 
-                    storage_adapter.save(icon_key, resize_to_profile(master_data, ICON))
+                    storage_adapter.save(icon_key, resize_to_profile(icon_master, ICON))
                     storage_adapter.save(
-                        texture_key, resize_to_profile(master_data, TEXTURE)
+                        texture_key, resize_to_profile(texture_master, TEXTURE)
                     )
                     storage_adapter.save(
-                        thumbnail_key, resize_to_profile(master_data, THUMBNAIL)
+                        thumbnail_key, resize_to_profile(icon_master, THUMBNAIL)
                     )
 
                     material.visual_status = "visual_ready"

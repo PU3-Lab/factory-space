@@ -56,3 +56,14 @@
 
 3. **아키텍처 문서 동기화**
    - [material_generation_current_structure.md](file:///Users/kimkyungpyo/Workspaces/projects/factory-space/docs/03_architecture/material_generation_current_structure.md) 문서에 신규 추가된 `derive` 노드 정보, 마이그레이션 컬럼, 그리고 해시 정체성 메커니즘을 업데이트 및 기록하였습니다.
+
+### 6. 아이콘 및 언리얼 머터리얼 텍스처 분리 생성 파이프라인 도입
+- **이중 마스터 이미지 생성**:
+  - 인벤토리 등 UI용으로 적합한 사물 중심의 **아이콘(Icon)**과 언리얼 에디터에서 반복해서 바인딩해 쓸 수 있는 평면 이음새 없는 **텍스처(Texture)**의 요구사항 충족을 위해 DALL-E/OpenAI API를 각각의 전용 프롬프트로 2회 호출하도록 설계했습니다.
+- **최적화 및 Fail-Fast**:
+  - `visual/adapter.py`의 `resize_to_profile` 함수에 short-circuit을 추가하여 해상도/포맷이 타겟 프로필과 정확히 일치할 때(예: `MASTER` -> `TEXTURE`) 불필요한 Pillow 디코드/리사이즈 연산을 생략합니다.
+  - 잘못된 저장소 백엔드(`FACTORY_IMAGE_STORAGE_BACKEND`) 설정 시 조용히 데이터가 버려지지 않고 즉각 `ValueError`를 발생시키며(Fail-fast), 영속 저장 경로의 기본값은 기존 SQLite 관례를 따라 `backend/var/assets`로 고정하고 `.gitignore` 처리하여 개발 편의성과 데이터 보존을 극대화했습니다.
+- **최종 검증 완료**:
+  - 이중 이미지 생성과 부분 실패(아이콘 또는 텍스처 실패)에 대응하는 단위 테스트 2개를 추가하여 백엔드 전체 테스트(**298개**)를 모두 통과시켰습니다.
+  - 실제 API 환경 변수 연동 하에서 이중 마스터를 생성하는 파이프라인 검증 스크립트(`var/smoke_test_actual_pipeline.py`)를 가동하여, `icon.png` (367KB)와 `texture.png` (1.66MB, 원본 마스터 단락 저장)이 용도에 적합한 물리적 파일로 정확히 나뉘어 저장되는 것을 증명하였습니다.
+

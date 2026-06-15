@@ -35,6 +35,32 @@ class _AlwaysFailsAdapter:
         return None
 
 
+class _PromptRecordingAdapter:
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    def generate(self, prompt: str) -> bytes | None:
+        self.prompts.append(prompt)
+        img = Image.new("RGB", (MASTER.width, MASTER.height), (10, 20, 30))
+        buf = io.BytesIO()
+        img.save(buf, format=MASTER.format)
+        return buf.getvalue()
+
+
+class _PartialFailureAdapter:
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    def generate(self, prompt: str) -> bytes | None:
+        self.call_count += 1
+        if self.call_count == 2:
+            return None
+        img = Image.new("RGB", (MASTER.width, MASTER.height), (10, 20, 30))
+        buf = io.BytesIO()
+        img.save(buf, format=MASTER.format)
+        return buf.getvalue()
+
+
 @pytest.fixture
 def pipeline_session() -> Iterator[tuple[Session, sessionmaker]]:
     engine = create_engine(
@@ -193,3 +219,66 @@ def test_default_image_adapter_warns_when_provider_unset(
 
     assert isinstance(adapter, PlaceholderImageAdapter)
     assert any("not configured" in record.message for record in caplog.records)
+
+
+def test_pipeline_calls_generate_twice_with_custom_prompts(
+    pipeline_session: tuple[Session, sessionmaker],
+) -> None:
+    session, factory = pipeline_session
+    _make_material(session, "mat_003")
+
+    adapter = _PromptRecordingAdapter()
+    VisualAssetPipeline.session_factory = factory
+    VisualAssetPipeline._image_adapter = adapter
+    VisualAssetPipeline._storage_adapter = NoopStorageAdapter()
+
+    try:
+        VisualAssetPipeline.process_visual_asset(
+            "mat_003", "glowing iron ingot", "alloy"
+        )
+    finally:
+        VisualAssetPipeline.session_factory = None
+        VisualAssetPipeline._image_adapter = None
+        VisualAssetPipeline._storage_adapter = None
+
+    session.expire_all()
+    result = session.execute(
+        select(GeneratedMaterialModel).where(GeneratedMaterialModel.id == "mat_003")
+    ).scalar_one()
+
+    assert result.visual_status == "visual_ready"
+    assert len(adapter.prompts) == 2
+    assert "standalone icon" in adapter.prompts[0]
+    assert "glowing iron ingot" in adapter.prompts[0]
+    assert "seamless, tileable texture" in adapter.prompts[1]
+    assert "glowing iron ingot" in adapter.prompts[1]
+
+
+def test_pipeline_sets_failed_when_partial_generation_fails(
+    pipeline_session: tuple[Session, sessionmaker],
+) -> None:
+    session, factory = pipeline_session
+    _make_material(session, "mat_004")
+
+    adapter = _PartialFailureAdapter()
+    VisualAssetPipeline.session_factory = factory
+    VisualAssetPipeline._image_adapter = adapter
+    VisualAssetPipeline._storage_adapter = NoopStorageAdapter()
+
+    try:
+        VisualAssetPipeline.process_visual_asset(
+            "mat_004", "glowing iron ingot", "alloy"
+        )
+    finally:
+        VisualAssetPipeline.session_factory = None
+        VisualAssetPipeline._image_adapter = None
+        VisualAssetPipeline._storage_adapter = None
+
+    session.expire_all()
+    result = session.execute(
+        select(GeneratedMaterialModel).where(GeneratedMaterialModel.id == "mat_004")
+    ).scalar_one()
+
+    assert result.visual_status == "failed"
+    assert result.fallback_icon == "materials/default/alloy.png"
+    assert "returned no data for one or more assets" in result.visual_error
