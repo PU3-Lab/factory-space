@@ -1,64 +1,64 @@
-objective,reward
-WASD로 이동하기,
-Space로 점프하기,
-Shift로 달리기,iron ingot 10
-I로 인벤토리 열기,
-I로 인벤토리 닫기,
-B로 빌드 모드 진입,
-빌드 모드에서 설치물 미리보기 확인,
-Q로 설치물 회전하기,
-E로 설치물 회전하기,
-X로 철거 모드 진입,
-탈출 포드 선택하기,
-탈출 포드 철거 완료,iron ingot 10
-철 광맥 찾기,
-채굴기 선택하기,
-철 광맥 근처에 채굴기 배치하기,
-채굴기 설치 완료,iron ingot 10
-발전소 선택하기,
-발전소 설치 위치 지정하기,
-발전소 설치 완료,iron ingot 10
-송전탑 선택하기,
-채굴기 근처에 송전탑 배치하기,
-송전탑 설치 완료,iron ingot 10
-발전소에서 송전선 연결 시작,
-송전탑에 송전선 연결 완료,
-채굴기에 전력 공급 확인,iron ingot 10
-채굴기에서 철 광석 1개 생산 확인,
-채굴기에서 철 광석 10개 생산,iron ingot 10
-제련기 선택하기,
-제련기 설치 위치 지정하기,
-제련기 설치 완료,iron ingot 10
-출력 창고 포트 선택하기,
-채굴기 출력 포트 근처에 창고 포트 설치,
-출력 자원으로 철 광석 선택,
-창고 포트에서 철 광석 출력 확인,iron ingot 10
-컨베이어 선택하기,
-출력 창고 포트에서 컨베이어 연결 시작,
-제련기 입력 방향까지 컨베이어 연결 완료,iron ingot 10
-철 광석이 제련기로 이동하는 것 확인,
-입력 창고 포트 선택하기,
-제련기 입력 포트 근처에 창고 포트 설치,
-입력 자원으로 철 주괴 선택,
-인벤토리의 철 주괴를 입력 창고에 등록,iron ingot 10
-제련기 작동 시작 확인,
-제련기에서 철 주괴 1개 생산 확인,
-철 주괴 10개 생산,iron ingot 10
-발전소 1기 추가 설치,
-송전탑 1기 추가 설치,
-추가 설비까지 전력 연결 완료,iron ingot 10
-채굴기 1기 추가 설치,
-제련기 1기 추가 설치,
-자동 생산 라인 1개 추가 완성,iron ingot 10
-철 광석 50개 누적 생산,
-철 주괴 30개 누적 생산,iron ingot 10
-통신탑 건설 재료 확보,
-통신탑 설치 위치 도달,
-통신탑 설치 완료,
-통신탑 전력 연결 완료,
-위성 내 통신 복구 확인,iron ingot 10
-신호 증폭기 건설 재료 확보,
-신호 증폭기 설치 위치 도달,
-신호 증폭기 설치 완료,
-통신 출력 상승 확인,
-지구 통신 복구 목표 해금,
+quest_id,next_quest_id,group,title,description,reward
+TUT_BASIC_001,TUT_BASIC_002,tutorial_basic,이동하기,"W, A, S, D를 눌러 캐릭터를 이동하세요.",
+TUT_BASIC_002,TUT_BASIC_003,tutorial_basic,점프하기,"Space를 눌러 점프하세요.",
+TUT_BASIC_003,TUT_BASIC_004,tutorial_basic,달리기,"Shift를 눌러 달리세요.",iron ingot 10
+TUT_BASIC_004,TUT_BASIC_005,tutorial_basic,인벤토리 열기,"I를 눌러 인벤토리를 여세요.",
+TUT_BASIC_005,TUT_BUILD_001,tutorial_basic,인벤토리 닫기,"I를 다시 눌러 인벤토리를 닫으세요.",
+TUT_BUILD_001,TUT_BUILD_002,tutorial_build,빌드 모드 진입,"B를 눌러 빌드 모드로 전환하세요.",
+TUT_BUILD_002,TUT_BUILD_003,tutorial_build,설치물 미리보기 확인,"빌드 모드에서 설치물 미리보기를 확인하세요.",
+TUT_BUILD_003,TUT_BUILD_004,tutorial_build,설치물 왼쪽 회전,"Q를 눌러 설치물 방향을 회전하세요.",
+TUT_BUILD_004,TUT_BUILD_005,tutorial_build,설치물 오른쪽 회전,"E를 눌러 설치물 방향을 회전하세요.",
+TUT_BUILD_005,TUT_BUILD_006,tutorial_build,철거 모드 진입,"X를 눌러 철거 모드로 전환하세요.",
+TUT_BUILD_006,TUT_BUILD_007,tutorial_build,탈출 포드 선택,"철거할 탈출 포드를 선택하세요.",
+TUT_BUILD_007,TUT_MINING_001,tutorial_build,탈출 포드 철거,"탈출 포드를 철거해 자재를 회수하세요.",iron ingot 10
+TUT_MINING_001,TUT_MINING_002,tutorial_mining,철 광맥 찾기,"주변에서 철 광맥을 찾으세요.",
+TUT_MINING_002,TUT_MINING_003,tutorial_mining,채굴기 선택,"하단 UI 또는 단축키로 채굴기를 선택하세요.",
+TUT_MINING_003,TUT_MINING_004,tutorial_mining,채굴기 배치,"철 광맥 근처에 채굴기를 배치하세요.",
+TUT_MINING_004,TUT_POWER_001,tutorial_mining,채굴기 설치 완료,"채굴기를 설치해 자원 채굴을 시작할 준비를 마치세요.",iron ingot 10
+TUT_POWER_001,TUT_POWER_002,tutorial_power,발전소 선택,"하단 UI 또는 단축키로 발전소를 선택하세요.",
+TUT_POWER_002,TUT_POWER_003,tutorial_power,발전소 위치 지정,"발전소를 설치할 위치를 지정하세요.",
+TUT_POWER_003,TUT_POWER_004,tutorial_power,발전소 설치 완료,"발전소를 설치해 전력 생산 기반을 확보하세요.",iron ingot 10
+TUT_POWER_004,TUT_POWER_005,tutorial_power,송전탑 선택,"하단 UI 또는 단축키로 송전탑을 선택하세요.",
+TUT_POWER_005,TUT_POWER_006,tutorial_power,송전탑 배치,"채굴기 근처에 송전탑을 배치하세요.",
+TUT_POWER_006,TUT_POWER_007,tutorial_power,송전탑 설치 완료,"송전탑을 설치해 전력 전달 준비를 마치세요.",iron ingot 10
+TUT_POWER_007,TUT_POWER_008,tutorial_power,송전선 연결 시작,"발전소에서 송전선 연결을 시작하세요.",
+TUT_POWER_008,TUT_POWER_009,tutorial_power,송전선 연결 완료,"발전소와 송전탑을 송전선으로 연결하세요.",
+TUT_POWER_009,TUT_POWER_010,tutorial_power,전력 공급 확인,"채굴기에 전력이 공급되는지 확인하세요.",iron ingot 10
+TUT_POWER_010,TUT_SMELT_001,tutorial_power,철 광석 첫 생산,"채굴기에서 철 광석 1개가 생산되는지 확인하세요.",
+TUT_SMELT_001,TUT_SMELT_002,tutorial_smelting,철 광석 10개 생산,"채굴기로 철 광석 10개를 생산하세요.",iron ingot 10
+TUT_SMELT_002,TUT_SMELT_003,tutorial_smelting,제련기 선택,"하단 UI 또는 단축키로 제련기를 선택하세요.",
+TUT_SMELT_003,TUT_SMELT_004,tutorial_smelting,제련기 위치 지정,"제련기를 설치할 위치를 지정하세요.",
+TUT_SMELT_004,TUT_LOGI_001,tutorial_smelting,제련기 설치 완료,"제련기를 설치해 가공 설비를 준비하세요.",iron ingot 10
+TUT_LOGI_001,TUT_LOGI_002,tutorial_logistics,출력 창고 포트 선택,"출력용 창고 포트를 선택하세요.",
+TUT_LOGI_002,TUT_LOGI_003,tutorial_logistics,출력 창고 포트 배치,"채굴기 출력 포트 근처에 창고 포트를 설치하세요.",
+TUT_LOGI_003,TUT_LOGI_004,tutorial_logistics,출력 자원 선택,"출력 창고 포트의 자원을 철 광석으로 설정하세요.",
+TUT_LOGI_004,TUT_LOGI_005,tutorial_logistics,철 광석 출력 확인,"창고 포트에서 철 광석이 출력되는지 확인하세요.",iron ingot 10
+TUT_LOGI_005,TUT_LOGI_006,tutorial_logistics,컨베이어 선택,"하단 UI 또는 단축키로 컨베이어를 선택하세요.",
+TUT_LOGI_006,TUT_LOGI_007,tutorial_logistics,컨베이어 연결 시작,"출력 창고 포트에서 컨베이어 연결을 시작하세요.",
+TUT_LOGI_007,TUT_LOGI_008,tutorial_logistics,컨베이어 연결 완료,"컨베이어를 제련기 입력 방향까지 연결하세요.",iron ingot 10
+TUT_LOGI_008,TUT_LOGI_009,tutorial_logistics,철 광석 이동 확인,"철 광석이 제련기로 이동하는지 확인하세요.",
+TUT_LOGI_009,TUT_LOGI_010,tutorial_logistics,입력 창고 포트 선택,"입력용 창고 포트를 선택하세요.",
+TUT_LOGI_010,TUT_LOGI_011,tutorial_logistics,입력 창고 포트 배치,"제련기 입력 포트 근처에 창고 포트를 설치하세요.",
+TUT_LOGI_011,TUT_LOGI_012,tutorial_logistics,입력 자원 선택,"입력 창고 포트의 자원을 철 주괴로 설정하세요.",
+TUT_LOGI_012,TUT_LOGI_013,tutorial_logistics,철 주괴 등록,"인벤토리의 철 주괴를 입력 창고 포트에 등록하세요.",iron ingot 10
+TUT_LOGI_013,TUT_LOGI_014,tutorial_logistics,제련 시작 확인,"제련기가 작동을 시작하는지 확인하세요.",
+TUT_LOGI_014,TUT_EXPAND_001,tutorial_logistics,철 주괴 첫 생산,"제련기에서 철 주괴 1개가 생산되는지 확인하세요.",
+TUT_EXPAND_001,TUT_EXPAND_002,tutorial_expand,철 주괴 10개 생산,"제련기로 철 주괴 10개를 생산하세요.",iron ingot 10
+TUT_EXPAND_002,TUT_EXPAND_003,tutorial_expand,추가 발전소 설치,"발전소 1기를 추가로 설치하세요.",
+TUT_EXPAND_003,TUT_EXPAND_004,tutorial_expand,추가 송전탑 설치,"송전탑 1기를 추가로 설치하세요.",
+TUT_EXPAND_004,TUT_EXPAND_005,tutorial_expand,확장 설비 전력 연결,"추가 설비까지 전력을 연결하세요.",iron ingot 10
+TUT_EXPAND_005,TUT_EXPAND_006,tutorial_expand,추가 채굴기 설치,"채굴기 1기를 추가로 설치하세요.",
+TUT_EXPAND_006,TUT_EXPAND_007,tutorial_expand,추가 제련기 설치,"제련기 1기를 추가로 설치하세요.",
+TUT_EXPAND_007,TUT_EXPAND_008,tutorial_expand,자동 생산 라인 확장,"자동 생산 라인 1개를 추가로 완성하세요.",iron ingot 10
+TUT_EXPAND_008,TUT_EXPAND_009,tutorial_expand,철 광석 누적 생산,"철 광석을 누적 50개 생산하세요.",
+TUT_EXPAND_009,TUT_COMM_001,tutorial_expand,철 주괴 누적 생산,"철 주괴를 누적 30개 생산하세요.",iron ingot 10
+TUT_COMM_001,TUT_COMM_002,main_commtower,통신탑 재료 확보,"통신탑 건설에 필요한 재료를 확보하세요.",
+TUT_COMM_002,TUT_COMM_003,main_commtower,통신탑 위치 도달,"통신탑을 설치할 위치까지 이동하세요.",
+TUT_COMM_003,TUT_COMM_004,main_commtower,통신탑 설치 완료,"통신탑을 설치하세요.",
+TUT_COMM_004,TUT_COMM_005,main_commtower,통신탑 전력 연결,"통신탑에 전력을 연결하세요.",
+TUT_COMM_005,TUT_SIGNAL_001,main_commtower,위성 통신 복구 확인,"위성 내 통신이 복구되었는지 확인하세요.",iron ingot 10
+TUT_SIGNAL_001,TUT_SIGNAL_002,main_signal_booster,신호 증폭기 재료 확보,"신호 증폭기 건설에 필요한 재료를 확보하세요.",
+TUT_SIGNAL_002,TUT_SIGNAL_003,main_signal_booster,신호 증폭기 위치 도달,"신호 증폭기를 설치할 위치까지 이동하세요.",
+TUT_SIGNAL_003,TUT_SIGNAL_004,main_signal_booster,신호 증폭기 설치 완료,"신호 증폭기를 설치하세요.",
+TUT_SIGNAL_004,TUT_SIGNAL_005,main_signal_booster,통신 출력 상승 확인,"통신 출력이 상승했는지 확인하세요.",
+TUT_SIGNAL_005,,main_signal_booster,지구 통신 목표 해금,"지구와의 통신 복구 목표를 해금하세요.",

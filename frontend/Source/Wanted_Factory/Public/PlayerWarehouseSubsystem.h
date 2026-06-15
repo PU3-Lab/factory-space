@@ -6,6 +6,18 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnWarehouseItemAdded, FName, ItemID, int32, AddedCount, int32, NewTotalCount);
 
+USTRUCT(BlueprintType)
+struct FWarehouseItemStack
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player Warehouse")
+	FName ItemID = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player Warehouse", meta = (ClampMin = "1"))
+	int32 Count = 1;
+};
+
 UCLASS()
 class WANTED_FACTORY_API UPlayerWarehouseSubsystem : public UGameInstanceSubsystem
 {
@@ -34,6 +46,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Player Warehouse")
 	void ClearWarehouse();
+
+	UFUNCTION(BlueprintCallable, Category = "Player Warehouse")
+	void GrantInitialItems(const TArray<FWarehouseItemStack>& Items);
 
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Player Warehouse")
