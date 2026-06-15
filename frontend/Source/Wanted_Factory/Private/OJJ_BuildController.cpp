@@ -22,9 +22,11 @@
 #include "Machines/Grinder.h"
 #include "Machines/MachineSubsystem.h"
 #include "Machines/MinerMachine.h"
+#include "Machines/MoldingMachine.h"
 #include "Machines/Pump.h"
 #include "Machines/LiquidTank.h"
 #include "Machines/Smelter.h"
+#include "Machines/Synthesizer.h"
 #include "Machines/WarehousePort.h"
 #include "OJJ_Foundation.h"
 #include "OJJ_ProtectionTower.h"
@@ -80,6 +82,10 @@ namespace
 			return TEXT("Conveyor");
 		case EOJJ_BuildPlacementMode::LiquidTank:
 			return TEXT("LiquidTank"); // F4-1' — ALiquidTank ctor의 MachineType과 동일 표기.
+		case EOJJ_BuildPlacementMode::MoldingMachine:
+			return TEXT("MoldingMachine");
+		case EOJJ_BuildPlacementMode::Synthesizer:
+			return TEXT("Synthesizer");
 		default:
 			return NAME_None;
 		}
@@ -127,6 +133,8 @@ AOJJ_BuildController::AOJJ_BuildController()
 	PumpClass = APump::StaticClass();
 	SmelterClass = ASmelter::StaticClass();
 	WarehouseClass = AWarehousePort::StaticClass();
+	MoldingMachineClass = AMoldingMachine::StaticClass();
+	SynthesizerClass = ASynthesizer::StaticClass();
 }
 
 void AOJJ_BuildController::Tick(float DeltaSeconds)
@@ -198,6 +206,16 @@ void AOJJ_BuildController::EnterBuildMode()
 	if (PlacementMode == EOJJ_BuildPlacementMode::LiquidTank && !LiquidTankClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] LiquidTankClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::MoldingMachine && !MoldingMachineClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] MoldingMachineClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::Synthesizer && !SynthesizerClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] SynthesizerClass missing. EnterBuildMode stopped."));
 		return;
 	}
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor && !ConveyorClass)
@@ -324,6 +342,8 @@ void AOJJ_BuildController::RotateHoverClockwise()
 			&& PlacementMode != EOJJ_BuildPlacementMode::Smelter
 			&& PlacementMode != EOJJ_BuildPlacementMode::Warehouse
 			&& PlacementMode != EOJJ_BuildPlacementMode::LiquidTank
+			&& PlacementMode != EOJJ_BuildPlacementMode::MoldingMachine
+			&& PlacementMode != EOJJ_BuildPlacementMode::Synthesizer
 			&& PlacementMode != EOJJ_BuildPlacementMode::Foundation))
 	{
 		return;
@@ -446,6 +466,16 @@ TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
 	if (PlacementMode == EOJJ_BuildPlacementMode::Warehouse)
 	{
 		return WarehouseClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::MoldingMachine)
+	{
+		return MoldingMachineClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::Synthesizer)
+	{
+		return SynthesizerClass;
 	}
 
 	return MachineClass;
@@ -1336,6 +1366,8 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::Foundation: ModeName = TEXT("Foundation"); break;
 	case EOJJ_BuildPlacementMode::Pipe:      ModeName = TEXT("Pipe");       break;
 	case EOJJ_BuildPlacementMode::LiquidTank: ModeName = TEXT("LiquidTank"); break;
+	case EOJJ_BuildPlacementMode::MoldingMachine: ModeName = TEXT("MoldingMachine"); break;
+	case EOJJ_BuildPlacementMode::Synthesizer: ModeName = TEXT("Synthesizer"); break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 

@@ -6,6 +6,25 @@
 #include "Wanted_Factory.h"
 #include "OJJ_Grid.h"
 
+namespace
+{
+	bool IsMineableOreResource(const AResourceBase* Resource)
+	{
+		if (!Resource)
+		{
+			return false;
+		}
+
+		if (Resource->HasShape(EResourceShape::Ore))
+		{
+			return true;
+		}
+
+		// DT_ResourceData가 아직 갱신되지 않은 에셋도 iron_ore/copper_ore/tin_ore 행이면
+		// 채굴 광물로 취급한다. 실제 산출물 ID도 이 RowName을 그대로 사용한다.
+		return Resource->GetResourceRowName().ToString().EndsWith(TEXT("_ore"));
+	}
+}
 
 // Sets default values
 AMinerMachine::AMinerMachine()
@@ -119,7 +138,7 @@ AResourceBase* AMinerMachine::FindAdjacentUnclaimedOre(const AOJJ_Grid* Grid, FI
 			Visited.Add(Neighbor);
 
 			AResourceBase* Resource = Cast<AResourceBase>(Grid->GetActorAtCell(Neighbor));
-			if (Resource && !Resource->IsClaimed() && Resource->HasShape(EResourceShape::Ore))
+			if (Resource && !Resource->IsClaimed() && IsMineableOreResource(Resource))
 			{
 				return Resource;
 			}
@@ -150,24 +169,12 @@ bool AMinerMachine::CanMine() const
 		return false;
 	}
 	
-	FResourceData Data;
-	if (!LinkedResource->GetResourceData(Data))
+	if (!IsMineableOreResource(LinkedResource))
 	{
 		LOG_SSR_W(
-			TEXT("CanMine failed: ResourceData is invalid. Resource=%s RowName=%s"),
+			TEXT("CanMine failed: Resource is not mineable Ore. Resource=%s RowName=%s"),
 			*LinkedResource->GetName(),
 			*LinkedResource->GetResourceRowName().ToString()
-		);
-		return false;
-	}
-
-	if (Data.shape != EResourceShape::Ore)
-	{
-		LOG_SSR_W(
-			TEXT("CanMine failed: Resource shape is not Ore. Resource=%s RowName=%s Shape=%s"),
-			*LinkedResource->GetName(),
-			*LinkedResource->GetResourceRowName().ToString(),
-			*UEnum::GetValueAsString(Data.shape)
 		);
 		return false;
 	}

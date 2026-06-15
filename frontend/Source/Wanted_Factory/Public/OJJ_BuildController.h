@@ -39,7 +39,9 @@ enum class EOJJ_BuildPlacementMode : uint8
 	// 파이프 모드(F4-1) — 컨베이어와 드래그 상태머신 공용(프리뷰/커밋만 분기). 펌프→물탱크 액체 라인.
 	Pipe,
 	// 물탱크 모드(F4-1') — 기존 머신 서브모드 패턴(발전소/펌프와 동일). 파이프 도착 끝점용.
-	LiquidTank
+	LiquidTank,
+	MoldingMachine,
+	Synthesizer
 };
 
 /**
@@ -136,6 +138,12 @@ protected:
 	// 1번 키(generic Machine 진입 키 대체)로 진입. WarehousePort C++/저장(PlayerWarehouse) 로직은 Chan 소유 — 무수정.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
 	TSubclassOf<AMachineBase> WarehouseClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AMachineBase> MoldingMachineClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AMachineBase> SynthesizerClass;
 
 	// Foundation 모드에서 배치할 평판 클래스(AOJJ_Foundation 파생 BP 지정 가능). 머신이 아니므로
 	// GetActiveMachineClass/머신 배치 경로 비경유 — Conveyor/Demolish처럼 독립 분기(F1-b).
