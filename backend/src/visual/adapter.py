@@ -61,10 +61,17 @@ class OpenAIImageAdapter:
                 prompt=prompt,
                 n=1,
                 size="1024x1024",
-                response_format="b64_json",
             )
-            b64_data = response.data[0].b64_json
-            return base64.b64decode(b64_data)
+            image_data = response.data[0]
+            if image_data.b64_json:
+                return base64.b64decode(image_data.b64_json)
+            elif image_data.url:
+                import httpx
+
+                resp = httpx.get(image_data.url)
+                resp.raise_for_status()
+                return resp.content
+            return None
         except Exception as exc:
             logger.warning("OpenAIImageAdapter: generation failed: %s", exc)
             return None

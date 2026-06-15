@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from PIL import Image
 
@@ -84,6 +84,7 @@ class TestOpenAIImageAdapter:
 
         mock_image_data = MagicMock()
         mock_image_data.b64_json = b64_data
+        mock_image_data.url = None
         mock_response = MagicMock()
         mock_response.data = [mock_image_data]
 
@@ -97,6 +98,29 @@ class TestOpenAIImageAdapter:
         img = Image.open(io.BytesIO(result))
         assert img.size == (1024, 1024)
         mock_client.images.generate.assert_called_once()
+
+    def test_returns_master_png_on_success_via_url(self) -> None:
+        raw_png = _png_bytes(1024, 1024)
+        mock_image_data = MagicMock()
+        mock_image_data.b64_json = None
+        mock_image_data.url = "https://fake-url.com/image.png"
+        mock_response = MagicMock()
+        mock_response.data = [mock_image_data]
+
+        mock_client = MagicMock()
+        mock_client.images.generate.return_value = mock_response
+
+        adapter = OpenAIImageAdapter(settings=_settings_openai(), client=mock_client)
+
+        with patch("httpx.get") as mock_get:
+            mock_resp = MagicMock()
+            mock_resp.content = raw_png
+            mock_get.return_value = mock_resp
+
+            result = adapter.generate("a glowing crystal")
+
+            assert result == raw_png
+            mock_get.assert_called_once_with("https://fake-url.com/image.png")
 
     def test_returns_none_on_api_exception(self) -> None:
         mock_client = MagicMock()
