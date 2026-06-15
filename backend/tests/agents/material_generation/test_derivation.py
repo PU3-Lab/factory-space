@@ -6,7 +6,11 @@
 
 from __future__ import annotations
 
-from agents.material_generation.derivation import apply_process, combine_properties
+from agents.material_generation.derivation import (
+    apply_process,
+    combine_properties,
+    derive_category,
+)
 from agents.material_generation.schemas import ProcessConditionsSchema
 
 
@@ -73,3 +77,36 @@ def test_apply_process_default_is_noop() -> None:
     """기본 공정 조건일 때 속성 변화가 없는지 테스트합니다."""
     out = apply_process((5.0, 5.0, 5.0, 5.0), ProcessConditionsSchema())
     assert out == (5.0, 5.0, 5.0, 5.0)
+
+
+def test_derive_category_all_metals_is_alloy() -> None:
+    """금속 재료들만 섞었을 때 alloy(합금) 카테고리로 판정되는지 테스트합니다."""
+    inputs = [
+        {"item_id": "iron_ingot", "qty": 1},
+        {"item_id": "copper_ingot", "qty": 1},
+    ]
+    assert derive_category(inputs) == "alloy"
+
+
+def test_derive_category_organic() -> None:
+    """유기물군에 속한 기초 재료들만 섞었을 때 organic(유기물) 카테고리로 판정되는지 테스트합니다."""
+    inputs = [{"item_id": "charcoal_dust", "qty": 1}, {"item_id": "wood", "qty": 1}]
+    assert derive_category(inputs) == "organic"
+
+
+def test_derive_category_chemical() -> None:
+    """금속이 없고 비금속군(황, 석탄 등)이 섞였을 때 chemical(화학물질) 카테고리로 판정되는지 테스트합니다."""
+    inputs = [
+        {"item_id": "sulfur_powder", "qty": 1},
+        {"item_id": "coal_dust", "qty": 1},
+    ]
+    assert derive_category(inputs) == "chemical"
+
+
+def test_derive_category_composite() -> None:
+    """금속과 비금속이 혼합되었을 때 composite(복합재) 카테고리로 판정되는지 테스트합니다."""
+    inputs = [
+        {"item_id": "iron_ingot", "qty": 1},
+        {"item_id": "sulfur_powder", "qty": 1},
+    ]
+    assert derive_category(inputs) == "composite"

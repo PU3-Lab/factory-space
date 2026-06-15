@@ -11,6 +11,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from agents.material_generation.material_properties import (
+    METALS,
+    ORGANIC_GROUP,
+    base_key,
     get_base_properties,
 )
 from agents.material_generation.schemas import (
@@ -96,3 +99,24 @@ def apply_process(
         _clamp(stability),
         _clamp(reactivity),
     )
+
+
+def derive_category(normalized_inputs: list[dict[str, Any]]) -> str:
+    """입력 재료 구성으로 category를 판정합니다 (alloy/organic/chemical/composite).
+
+    - 모든 입력이 금속(METALS)이면 "alloy"
+    - 금속이 전혀 없고, 모든 입력이 유기물(ORGANIC_GROUP)군이면 "organic"
+    - 금속이 전혀 없고, 유기물군에 속하지 않은 비금속이 섞여 있으면 "chemical"
+    - 금속과 비금속이 혼합되어 있으면 "composite"
+    """
+    keys = {base_key(item["item_id"]) for item in normalized_inputs}
+    metals = keys & METALS
+    nonmetals = keys - METALS
+
+    if not nonmetals:
+        return "alloy"
+    if not metals:
+        if keys <= ORGANIC_GROUP:
+            return "organic"
+        return "chemical"
+    return "composite"
