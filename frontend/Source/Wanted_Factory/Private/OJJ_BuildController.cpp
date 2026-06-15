@@ -1056,6 +1056,20 @@ void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHi
 	// F3.6-1(㊂): 풋프린트 구성 불가(자동 맞춤 경사 한계)는 클릭도 같은 훅 bValid로 거부 — 빨강 강제로
 	// 색 단일 진실원 유지. 사유 텍스트는 클릭 시 로그(아래 호버 로그에도 동반 — 셀 변경 시만이라 저빈도).
 	TargetGrid->OJJ_UpdateFoundationHoverPreview(Fit.Origin, Fit.EffSize, !Fit.bValid);
+
+	// 고스트 프리뷰(#187): 평판 전용. 색 판정원은 호버 타일과 동일(Fit.bValid AND CanPlaceFoundation)로 일치.
+	// 램프는 후속 범위라 고스트 미표시 — OJJ_HideGhost로 전환 잔존 방지(ClearHoverPreview도 숨기지만 명시적).
+	if (!bRampFoundationSelected)
+	{
+		FString GhostReason;
+		const bool bGhostValid = Fit.bValid && TargetGrid->CanPlaceFoundation(Fit.Origin, Fit.EffSize, GhostReason);
+		TargetGrid->OJJ_ShowGhostForFoundation(
+			ActiveClass.GetDefaultObject(), Fit.Origin, Fit.EffSize, bGhostValid);
+	}
+	else
+	{
+		TargetGrid->OJJ_HideGhost();
+	}
 	// ㊁ 보강: 방향 출처 표시 — 자동(이웃 낮→높) vs 수동(R) 이원화의 UX 방어. 평판은 출처가 비어
 	// 있어 무로그(스팸 0), 램프만 셀 변경 시 1줄.
 	if (!Fit.DirectionSource.IsEmpty())

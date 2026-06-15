@@ -66,6 +66,9 @@ public:
 	FIntPoint GetFoundationSize() const { return FoundationSize; }
 	float GetThickness() const { return Thickness; }
 
+	// 고스트 프리뷰(#187)가 슬래브 메시(엔진 Cube)를 액터 spawn 없이 그리기 위한 접근자(CDO에서 StaticMesh 취득).
+	UStaticMeshComponent* GetSlabMesh() const { return SlabMesh; }
+
 	// 배치 확정 직후 BuildController가 호출 — EndPlay 대칭 해제용 그리드 보관 + 비주얼 확정 갱신.
 	void OJJ_NotifyPlacedOnGrid(AOJJ_Grid* Grid);
 
