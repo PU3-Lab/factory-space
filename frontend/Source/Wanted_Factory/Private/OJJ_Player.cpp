@@ -135,6 +135,14 @@ void AOJJ_Player::BeginPlay()
 			MainHUDWidgetInstance->AddToViewport();
 		}
 	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->StartTutorialQuestTest();
+		}
+	}
 	
 	ConnectFactoryAgentClient();
 }
@@ -348,6 +356,7 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
 		{
 			QuestManager->NotifyMainQuestInputAction(TEXT("Move"));
+			QuestManager->NotifyTutorialEvent(TEXT("InputAction"), TEXT("Move"));
 		}
 	}
 }
@@ -398,6 +407,7 @@ void AOJJ_Player::StartJumpAction(const FInputActionValue& Value)
 		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
 		{
 			QuestManager->NotifyMainQuestInputAction(TEXT("Jump"));
+			QuestManager->NotifyTutorialEvent(TEXT("InputAction"), TEXT("Jump"));
 		}
 	}
 }
@@ -422,6 +432,8 @@ void AOJJ_Player::ToggleBuild(const FInputActionValue& Value)
 			if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
 			{
 				QuestManager->NotifyMainQuestBuildModeEntered();
+				QuestManager->NotifyTutorialEvent(TEXT("BuildMode"));
+				QuestManager->NotifyTutorialEvent(TEXT("BuildPreviewSeen"));
 			}
 		}
 	}
@@ -587,6 +599,14 @@ void AOJJ_Player::SetConveyorMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Conveyor);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectConveyorMode"));
+		}
+	}
 }
 
 void AOJJ_Player::SetPipeMode(const FInputActionValue& Value)
@@ -638,6 +658,14 @@ void AOJJ_Player::SetPowerNodeMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerNode);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectPowerNodeMode"));
+		}
+	}
 }
 
 void AOJJ_Player::SetShieldMode(const FInputActionValue& Value)
@@ -657,6 +685,14 @@ void AOJJ_Player::SetPowerLineMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerLine);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectPowerLineMode"));
+		}
+	}
 }
 
 void AOJJ_Player::SetPowerPlantMode(const FInputActionValue& Value)
@@ -666,6 +702,14 @@ void AOJJ_Player::SetPowerPlantMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerPlant);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectPowerPlantMode"));
+		}
+	}
 }
 
 void AOJJ_Player::SetGrinderMode(const FInputActionValue& Value)
@@ -684,6 +728,14 @@ void AOJJ_Player::SetMinerMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Miner);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectMinerMode"));
+		}
+	}
 }
 
 void AOJJ_Player::SetPumpMode(const FInputActionValue& Value)
@@ -702,6 +754,14 @@ void AOJJ_Player::SetSmelterMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Smelter);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectSmelterMode"));
+		}
+	}
 }
 
 // 창고 모드 진입(1키, generic Machine 진입 키 대체). generic SetMachineMode는 보존(미바인딩 시 dead) — 코드 삭제 없음.
@@ -712,6 +772,14 @@ void AOJJ_Player::SetWarehouseMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Warehouse);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectWarehouseMode"));
+		}
+	}
 }
 
 // 철거 모드 진입(X키). 호버 대상 빨강 하이라이트 + 좌클릭 제거.
@@ -722,6 +790,14 @@ void AOJJ_Player::SetDemolishMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Demolish);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("DemolishMode"));
+		}
+	}
 }
 
 // 평판 Foundation 모드 진입(G키 — #196 IA 전환). 다른 모드 핸들러(탱크/파이프)와 동일 구조 —
@@ -757,6 +833,7 @@ void AOJJ_Player::StartSprint(const FInputActionValue& Value)
 		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
 		{
 			QuestManager->NotifyMainQuestInputAction(TEXT("Sprint"));
+			QuestManager->NotifyTutorialEvent(TEXT("InputAction"), TEXT("Sprint"));
 		}
 	}
 }
@@ -780,9 +857,25 @@ void AOJJ_Player::BuildPan(const FInputActionValue& Value)
 
 void AOJJ_Player::BuildRotate(const FInputActionValue& Value)
 {
+	const float RotateInput = Value.Get<float>();
+
 	if (BuildCamera)
 	{
-		BuildCamera->Rotate(Value.Get<float>());
+		BuildCamera->Rotate(RotateInput);
+	}
+
+	if (FMath::IsNearlyZero(RotateInput))
+	{
+		return;
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(
+				RotateInput < 0.0f ? TEXT("RotateViewLeft") : TEXT("RotateViewRight"));
+		}
 	}
 }
 
@@ -792,6 +885,14 @@ void AOJJ_Player::BuildRotateMachine(const FInputActionValue& Value)
 	if (BuildController)
 	{
 		BuildController->RotateHoverClockwise();
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("RotatePlacement"));
+		}
 	}
 }
 
@@ -994,6 +1095,14 @@ void AOJJ_Player::TriggerInventoryToggle()
 		{
 			InventoryWidgetInstance->RemoveFromParent();
 			bIsInventoryOpen = false;
+
+			if (UGameInstance* GameInstance = GetGameInstance())
+			{
+				if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+				{
+					QuestManager->NotifyTutorialEvent(TEXT("InventoryClose"));
+				}
+			}
 		}
 		
 		PC->SetInputMode(FInputModeGameOnly());
@@ -1029,6 +1138,14 @@ void AOJJ_Player::TriggerInventoryToggle()
 		InventoryWidgetInstance->RefreshInventoryWindow();
 		InventoryWidgetInstance->AddToViewport();
 		bIsInventoryOpen = true;
+
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+			{
+				QuestManager->NotifyTutorialEvent(TEXT("InventoryOpen"));
+			}
+		}
 		
 		PC->SetInputMode(FInputModeGameAndUI());
 		PC->SetShowMouseCursor(true);
@@ -1040,6 +1157,28 @@ void AOJJ_Player::TriggerInventoryToggle()
 			0.1f, 
 			true
 		);
+	}
+}
+
+void AOJJ_Player::OJJ_TutorialAdvance()
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->CompleteCurrentTutorialQuestForTest();
+		}
+	}
+}
+
+void AOJJ_Player::OJJ_TutorialLog()
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->LogCurrentTutorialQuestTestState();
+		}
 	}
 }
 
