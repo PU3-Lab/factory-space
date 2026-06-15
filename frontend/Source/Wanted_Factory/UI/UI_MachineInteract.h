@@ -91,6 +91,10 @@ protected:
 	
 	UPROPERTY(meta = (BindWidget))
 	class UBorder* B_InputDropZone;
+	UPROPERTY(meta = (BindWidget))
+	class UBorder* B_OutputDropZone;
+	FName ManualDroppedOutputItemID = NAME_None;
+	
 
 private:
 	// 테스트하기 위한 임시 변수

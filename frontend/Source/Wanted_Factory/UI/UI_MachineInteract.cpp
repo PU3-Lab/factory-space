@@ -101,7 +101,13 @@ void UUI_MachineInteract::NativeTick(const FGeometry& MyGeometry, float InDeltaT
     FRecipeTable Recipe = TargetMachine->GetCurrentRecipe();
     // 우측 출력(Output) UI 갱신
     FName OutputName = Recipe.OutputItem1;
+    if (!ManualDroppedOutputItemID.IsNone())
+    {
+        OutputName = ManualDroppedOutputItemID;
+    }
     int32 OutputAmount = TargetMachine->GetOutputBuffer().FindRef(OutputName);
+    
+    // 우측 출력(Output) UI 갱신 (이제 None으로 밀리지 않고 iron_ore가 똑바로 유지됩니다)
     UpdateOutputUI(OutputName, OutputAmount, TargetMachine->GetMaxOutput());
 
     // 상태 텍스트 갱신 
@@ -219,7 +225,7 @@ void UUI_MachineInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, in
                 UTexture2D* LoadedTexture = RowData->ImgAsset.LoadSynchronous();
                 if (LoadedTexture) IMG_OutputIcon->SetBrushFromTexture(LoadedTexture);
             }
-            if (CurrentAmount <= 0)
+            if (CurrentAmount <= 0 && ItemName != ManualDroppedOutputItemID)
             {
                 IMG_OutputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.15f));
             }
@@ -299,20 +305,37 @@ void UUI_MachineInteract::UpdateDurabilityUI(float CurrentDurability, float MaxD
 
 bool UUI_MachineInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
-    // 1. 마우스 드래그 오퍼레이션 검사
     UItemDragDropOperation* ItemDragOp = Cast<UItemDragDropOperation>(InOperation);
     if (!ItemDragOp || !TargetMachine) return false;
+    
+    // 가시성이 꺼져서 지오메트리가 터지는 이미지 대신, 
+    // 항상 크기가 고정되어 켜져 있는 B_OutputDropZone 보더 영역을 타겟으로 검사합니다
+    if (B_OutputDropZone)
+    {
+        FVector2D DropScreenPos = InDragDropEvent.GetScreenSpacePosition();
+        
+        // 보더 영역 내부로 마우스가 정확히 골인했는지 대조
+        bool bIsOverZone = USlateBlueprintLibrary::IsUnderLocation(
+            B_OutputDropZone->GetCachedGeometry(), 
+            DropScreenPos
+        );
 
-    FName DroppedItemID = ItemDragOp->DraggedItemID;
-
-    // 2. 수량 제한 검사 (기계 수용량이 꽉 찬 게 아니라면 허용)
-    int32 CurrentInputAmount = TargetMachine->GetInputInventory().FindRef(DroppedItemID);
-    if (CurrentInputAmount >= TargetMachine->GetMaxInput())
+        if (!bIsOverZone)
+        {
+            return false; // 마우스 포인터가 칸 밖으로 나갔다면 투입 실패 처리
+        }
+    }
+    else
     {
         return false;
     }
 
-    // 3. 내 가방에서 1개 빼고 기계에 1개 넣기
+    FName DroppedItemID = ItemDragOp->DraggedItemID;
+
+    // --- 이하 서브시스템 아이템 차감 및 이미지/ID 세팅 로직 동일 ---
+    int32 CurrentInputAmount = TargetMachine->GetInputInventory().FindRef(DroppedItemID);
+    if (CurrentInputAmount >= TargetMachine->GetMaxInput()) return false;
+
     UGameInstance* GI = GetGameInstance();
     if (GI)
     {
@@ -320,21 +343,38 @@ bool UUI_MachineInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDragD
         if (WarehouseSubsystem && WarehouseSubsystem->TakeItem(DroppedItemID, 1)) 
         {
             TargetMachine->AddItem(DroppedItemID, 1);
+            ManualDroppedOutputItemID = DroppedItemID;
             
+            // 드롭 성공 시 알맹이 이미지 컴포넌트 데이터 갱신 및 가시성 ON!
+            if (ResourceDataTable && IMG_OutputIcon)
+            {
+                FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(DroppedItemID, TEXT("FindDroppedOutputIconContext"));
+                if (RowData)
+                {
+                    IMG_OutputIcon->SetVisibility(ESlateVisibility::Visible);
+                    IMG_OutputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
+
+                    if (RowData->ImgAsset.IsValid()) IMG_OutputIcon->SetBrushFromTexture(RowData->ImgAsset.Get());
+                    else
+                    {
+                        UTexture2D* LoadedTexture = RowData->ImgAsset.LoadSynchronous();
+                        if (LoadedTexture) IMG_OutputIcon->SetBrushFromTexture(LoadedTexture);
+                    }
+                }
+            }
+
+            // 가방 UI 새로고침
             APlayerController* PC = GetOwningPlayer();
             if (PC)
             {
                 AOJJ_Player* OJJPlayer = Cast<AOJJ_Player>(PC->GetPawn());
                 if (OJJPlayer && OJJPlayer->GetInventoryWidgetInstance()) 
                 {
-                    OJJPlayer->GetInventoryWidgetInstance()->RefreshInventoryWindow();
+                    OJJPlayer->GetInventoryWidgetInstance()->UpdateSlotQuantitiesOnly();
                 }
             }
-            
-            UE_LOG(LogTemp, Log, TEXT("[드롭 성공] 창고 투입 성공: %s"), *DroppedItemID.ToString());
             return true; 
         }
     }
-
     return false;
 }
