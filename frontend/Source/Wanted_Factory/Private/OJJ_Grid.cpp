@@ -3624,21 +3624,17 @@ void AOJJ_Grid::OJJ_EnsureGhostMIDs()
 		}
 	}
 
-	// 오버레이 틴트 — 호버 타일 색(HoverValid/InvalidColor)과 분리한 고스트 전용 톤(#187 PIE 튜닝).
-	// 오버레이는 베이스 텍스처 위에 합성되므로 옅게: Opacity 0.22 + 채도·명도 낮춘 색. 채널>1.0은
-	// Emissive 글로우라 쨍해지므로 회피(빨강 R=1.0은 경계값). 타일 색을 안 건드리려 별도 상수로 둠.
-	const float GhostTintOpacity = 0.38f;
-	const FLinearColor GhostValidTint(0.2f, 0.9f, 0.3f);     // 부드러운 초록(배치 가능)
-	const FLinearColor GhostInvalidTint(1.0f, 0.2f, 0.2f);   // 부드러운 빨강(배치 불가)
+	// 오버레이 틴트 — 호버 타일 색과 분리한 고스트 전용 톤(#187). EditAnywhere 멤버(GhostOpacity/Valid·InvalidTint)로
+	// 노출 → PIE 디테일 슬라이더 라이브 튜닝(PostEditChangeProperty가 이 함수 재호출 → 재적용).
 	if (GhostValidMID)
 	{
 		GhostValidMID->SetVectorParameterValue(TEXT("TintColor"), GhostValidTint);
-		GhostValidMID->SetScalarParameterValue(TEXT("Opacity"), GhostTintOpacity);
+		GhostValidMID->SetScalarParameterValue(TEXT("Opacity"), GhostOpacity);
 	}
 	if (GhostInvalidMID)
 	{
 		GhostInvalidMID->SetVectorParameterValue(TEXT("TintColor"), GhostInvalidTint);
-		GhostInvalidMID->SetScalarParameterValue(TEXT("Opacity"), GhostTintOpacity);
+		GhostInvalidMID->SetScalarParameterValue(TEXT("Opacity"), GhostOpacity);
 	}
 }
 
