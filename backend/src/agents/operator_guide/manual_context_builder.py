@@ -27,6 +27,8 @@ class ManualQAPromptContext:
 
     result: ManualQAResult
     evidence: dict[str, Any]
+    rag_context_text: str = ""
+    rag_metadata: dict[str, Any] | None = None
 
 
 class ManualQAContextBuilder:

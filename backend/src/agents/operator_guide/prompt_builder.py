@@ -73,6 +73,7 @@ class ManualQAPromptBuilder:
             ensure_ascii=False,
             indent=2,
         )
+        rag_context_section = self._rag_context_section(context)
         return f"""Answer this {self._topic_label(topic)}.
 [PLAYER_QUESTION]
 {question}
@@ -85,6 +86,8 @@ class ManualQAPromptBuilder:
 
 [CSV_EVIDENCE]
 {evidence_json}
+
+{rag_context_section}
 
 [RECOMMENDED_ACTIONS]
 {actions_json}
@@ -99,6 +102,24 @@ Use exactly these keys:
   "question": "{question}",
   "topic": "{topic}"
 }}
+"""
+
+    def _rag_context_section(self, context: ManualQAPromptContext) -> str:
+        """RAG 검색 결과가 있을 때만 prompt에 검색 근거 섹션을 추가한다."""
+
+        if not context.rag_context_text:
+            return ""
+
+        metadata_json = json.dumps(
+            context.rag_metadata or {},
+            ensure_ascii=False,
+            indent=2,
+        )
+        return f"""[RAG_RETRIEVAL_CONTEXT]
+{context.rag_context_text}
+
+[RAG_RETRIEVAL_METADATA]
+{metadata_json}
 """
 
     def _topic_label(self, topic: str) -> str:

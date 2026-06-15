@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
 
 from agents.base import AgentContext, AgentRunResult
 from agents.operator_guide.csv_repository import CsvManualQARepository
@@ -20,14 +20,30 @@ from agents.operator_guide.question_classifier import ManualQAQuestionClassifier
 from agents.operator_guide.schemas import ManualQAResult
 
 
+class ManualQARagRuntime(Protocol):
+    """operator_guide service가 기대하는 RAG runtime의 최소 인터페이스.
+
+    초보자용 설명:
+        service는 실제 DB나 embedding provider를 직접 알 필요가 없다.
+        대신 `retrieve(question)`을 호출하면 RAG 검색 결과를 돌려주는 객체만
+        받는다. 이렇게 하면 테스트에서는 fake runtime을 넣고, 실제 실행에서는
+        PostgreSQL/pgvector 기반 runtime을 넣을 수 있다.
+    """
+
+    def retrieve(self, question: str) -> object:
+        """플레이어 질문을 받아 RAG 검색 결과를 반환한다."""
+
+
 class ManualQAService:
     """질문 분류, CSV 근거 수집, prompt 생성을 한 곳에서 조율한다."""
 
     def __init__(
         self,
         repository: CsvManualQARepository | None = None,
+        rag_runtime: ManualQARagRuntime | None = None,
     ) -> None:
         self._repository = repository or CsvManualQARepository()
+        self._rag_runtime = rag_runtime
         self._question_classifier = ManualQAQuestionClassifier(self._repository)
         self._context_builder = ManualQAContextBuilder(self._repository)
         self._prompt_builder = ManualQAPromptBuilder()
@@ -46,7 +62,19 @@ class ManualQAService:
         """질문을 분류하고, 그 질문에 맞는 CSV evidence를 모은다."""
 
         intent = self._question_classifier.classify(question)
-        return self._context_builder.build(question, intent)
+        prompt_context = self._context_builder.build(question, intent)
+        if self._rag_runtime is None:
+            return prompt_context
+
+        rag_result = self._rag_runtime.retrieve(question)
+        rag_metadata = _rag_metadata(rag_result)
+        result = prompt_context.result.model_copy(update={"retrieval": rag_metadata})
+        return ManualQAPromptContext(
+            result=result,
+            evidence=prompt_context.evidence,
+            rag_context_text=str(getattr(rag_result, "context_text", "")),
+            rag_metadata=rag_metadata,
+        )
 
     def build_prompt(
         self,
@@ -138,3 +166,29 @@ def build_manual_qa_prompt_messages(
         topic=topic,
         sub_agent=sub_agent,
     )
+
+
+def _rag_metadata(rag_result: object) -> dict[str, object]:
+    raw_metadata = dict(getattr(rag_result, "metadata", {}) or {})
+    sub_question_results = list(getattr(rag_result, "sub_question_results", []) or [])
+    sub_questions = [
+        {
+            "index": getattr(sub_question_result, "index", index),
+            "question": getattr(sub_question_result, "question", ""),
+        }
+        for index, sub_question_result in enumerate(sub_question_results, start=1)
+    ]
+    return {
+        "is_multi_question": bool(getattr(rag_result, "is_multi_question", False)),
+        "sub_question_count": raw_metadata.get(
+            "sub_question_count",
+            len(sub_question_results),
+        ),
+        "max_sub_questions": raw_metadata.get("max_sub_questions"),
+        "truncated": raw_metadata.get("truncated", False),
+        "confidence_counts": raw_metadata.get(
+            "confidence_counts",
+            {"high": 0, "medium": 0, "low": 0},
+        ),
+        "sub_questions": sub_questions,
+    }
