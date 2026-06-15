@@ -6,6 +6,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "PlayerWarehouseSubsystem.h"
+#include "Serialization/Csv/CsvParser.h"
 #include "Wanted_Factory.h"
 #include "Dom/JsonObject.h"
 
@@ -18,7 +19,43 @@ constexpr TCHAR ProductionQuestSubAgentId[] = TEXT("quest_generator.production_q
 constexpr TCHAR QuestManagerQuestSampleRequestId[] = TEXT("request-quest-sample");
 constexpr TCHAR QuestManagerQuestSampleSessionId[] = TEXT("smoke-session");
 constexpr TCHAR QuestManagerQuestSampleClientId[] = TEXT("smoke-client");
-constexpr TCHAR MainQuestCsvRelativePath[] = TEXT("Source/Wanted_Factory/Quest/MainQuestTable.csv");
+constexpr TCHAR MainQuestCsvRelativePath[] = TEXT("Source/Wanted_Factory/Data/MainQuestTable.csv");
+constexpr TCHAR TutorialQuestStepsCsvRelativePath[] = TEXT("Source/Wanted_Factory/Data/tutorial_quest_steps.csv");
+constexpr TCHAR TutorialQuestDialogueCsvRelativePath[] = TEXT("Source/Wanted_Factory/Data/tutorial_quest_dialogue.csv");
+
+constexpr TCHAR TutorialEventInputAction[] = TEXT("InputAction");
+constexpr TCHAR TutorialEventBuildMode[] = TEXT("BuildMode");
+constexpr TCHAR TutorialEventBuildPreviewSeen[] = TEXT("BuildPreviewSeen");
+constexpr TCHAR TutorialEventInventoryOpen[] = TEXT("InventoryOpen");
+constexpr TCHAR TutorialEventInventoryClose[] = TEXT("InventoryClose");
+constexpr TCHAR TutorialEventRotateViewLeft[] = TEXT("RotateViewLeft");
+constexpr TCHAR TutorialEventRotateViewRight[] = TEXT("RotateViewRight");
+constexpr TCHAR TutorialEventRotatePlacement[] = TEXT("RotatePlacement");
+constexpr TCHAR TutorialEventDemolishMode[] = TEXT("DemolishMode");
+constexpr TCHAR TutorialEventDemolishRemoved[] = TEXT("DemolishRemoved");
+constexpr TCHAR TutorialEventSelectMinerMode[] = TEXT("SelectMinerMode");
+constexpr TCHAR TutorialEventSelectPowerPlantMode[] = TEXT("SelectPowerPlantMode");
+constexpr TCHAR TutorialEventSelectPowerNodeMode[] = TEXT("SelectPowerNodeMode");
+constexpr TCHAR TutorialEventSelectSmelterMode[] = TEXT("SelectSmelterMode");
+constexpr TCHAR TutorialEventSelectWarehouseMode[] = TEXT("SelectWarehouseMode");
+constexpr TCHAR TutorialEventSelectConveyorMode[] = TEXT("SelectConveyorMode");
+constexpr TCHAR TutorialEventSelectPowerLineMode[] = TEXT("SelectPowerLineMode");
+constexpr TCHAR TutorialEventPowerLineConnected[] = TEXT("PowerLineConnected");
+
+enum class ETutorialRequirementType : uint8
+{
+	Unsupported,
+	EventCount,
+	WarehouseCount
+};
+
+struct FTutorialRequirement
+{
+	ETutorialRequirementType Type = ETutorialRequirementType::Unsupported;
+	FName EventId = NAME_None;
+	FName TargetId = NAME_None;
+	int32 RequiredCount = 1;
+};
 
 TSharedPtr<FJsonObject> CreateProductionPayload(const FString& Question)
 {
@@ -79,6 +116,273 @@ bool ReadQuestState(const TSharedPtr<FJsonObject>& QuestObject, FQuestState& Out
 
 	return !OutQuest.QuestId.IsEmpty() && !OutQuest.Title.IsEmpty() && OutQuest.Objectives.Num() > 0;
 }
+
+bool ParseTutorialStepCsv(const FString& CsvContent, TArray<FTutorialQuestStep>& OutSteps)
+{
+	FCsvParser CsvParser(CsvContent);
+	const FCsvParser::FRows& Rows = CsvParser.GetRows();
+	if (Rows.Num() <= 1)
+	{
+		return false;
+	}
+
+	for (int32 RowIndex = 1; RowIndex < Rows.Num(); ++RowIndex)
+	{
+		const TArray<const TCHAR*>& Row = Rows[RowIndex];
+		if (Row.Num() < 6)
+		{
+			continue;
+		}
+
+		FTutorialQuestStep Step;
+		Step.QuestId = Row[0];
+		Step.NextQuestId = Row[1];
+		Step.Group = Row[2];
+		Step.Title = Row[3];
+		Step.Description = Row[4];
+		Step.Reward = Row[5];
+		if (!Step.QuestId.IsEmpty())
+		{
+			OutSteps.Add(Step);
+		}
+	}
+
+	return OutSteps.Num() > 0;
+}
+
+bool ParseTutorialDialogueCsv(const FString& CsvContent, TArray<FTutorialQuestDialogueLine>& OutLines)
+{
+	FCsvParser CsvParser(CsvContent);
+	const FCsvParser::FRows& Rows = CsvParser.GetRows();
+	if (Rows.Num() <= 1)
+	{
+		return false;
+	}
+
+	for (int32 RowIndex = 1; RowIndex < Rows.Num(); ++RowIndex)
+	{
+		const TArray<const TCHAR*>& Row = Rows[RowIndex];
+		if (Row.Num() < 5)
+		{
+			continue;
+		}
+
+		FTutorialQuestDialogueLine Line;
+		Line.QuestId = Row[0];
+		Line.TriggerType = Row[1];
+		Line.LineOrder = FCString::Atoi(Row[2]);
+		Line.Speaker = Row[3];
+		Line.Dialogue = Row[4];
+		if (!Line.QuestId.IsEmpty() && !Line.TriggerType.IsEmpty())
+		{
+			OutLines.Add(Line);
+		}
+	}
+
+	return OutLines.Num() > 0;
+}
+
+FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
+{
+	FTutorialRequirement Requirement;
+
+	auto SetEventRequirement = [&Requirement](const TCHAR* EventName, const TCHAR* TargetName = nullptr, int32 RequiredCount = 1)
+	{
+		Requirement.Type = ETutorialRequirementType::EventCount;
+		Requirement.EventId = FName(EventName);
+		Requirement.TargetId = TargetName ? FName(TargetName) : NAME_None;
+		Requirement.RequiredCount = RequiredCount;
+	};
+
+	auto SetWarehouseRequirement = [&Requirement](const TCHAR* ItemId, int32 RequiredCount)
+	{
+		Requirement.Type = ETutorialRequirementType::WarehouseCount;
+		Requirement.TargetId = FName(ItemId);
+		Requirement.RequiredCount = RequiredCount;
+	};
+
+	if (QuestId == TEXT("TUT_BASIC_001"))
+	{
+		SetEventRequirement(TutorialEventInputAction, TEXT("Move"));
+	}
+	else if (QuestId == TEXT("TUT_BASIC_002"))
+	{
+		SetEventRequirement(TutorialEventInputAction, TEXT("Jump"));
+	}
+	else if (QuestId == TEXT("TUT_BASIC_003"))
+	{
+		SetEventRequirement(TutorialEventInputAction, TEXT("Sprint"));
+	}
+	else if (QuestId == TEXT("TUT_BASIC_004"))
+	{
+		SetEventRequirement(TutorialEventInventoryOpen);
+	}
+	else if (QuestId == TEXT("TUT_BASIC_005"))
+	{
+		SetEventRequirement(TutorialEventInventoryClose);
+	}
+	else if (QuestId == TEXT("TUT_BUILD_001"))
+	{
+		SetEventRequirement(TutorialEventBuildMode);
+	}
+	else if (QuestId == TEXT("TUT_BUILD_002"))
+	{
+		SetEventRequirement(TutorialEventBuildPreviewSeen);
+	}
+	else if (QuestId == TEXT("TUT_BUILD_003"))
+	{
+		SetEventRequirement(TutorialEventRotateViewLeft);
+	}
+	else if (QuestId == TEXT("TUT_BUILD_004"))
+	{
+		SetEventRequirement(TutorialEventRotateViewRight);
+	}
+	else if (QuestId == TEXT("TUT_BUILD_005"))
+	{
+		SetEventRequirement(TutorialEventRotatePlacement);
+	}
+	else if (QuestId == TEXT("TUT_BUILD_006"))
+	{
+		SetEventRequirement(TutorialEventDemolishMode);
+	}
+	else if (QuestId == TEXT("TUT_BUILD_007"))
+	{
+		SetEventRequirement(TutorialEventDemolishRemoved);
+	}
+	else if (QuestId == TEXT("TUT_MINING_002"))
+	{
+		SetEventRequirement(TutorialEventSelectMinerMode);
+	}
+	else if (QuestId == TEXT("TUT_MINING_003"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("MinerMachine"));
+	}
+	else if (QuestId == TEXT("TUT_POWER_001"))
+	{
+		SetEventRequirement(TutorialEventSelectPowerPlantMode);
+	}
+	else if (QuestId == TEXT("TUT_POWER_002"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("PowerPlant"));
+	}
+	else if (QuestId == TEXT("TUT_POWER_003"))
+	{
+		SetEventRequirement(TutorialEventSelectPowerNodeMode);
+	}
+	else if (QuestId == TEXT("TUT_POWER_004"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("PowerGridNode"));
+	}
+	else if (QuestId == TEXT("TUT_POWER_005"))
+	{
+		SetEventRequirement(TutorialEventSelectPowerLineMode);
+	}
+	else if (QuestId == TEXT("TUT_POWER_006") || QuestId == TEXT("TUT_POWER_007"))
+	{
+		SetEventRequirement(TutorialEventPowerLineConnected);
+	}
+	else if (QuestId == TEXT("TUT_POWER_008"))
+	{
+		SetWarehouseRequirement(TEXT("iron_ore"), 1);
+	}
+	else if (QuestId == TEXT("TUT_SMELT_001"))
+	{
+		SetWarehouseRequirement(TEXT("iron_ore"), 10);
+	}
+	else if (QuestId == TEXT("TUT_SMELT_002"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("Smelter"));
+	}
+	else if (QuestId == TEXT("TUT_LOGI_001"))
+	{
+		SetEventRequirement(TutorialEventSelectWarehouseMode);
+	}
+	else if (QuestId == TEXT("TUT_LOGI_002"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("WarehousePort"));
+	}
+	else if (QuestId == TEXT("TUT_LOGI_004"))
+	{
+		SetWarehouseRequirement(TEXT("iron_ore"), 1);
+	}
+	else if (QuestId == TEXT("TUT_LOGI_005"))
+	{
+		SetEventRequirement(TutorialEventSelectConveyorMode);
+	}
+	else if (QuestId == TEXT("TUT_LOGI_007"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("Conveyor"));
+	}
+	else if (QuestId == TEXT("TUT_LOGI_009"))
+	{
+		SetEventRequirement(TutorialEventSelectWarehouseMode);
+	}
+	else if (QuestId == TEXT("TUT_LOGI_010"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("WarehousePort"));
+	}
+	else if (QuestId == TEXT("TUT_LOGI_012"))
+	{
+		SetWarehouseRequirement(TEXT("iron_ingot"), 1);
+	}
+	else if (QuestId == TEXT("TUT_LOGI_014"))
+	{
+		SetWarehouseRequirement(TEXT("iron_ingot"), 1);
+	}
+	else if (QuestId == TEXT("TUT_EXPAND_001"))
+	{
+		SetWarehouseRequirement(TEXT("iron_ingot"), 10);
+	}
+	else if (QuestId == TEXT("TUT_EXPAND_002"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("PowerPlant"));
+	}
+	else if (QuestId == TEXT("TUT_EXPAND_003"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("PowerGridNode"));
+	}
+	else if (QuestId == TEXT("TUT_EXPAND_004"))
+	{
+		SetEventRequirement(TutorialEventPowerLineConnected);
+	}
+	else if (QuestId == TEXT("TUT_EXPAND_005"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("MinerMachine"));
+	}
+	else if (QuestId == TEXT("TUT_EXPAND_006"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("Smelter"));
+	}
+	else if (QuestId == TEXT("TUT_EXPAND_007"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("Conveyor"));
+	}
+	else if (QuestId == TEXT("TUT_EXPAND_008"))
+	{
+		SetWarehouseRequirement(TEXT("iron_ore"), 50);
+	}
+	else if (QuestId == TEXT("TUT_EXPAND_009"))
+	{
+		SetWarehouseRequirement(TEXT("iron_ingot"), 30);
+	}
+
+	return Requirement;
+}
+
+FString DescribeTutorialRequirement(const FTutorialRequirement& Requirement)
+{
+	switch (Requirement.Type)
+	{
+	case ETutorialRequirementType::EventCount:
+		return Requirement.TargetId.IsNone()
+			? FString::Printf(TEXT("event=%s count=%d"), *Requirement.EventId.ToString(), Requirement.RequiredCount)
+			: FString::Printf(TEXT("event=%s target=%s count=%d"), *Requirement.EventId.ToString(), *Requirement.TargetId.ToString(), Requirement.RequiredCount);
+	case ETutorialRequirementType::WarehouseCount:
+		return FString::Printf(TEXT("warehouse item=%s count=%d"), *Requirement.TargetId.ToString(), Requirement.RequiredCount);
+	default:
+		return TEXT("manual test only");
+	}
+}
 }
 
 UQuestManagerSubsystem::UQuestManagerSubsystem()
@@ -94,6 +398,7 @@ void UQuestManagerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	AgentClient = GetGameInstance()->GetSubsystem<UFactoryAgentClientSubsystem>();
 	WarehouseSubsystem = GetGameInstance()->GetSubsystem<UPlayerWarehouseSubsystem>();
 	LoadMainQuestSequence();
+	LoadTutorialQuestTestData();
 	BindAgentClient();
 	BindWarehouse();
 	ActivateCurrentMainQuest();
@@ -236,6 +541,90 @@ FString UQuestManagerSubsystem::RequestProductionSubQuests(const FString& Questi
 	return SendSubQuestRequest(FactoryAgentJsonUtils::WriteJsonObject(CreateProductionPayload(Question)));
 }
 
+void UQuestManagerSubsystem::StartTutorialQuestTest()
+{
+	if (TutorialQuestSteps.IsEmpty())
+	{
+		LOG_LC_W(TEXT("Tutorial quest test could not start because no tutorial quest steps were loaded."));
+		return;
+	}
+
+	bTutorialQuestTestActive = true;
+	CurrentTutorialQuestId = TutorialQuestSteps[0].QuestId;
+	LOG_LC(TEXT("Tutorial quest test started."));
+	LogCurrentTutorialQuestTestState();
+	LogTutorialDialogue(CurrentTutorialQuestId, TEXT("on_start"));
+}
+
+bool UQuestManagerSubsystem::CompleteCurrentTutorialQuestForTest()
+{
+	if (!bTutorialQuestTestActive)
+	{
+		StartTutorialQuestTest();
+		return !CurrentTutorialQuestId.IsEmpty();
+	}
+
+	return AdvanceTutorialQuestStep(true);
+}
+
+void UQuestManagerSubsystem::LogCurrentTutorialQuestTestState() const
+{
+	const FTutorialQuestStep* Step = FindCurrentTutorialQuestStep();
+	if (!Step)
+	{
+		LOG_LC_W(TEXT("Tutorial quest test state: no active step."));
+		return;
+	}
+
+	const FTutorialRequirement Requirement = GetTutorialRequirement(Step->QuestId);
+	LOG_LC(
+		TEXT("Tutorial step [%s] group=%s title=%s description=%s reward=%s requirement=%s"),
+		*Step->QuestId,
+		*Step->Group,
+		*Step->Title,
+		*Step->Description,
+		*Step->Reward,
+		*DescribeTutorialRequirement(Requirement));
+}
+
+void UQuestManagerSubsystem::NotifyTutorialEvent(FName EventId, FName TargetId, int32 DeltaCount)
+{
+	if (!bTutorialQuestTestActive || DeltaCount <= 0)
+	{
+		return;
+	}
+
+	const FTutorialQuestStep* Step = FindCurrentTutorialQuestStep();
+	if (!Step)
+	{
+		return;
+	}
+
+	const FTutorialRequirement Requirement = GetTutorialRequirement(Step->QuestId);
+	if (Requirement.Type != ETutorialRequirementType::EventCount)
+	{
+		return;
+	}
+
+	if (Requirement.EventId != EventId)
+	{
+		return;
+	}
+
+	if (!Requirement.TargetId.IsNone() && Requirement.TargetId != TargetId)
+	{
+		return;
+	}
+
+	LOG_LC(
+		TEXT("Tutorial quest test event matched: quest=%s event=%s target=%s delta=%d"),
+		*Step->QuestId,
+		*EventId.ToString(),
+		*TargetId.ToString(),
+		DeltaCount);
+	AdvanceTutorialQuestStep(false);
+}
+
 void UQuestManagerSubsystem::ActivateCurrentMainQuest()
 {
 	for (int32 Index = 0; Index < MainQuestSequence.Num(); ++Index)
@@ -279,6 +668,68 @@ void UQuestManagerSubsystem::BindWarehouse()
 	}
 
 	WarehouseSubsystem->OnItemAdded.AddDynamic(this, &UQuestManagerSubsystem::HandleWarehouseItemAdded);
+}
+
+void UQuestManagerSubsystem::LoadTutorialQuestTestData()
+{
+	TutorialQuestSteps.Empty();
+	TutorialDialogueLines.Empty();
+	TutorialQuestStepIndexById.Empty();
+	TutorialDialogueByQuestId.Empty();
+	CurrentTutorialQuestId.Empty();
+	bTutorialQuestTestActive = false;
+
+	FString StepsCsvContent;
+	const FString StepsCsvPath = FPaths::Combine(FPaths::ProjectDir(), TutorialQuestStepsCsvRelativePath);
+	if (!FFileHelper::LoadFileToString(StepsCsvContent, *StepsCsvPath))
+	{
+		LOG_LC_W(TEXT("Quest manager could not load tutorial quest steps CSV: %s"), *StepsCsvPath);
+		return;
+	}
+
+	if (!ParseTutorialStepCsv(StepsCsvContent, TutorialQuestSteps))
+	{
+		LOG_LC_W(TEXT("Quest manager could not parse tutorial quest steps CSV: %s"), *StepsCsvPath);
+		return;
+	}
+
+	for (int32 Index = 0; Index < TutorialQuestSteps.Num(); ++Index)
+	{
+		TutorialQuestStepIndexById.Add(TutorialQuestSteps[Index].QuestId, Index);
+	}
+
+	FString DialogueCsvContent;
+	const FString DialogueCsvPath = FPaths::Combine(FPaths::ProjectDir(), TutorialQuestDialogueCsvRelativePath);
+	if (!FFileHelper::LoadFileToString(DialogueCsvContent, *DialogueCsvPath))
+	{
+		LOG_LC_W(TEXT("Quest manager could not load tutorial quest dialogue CSV: %s"), *DialogueCsvPath);
+		return;
+	}
+
+	if (!ParseTutorialDialogueCsv(DialogueCsvContent, TutorialDialogueLines))
+	{
+		LOG_LC_W(TEXT("Quest manager could not parse tutorial quest dialogue CSV: %s"), *DialogueCsvPath);
+		return;
+	}
+
+	for (const FTutorialQuestDialogueLine& Line : TutorialDialogueLines)
+	{
+		TutorialDialogueByQuestId.FindOrAdd(Line.QuestId).Add(Line);
+	}
+
+	for (TPair<FString, TArray<FTutorialQuestDialogueLine>>& Pair : TutorialDialogueByQuestId)
+	{
+		Pair.Value.Sort(
+			[](const FTutorialQuestDialogueLine& Left, const FTutorialQuestDialogueLine& Right)
+			{
+				return Left.LineOrder < Right.LineOrder;
+			});
+	}
+
+	LOG_LC(
+		TEXT("Tutorial quest test data loaded: steps=%d dialogue_lines=%d"),
+		TutorialQuestSteps.Num(),
+		TutorialDialogueLines.Num());
 }
 
 void UQuestManagerSubsystem::LoadMainQuestSequence()
@@ -551,8 +1002,108 @@ bool UQuestManagerSubsystem::IsQuestCompletedByWarehouse(const FQuestState& Ques
 	return true;
 }
 
+bool UQuestManagerSubsystem::AdvanceTutorialQuestStep(bool bFromManualTest)
+{
+	const FTutorialQuestStep* CurrentStep = FindCurrentTutorialQuestStep();
+	if (!CurrentStep)
+	{
+		LOG_LC_W(TEXT("Tutorial quest test advance failed because there is no active step."));
+		return false;
+	}
+
+	LOG_LC(
+		TEXT("Tutorial step completed [%s] title=%s via=%s"),
+		*CurrentStep->QuestId,
+		*CurrentStep->Title,
+		bFromManualTest ? TEXT("manual") : TEXT("gameplay"));
+	LogTutorialDialogue(CurrentStep->QuestId, TEXT("on_complete"));
+
+	if (CurrentStep->NextQuestId.IsEmpty())
+	{
+		LOG_LC(TEXT("Tutorial quest test finished at [%s]."), *CurrentStep->QuestId);
+		CurrentTutorialQuestId.Empty();
+		bTutorialQuestTestActive = false;
+		return true;
+	}
+
+	const int32* NextIndex = TutorialQuestStepIndexById.Find(CurrentStep->NextQuestId);
+	if (!NextIndex || !TutorialQuestSteps.IsValidIndex(*NextIndex))
+	{
+		LOG_LC_W(
+			TEXT("Tutorial quest test could not find next step [%s] after [%s]."),
+			*CurrentStep->NextQuestId,
+			*CurrentStep->QuestId);
+		CurrentTutorialQuestId.Empty();
+		bTutorialQuestTestActive = false;
+		return false;
+	}
+
+	CurrentTutorialQuestId = CurrentStep->NextQuestId;
+	LogCurrentTutorialQuestTestState();
+	LogTutorialDialogue(CurrentTutorialQuestId, TEXT("on_start"));
+	return true;
+}
+
+void UQuestManagerSubsystem::LogTutorialDialogue(const FString& QuestId, const FString& TriggerType) const
+{
+	const TArray<FTutorialQuestDialogueLine>* Lines = TutorialDialogueByQuestId.Find(QuestId);
+	if (!Lines)
+	{
+		return;
+	}
+
+	for (const FTutorialQuestDialogueLine& Line : *Lines)
+	{
+		if (Line.TriggerType != TriggerType)
+		{
+			continue;
+		}
+
+		LOG_LC(
+			TEXT("Tutorial dialogue [%s][%s][%d] %s: %s"),
+			*QuestId,
+			*TriggerType,
+			Line.LineOrder,
+			*Line.Speaker,
+			*Line.Dialogue);
+	}
+}
+
+const FTutorialQuestStep* UQuestManagerSubsystem::FindCurrentTutorialQuestStep() const
+{
+	if (CurrentTutorialQuestId.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	const int32* StepIndex = TutorialQuestStepIndexById.Find(CurrentTutorialQuestId);
+	return StepIndex && TutorialQuestSteps.IsValidIndex(*StepIndex)
+		? &TutorialQuestSteps[*StepIndex]
+		: nullptr;
+}
+
 void UQuestManagerSubsystem::HandleWarehouseItemAdded(FName ItemID, int32 AddedCount, int32 NewTotalCount)
 {
+	if (bTutorialQuestTestActive)
+	{
+		const FTutorialQuestStep* Step = FindCurrentTutorialQuestStep();
+		if (Step)
+		{
+			const FTutorialRequirement Requirement = GetTutorialRequirement(Step->QuestId);
+			if (Requirement.Type == ETutorialRequirementType::WarehouseCount
+				&& Requirement.TargetId == ItemID
+				&& NewTotalCount >= Requirement.RequiredCount)
+			{
+				LOG_LC(
+					TEXT("Tutorial warehouse requirement matched: quest=%s item=%s total=%d"),
+					*Step->QuestId,
+					*ItemID.ToString(),
+					NewTotalCount);
+				AdvanceTutorialQuestStep(false);
+			}
+		}
+	}
+
 	RefreshSubQuestCompletion();
 	RefreshMainQuestCompletion();
 }

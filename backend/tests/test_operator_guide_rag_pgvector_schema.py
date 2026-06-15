@@ -50,6 +50,13 @@ def test_alembic_config_points_to_backend_migrations() -> None:
     assert "script_location = migrations" in alembic_ini.read_text(encoding="utf-8")
 
 
+def test_alembic_env_accepts_factory_database_url_fallback() -> None:
+    env_text = (ROOT / "migrations" / "env.py").read_text(encoding="utf-8")
+
+    assert 'os.environ.get("FACTORY_DATABASE_URL")' in env_text
+    assert "DATABASE_URL or FACTORY_DATABASE_URL" in env_text
+
+
 def test_initial_migration_creates_pgvector_document_table() -> None:
     migration = ROOT / "migrations" / "versions" / "0001_create_manual_rag_documents.py"
     migration_text = migration.read_text(encoding="utf-8")

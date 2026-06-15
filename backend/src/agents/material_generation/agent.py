@@ -1,4 +1,4 @@
-"""Orchestrates the material synthesis process, coordinating validation, classification, and generation via LangGraph."""
+"""LangGraph를 통해 검증, 분류 및 생성을 조정하여 재료 합성 프로세스를 오케스트레이션합니다."""
 
 from __future__ import annotations
 
@@ -19,13 +19,13 @@ logger = logging.getLogger(__name__)
 
 
 class MaterialCreationAgent:
-    """Agent that handles player synthesis attempts by invoking a LangGraph subgraph."""
+    """LangGraph 서브그래프를 호출하여 플레이어의 합성 시도를 처리하는 에이전트입니다."""
 
     agent_id = "material_generation"
     tools = ()
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
-        """Required base agent method. Unused in direct HTTP flow."""
+        """기본 에이전트 필수 메서드입니다. 직접적인 HTTP 흐름에서는 사용되지 않습니다."""
         return "Initiating material synthesis agent."
 
     def fallback(
@@ -33,7 +33,7 @@ class MaterialCreationAgent:
         payload: dict[str, Any],
         context: AgentContext,
     ) -> AgentRunResult:
-        """Required base agent fallback method."""
+        """기본 에이전트 필수 폴백(fallback) 메서드입니다."""
         return AgentRunResult(
             agent=self.agent_id,
             payload={
@@ -48,7 +48,7 @@ class MaterialCreationAgent:
         session: Session,
         request: MaterialCreationRequest,
     ) -> MaterialCreationResponse:
-        """Run the full synthesis pipeline by invoking the LangGraph subgraph."""
+        """LangGraph 서브그래프를 호출하여 전체 합성 파이프라인을 실행합니다."""
         context = AgentContext(
             request_id=f"req_{uuid.uuid4().hex[:10]}",
             session_id=request.player_id,

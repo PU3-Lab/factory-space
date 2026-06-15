@@ -888,8 +888,10 @@ _TEST_PAGE_TEMPLATE = """<!doctype html>
     /* ── 로그 ── */
     .resp-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
     .resp-title h2 { margin: 0; }
-    #log { display: flex; flex-direction: column; gap: 10px; max-height: 380px; overflow-y: auto; }
-    .card { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+    #log { display: flex; flex-direction: column; gap: 10px; height: min(52vh, 520px);
+           min-height: 260px; overflow-y: auto; overflow-x: hidden;
+           overscroll-behavior: contain; scrollbar-gutter: stable; padding-right: 4px; }
+    .card { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
     .card-head { display: flex; justify-content: space-between; align-items: center;
                  padding: 7px 12px; background: #f1f5f9;
                  border-bottom: 1px solid var(--line); gap: 8px; }
@@ -900,7 +902,8 @@ _TEST_PAGE_TEMPLATE = """<!doctype html>
     .t-sent { background: #e0f2fe; color: #0369a1; }
     .t-resp { background: var(--accent-soft); color: var(--accent); }
     .t-err  { background: #fee2e2; color: #b91c1c; }
-    .card pre { margin: 0; padding: 12px; overflow-x: auto; background: #fff;
+    .card pre { margin: 0; padding: 12px; max-height: min(45vh, 420px);
+                overflow: auto; background: #fff; white-space: pre-wrap; word-break: break-word;
                 font-family: Consolas, "Liberation Mono", monospace;
                 font-size: 12px; line-height: 1.55; }
     .jk { color: #0550ae; } .js { color: #0a7a61; }

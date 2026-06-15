@@ -5,6 +5,7 @@
 #include "WarehousePort.generated.h"
 
 class UPlayerWarehouseSubsystem;
+class UDataTable;
 
 UCLASS()
 class WANTED_FACTORY_API AWarehousePort : public AMachineBase
@@ -35,5 +36,10 @@ protected:
 
 private:
 	UPlayerWarehouseSubsystem* GetWarehouse() const;
+	bool IsSolidItem(FName ItemID) const;
+	bool CanStoreSolid(FName ItemID, int32 Count) const;
 	bool StoreInputItem(FName ItemID, int32 Count);
+
+	UPROPERTY(Transient)
+	TObjectPtr<UDataTable> ResourceTable;
 };

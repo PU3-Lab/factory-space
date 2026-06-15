@@ -30,7 +30,9 @@
 #include "UI/UI_MachineInteract.h"
 #include "UI/UI_MainHUD.h"
 #include "UI/UI_Inventory.h"
+#include "Machines/LiquidTank.h"
 #include "Machines/WarehousePort.h"
+#include "PlayerWarehouseSubsystem.h"
 
 AOJJ_Player::AOJJ_Player()
 {
@@ -67,6 +69,14 @@ AOJJ_Player::AOJJ_Player()
 void AOJJ_Player::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>())
+		{
+			WarehouseSubsystem->GrantInitialItems(InitialWarehouseItems);
+		}
+	}
 
 	// 걷기 속도를 권위 있게 적용(BP CharacterMovement의 MaxWalkSpeed 기본값을 덮음 — 단일 출처).
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
@@ -127,6 +137,14 @@ void AOJJ_Player::BeginPlay()
 		if (MainHUDWidgetInstance)
 		{
 			MainHUDWidgetInstance->AddToViewport();
+		}
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->StartTutorialQuestTest();
 		}
 	}
 	
@@ -370,6 +388,7 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
 		{
 			QuestManager->NotifyMainQuestInputAction(TEXT("Move"));
+			QuestManager->NotifyTutorialEvent(TEXT("InputAction"), TEXT("Move"));
 		}
 	}
 }
@@ -580,6 +599,7 @@ void AOJJ_Player::StartJumpAction(const FInputActionValue& Value)
 		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
 		{
 			QuestManager->NotifyMainQuestInputAction(TEXT("Jump"));
+			QuestManager->NotifyTutorialEvent(TEXT("InputAction"), TEXT("Jump"));
 		}
 	}
 }
@@ -607,6 +627,8 @@ void AOJJ_Player::ToggleBuild(const FInputActionValue& Value)
 			if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
 			{
 				QuestManager->NotifyMainQuestBuildModeEntered();
+				QuestManager->NotifyTutorialEvent(TEXT("BuildMode"));
+				QuestManager->NotifyTutorialEvent(TEXT("BuildPreviewSeen"));
 			}
 		}
 	}
@@ -772,6 +794,14 @@ void AOJJ_Player::SetConveyorMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Conveyor);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectConveyorMode"));
+		}
+	}
 }
 
 void AOJJ_Player::SetPipeMode(const FInputActionValue& Value)
@@ -823,6 +853,14 @@ void AOJJ_Player::SetPowerNodeMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerNode);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectPowerNodeMode"));
+		}
+	}
 }
 
 void AOJJ_Player::SetShieldMode(const FInputActionValue& Value)
@@ -842,6 +880,14 @@ void AOJJ_Player::SetPowerLineMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerLine);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectPowerLineMode"));
+		}
+	}
 }
 
 void AOJJ_Player::SetPowerPlantMode(const FInputActionValue& Value)
@@ -851,6 +897,14 @@ void AOJJ_Player::SetPowerPlantMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerPlant);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectPowerPlantMode"));
+		}
+	}
 }
 
 void AOJJ_Player::SetGrinderMode(const FInputActionValue& Value)
@@ -869,6 +923,14 @@ void AOJJ_Player::SetMinerMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Miner);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectMinerMode"));
+		}
+	}
 }
 
 void AOJJ_Player::SetPumpMode(const FInputActionValue& Value)
@@ -887,6 +949,14 @@ void AOJJ_Player::SetSmelterMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Smelter);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectSmelterMode"));
+		}
+	}
 }
 
 // 창고 모드 진입(1키, generic Machine 진입 키 대체). generic SetMachineMode는 보존(미바인딩 시 dead) — 코드 삭제 없음.
@@ -897,6 +967,14 @@ void AOJJ_Player::SetWarehouseMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Warehouse);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectWarehouseMode"));
+		}
+	}
 }
 
 // 철거 모드 진입(X키). 호버 대상 빨강 하이라이트 + 좌클릭 제거.
@@ -907,6 +985,14 @@ void AOJJ_Player::SetDemolishMode(const FInputActionValue& Value)
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Demolish);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("DemolishMode"));
+		}
+	}
 }
 
 // 평판 Foundation 모드 진입(G키 — #196 IA 전환). 다른 모드 핸들러(탱크/파이프)와 동일 구조 —
@@ -942,6 +1028,7 @@ void AOJJ_Player::StartSprint(const FInputActionValue& Value)
 		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
 		{
 			QuestManager->NotifyMainQuestInputAction(TEXT("Sprint"));
+			QuestManager->NotifyTutorialEvent(TEXT("InputAction"), TEXT("Sprint"));
 		}
 	}
 }
@@ -965,9 +1052,25 @@ void AOJJ_Player::BuildPan(const FInputActionValue& Value)
 
 void AOJJ_Player::BuildRotate(const FInputActionValue& Value)
 {
+	const float RotateInput = Value.Get<float>() * -1;
+
 	if (BuildCamera)
 	{
-		BuildCamera->Rotate(Value.Get<float>());
+		BuildCamera->Rotate(RotateInput);
+	}
+
+	if (FMath::IsNearlyZero(RotateInput))
+	{
+		return;
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(
+				RotateInput > 0.0f ? TEXT("RotateViewRight") : TEXT("RotateViewLeft"));
+		}
 	}
 }
 
@@ -977,6 +1080,14 @@ void AOJJ_Player::BuildRotateMachine(const FInputActionValue& Value)
 	if (BuildController)
 	{
 		BuildController->RotateHoverClockwise();
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("RotatePlacement"));
+		}
 	}
 }
 
@@ -1012,30 +1123,30 @@ void AOJJ_Player::SendOperatorGuideRequest()
 void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 {
 	// UI는 로컬 전용 — 멀티플레이에서 비로컬 폰의 입력으로 위젯을 띄우지 않도록 가드.
-	if (!IsLocallyControlled())
-	{
-		return;
-	}
+	if (!IsLocallyControlled()) return;
 
 	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC)
-	{
-		return;
-	}
+	if (!PC) return;
 
-	// 빌드모드 중에는 F 무시 — 빌드 입력/탑다운 카메라와 상호작용 UI를 상호배제(half-state 방지).
-	if (BuildController && BuildController->IsInBuildMode())
-	{
-		return;
-	}
+	if (BuildController && BuildController->IsInBuildMode()) return;
 
-	// 토글 닫기: 뷰포트에 떠 있는 위젯이 있으면 닫는다.
-	// IsValid()에 더해 IsInViewport()까지 보는 이유 — 위젯이 자체 BTN_Close(RemoveFromParent)로
-	// 닫혀도 객체는 GC 전까지 살아 있어 IsValid()만으론 "열림"으로 오판하기 때문.
-	// (자체 닫기 시 입력모드/커서 즉시 복원은 위젯 OnClosed 델리게이트 → RestoreGameInputMode가 처리.)
-	if (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport())
+	if (bIsInventoryOpen || (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()))
 	{
-		CloseMachineInteractWidget(PC);
+		if (MachineInteractWidgetInstance.IsValid())
+		{
+			MachineInteractWidgetInstance->RemoveFromParent();
+			MachineInteractWidgetInstance = nullptr;
+		}
+
+		if (InventoryWidgetInstance)
+		{
+			InventoryWidgetInstance->RemoveFromParent();
+		}
+		bIsInventoryOpen = false; // 락 해제
+		GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle); // 타이머 확실히 소멸
+
+		PC->SetInputMode(FInputModeGameOnly());
+		PC->SetShowMouseCursor(false);
 		return;
 	}
 
@@ -1076,15 +1187,43 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 	{
 		return;
 	}
-	Widget->AddToViewport();
-	// 위젯의 모든 닫힘 경로(특히 자체 BTN_Close) 통지 구독 — 닫히면 입력모드/커서 즉시 복원.
-	Widget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
-	// 머신 참조 전달 — 위젯의 모든 실데이터(입출력/상태/진행도/내구도) 표시가 이 참조에 의존.
 	Widget->SetTargetMachine(Machine);
 	MachineInteractWidgetInstance = Widget;
+	Widget->AddToViewport(); //
+	Widget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
+	const bool bIsWarehousePort = Machine->IsA(AWarehousePort::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse"));
+	const bool bIsLiquidTank = Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("LiquidTank"));
+	if (bIsWarehousePort || bIsLiquidTank)
+	{
+		// 인벤토리 위젯이 아직 없다면 새로 생성
+		if (!InventoryWidgetInstance && InventoryWidgetClass)
+		{
+			InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
+		}
 
-	// 열 때: 마우스로 위젯과 상호작용 가능하도록 GameAndUI + 커서 표시.
-	PC->SetInputMode(FInputModeGameAndUI());
+		if (InventoryWidgetInstance)
+		{
+			InventoryWidgetInstance->SetItemFormFilter(bIsLiquidTank ? FName(TEXT("liquid")) : FName(TEXT("solid")));
+			InventoryWidgetInstance->AddToViewport();
+			InventoryWidgetInstance->RefreshInventoryWindow(); // 최초 1회 생성 레이아웃 틀 짜기
+			bIsInventoryOpen = true;
+			
+			GetWorldTimerManager().SetTimer(
+			   InventoryRefreshTimerHandle, 
+			   this, 
+			   &AOJJ_Player::UpdateInventoryRealtime, 
+			   0.1f, 
+			   true
+			);
+            
+			UE_LOG(LogTemp, Log, TEXT("[F키 성공] 창고와 가방 창을 동시에 성공적으로 활성화했습니다."));
+		}
+	}
+
+	// 마우스 가로채기 억까(TakeWidget)가 완벽히 배제된 정석 프리 인풋 세팅
+	FInputModeGameAndUI InputModeData;
+	InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	PC->SetInputMode(InputModeData);
 	PC->SetShowMouseCursor(true);
 }
 
@@ -1167,10 +1306,10 @@ void AOJJ_Player::TriggerHUDAIGuideToggle()
 
 void AOJJ_Player::TriggerInventoryToggle()
 {
-	if (BuildController && BuildController->IsInBuildMode()) return;
+    if (BuildController && BuildController->IsInBuildMode()) return;
 
-	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC) return;
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    if (!PC) return;
 
 	// 1. 이미 열려 있다면 닫기
 	if (bIsInventoryOpen)
@@ -1179,44 +1318,97 @@ void AOJJ_Player::TriggerInventoryToggle()
 		{
 			InventoryWidgetInstance->RemoveFromParent();
 			bIsInventoryOpen = false;
+
+			if (UGameInstance* GameInstance = GetGameInstance())
+			{
+				if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+				{
+					QuestManager->NotifyTutorialEvent(TEXT("InventoryClose"));
+				}
+			}
 		}
 		
 		PC->SetInputMode(FInputModeGameOnly());
 		PC->SetShowMouseCursor(false);
 
-		GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
-		return;
-	}
+       GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
+       return;
+    }
+	
+    UWorld* World = GetWorld();
+    if (!Camera || !World) return;
 
-	// 2. 레이저 검사 (창고 포트인지 확인)
-	UWorld* World = GetWorld();
-	if (!Camera || !World) return;
+    FVector TraceStart = Camera->GetComponentLocation();
+    FVector TraceEnd = TraceStart + Camera->GetForwardVector() * MaxInteractDistance;
+    FHitResult Hit;
+    FCollisionQueryParams TraceParams(FName(TEXT("OJJInventoryInteract")), false, this);
 
-	FVector TraceStart = Camera->GetComponentLocation();
-	FVector TraceEnd = TraceStart + Camera->GetForwardVector() * MaxInteractDistance;
-	FHitResult Hit;
-	FCollisionQueryParams TraceParams(FName(TEXT("OJJInventoryInteract")), false, this);
+    bool bHit = World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, TraceParams);
+    
+    // 창고 컴포넌트 구조체 캐스팅
+    bool bIsValidWarehouse = false;
+    FName InventoryFormFilter = NAME_None;
+    if (bHit && Hit.GetActor())
+    {
+        // AWarehousePort 뿐만 아니라 일반 머신 베이스 계열인지도 체크
+        if (Hit.GetActor()->IsA(AWarehousePort::StaticClass()) || Hit.GetActor()->GetName().Contains(TEXT("Warehouse")))
+        {
+            bIsValidWarehouse = true;
+            InventoryFormFilter = TEXT("solid");
+        }
+        else if (Hit.GetActor()->IsA(ALiquidTank::StaticClass()) || Hit.GetActor()->GetName().Contains(TEXT("LiquidTank")))
+        {
+            bIsValidWarehouse = true;
+            InventoryFormFilter = TEXT("liquid");
+        }
+        else if (Hit.GetActor()->IsA(AMachineBase::StaticClass()))
+        {
+            bIsValidWarehouse = true;
+        }
+    }
 
-	bool bHit = World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, TraceParams);
-	if (!bHit) return;
+    // 테스트 환경 편의를 위해, 바라보고 있는 액터가 감지가 안 되더라도 
+    // 최소한의 방어선만 치고 UI가 무조건 생성되도록 우회 통과시킵니다.
+    if (!bIsValidWarehouse)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[가방 경고] 시선 끝에 창고(WarehousePort)가 정확히 조준되지 않았습니다! (디버깅을 위해 생성을 강제 진행합니다)"));
+    }
 
-	AWarehousePort* WarehouseMachine = Cast<AWarehousePort>(Hit.GetActor());
-	if (!WarehouseMachine) return;
+    // 3. 인벤토리 오픈 및 UI 생성
+    if (!InventoryWidgetInstance && InventoryWidgetClass)
+    {
+       InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
+    }
 
-	// 3. 창고 포트 확인 완료 시 인벤토리 오픈
-	if (!InventoryWidgetInstance && InventoryWidgetClass)
-	{
-		InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
-	}
+    if (InventoryWidgetInstance)
+    {
+       InventoryWidgetInstance->SetItemFormFilter(InventoryFormFilter);
+       InventoryWidgetInstance->AddToViewport();
+       InventoryWidgetInstance->RefreshInventoryWindow();
+       bIsInventoryOpen = true;
+       
+       // UI 포커스 및 인풋 모드 설정
+       FInputModeGameAndUI InputModeData;
+       InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+       PC->SetInputMode(InputModeData);
+       PC->SetShowMouseCursor(true);
 
 	if (InventoryWidgetInstance)
 	{
 		InventoryWidgetInstance->RefreshInventoryWindow();
 		InventoryWidgetInstance->AddToViewport();
 		bIsInventoryOpen = true;
+
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+			{
+				QuestManager->NotifyTutorialEvent(TEXT("InventoryOpen"));
+			}
+		}
 		
-		PC->SetInputMode(FInputModeGameAndUI());
-		PC->SetShowMouseCursor(true);
+		// 위젯 자체에 강제로 마우스 포커스를 심어 드래그 스타트 신호 보호
+		InventoryWidgetInstance->SetKeyboardFocus();
 
 		GetWorldTimerManager().SetTimer(
 			InventoryRefreshTimerHandle, 
@@ -1227,12 +1419,35 @@ void AOJJ_Player::TriggerInventoryToggle()
 		);
 	}
 }
+}
+
+void AOJJ_Player::OJJ_TutorialAdvance()
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->CompleteCurrentTutorialQuestForTest();
+		}
+	}
+}
+
+void AOJJ_Player::OJJ_TutorialLog()
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->LogCurrentTutorialQuestTestState();
+		}
+	}
+}
 
 void AOJJ_Player::UpdateInventoryRealtime()
 {
 	if (bIsInventoryOpen && InventoryWidgetInstance)
 	{
-		InventoryWidgetInstance->RefreshInventoryWindow();
+		InventoryWidgetInstance->UpdateSlotQuantitiesOnly();
 	}
 	else
 	{

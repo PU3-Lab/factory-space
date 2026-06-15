@@ -1,4 +1,4 @@
-"""Input normalization and hashing logic for material generation."""
+"""재료 생성을 위한 입력 정규화 및 해싱 로직입니다."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from agents.material_generation.schemas import (
 
 
 def normalize_inputs(inputs: list[InputItemSchema]) -> list[dict[str, Any]]:
-    """Normalize input items by merging duplicate item_ids, summing quantities, and sorting by item_id."""
+    """중복된 item_id를 병합하고 수량을 합산한 뒤, item_id 기준으로 정렬하여 입력 아이템을 정규화합니다."""
     merged: dict[str, int] = {}
     for item in inputs:
         merged[item.item_id] = merged.get(item.item_id, 0) + item.qty
@@ -27,7 +27,7 @@ def generate_experiment_hash(
     normalized_inputs: list[dict[str, Any]],
     process_conditions: ProcessConditionsSchema,
 ) -> str:
-    """Generate a stable sha256 hash for an experiment combination."""
+    """실험 조합에 대한 고유하고 안정적인 sha256 해시를 생성합니다."""
     inputs_str = "|".join(
         f"{item['item_id']}:{item['qty']}" for item in normalized_inputs
     )
@@ -44,8 +44,8 @@ def generate_experiment_hash(
 
 
 def generate_material_hash(result: MaterialProposalResult) -> str:
-    """Generate a stable sha256 hash for a generated material's properties."""
-    # Round properties to 1 decimal place to tolerate minor LLM balance score variations
+    """생성된 재료의 속성에 대한 고유하고 안정적인 sha256 해시를 생성합니다."""
+    # 미세한 LLM 밸런스 점수 변동을 수용하기 위해 속성 값을 소수점 첫째 자리에서 반올림합니다.
     props_str = (
         f"strength:{result.properties.strength:.1f}|"
         f"conductivity:{result.properties.conductivity:.1f}|"

@@ -1,4 +1,4 @@
-"""Unit tests for the RecipePreValidator."""
+"""RecipePreValidator에 대한 단위 테스트입니다."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Deterministic validation of inputs before running optimization/synthesis."""
+"""최적화/합성을 실행하기 전 입력값에 대한 결정론적 검증입니다."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ VALID_MACHINES = {"Smelter", "Grinder", "Synthesizer"}
 
 
 class RecipePreValidator:
-    """Performs static checks on materials, quantities, and machine types."""
+    """재료, 수량 및 머신 유형에 대해 정적 검사를 수행합니다."""
 
     @classmethod
     def validate_inputs(
@@ -21,7 +21,7 @@ class RecipePreValidator:
         machine_type: str,
         normalized_inputs: list[dict[str, Any]],
     ) -> str | None:
-        """Validate input parameters. Returns error code if invalid, else None."""
+        """입력 파라미터를 검증합니다. 유효하지 않은 경우 에러 코드를 반환하고, 유효한 경우 None을 반환합니다."""
         if machine_type not in VALID_MACHINES:
             return "invalid_machine"
 
