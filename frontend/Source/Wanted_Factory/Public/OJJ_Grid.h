@@ -682,6 +682,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Water")
 	bool IsCellWater(FIntPoint Cell) const;
 
+	// 셀을 덮는 점유 액체 자원(WaterArea, form=liquid)의 수면 Z를 반환. 그런 액터가 없으면 false.
+	// #182 펌프 물위 배치·파이프 수면 Z의 공용 단일원 — per-puddle(WaterArea별 액터 Z) 자동(WA1/WA2 다른 수면).
+	// ⚠️ 수면 = WaterArea 액터 Z(GetActorLocation().Z). plane 메시 시각 오프셋과 별개 — 게이트/안착 기준은 액터 Z.
+	// "교집합" 정책: 분류 water 셀(IsCellWater)이라도 WaterArea가 안 덮으면 false → 호출자가 거부(펌프=교집합만 허용).
+	UFUNCTION(BlueprintPure, Category = "Grid|Water")
+	bool GetWaterSurfaceZAtCell(FIntPoint Cell, float& OutSurfaceZ) const;
+
 	// 지형 높이 베이크 — GridSize 전 셀 ↓트레이스로 buildable/blocked/void/water 재계산. BeginPlay 폴백 + 콘솔 재호출.
 	// bVerbose: 평탄(바닥)이 아닌 셀마다 (좌표/hit/Z/부호델타/분류)를 로그(캡 있음) — 큐브 등 베이크 진단용.
 	// bWriteCache: 분류 결과를 PackedCellClasses(+선택 GroundZ)로 패킹하고 시그니처 기록(에디터 RebakeAndCache 경로).
@@ -974,7 +981,8 @@ bool OJJ_BuildConveyorPlacementPath(
 	TArray<FIntPoint>& OutPathCells,
 	FString& OutReason,
 	bool bAllowConveyorOverpass = false,
-	bool bAllowLiquidMachines = false) const;
+	bool bAllowLiquidMachines = false,
+	bool bAllowWaterCells = false) const;
 
 	// 주어진 경로가 배치 가능한지만 판정(예약셀 산출 없이 OJJ_CollectConveyorReservedCells 래핑). C++ 전용.
 	bool OJJ_CanPlaceConveyorPath(const TArray<FIntPoint>& PathCells) const;

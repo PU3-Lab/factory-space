@@ -54,6 +54,18 @@ AResourceBase* APump::FindAdjacentWater(const AOJJ_Grid* Grid, FIntPoint Origin,
 		}
 	}
 
+	// #182 발밑 우선: 펌프가 물 위(footprint가 WaterArea∩분류 water)면 발밑 수원을 채택한다.
+	// 마른 땅+인접 물(아래 폴백)보다 먼저 — 물 위 배치 시 발밑 WaterArea를 LinkedResource로 연결.
+	// 발밑에 form=liquid가 없으면(육상 펌프) 아무 영향 없이 인접 검사로 폴백 → 기존 모델 회귀 0.
+	for (const FIntPoint& Cell : Footprint)
+	{
+		AResourceBase* Under = Cast<AResourceBase>(Grid->GetActorAtCell(Cell));
+		if (Under && Under->HasForm(LiquidFormName))
+		{
+			return Under;
+		}
+	}
+
 	static const FIntPoint Dirs[] = {
 		FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1)
 	};
