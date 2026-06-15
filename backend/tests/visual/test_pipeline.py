@@ -139,3 +139,24 @@ def test_pipeline_handles_missing_material_gracefully(
         VisualAssetPipeline.session_factory = None
         VisualAssetPipeline._image_adapter = None
         VisualAssetPipeline._storage_adapter = None
+
+
+def test_pipeline_raises_on_unsupported_storage_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agents.material_generation.visual_pipeline import _default_storage_adapter
+
+    monkeypatch.setenv("FACTORY_IMAGE_STORAGE_BACKEND", "unknown_backend")
+    with pytest.raises(ValueError, match="Unsupported image storage backend"):
+        _default_storage_adapter()
+
+
+def test_pipeline_returns_noop_storage_on_noop_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agents.material_generation.visual_pipeline import _default_storage_adapter
+    from visual.storage import NoopStorageAdapter
+
+    monkeypatch.setenv("FACTORY_IMAGE_STORAGE_BACKEND", "noop")
+    adapter = _default_storage_adapter()
+    assert isinstance(adapter, NoopStorageAdapter)

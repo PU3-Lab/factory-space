@@ -60,6 +60,11 @@ class TestResizeToProfile:
         img = Image.open(io.BytesIO(result))
         assert img.size == (THUMBNAIL.width, THUMBNAIL.height)
 
+    def test_resize_to_identical_profile_returns_original_bytes(self) -> None:
+        master = _png_bytes(MASTER.width, MASTER.height)
+        result = resize_to_profile(master, MASTER)
+        assert result is master
+
 
 class TestOpenAIImageAdapter:
     def test_returns_none_when_api_key_missing(self) -> None:

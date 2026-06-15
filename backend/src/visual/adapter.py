@@ -81,12 +81,15 @@ def create_image_adapter(settings: ImageGenSettings) -> ImageGenerationAdapter:
 
 def resize_to_profile(master_bytes: bytes, profile: ImageProfile) -> bytes:
     """Downscale a master image to the given profile's dimensions and format."""
-    img = Image.open(io.BytesIO(master_bytes)).resize(
+    img = Image.open(io.BytesIO(master_bytes))
+    if img.size == (profile.width, profile.height) and img.format == profile.format:
+        return master_bytes
+    resized = img.resize(
         (profile.width, profile.height),
         Image.Resampling.LANCZOS,
     )
     buf = io.BytesIO()
-    img.save(buf, format=profile.format)
+    resized.save(buf, format=profile.format)
     return buf.getvalue()
 
 

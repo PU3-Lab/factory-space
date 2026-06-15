@@ -115,7 +115,13 @@ def _default_image_adapter() -> ImageGenerationAdapter:
 
 
 def _default_storage_adapter() -> ImageStorageAdapter:
-    backend = os.environ.get("FACTORY_IMAGE_STORAGE_BACKEND", "local").strip().lower()
+    backend_raw = os.environ.get("FACTORY_IMAGE_STORAGE_BACKEND", "local")
+    backend = backend_raw.strip().lower()
     if backend == "local":
         return LocalFileStorageAdapter(base_path=_DEFAULT_STORAGE_PATH)
-    return NoopStorageAdapter()
+    if backend == "noop":
+        return NoopStorageAdapter()
+    raise ValueError(
+        f"Unsupported image storage backend: {backend_raw!r}. "
+        f"Supported backends are 'local' or 'noop'."
+    )
