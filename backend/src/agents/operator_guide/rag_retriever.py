@@ -9,7 +9,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
+
+RetrievalConfidence = Literal["high", "medium", "low"]
 
 
 class QueryEmbeddingProvider(Protocol):
@@ -61,6 +63,10 @@ class ManualRagRetrievalResult:
     top_score: float | None
     matched_documents: int
     context_text: str
+    # confidence는 LLM 감상이 아니라 검색 점수와 매칭 신호를 기준으로 backend가 계산한다.
+    confidence: RetrievalConfidence
+    confidence_reason: str
+    retrieval_metadata: dict[str, object]
 
 
 class ManualRagRetriever:
@@ -88,6 +94,7 @@ class ManualRagRetriever:
             query_embedding,
             top_k=self._settings.top_k,
         )
+        confidence_result = _calculate_confidence(query, results)
         return ManualRagRetrievalResult(
             query=query,
             results=results,
@@ -97,6 +104,9 @@ class ManualRagRetriever:
                 results,
                 max_chars=self._settings.max_context_chars,
             ),
+            confidence=confidence_result.confidence,
+            confidence_reason=confidence_result.reason,
+            retrieval_metadata=confidence_result.metadata,
         )
 
     def _embed_query(self, query: str) -> list[float] | None:
@@ -107,12 +117,84 @@ class ManualRagRetriever:
 
 
 def _empty_result(query: str) -> ManualRagRetrievalResult:
+    confidence_result = _calculate_confidence(query, [])
     return ManualRagRetrievalResult(
         query=query,
         results=[],
         top_score=None,
         matched_documents=0,
         context_text="",
+        confidence=confidence_result.confidence,
+        confidence_reason=confidence_result.reason,
+        retrieval_metadata=confidence_result.metadata,
+    )
+
+
+@dataclass(frozen=True)
+class _ConfidenceResult:
+    confidence: RetrievalConfidence
+    reason: str
+    metadata: dict[str, object]
+
+
+def _calculate_confidence(
+    query: str,
+    results: list[ManualRagSearchResult],
+) -> _ConfidenceResult:
+    top_score = results[0].score if results else None
+    direct_match = _has_direct_match(query, results)
+    metadata = {
+        "top_score": top_score,
+        "matched_documents": len(results),
+        "direct_match": direct_match,
+    }
+
+    if top_score is None:
+        return _ConfidenceResult(
+            confidence="low",
+            reason="no_retrieval_results",
+            metadata=metadata,
+        )
+    if top_score >= 0.85 and direct_match:
+        return _ConfidenceResult(
+            confidence="high",
+            reason="direct_match_high_score",
+            metadata=metadata,
+        )
+    if top_score >= 0.65:
+        return _ConfidenceResult(
+            confidence="medium",
+            reason="related_documents_medium_score",
+            metadata=metadata,
+        )
+    return _ConfidenceResult(
+        confidence="low",
+        reason="weak_retrieval_score",
+        metadata=metadata,
+    )
+
+
+def _has_direct_match(query: str, results: list[ManualRagSearchResult]) -> bool:
+    normalized_query = _normalize_match_text(query)
+    return any(
+        token
+        for result in results
+        for token in (
+            _normalize_match_text(result.title),
+            _normalize_match_text(result.doc_id),
+            _normalize_match_text(result.source_row_id),
+        )
+        if token and token in normalized_query
+    )
+
+
+def _normalize_match_text(value: str) -> str:
+    return (
+        value.lower()
+        .replace("_", " ")
+        .replace("-", " ")
+        .replace(":", " ")
+        .strip()
     )
 
 

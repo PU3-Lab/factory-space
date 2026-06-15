@@ -111,6 +111,51 @@ def test_retriever_keeps_source_metadata_in_results() -> None:
     assert source.metadata == {"record_type": "equipment"}
 
 
+def test_retriever_marks_high_confidence_for_direct_high_score_match() -> None:
+    store = FakeSearchStore([_result("recipe:iron_ingot", "iron ingot", 0.91)])
+
+    result = ManualRagRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        search_store=store,
+    ).retrieve("How do I make iron ingot?")
+
+    assert result.confidence == "high"
+    assert "direct_match" in result.confidence_reason
+    assert result.retrieval_metadata == {
+        "top_score": 0.91,
+        "matched_documents": 1,
+        "direct_match": True,
+    }
+
+
+def test_retriever_marks_medium_confidence_for_related_search_results() -> None:
+    store = FakeSearchStore([_result("equipment:smelter", "smelter", 0.72)])
+
+    result = ManualRagRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        search_store=store,
+    ).retrieve("Why is my production not working?")
+
+    assert result.confidence == "medium"
+    assert "related_documents" in result.confidence_reason
+    assert result.retrieval_metadata["direct_match"] is False
+
+
+def test_retriever_marks_low_confidence_without_search_results() -> None:
+    result = ManualRagRetriever(
+        embedding_provider=FakeEmbeddingProvider(),
+        search_store=FakeSearchStore([]),
+    ).retrieve("unknown question")
+
+    assert result.confidence == "low"
+    assert result.confidence_reason == "no_retrieval_results"
+    assert result.retrieval_metadata == {
+        "top_score": None,
+        "matched_documents": 0,
+        "direct_match": False,
+    }
+
+
 def _result(
     doc_id: str,
     title: str,
