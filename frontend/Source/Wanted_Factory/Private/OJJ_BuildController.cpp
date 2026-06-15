@@ -103,6 +103,28 @@ namespace
 		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
 		{
 			QuestManager->NotifyMainQuestMachinePlaced(MachineType);
+			QuestManager->NotifyTutorialEvent(TEXT("PlaceMachine"), MachineType);
+		}
+	}
+
+	void NotifyTutorialQuestEvent(UObject* Context, FName EventId)
+	{
+		if (!Context || EventId.IsNone())
+		{
+			return;
+		}
+
+		UGameInstance* GameInstance = Context->GetWorld()
+			? Context->GetWorld()->GetGameInstance()
+			: nullptr;
+		if (!GameInstance)
+		{
+			return;
+		}
+
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(EventId);
 		}
 	}
 }
@@ -803,6 +825,7 @@ void AOJJ_BuildController::DemolishUnderCursor()
 
 	if (bRemoved)
 	{
+		NotifyTutorialQuestEvent(this, TEXT("DemolishRemoved"));
 		// 연속 철거: 셀이 비었으니 호버 즉시 갱신(sentinel 리셋 → 다음 UpdateMouseHover에서 빈 셀로 리빌드).
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 		UpdateMouseHover();
@@ -1688,6 +1711,7 @@ void AOJJ_BuildController::CommitPowerLineDrag()
 	PowerLine->ConfigurePowerLine(SourceMachine, TargetMachine);
 	FactoryManager->UpdatePowerGrid();
 	PowerLine->UpdateLineVisual();
+	NotifyTutorialQuestEvent(this, TEXT("PowerLineConnected"));
 }
 
 void AOJJ_BuildController::AppendConveyorPathTo(FIntPoint TargetCell)
