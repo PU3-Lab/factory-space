@@ -5,6 +5,7 @@
 #include "PlayerWarehouseSubsystem.h"
 #include "Resource/ResourceData.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Wanted_Factory.h"
 
 ALiquidTank::ALiquidTank()
 {
@@ -45,6 +46,12 @@ void ALiquidTank::OnConstruction(const FTransform& Transform)
 
 void ALiquidTank::SetSelectedOutputLiquid(FName ItemID)
 {
+	if (!ItemID.IsNone() && !IsLiquidItem(ItemID))
+	{
+		LOG_SSR_W(TEXT("Liquid tank output rejected non-liquid item: %s"), *ItemID.ToString());
+		return;
+	}
+
 	SelectedOutputLiquidID = ItemID;
 	SyncDisplayedBuffer();
 	UpdateDebugBufferText();

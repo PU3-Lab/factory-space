@@ -100,6 +100,17 @@ bool OJJ_IsInFrontOfMachine(const AOJJ_Grid* Grid, const AMachineBase* Machine, 
 	return OJJ_GetMachineForwardDotToCell(Grid, Machine, Cell) > OJJ_PortDotThreshold;
 }
 
+bool OJJ_IsLiquidTransportMachine(const AMachineBase* Machine)
+{
+	if (!Machine)
+	{
+		return false;
+	}
+
+	const FName MachineType = Machine->GetMachineType();
+	return MachineType == TEXT("Pump") || MachineType == TEXT("LiquidTank");
+}
+
 bool OJJ_IsMachineBackOutputPair(
 	const AOJJ_Grid* Grid,
 	const AMachineBase* Machine,
@@ -341,6 +352,11 @@ bool OJJ_CollectConveyorReservedCells(
 
 	AMachineBase* StartMachine = OJJ_GetMachineAtCell(OccupiedCells, PathCells[0]);
 	const TArray<FIntPoint>* StartMachineCells = StartMachine ? ActorToCells.Find(StartMachine) : nullptr;
+	if (OJJ_IsLiquidTransportMachine(StartMachine))
+	{
+		OutReason = TEXT("Conveyor cannot connect to liquid machines. Use pipes for Pump and LiquidTank.");
+		return false;
+	}
 	// 포트 없는 머신(송전탑/발전소/차폐장 등)은 컨베이어 endpoint 불가 — 출력 포트 0이면 송신 불가.
 	if (!StartMachine || !StartMachineCells
 		|| StartMachine->GetOutputPortCount() <= 0
@@ -362,6 +378,12 @@ bool OJJ_CollectConveyorReservedCells(
 		bEndsOnMachine,
 		OutReason))
 	{
+		return false;
+	}
+
+	if (OJJ_IsLiquidTransportMachine(EndMachine))
+	{
+		OutReason = TEXT("Conveyor cannot connect to liquid machines. Use pipes for Pump and LiquidTank.");
 		return false;
 	}
 
