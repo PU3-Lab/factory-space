@@ -32,10 +32,21 @@ class MaterialProposalGenerator:
         normalized_inputs: list[dict[str, Any]],
         process_conditions: ProcessConditionsSchema,
         similar_experiments: list[dict[str, Any]],
+        derived_state: str = "solid",
+        derived_category: str = "alloy",
     ) -> str:
         """LLM을 위한 지시 프롬프트를 구성합니다."""
         inputs_str = ", ".join(
             f"{item['item_id']} (qty: {item['qty']})" for item in normalized_inputs
+        )
+
+        naming_guide = (
+            f"이 물질의 분류는 '{derived_category}', 물리적 상태는 '{derived_state}'입니다.\n"
+            "이름은 실제 화학 물질·신소재처럼, 해당 상태가 연상되는 한글 명칭으로 지으십시오.\n"
+            "- 고체(solid): '~정', '~합금', '~석'\n"
+            "- 액체(liquid): '~용액', '~유', '~액'\n"
+            "- 기체(gas): '~기체', '~가스', '~증기'\n"
+            "- 플라즈마(plasma): '~플라즈마', '~이온체', '~화염체'\n"
         )
 
         similar_context = ""
@@ -59,6 +70,7 @@ class MaterialProposalGenerator:
             f"- 입력 재료 조합: {inputs_str}\n"
             f"- 공정 조건: 온도={process_conditions.temperature}, 압력={process_conditions.pressure}, 촉매={process_conditions.catalyst or '없음'}\n\n"
             f"{similar_context}\n"
+            f"{naming_guide}\n"
             "이 조합의 과학적, 공학적 의미를 분석하여 적절한 신소재 초안을 제안해 주십시오.\n"
             "결과는 반드시 아래의 JSON 포맷 형식을 엄격하게 준수하여 하나의 JSON 객체로만 반환하십시오.\n"
             "마크다운 펜스(```json)나 부가 설명은 절대 쓰지 마십시오.\n\n"
@@ -109,10 +121,17 @@ class MaterialProposalGenerator:
         normalized_inputs: list[dict[str, Any]],
         process_conditions: ProcessConditionsSchema,
         similar_experiments: list[dict[str, Any]],
+        derived_state: str = "solid",
+        derived_category: str = "alloy",
     ) -> MaterialProposal:
         """제안을 얻기 위해 LLM을 호출하며, 실패 시 강력한 폴백을 실행합니다."""
         prompt = self._build_prompt(
-            machine_type, normalized_inputs, process_conditions, similar_experiments
+            machine_type,
+            normalized_inputs,
+            process_conditions,
+            similar_experiments,
+            derived_state,
+            derived_category,
         )
 
         try:
@@ -145,8 +164,9 @@ class MaterialProposalGenerator:
             reason="LLM 생성 실패 또는 비가용 상태로 인한 기본 fallback 동작",
             result=MaterialProposalResult(
                 id_hint=f"mat_{id_hint}_alloy",
-                name=f"{compound_name} 합금 (Fallback)",
+                name=f"{compound_name} 합금",
                 category="alloy",
+                state="solid",
                 rarity="common",
                 description="기본 합성 공정으로 생성된 대체 합금 물질입니다.",
                 properties=MaterialProperties(
