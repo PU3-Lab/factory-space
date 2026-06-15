@@ -858,7 +858,7 @@ void AOJJ_Player::BuildPan(const FInputActionValue& Value)
 
 void AOJJ_Player::BuildRotate(const FInputActionValue& Value)
 {
-	const float RotateInput = Value.Get<float>();
+	const float RotateInput = Value.Get<float>() * -1;
 
 	if (BuildCamera)
 	{
@@ -875,7 +875,7 @@ void AOJJ_Player::BuildRotate(const FInputActionValue& Value)
 		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
 		{
 			QuestManager->NotifyTutorialEvent(
-				RotateInput < 0.0f ? TEXT("RotateViewLeft") : TEXT("RotateViewRight"));
+				RotateInput > 0.0f ? TEXT("RotateViewRight") : TEXT("RotateViewLeft"));
 		}
 	}
 }

@@ -11,9 +11,9 @@ TUT_BUILD_004,TUT_BUILD_005,tutorial_build,화면 오른쪽 회전,"E를 눌러 
 TUT_BUILD_005,TUT_BUILD_006,tutorial_build,설치물 회전,"R을 눌러 설치물 방향을 회전하세요.",,
 TUT_BUILD_006,TUT_BUILD_007,tutorial_build,철거 모드 진입,"X를 눌러 철거 모드로 전환하세요.",,
 TUT_BUILD_007,TUT_MINING_001,tutorial_build,탈출 포드 철거,"탈출 포드를 철거해 자재를 회수하세요.",iron ingot 10
-TUT_MINING_001,TUT_MINING_002,tutorial_mining,주변 철 광맥 확인,"주변의 철 광맥을 찾아 채굴 가능한 지점을 확인하세요.",,
+TUT_MINING_001,TUT_MINING_002,tutorial_mining,주변 철 광맥 확인,"주변의 철 광맥을 찾아 채굴기를 설치할 수 있는 지점을 확인하세요.",,
 TUT_MINING_002,TUT_MINING_003,tutorial_mining,채굴기 선택,"하단 UI 또는 단축키로 채굴기를 선택하세요.",,
-TUT_MINING_003,TUT_POWER_001,tutorial_mining,채굴기 설치 완료,"채굴기를 설치해 자원 채굴을 시작할 준비를 마치세요.",iron ingot 10
+TUT_MINING_003,TUT_POWER_001,tutorial_mining,채굴기 설치 완료,"철 광맥 옆에 채굴기를 설치해 자원 채굴을 시작할 준비를 마치세요.",iron ingot 10
 TUT_POWER_001,TUT_POWER_002,tutorial_power,발전소 선택,"하단 UI 또는 단축키로 발전소를 선택하세요.",,
 TUT_POWER_002,TUT_POWER_003,tutorial_power,발전소 설치 완료,"발전소를 설치해 전력 생산 기반을 확보하세요.",iron ingot 10
 TUT_POWER_003,TUT_POWER_004,tutorial_power,송전탑 선택,"하단 UI 또는 단축키로 송전탑을 선택하세요.",,

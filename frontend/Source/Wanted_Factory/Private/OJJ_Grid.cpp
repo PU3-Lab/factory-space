@@ -332,7 +332,8 @@ bool OJJ_CollectConveyorReservedCells(
 	AMachineBase** OutTargetMachine = nullptr,
 	// F4-3: true면 컨베이어 점유 셀을 타넘기(오버패스)로 허용·예약(파이프 전용). false(기본)는 기존
 	// 컨베이어 동작 그대로 — 컨베이어 배치는 이 인자를 안 넘기므로 수치/판정 완전 항등.
-	bool bAllowConveyorOverpass = false)
+	bool bAllowConveyorOverpass = false,
+	bool bAllowLiquidMachines = false)
 {
 	OutReservedCells.Reset();
 	if (OutSourceMachine)
@@ -352,7 +353,7 @@ bool OJJ_CollectConveyorReservedCells(
 
 	AMachineBase* StartMachine = OJJ_GetMachineAtCell(OccupiedCells, PathCells[0]);
 	const TArray<FIntPoint>* StartMachineCells = StartMachine ? ActorToCells.Find(StartMachine) : nullptr;
-	if (OJJ_IsLiquidTransportMachine(StartMachine))
+	if (!bAllowLiquidMachines && OJJ_IsLiquidTransportMachine(StartMachine))
 	{
 		OutReason = TEXT("Conveyor cannot connect to liquid machines. Use pipes for Pump and LiquidTank.");
 		return false;
@@ -381,7 +382,7 @@ bool OJJ_CollectConveyorReservedCells(
 		return false;
 	}
 
-	if (OJJ_IsLiquidTransportMachine(EndMachine))
+	if (!bAllowLiquidMachines && OJJ_IsLiquidTransportMachine(EndMachine))
 	{
 		OutReason = TEXT("Conveyor cannot connect to liquid machines. Use pipes for Pump and LiquidTank.");
 		return false;
@@ -2143,7 +2144,12 @@ bool AOJJ_Grid::OJJ_BuildPipePlacementPath(const TArray<FIntPoint>& DragCells,
 	// 정규화는 컨베이어와 완전 동일(머신 시작 back-output 정규화 / 인접 시작 머신 셀 선두 삽입) — 위임.
 	// F4-3: 내부 수집 검증도 오버패스 허용으로(true) — 안 그러면 정규화 단계 수집기(기본 false)가
 	// 컨베이어 교차 셀을 점유 거부해 ValidatePipePlacement의 true 호출에 도달 못 함.
-	return OJJ_BuildConveyorPlacementPath(DragCells, OutPathCells, OutReason, /*bAllowConveyorOverpass=*/ true);
+	return OJJ_BuildConveyorPlacementPath(
+		DragCells,
+		OutPathCells,
+		OutReason,
+		/*bAllowConveyorOverpass=*/ true,
+		/*bAllowLiquidMachines=*/ true);
 }
 
 bool AOJJ_Grid::OJJ_ValidatePipePlacement(const TArray<FIntPoint>& PathCells,
@@ -2164,7 +2170,9 @@ bool AOJJ_Grid::OJJ_ValidatePipePlacement(const TArray<FIntPoint>& PathCells,
 	// F4-3: bAllowConveyorOverpass=true — 컨베이어 점유 셀을 타넘기로 허용·예약(공중 셀). 머신 점유는
 	// 여전히 차단(끝점만 예외). 지상 파이프↔컨베이어 비대칭 게이트는 컨베이어 측 호출(false)에서만 적용.
 	if (!OJJ_CollectConveyorReservedCells(this, OccupiedCells, OJJ_ActorToCells, OutPlacementCells,
-		OutReservedCells, OutReason, &OutSourceMachine, &OutTargetMachine, /*bAllowConveyorOverpass=*/ true))
+		OutReservedCells, OutReason, &OutSourceMachine, &OutTargetMachine,
+		/*bAllowConveyorOverpass=*/ true,
+		/*bAllowLiquidMachines=*/ true))
 	{
 		return false;
 	}
@@ -2969,7 +2977,8 @@ bool AOJJ_Grid::OJJ_BuildConveyorPlacementPath(
 	const TArray<FIntPoint>& DragCells,
 	TArray<FIntPoint>& OutPathCells,
 	FString& OutReason,
-	bool bAllowConveyorOverpass) const
+	bool bAllowConveyorOverpass,
+	bool bAllowLiquidMachines) const
 {
 	OutPathCells.Reset();
 	if (DragCells.Num() == 0)
@@ -3040,7 +3049,7 @@ bool AOJJ_Grid::OJJ_BuildConveyorPlacementPath(
 
 	TArray<FIntPoint> ReservedCells;
 	return OJJ_CollectConveyorReservedCells(this, OccupiedCells, OJJ_ActorToCells, OutPathCells, ReservedCells,
-		OutReason, nullptr, nullptr, bAllowConveyorOverpass);
+		OutReason, nullptr, nullptr, bAllowConveyorOverpass, bAllowLiquidMachines);
 }
 
 bool AOJJ_Grid::OJJ_CanPlaceConveyorPath(const TArray<FIntPoint>& PathCells) const

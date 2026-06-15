@@ -969,11 +969,12 @@ public:
 	// 실패 시 OutReason에 사유. (포트 판정/연속성/충돌은 내부 OJJ_CollectConveyorReservedCells로 검증.) C++ 전용.
 	// bAllowConveyorOverpass: 파이프 정규화(OJJ_BuildPipePlacementPath)가 true 전달 — 내부 수집 검증이
 	// 컨베이어 점유 셀을 타넘기로 허용. 컨베이어 호출(기본 false)은 기존 동작 그대로.
-	bool OJJ_BuildConveyorPlacementPath(
-		const TArray<FIntPoint>& DragCells,
-		TArray<FIntPoint>& OutPathCells,
-		FString& OutReason,
-		bool bAllowConveyorOverpass = false) const;
+bool OJJ_BuildConveyorPlacementPath(
+	const TArray<FIntPoint>& DragCells,
+	TArray<FIntPoint>& OutPathCells,
+	FString& OutReason,
+	bool bAllowConveyorOverpass = false,
+	bool bAllowLiquidMachines = false) const;
 
 	// 주어진 경로가 배치 가능한지만 판정(예약셀 산출 없이 OJJ_CollectConveyorReservedCells 래핑). C++ 전용.
 	bool OJJ_CanPlaceConveyorPath(const TArray<FIntPoint>& PathCells) const;
