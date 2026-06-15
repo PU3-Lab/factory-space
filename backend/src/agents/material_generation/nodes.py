@@ -10,6 +10,10 @@ from sqlalchemy import event, select
 from sqlalchemy.orm import Session
 
 from agents.material_generation.classifier import ExperimentClassifier
+from agents.material_generation.derivation import (
+    DerivedAttributes,
+    derive_material_attributes,
+)
 from agents.material_generation.events import MaterialEventPublisher
 from agents.material_generation.graph_state import MaterialGraphState
 from agents.material_generation.normalizer import (
@@ -29,6 +33,7 @@ from agents.material_generation.registry.material_registry import (
 from agents.material_generation.result_validator import MaterialResultValidator
 from agents.material_generation.schemas import (
     MaterialCreationResponse,
+    MaterialProposal,
     OutputItemSchema,
 )
 from agents.material_generation.similarity import ExperimentSimilarityService
@@ -80,6 +85,7 @@ def lookup_cache_node(state: MaterialGraphState) -> dict[str, Any]:
             mat_name = mat_model.name if mat_model else "Unknown Alloy"
             mat_hash = mat_model.material_hash if mat_model else None
             mat_rarity = mat_model.rarity if mat_model else None
+            mat_state = mat_model.state if mat_model else None
             visual_status = mat_model.visual_status if mat_model else None
             fallback_icon = mat_model.fallback_icon if mat_model else None
 
@@ -91,6 +97,7 @@ def lookup_cache_node(state: MaterialGraphState) -> dict[str, Any]:
                 material_hash=mat_hash,
                 name=mat_name,
                 rarity=mat_rarity,
+                state=mat_state,
                 generation_status="cached",
                 visual_status=visual_status,
                 fallback_icon=fallback_icon,
@@ -296,18 +303,46 @@ def similarity_context_node(state: MaterialGraphState) -> dict[str, Any]:
     return {"similar_context": similar_exps}
 
 
+def _apply_derived(proposal: MaterialProposal, derived: DerivedAttributes) -> None:
+    """LLM 제안의 구조화 값을 결정론 산출값으로 덮어씁니다 (이름·설명은 유지)."""
+    if proposal.result is None:
+        return
+    proposal.result.properties = derived.properties
+    proposal.result.category = derived.category
+    proposal.result.state = derived.state
+    proposal.result.rarity = derived.rarity
+
+
+def derive_node(state: MaterialGraphState) -> dict[str, Any]:
+    """노드: 입력·공정으로부터 속성·category·state·rarity를 결정론적으로 산출합니다."""
+    if state.get("response"):
+        return {}
+    request = state["request"]
+    normalized = state["normalized_inputs"]
+    derived = derive_material_attributes(normalized, request.process_conditions)
+    return {"derived": derived}
+
+
 def llm_propose_node(state: MaterialGraphState) -> dict[str, Any]:
-    """노드: 재료 제안을 받기 위해 LLM을 쿼리합니다."""
+    """노드: LLM으로 이름·설명을 제안받고 구조화 값을 derived로 덮어씁니다."""
     if state.get("response"):
         return {}
 
     request = state["request"]
     normalized = state["normalized_inputs"]
     similar_exps = state.get("similar_context") or []
+    derived = state["derived"]
+    assert derived is not None
 
     proposal = get_proposal_generator().generate_proposal(
-        request.machine_type, normalized, request.process_conditions, similar_exps
+        request.machine_type,
+        normalized,
+        request.process_conditions,
+        similar_exps,
+        derived_state=derived.state,
+        derived_category=derived.category,
     )
+    _apply_derived(proposal, derived)
     return {"proposal": proposal}
 
 
@@ -323,6 +358,9 @@ def validate_result_node(state: MaterialGraphState) -> dict[str, Any]:
         proposal = get_proposal_generator().get_fallback_proposal(
             state["normalized_inputs"]
         )
+        derived = state.get("derived")
+        if derived is not None:
+            _apply_derived(proposal, derived)
 
     proposal = MaterialResultValidator.validate_and_correct(proposal)
 
@@ -375,7 +413,9 @@ def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
     request = state["request"]
 
     assert proposal.result is not None
-    mat_hash = generate_material_hash(proposal.result)
+    mat_hash = generate_material_hash(
+        request.machine_type, state["normalized_inputs"], request.process_conditions
+    )
     existing_mat = MaterialRegistryService.get_material_by_hash(session, mat_hash)
 
     generate_visual = request.generate_visual_asset
@@ -384,6 +424,7 @@ def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
         material_id = existing_mat.id
         mat_name = existing_mat.name
         mat_rarity = existing_mat.rarity
+        mat_state = existing_mat.state
         visual_status = existing_mat.visual_status
         fallback_icon = existing_mat.fallback_icon
         is_new = False
@@ -391,6 +432,7 @@ def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
         material_id = f"mat_{proposal.result.id_hint}_{uuid.uuid4().hex[:6]}"
         mat_name = proposal.result.name
         mat_rarity = proposal.result.rarity
+        mat_state = proposal.result.state
         visual_status = "pending" if generate_visual else "skipped"
         fallback_icon = f"materials/default/{proposal.result.category}.png"
         is_new = True
@@ -402,6 +444,7 @@ def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
         material_hash=mat_hash,
         name=mat_name,
         rarity=mat_rarity,
+        state=mat_state,
         generation_status="created" if is_new else "cached",
         visual_status=visual_status,
         fallback_icon=fallback_icon,
@@ -441,6 +484,7 @@ def register_material_node(state: MaterialGraphState) -> dict[str, Any]:
             material_hash=mat_hash,
             name=mat_name,
             category=proposal.result.category,
+            state=proposal.result.state,
             rarity=mat_rarity,
             description=proposal.result.description,
             properties_json=proposal.result.properties.model_dump(),
