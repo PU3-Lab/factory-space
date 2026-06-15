@@ -47,6 +47,7 @@ class MaterialProposalResult(BaseModel):
     id_hint: str
     name: str
     category: str
+    state: str = "solid"
     rarity: str
     description: str
     properties: MaterialProperties
@@ -85,6 +86,7 @@ class MaterialCreationResponse(BaseModel):
     material_hash: str | None = None
     name: str | None = None
     rarity: str | None = None
+    state: str | None = None
     generation_status: str | None = None
     visual_status: str | None = None
     fallback_icon: str | None = None
