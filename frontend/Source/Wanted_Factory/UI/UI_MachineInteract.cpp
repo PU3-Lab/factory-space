@@ -182,12 +182,6 @@ void UUI_MachineInteract::UpdateInputUI(FName ItemName, int32 CurrentAmount, int
             
             if (CurrentAmount <= 0) IMG_InputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.15f));
             else                    IMG_InputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
-            
-            UE_LOG(LogTemp, Log, TEXT("[UI 성공] %s 아이템의 아이콘을 데이터 테이블에서 찾아 성공적으로 갱신했습니다!"), *ItemName.ToString());
-        }
-        else
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[UI 경고] 데이터 테이블에서 '%s' 라는 이름의 행(Row)을 찾을 수 없습니다. 대소문자나 이름을 확인하세요."), *ItemName.ToString());
         }
     }
 }
