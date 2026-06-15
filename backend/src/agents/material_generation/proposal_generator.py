@@ -1,4 +1,4 @@
-"""LLM MaterialProposalGenerator for candidate materials."""
+"""후보 재료들에 대한 LLM MaterialProposalGenerator(재료 제안 생성기)입니다."""
 
 from __future__ import annotations
 
@@ -19,11 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 class MaterialProposalGenerator:
-    """Generates material proposal concepts via LLM, with fallback support."""
+    """폴백(fallback) 지원을 바탕으로 LLM을 통해 재료 제안 콘셉트를 생성합니다."""
 
     def __init__(self) -> None:
         self.settings = LLMSettings.from_env()
-        # Initialize LLM Adapter from default slot
+        # 기본 슬롯에서 LLM 어댑터 초기화
         self.adapter = create_llm_adapter(self.settings.default)
 
     def _build_prompt(
@@ -33,7 +33,7 @@ class MaterialProposalGenerator:
         process_conditions: ProcessConditionsSchema,
         similar_experiments: list[dict[str, Any]],
     ) -> str:
-        """Compose the instruction prompt for LLM."""
+        """LLM을 위한 지시 프롬프트를 구성합니다."""
         inputs_str = ", ".join(
             f"{item['item_id']} (qty: {item['qty']})" for item in normalized_inputs
         )
@@ -89,9 +89,9 @@ class MaterialProposalGenerator:
         return prompt
 
     def _parse_llm_response(self, text: str) -> MaterialProposal:
-        """Parse raw LLM string into validated MaterialProposal schema."""
+        """원시 LLM 문자열을 파싱하여 검증된 MaterialProposal 스키마로 변환합니다."""
         cleaned = text.strip()
-        # Remove markdown code fences if present
+        # 마크다운 코드 펜스가 있는 경우 이를 제거합니다.
         if cleaned.startswith("```"):
             lines = cleaned.splitlines()
             if lines[0].startswith("```"):
@@ -110,7 +110,7 @@ class MaterialProposalGenerator:
         process_conditions: ProcessConditionsSchema,
         similar_experiments: list[dict[str, Any]],
     ) -> MaterialProposal:
-        """Invoke LLM to obtain a proposal, with a robust fallback on failure."""
+        """제안을 얻기 위해 LLM을 호출하며, 실패 시 강력한 폴백을 실행합니다."""
         prompt = self._build_prompt(
             machine_type, normalized_inputs, process_conditions, similar_experiments
         )
@@ -128,7 +128,7 @@ class MaterialProposalGenerator:
     def get_fallback_proposal(
         self, normalized_inputs: list[dict[str, Any]]
     ) -> MaterialProposal:
-        """Generate a basic, safe fallback proposal when the LLM is offline or fails."""
+        """LLM이 오프라인이거나 실패할 경우 기본적이고 안전한 폴백 제안을 생성합니다."""
         names = [
             item["item_id"].replace("_ingot", "").replace("_powder", "").title()
             for item in normalized_inputs

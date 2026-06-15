@@ -10,6 +10,7 @@
 class AMachineBase;
 class AConveyor;
 class APipe;
+class AOJJ_Foundation;
 class UStaticMeshComponent;
 class UInstancedStaticMeshComponent;
 class UMaterialInterface;
@@ -159,19 +160,19 @@ protected:
 
 	// 바닥 분류 오버레이(빨강/초록/파랑) 공통 불투명도 — "정보는 주되 시끄럽지 않게". 낮게.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float OverlayOpacity = 0.30f;
+	float OverlayOpacity = 0.1f; // #215 윤곽선 그리드: 선(분류색) + 아주 옅은 면(0.1)로 바닥 살짝 톤.
 
 	// 오버레이 건설가능(초록) — 차분한 톤(저채도/저명도).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
-	FLinearColor OverlayBuildableColor = FLinearColor(0.10f, 0.45f, 0.13f);
+	FLinearColor OverlayBuildableColor = FLinearColor(0.103158f, 0.288191f, 1.0f, 1.0f); // #215 윤곽선: 청색 선
 
 	// 오버레이 건설불가/blocked(빨강) — 차분한 톤.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
-	FLinearColor OverlayBlockedColor = FLinearColor(0.50f, 0.10f, 0.09f);
+	FLinearColor OverlayBlockedColor = FLinearColor(0.5f, 0.1f, 0.09f, 1.0f); // #215 윤곽선: 적색 선
 
 	// 오버레이 물(파랑) — 차분한 톤.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
-	FLinearColor OverlayWaterColor = FLinearColor(0.10f, 0.35f, 0.60f);
+	FLinearColor OverlayWaterColor = FLinearColor(0.007655f, 0.030338f, 0.6f, 1.0f); // #215 윤곽선: 파랑 선
 
 	// 캐릭터 점유 셀(노랑) — 빌드모드 중 플레이어 캡슐이 걸친 셀 표시(F2-4 후속 ② — 시각 전용, 점유 비등록).
 	// 정보 계층이라 OverlayOpacity 공유, 색은 오버레이 3색과 구분되는 밝은 노랑.
@@ -180,7 +181,7 @@ protected:
 
 	// 호버 공통 불투명도 — "지금 액션이 주인공". 높게(아래 오버레이를 거의 가림 → 색 섞임 제거).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float HoverOpacity = 0.90f;
+	float HoverOpacity = 0.1f; // #215 윤곽선: 호버도 옅게(채움 거의 없음).
 
 	// 호버 가능(밝은 초록 + 살짝 에미시브) — Unlit이라 채널>1이 글로우.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
@@ -199,7 +200,20 @@ protected:
 
 	// 격자 선 불투명도 — 채움(Overlay/Hover Opacity)과 독립. 스냅 기준선이라 높게 유지.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float GridLineOpacity = 0.90f;
+	float GridLineOpacity = 0.6f; // #215 윤곽선: 선 불투명도.
+
+	// 윤곽선 그리드 스타일(#215) — true면 셀 경계선을 **분류색(FillColor)** 으로 그린다
+	// (buildable=초록선 / water=청선 / blocked=적선). false면 기존 동작(공유 GridLineColor 선 + 채움).
+	// 채움(면) 제거는 별개 — Overlay/HoverOpacity를 0으로 내리면 순수 윤곽선(바닥 비침)이 된다.
+	// 기본 false = 회귀 안전(기존 채움 그리드 유지). 레벨 인스턴스에서 켜고 PIE 비교/튜닝.
+	// PostEditChangeProperty로 라이브 반영. 부수: 윤곽선만 그리면 면적이 줄어 지형 z-fighting 체감도 완화.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
+	bool bOutlineGridStyle = true; // #215 확정: 윤곽선 그리드를 기본 스타일로(모든 그리드/레벨 일관).
+
+	// 윤곽선 두께(#215) — M_OJJ_GridFloor의 LineWidth 파라미터를 라이브로 구동(슬라이더 노출). 윤곽선 모드일
+	// 때만 주입 — 끄면 마스터 기본값 유지(회귀 0). 셀 경계 기준 폭(작을수록 얇은 선). PIE에서 슬라이더로 튜닝.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.001", ClampMax = "0.5"))
+	float GridLineWidth = 0.06f; // #215 확정 윤곽 두께.
 
 	// === 지형 높낮이 건설 제약 (정적 지형 — BeginPlay 1회 베이크) ===
 	// BeginPlay에서 GridSize 전 셀 중심에서 ↓라인트레이스 → 지형 높이가 그리드 평면 Z와
@@ -380,6 +394,34 @@ protected:
 	// 배치 불가 셀 호버 표시 (빨강)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Hover")
 	TObjectPtr<UInstancedStaticMeshComponent> InvalidHoverISM;
+
+	// === 고스트 프리뷰(#187) — 호버 셀을 따라다니는 반투명 미리보기 메시 ===
+	// 액터 spawn 없이 단일 컴포넌트로 그린다(설계 원칙: 프리뷰용 머신/Foundation 액터 미스폰).
+	// 머신(전 서브모드) + 평판 Foundation만 대상. 셀 변경 시에만 갱신(매 프레임 Tick 없음).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Ghost")
+	TObjectPtr<UStaticMeshComponent> GhostMeshComp;
+
+	// 고스트용 반투명 베이스 머티리얼(사용자가 에디터에서 지정 — 벡터 파라미터 TintColor, 스칼라 Opacity 가정).
+	// 미지정이면 고스트 비활성(안전한 no-op) — OJJ_EnsureGhostMIDs가 1회 경고.
+	UPROPERTY(EditAnywhere, Category = "Grid|Ghost")
+	TObjectPtr<UMaterialInterface> GhostBaseMaterial;
+
+	// 고스트 틴트(#187) — PIE 디테일 슬라이더 튜닝용(그리드 Visual Hierarchy 패턴). OJJ_EnsureGhostMIDs가
+	// GhostValidMID/InvalidMID의 TintColor/Opacity에 주입(PostEditChangeProperty로 라이브 반영).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Ghost", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float GhostOpacity = 0.1f; // #187 확정 — 텍스처 거의 그대로, 아주 옅은 틴트.
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Ghost")
+	FLinearColor GhostValidTint = FLinearColor(0.2f, 0.9f, 0.3f);   // 배치 가능(부드러운 초록)
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Ghost")
+	FLinearColor GhostInvalidTint = FLinearColor(1.0f, 0.2f, 0.2f); // 배치 불가(부드러운 빨강)
+
+	// 배치 가능(초록 틴트) / 불가(빨강 틴트) 고스트 MID. OJJ_EnsureGhostMIDs에서 lazy 생성.
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> GhostValidMID;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> GhostInvalidMID;
 
 	// === 포트 방향 화살표 (빌드모드 전용 시각화) ===
 	// 입력=파랑 계열 / 출력=주황 계열. 배치 머신용(Placed*)과 호버 프리뷰용(Hover*)을 분리해
@@ -562,6 +604,10 @@ private:
 	// 단일 MID에 채움/선을 독립 세팅 — 채움(BaseColor/Opacity)=인자(분류색·연하게), 선(LineColor/LineOpacity)=
 	// 공유 GridLineColor/GridLineOpacity(스냅 기준선·선명). 채움 투명도가 선을 흐리지 않게 분리. MID==null/없는 파라미터는 무시.
 	void OJJ_SetTileParams(UMaterialInstanceDynamic* MID, const FLinearColor& FillColor, float FillOpacity) const;
+
+	// 고스트 프리뷰(#187) MID lazy 생성. GhostBaseMaterial 미지정이면 1회 경고 후 비활성(크래시 금지).
+	// 생성 시 Valid=HoverValidColor / Invalid=HoverInvalidColor 틴트, 둘 다 Opacity=HoverOpacity 세팅.
+	void OJJ_EnsureGhostMIDs();
 
 #if WITH_EDITOR
 	// 디테일 패널/PIE에서 Visual Hierarchy 값 변경 시 MID에 즉시 재적용 + 오버레이 갱신(실시간 튜닝).
@@ -923,11 +969,12 @@ public:
 	// 실패 시 OutReason에 사유. (포트 판정/연속성/충돌은 내부 OJJ_CollectConveyorReservedCells로 검증.) C++ 전용.
 	// bAllowConveyorOverpass: 파이프 정규화(OJJ_BuildPipePlacementPath)가 true 전달 — 내부 수집 검증이
 	// 컨베이어 점유 셀을 타넘기로 허용. 컨베이어 호출(기본 false)은 기존 동작 그대로.
-	bool OJJ_BuildConveyorPlacementPath(
-		const TArray<FIntPoint>& DragCells,
-		TArray<FIntPoint>& OutPathCells,
-		FString& OutReason,
-		bool bAllowConveyorOverpass = false) const;
+bool OJJ_BuildConveyorPlacementPath(
+	const TArray<FIntPoint>& DragCells,
+	TArray<FIntPoint>& OutPathCells,
+	FString& OutReason,
+	bool bAllowConveyorOverpass = false,
+	bool bAllowLiquidMachines = false) const;
 
 	// 주어진 경로가 배치 가능한지만 판정(예약셀 산출 없이 OJJ_CollectConveyorReservedCells 래핑). C++ 전용.
 	bool OJJ_CanPlaceConveyorPath(const TArray<FIntPoint>& PathCells) const;
@@ -986,6 +1033,20 @@ public:
 	// 호버 미리보기 모두 제거 (머신 placement 완료 / 호버 해제 시 호출). 호버 포트 화살표도 함께 제거.
 	UFUNCTION(BlueprintCallable, Category = "Grid|Hover")
 	void ClearHoverPreview();
+
+	// === 고스트 프리뷰(#187) — 호버 셀 위 반투명 미리보기 메시 ===
+
+	// 머신 CDO의 메시를 호버 셀(Origin/회전)에 반투명으로 그린다. bValid=배치 가능(초록)/불가(빨강) 틴트.
+	// 메시 fit·XY 중심·BaseZ는 GetMachinePlacementLocation 산식 재사용, ZOffset은 CDO-safe(라이브 트랜스폼 무의존).
+	// MachineCDO/메시/MID 미비 시 안전하게 고스트 숨김.
+	void OJJ_ShowGhostForMachine(AMachineBase* MachineCDO, FIntPoint Origin, int32 RotationSteps, bool bValid);
+
+	// 평판 Foundation CDO의 슬래브(엔진 Cube)를 호버 풋프린트에 반투명으로 그린다. UpdateSlabVisual 산식 재현.
+	// 평판 전용(램프는 호출하지 않음). MID 미비 시 안전하게 고스트 숨김.
+	void OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize, bool bValid);
+
+	// 고스트 숨김(ClearHoverPreview / 램프 선택 / 미지정 머티리얼 등).
+	void OJJ_HideGhost();
 
 	// === 포트 방향 화살표 (빌드모드 전용) ===
 

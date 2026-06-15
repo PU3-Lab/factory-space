@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "PlayerWarehouseSubsystem.h"
 #include "OJJ_Player.generated.h"
 
 class USpringArmComponent;
@@ -36,6 +37,7 @@ public:
 	AOJJ_Player();
 
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	FORCEINLINE class UUI_Inventory* GetInventoryWidgetInstance() const { return InventoryWidgetInstance; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -53,6 +55,9 @@ protected:
 	TSubclassOf<UUserWidget> MainHUDWidgetClass;
 	UPROPERTY()
 	UUserWidget* MainHUDWidgetInstance;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player Warehouse")
+	TArray<FWarehouseItemStack> InitialWarehouseItems;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
 	TSubclassOf<class UUI_Inventory> InventoryWidgetClass;
@@ -299,6 +304,12 @@ public:
 	// 없는 신규 모드(pipe/tank)의 검증 진입로 — 정식 키/UI 와이어링(BP·UI 소유자 안건) 후 제거 후보.
 	UFUNCTION(Exec)
 	void OJJ_SetBuildMode(const FString& ModeName);
+
+	UFUNCTION(Exec)
+	void OJJ_TutorialAdvance();
+
+	UFUNCTION(Exec)
+	void OJJ_TutorialLog();
 
 protected:
 	void SetPowerNodeMode(const FInputActionValue& Value);

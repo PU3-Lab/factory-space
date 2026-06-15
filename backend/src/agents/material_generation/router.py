@@ -1,4 +1,4 @@
-"""API Router for material generation agent experiments."""
+"""재료 생성 에이전트 실험을 위한 API 라우터입니다."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ agent = MaterialCreationAgent()
 def create_material_experiment(
     request: MaterialCreationRequest,
 ) -> MaterialCreationResponse:
-    """Synthesize a new material using rules and LLM validation."""
+    """규칙 및 LLM 검증을 사용하여 새로운 재료를 합성합니다."""
     try:
         with get_db_session() as db:
             response = agent.synthesize(db, request)
@@ -45,7 +45,7 @@ def create_material_experiment(
 
 @router.get("/materials/{material_id}/visual-status")
 def get_material_visual_status(material_id: str) -> dict[str, Any]:
-    """Retrieve the status and asset keys of a generated material's visual assets."""
+    """생성된 재료의 시각적 자산에 대한 상태 및 자산 키(Asset keys)를 조회합니다."""
     with get_db_session() as db:
         stmt = select(GeneratedMaterialModel).where(
             GeneratedMaterialModel.id == material_id

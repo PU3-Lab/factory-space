@@ -2,14 +2,17 @@
 
 #include "Engine/DataTable.h"
 #include "Engine/StaticMesh.h"
+#include "PlayerWarehouseSubsystem.h"
 #include "Resource/ResourceData.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Wanted_Factory.h"
 
 ALiquidTank::ALiquidTank()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
 	MachineType = TEXT("LiquidTank");
+	SelectedOutputLiquidID = TEXT("water");
 	bNeedPower = false;
 	bDisableWhenBroken = true;
 	InputPortCount = 1;
@@ -37,14 +40,39 @@ void ALiquidTank::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 	MaxBufferPerItem = Capacity;
+	SyncDisplayedBuffer();
 	AMachineBase::UpdateDebugBufferText();
+}
+
+void ALiquidTank::SetSelectedOutputLiquid(FName ItemID)
+{
+	if (!ItemID.IsNone() && !IsLiquidItem(ItemID))
+	{
+		LOG_SSR_W(TEXT("Liquid tank output rejected non-liquid item: %s"), *ItemID.ToString());
+		return;
+	}
+
+	SelectedOutputLiquidID = ItemID;
+	SyncDisplayedBuffer();
+	UpdateDebugBufferText();
 }
 
 FName ALiquidTank::GetStoredLiquidID() const
 {
-	for (const TPair<FName, int32>& Pair : OutputBuffer)
+	const UPlayerWarehouseSubsystem* Warehouse = GetWarehouse();
+	if (!Warehouse)
 	{
-		if (!Pair.Key.IsNone() && Pair.Value > 0)
+		return NAME_None;
+	}
+
+	if (!SelectedOutputLiquidID.IsNone() && Warehouse->GetItemCount(SelectedOutputLiquidID) > 0)
+	{
+		return SelectedOutputLiquidID;
+	}
+
+	for (const TPair<FName, int32>& Pair : Warehouse->GetStoredItems())
+	{
+		if (!Pair.Key.IsNone() && Pair.Value > 0 && IsLiquidItem(Pair.Key))
 		{
 			return Pair.Key;
 		}
@@ -55,8 +83,9 @@ FName ALiquidTank::GetStoredLiquidID() const
 
 int32 ALiquidTank::GetStoredLiquidAmount() const
 {
+	const UPlayerWarehouseSubsystem* Warehouse = GetWarehouse();
 	const FName StoredLiquidID = GetStoredLiquidID();
-	return StoredLiquidID.IsNone() ? 0 : OutputBuffer.FindRef(StoredLiquidID);
+	return (!Warehouse || StoredLiquidID.IsNone()) ? 0 : Warehouse->GetItemCount(StoredLiquidID);
 }
 
 bool ALiquidTank::AddItem(FName ItemID, int32 Count)
@@ -76,18 +105,13 @@ bool ALiquidTank::TakeOutputItem(FName ItemID, int32 Count)
 		return false;
 	}
 
-	int32* StoredAmount = OutputBuffer.Find(ItemID);
-	if (!StoredAmount || *StoredAmount < Count)
+	UPlayerWarehouseSubsystem* Warehouse = GetWarehouse();
+	if (!Warehouse || !Warehouse->TakeItem(ItemID, Count))
 	{
 		return false;
 	}
 
-	*StoredAmount -= Count;
-	if (*StoredAmount <= 0)
-	{
-		OutputBuffer.Remove(ItemID);
-	}
-
+	SyncDisplayedBuffer();
 	UpdateDebugBufferText();
 	return true;
 }
@@ -124,6 +148,12 @@ bool ALiquidTank::TryTakeFirstOutputItem(FName& OutItemID)
 	return true;
 }
 
+UPlayerWarehouseSubsystem* ALiquidTank::GetWarehouse() const
+{
+	const UGameInstance* GameInstance = GetGameInstance();
+	return GameInstance ? GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>() : nullptr;
+}
+
 bool ALiquidTank::IsLiquidItem(FName ItemID) const
 {
 	if (!ResourceTable || ItemID.IsNone())
@@ -137,18 +167,12 @@ bool ALiquidTank::IsLiquidItem(FName ItemID) const
 
 bool ALiquidTank::CanStoreLiquid(FName ItemID, int32 Count) const
 {
-	if (!IsLiquidItem(ItemID) || Count <= 0)
+	if (!IsLiquidItem(ItemID) || Count <= 0 || !GetWarehouse())
 	{
 		return false;
 	}
 
-	const FName StoredLiquidID = GetStoredLiquidID();
-	if (!StoredLiquidID.IsNone() && StoredLiquidID != ItemID)
-	{
-		return false;
-	}
-
-	return GetStoredLiquidAmount() + Count <= Capacity;
+	return true;
 }
 
 bool ALiquidTank::StoreLiquid(FName ItemID, int32 Count)
@@ -158,8 +182,30 @@ bool ALiquidTank::StoreLiquid(FName ItemID, int32 Count)
 		return false;
 	}
 
-	MaxBufferPerItem = Capacity;
-	OutputBuffer.FindOrAdd(ItemID) += Count;
+	UPlayerWarehouseSubsystem* Warehouse = GetWarehouse();
+	if (!Warehouse || !Warehouse->AddItem(ItemID, Count))
+	{
+		return false;
+	}
+
+	if (SelectedOutputLiquidID.IsNone())
+	{
+		SelectedOutputLiquidID = ItemID;
+	}
+
+	SyncDisplayedBuffer();
 	AMachineBase::UpdateDebugBufferText();
 	return true;
+}
+
+void ALiquidTank::SyncDisplayedBuffer()
+{
+	OutputBuffer.Reset();
+
+	const FName DisplayLiquidID = GetStoredLiquidID();
+	const int32 DisplayAmount = GetStoredLiquidAmount();
+	if (!DisplayLiquidID.IsNone() && DisplayAmount > 0)
+	{
+		OutputBuffer.Add(DisplayLiquidID, DisplayAmount);
+	}
 }

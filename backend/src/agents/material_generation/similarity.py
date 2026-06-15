@@ -1,4 +1,4 @@
-"""Retrieves previously discovered similar experiments to assist LLM generation."""
+"""LLM 생성을 지원하기 위해 이전에 발견된 유사한 실험 정보를 검색합니다."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from db.models import GeneratedExperimentModel, GeneratedMaterialModel
 
 
 class ExperimentSimilarityService:
-    """Provides historical context for synthesis experiments based on ingredient overlap."""
+    """재료의 중복 여부를 기반으로 합성 실험에 대한 이력 컨텍스트를 제공합니다."""
 
     @classmethod
     def find_similar_experiments(
@@ -21,12 +21,12 @@ class ExperimentSimilarityService:
         normalized_inputs: list[dict[str, Any]],
         limit: int = 3,
     ) -> list[dict[str, Any]]:
-        """Find past successful experiments with overlapping inputs on the same machine."""
+        """동일한 장비에서 입력 재료가 중복되는 과거 성공 실험을 찾습니다."""
         input_item_ids = {item["item_id"] for item in normalized_inputs}
         if not input_item_ids:
             return []
 
-        # Optimize: Filter on the database side using LIKE queries to avoid a full table scan
+        # 최적화: 전체 테이블 스캔을 방지하기 위해 LIKE 쿼리를 사용하여 데이터베이스 측에서 필터링합니다.
         clauses = [
             cast(GeneratedExperimentModel.inputs_json, String).like(f'%"{item_id}"%')
             for item_id in input_item_ids
@@ -45,7 +45,7 @@ class ExperimentSimilarityService:
             for item_id in input_item_ids
         )
 
-        # Query past experiments of the same machine type that successfully created a material
+        # 새로운 재료를 성공적으로 생성한 동일한 장비 유형의 과거 실험을 쿼리합니다.
         stmt = (
             select(GeneratedExperimentModel, GeneratedMaterialModel)
             .join(
@@ -65,7 +65,7 @@ class ExperimentSimilarityService:
 
         similar_candidates = []
         for exp_model, mat_model in rows:
-            # inputs_json: list of dicts like [{"item_id": "...", "qty": ...}]
+            # inputs_json: [{"item_id": "...", "qty": ...}] 형식의 딕셔너리 리스트
             exp_inputs = exp_model.inputs_json
             if not isinstance(exp_inputs, list):
                 continue
@@ -85,10 +85,10 @@ class ExperimentSimilarityService:
                     }
                 )
 
-        # Sort by overlap count (descending)
+        # 중복 카운트 기준 정렬 (내림차순)
         similar_candidates.sort(key=lambda x: x["overlap_count"], reverse=True)
 
-        # Remove internal sorting keys before returning
+        # 반환하기 전에 내부 정렬 키를 제거합니다.
         return [
             {
                 "inputs": item["inputs"],

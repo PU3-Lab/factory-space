@@ -1,15 +1,22 @@
-"""Prompt builder for operator guide CSV-grounded LLM answers."""
+"""CSV 근거를 LLM 프롬프트로 조립하는 operator_guide prompt builder.
+
+초보자용 설명:
+    LLM은 아무 근거 없이 답하면 지어낼 수 있다.
+    이 파일은 플레이어 질문, leaf agent 정보, CSV 근거를 하나의 prompt로 묶어
+    LLM이 정해진 JSON 형식으로 답하도록 안내한다.
+"""
 
 from __future__ import annotations
 
 import json
 
 from agents.operator_guide.manual_context_builder import ManualQAPromptContext
+from agents.operator_guide.retrieved_context_guard import wrap_retrieved_context
 from agents.operator_guide.system_prompt import OPERATOR_GUIDE_SYSTEM_PROMPT
 
 
 class ManualQAPromptBuilder:
-    """Render the selected leaf-agent prompt with CSV evidence."""
+    """선택된 leaf agent와 CSV evidence를 LLM이 읽을 수 있는 prompt로 만든다."""
 
     def build(
         self,
@@ -19,6 +26,8 @@ class ManualQAPromptBuilder:
         sub_agent: str,
         context: ManualQAPromptContext,
     ) -> str:
+        """단일 문자열 prompt를 만든다."""
+
         return self.build_user_prompt(
             question=question,
             topic=topic,
@@ -34,7 +43,7 @@ class ManualQAPromptBuilder:
         sub_agent: str,
         context: ManualQAPromptContext,
     ) -> list[dict[str, str]]:
-        """Return chat messages with a real system prompt."""
+        """system/user 역할이 분리된 chat messages를 만든다."""
 
         return [
             {"role": "system", "content": OPERATOR_GUIDE_SYSTEM_PROMPT},
@@ -57,7 +66,7 @@ class ManualQAPromptBuilder:
         sub_agent: str,
         context: ManualQAPromptContext,
     ) -> str:
-        """Render request-specific user content for the operator guide."""
+        """이번 질문에 필요한 CSV 근거와 출력 계약을 user prompt로 만든다."""
 
         evidence_json = json.dumps(context.evidence, ensure_ascii=False, indent=2)
         actions_json = json.dumps(
@@ -65,9 +74,13 @@ class ManualQAPromptBuilder:
             ensure_ascii=False,
             indent=2,
         )
+        recent_conversation_section = self._recent_conversation_section(context)
+        rag_context_section = self._rag_context_section(context)
         return f"""Answer this {self._topic_label(topic)}.
 [PLAYER_QUESTION]
 {question}
+
+{recent_conversation_section}
 
 [LEAF_AGENT]
 {sub_agent}
@@ -77,6 +90,8 @@ class ManualQAPromptBuilder:
 
 [CSV_EVIDENCE]
 {evidence_json}
+
+{rag_context_section}
 
 [RECOMMENDED_ACTIONS]
 {actions_json}
@@ -93,7 +108,47 @@ Use exactly these keys:
 }}
 """
 
+    def _recent_conversation_section(self, context: ManualQAPromptContext) -> str:
+        """같은 세션의 최근 대화를 LLM이 참고할 수 있는 prompt 섹션으로 만든다.
+
+        초보자용 설명:
+            후속 질문은 "그럼?", "그 장비는?"처럼 앞 대화를 알아야 이해됩니다.
+            그래서 최근 질문/답변을 짧은 목록으로 넣어주되, 사용자가 처음 질문한
+            경우에는 이 섹션을 아예 만들지 않습니다.
+        """
+
+        if not context.recent_conversation:
+            return ""
+
+        lines = ["[RECENT_CONVERSATION_CONTEXT]"]
+        for index, turn in enumerate(context.recent_conversation, start=1):
+            lines.append(f"Turn {index}")
+            lines.append(f"Player: {turn.get('question', '')}")
+            lines.append(f"Operator: {turn.get('answer', '')}")
+        return "\n".join(lines)
+
+    def _rag_context_section(self, context: ManualQAPromptContext) -> str:
+        """RAG 검색 결과가 있을 때만 prompt에 검색 근거 섹션을 추가한다."""
+
+        if not context.rag_context_text:
+            return ""
+
+        metadata_json = json.dumps(
+            context.rag_metadata or {},
+            ensure_ascii=False,
+            indent=2,
+        )
+        guarded_context = wrap_retrieved_context(context.rag_context_text)
+        return f"""[RAG_RETRIEVAL_CONTEXT]
+{guarded_context}
+
+[RAG_RETRIEVAL_METADATA]
+{metadata_json}
+"""
+
     def _topic_label(self, topic: str) -> str:
+        """내부 topic 값을 LLM이 이해하기 쉬운 영어 설명으로 바꾼다."""
+
         if topic == "machine":
             return "machine help question"
         if topic == "recipe":

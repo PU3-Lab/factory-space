@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from agents.operator_guide.csv_repository import (
@@ -27,6 +27,9 @@ class ManualQAPromptContext:
 
     result: ManualQAResult
     evidence: dict[str, Any]
+    rag_context_text: str = ""
+    rag_metadata: dict[str, Any] | None = None
+    recent_conversation: list[dict[str, str]] = field(default_factory=list)
 
 
 class ManualQAContextBuilder:
