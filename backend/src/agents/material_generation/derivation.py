@@ -138,3 +138,29 @@ def derive_state(props: tuple[float, float, float, float]) -> str:
     if reactivity >= 5.0 and stability <= 5.0:
         return "liquid"
     return "solid"
+
+
+def compute_rarity(props: tuple[float, float, float, float]) -> str:
+    """속성으로부터 희귀도(rarity)를 결정론적으로 계산합니다.
+
+    - 강도, 전도도, 안정성 3개 속성의 평균(avg)을 70% 비중으로,
+      전체 4대 속성의 최댓값(peak)을 30% 비중으로 계산하여 가중 점수(score)를 산출합니다:
+      score = 0.7 * avg + 0.3 * peak
+    - 점수 구간에 따른 등급 분류:
+      - score >= 8.5: "epic" (영웅)
+      - score >= 7.0: "rare" (희귀)
+      - score >= 5.0: "uncommon" (고급)
+      - 그 외: "common" (일반)
+    """
+    strength, conductivity, stability, reactivity = props
+    avg = (strength + conductivity + stability) / 3.0
+    peak = max(strength, conductivity, stability, reactivity)
+    score = 0.7 * avg + 0.3 * peak
+
+    if score >= 8.5:
+        return "epic"
+    if score >= 7.0:
+        return "rare"
+    if score >= 5.0:
+        return "uncommon"
+    return "common"

@@ -9,6 +9,7 @@ from __future__ import annotations
 from agents.material_generation.derivation import (
     apply_process,
     combine_properties,
+    compute_rarity,
     derive_category,
     derive_state,
 )
@@ -132,3 +133,27 @@ def test_derive_state_liquid() -> None:
 def test_derive_state_solid() -> None:
     """반응성이 낮고 안정성이 높을 때 solid(고체) 상태로 판정되는지 테스트합니다."""
     assert derive_state((7.0, 5.0, 7.0, 4.0)) == "solid"
+
+
+def test_compute_rarity_common() -> None:
+    """속성 스펙트럼의 합성 점수가 낮을 때 common(일반) 등급으로 계산되는지 테스트합니다."""
+    # avg=3, peak=3 -> score 3.0
+    assert compute_rarity((3.0, 3.0, 3.0, 3.0)) == "common"
+
+
+def test_compute_rarity_uncommon_boundary() -> None:
+    """합성 점수가 uncommon 경계선(5.0) 이상일 때 uncommon(고급) 등급으로 계산되는지 테스트합니다."""
+    # avg=5, peak=5 -> score 5.0
+    assert compute_rarity((5.0, 5.0, 5.0, 5.0)) == "uncommon"
+
+
+def test_compute_rarity_rare_boundary() -> None:
+    """합성 점수가 rare 경계선(7.0) 이상일 때 rare(희귀) 등급으로 계산되는지 테스트합니다."""
+    # avg=7, peak=7 -> score 7.0
+    assert compute_rarity((7.0, 7.0, 7.0, 7.0)) == "rare"
+
+
+def test_compute_rarity_epic_boundary() -> None:
+    """합성 점수가 epic 경계선(8.5) 이상일 때 epic(영웅) 등급으로 계산되는지 테스트합니다."""
+    # avg=8.5, peak=8.5 -> score 8.5
+    assert compute_rarity((8.5, 8.5, 8.5, 8.5)) == "epic"
