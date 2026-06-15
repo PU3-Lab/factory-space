@@ -159,7 +159,10 @@ def validate_case_response(case: SmokeCase, response: dict[str, Any]) -> None:
 async def run_profile(profile: SmokeProfile, base_url: str, ws_path: str) -> int:
     """Run one smoke profile and return a process-style exit code."""
 
-    if profile.requires_external_opt_in and os.environ.get(EXTERNAL_PROVIDER_OPT_IN) != "1":
+    if (
+        profile.requires_external_opt_in
+        and os.environ.get(EXTERNAL_PROVIDER_OPT_IN) != "1"
+    ):
         print(
             f"SKIP {profile.name}: set {EXTERNAL_PROVIDER_OPT_IN}=1 to run provider smoke"
         )
@@ -276,8 +279,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the smoke command."""
 
     args = parse_args(sys.argv[1:] if argv is None else argv)
-    profile_names = ("none", "local", "providers") if args.profile == "all" else (
-        args.profile,
+    profile_names = (
+        ("none", "local", "providers") if args.profile == "all" else (args.profile,)
     )
     try:
         for profile_name in profile_names:

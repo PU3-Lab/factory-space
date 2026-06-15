@@ -233,6 +233,22 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	{
 		EnhancedInput->BindAction(IA_SetConveyorMode, ETriggerEvent::Started, this, &AOJJ_Player::SetConveyorMode);
 	}
+	if (IA_SetPipeMode)
+	{
+		EnhancedInput->BindAction(IA_SetPipeMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPipeMode);
+	}
+	if (IA_SetTankMode)
+	{
+		EnhancedInput->BindAction(IA_SetTankMode, ETriggerEvent::Started, this, &AOJJ_Player::SetTankMode);
+	}
+	if (IA_SetFoundationMode)
+	{
+		EnhancedInput->BindAction(IA_SetFoundationMode, ETriggerEvent::Started, this, &AOJJ_Player::SetFoundationMode);
+	}
+	if (IA_SetRampMode)
+	{
+		EnhancedInput->BindAction(IA_SetRampMode, ETriggerEvent::Started, this, &AOJJ_Player::SetRampFoundationMode);
+	}
 	if (IA_SetPowerNodeMode)
 	{
 		EnhancedInput->BindAction(IA_SetPowerNodeMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerNodeMode);
@@ -298,9 +314,8 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
 	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
-	// Foundation 모드(F1-b) — 직접 바인딩(M/J/I 패턴). IA/IMC 에셋 전환은 키 정리 백로그.
-	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AOJJ_Player::SetFoundationMode);
-	PlayerInputComponent->BindKey(EKeys::H, IE_Pressed, this, &AOJJ_Player::SetRampFoundationMode);
+	// Foundation G/H는 #196에서 Enhanced Input(IA_SetFoundationMode/IA_SetRampMode)로 전환 —
+	// 레거시 BindKey 제거(이중발화 차단). 바인딩은 위 BindAction 블록 + IMC_Build/BP 매핑(에디터).
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -340,12 +355,27 @@ void AOJJ_Player::Look(const FInputActionValue& Value)
 void AOJJ_Player::Zoom(const FInputActionValue& Value)
 {
 	const float Scroll = Value.Get<float>();
-	if (!SpringArm || FMath::IsNearlyZero(Scroll))
+	if (FMath::IsNearlyZero(Scroll))
 	{
 		return;
 	}
 
-	// 스크롤 업(+) → 줌인(팔 길이 감소)
+	// 빌드모드면 뷰타겟인 BuildCamera를 줌(플레이어 SpringArm은 안 보이므로). 양쪽 모드 동일 휠 UX.
+	if (BuildController && BuildController->IsInBuildMode())
+	{
+		if (BuildCamera)
+		{
+			BuildCamera->Zoom(Scroll);
+		}
+		return;
+	}
+
+	if (!SpringArm)
+	{
+		return;
+	}
+
+	// TPS: 스크롤 업(+) → 줌인(팔 길이 감소)
 	const float NewLength = SpringArm->TargetArmLength - Scroll * ZoomStep;
 	SpringArm->TargetArmLength = FMath::Clamp(NewLength, MinArmLength, MaxArmLength);
 }
@@ -550,6 +580,48 @@ void AOJJ_Player::SetConveyorMode(const FInputActionValue& Value)
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Conveyor);
 }
 
+void AOJJ_Player::SetPipeMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pipe);
+}
+
+// 물탱크 모드 직행(K키 — F4-4, IA 경로). 파이프 핸들러 미러 — 콘솔 OJJ_SetBuildMode tank와 동일 위임.
+void AOJJ_Player::SetTankMode(const FInputActionValue& Value)
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::LiquidTank);
+}
+
+void AOJJ_Player::OJJ_SetBuildMode(const FString& ModeName)
+{
+	// [임시 진입로] 콘솔 exec — IA/UI 미와이어링 모드(pipe/tank) 전용. 빌드모드 여부는 검사하지
+	// 않음 — 기존 모드 키(SetConveyorMode 등)와 동일 정책(빌드모드 밖 호출 = 다음 진입 모드 예약).
+	if (!BuildController)
+	{
+		return;
+	}
+	const FString Lower = ModeName.ToLower();
+	if (Lower == TEXT("pipe"))
+	{
+		BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pipe);
+	}
+	else if (Lower == TEXT("tank") || Lower == TEXT("liquidtank"))
+	{
+		BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::LiquidTank);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] OJJ_SetBuildMode: 알 수 없는 모드 '%s' (pipe|tank)"), *ModeName);
+	}
+}
+
 void AOJJ_Player::SetPowerNodeMode(const FInputActionValue& Value)
 {
 	if (!BuildController)
@@ -643,9 +715,9 @@ void AOJJ_Player::SetDemolishMode(const FInputActionValue& Value)
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Demolish);
 }
 
-// 평판 Foundation 모드 직행(G키 — F1-b, F3.7' 키 개편으로 종류까지 확정). 다른 모드 핸들러와
-// 동일하게 BuildController 위임만 — 모드 진입/호버 갱신/빌드모드 밖 무해성은 컨트롤러 소관.
-void AOJJ_Player::SetFoundationMode()
+// 평판 Foundation 모드 진입(G키 — #196 IA 전환). 다른 모드 핸들러(탱크/파이프)와 동일 구조 —
+// BuildController 위임만. 모드 진입/호버 갱신/빌드모드 밖 무해성은 컨트롤러 소관.
+void AOJJ_Player::SetFoundationMode(const FInputActionValue& Value)
 {
 	if (!BuildController)
 	{
@@ -654,8 +726,8 @@ void AOJJ_Player::SetFoundationMode()
 	BuildController->OJJ_SelectFoundationKind(false);
 }
 
-// 램프 Foundation 모드 직행(H키 — F3.7' 키 개편, F3-2.5 T 토글 대체).
-void AOJJ_Player::SetRampFoundationMode()
+// 램프 Foundation 모드 진입(H키 — #196 IA 전환, F3-2.5 T 토글 대체).
+void AOJJ_Player::SetRampFoundationMode(const FInputActionValue& Value)
 {
 	if (!BuildController)
 	{

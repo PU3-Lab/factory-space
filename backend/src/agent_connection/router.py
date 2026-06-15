@@ -27,9 +27,7 @@ async def get_agent_connection_manifest() -> dict[str, object]:
             "process_optimizer": list(SINGLE_LEAF_AGENT_IDS["process_optimizer"]),
             "operator_guide": list(OPERATOR_GUIDE_LEAF_AGENT_IDS),
             "quest_generator": list(QUEST_SUB_AGENT_IDS),
-            "new_material_generator": list(
-                SINGLE_LEAF_AGENT_IDS["new_material_generator"]
-            ),
+            "material_generation": list(SINGLE_LEAF_AGENT_IDS["material_generation"]),
         },
         "sample_request": {
             "type": "agent.request",

@@ -218,3 +218,53 @@ INVALID_LLM_RESPONSE는 3계층으로 해결한다:
 - 파서 → 펜스 제거 안전망
 
 **트레이드오프:** API 강제가 없으므로 모델이 프롬프트를 무시하면 깨질 수 있다. 그러나 원래 결함(프롬프트가 JSON을 아예 요구하지 않음)은 프롬프트 개선으로 제거되었고, 펜스 제거 파서가 가장 흔한 일탈(```` ```json ```` 래핑)을 흡수한다. 실무상 충분하며, 향후 특정 모델이 반복적으로 일탈하면 그때 해당 provider 한정으로 API 강제를 재도입한다.
+
+---
+
+## 재발 — 로컬 dev 환경 `.env` 누락 (2026-06-14)
+
+**상태:** **Resolved**
+**증상:** `uv run python scripts/run_server.py`로 dev 서버 기동 후 `/agent-test` 콘솔의 "신물질 합성" 프리셋(`material_generation`) 요청이 모두 `ROUTING_UNAVAILABLE` 반환.
+
+### 근본 원인 — 코드 결함 아님, **설정 누락**
+
+이전 절들의 코드 수정(fallback 래퍼, 따옴표 정리)은 모두 적용된 상태였다. 이번 재발은 코드가 아니라 **환경 설정** 문제였다.
+
+1. `scripts/run_server.py`의 `prepare_environment`는 `backend/.env`를 로드한다 ([run_server.py:101](file:///Users/kimkyungpyo/Workspaces/projests/factory-space/backend/scripts/run_server.py)).
+2. 그러나 작업 트리에는 `.env`가 없고 `.env.example`만 존재했다 (`.env`는 `.gitignore` 대상).
+3. `.env`가 없으면 `ENVIRONMENT`도, `FACTORY_LLM_*`도 셸에 설정되지 않는다.
+4. `LLMSettings.from_env`의 `_provider_from_env`는 `default` 슬롯에서 provider 미지정 + `ENVIRONMENT != "development"`이면 provider를 `none`으로 확정한다 ([settings.py:94](file:///Users/kimkyungpyo/Workspaces/projests/factory-space/backend/src/llm/settings.py)).
+5. 세 슬롯 모두 `none` → `NoopLLMAdapter.invoke()`가 항상 `None` 반환 → `routing_llm`(fallback 래퍼)도 `None` → `selectedAgent == ""` → `TOP_LEVEL_AGENT_IDS` 검증 실패 → `ROUTING_UNAVAILABLE`.
+
+재현 확인:
+- 빈 env(`LLMSettings.from_env(env={})`) → 세 슬롯 모두 `provider=none`.
+- 로컬 Ollama `gemma4:e4b` 슬롯 → `invoke("...operator_guide")` → `'operator_guide'` 정상 반환.
+
+> 추가 함정: `.env.example`의 기본 모델은 `llama3.1:8b`이지만 로컬 Ollama에는 `gemma4:e4b`/`gemma4:26b`만 pull되어 있어, 예제를 그대로 복사하면 모델 404로 또 `None`을 받아 동일 증상이 재현된다.
+
+### 조치
+
+1. `backend/.env` 생성: `ENVIRONMENT=development`, default 슬롯을 로컬 Ollama + **실제 pull된 모델** `gemma4:e4b`로 지정, fallback1/2는 `none`.
+
+### 후속 차단 이슈 (별건, 함께 해소)
+
+라우팅 복구 후 `material_generation` 경로에서 `SYNTHESIS_ERROR: no such table: generated_experiments` 발생.
+
+- 원인: `factory_space.db`가 0바이트(빈 파일)였고 Alembic 마이그레이션(`0001`, `0002`)이 미적용 상태.
+- 함정: `migrations/env.py`는 `DATABASE_URL`을 **필수**로 요구하지만([env.py:25](file:///Users/kimkyungpyo/Workspaces/projests/factory-space/backend/migrations/env.py)), 앱 엔진(`db/engine.py`)은 미설정 시 `sqlite:///./factory_space.db`로 **기본값**을 쓴다. 두 경로를 일치시켜야 한다.
+- 조치: `DATABASE_URL="sqlite:///./factory_space.db" uv run alembic upgrade head` 실행, 그리고 앱·마이그레이션 일관성을 위해 `.env`에 `DATABASE_URL=sqlite:///./factory_space.db` 추가.
+
+### 최종 검증
+
+"신물질 합성" 프리셋을 파이프라인에 통과시킨 결과 `type: agent.response` 정상 반환(에러 envelope 아님). 단, `result_type: invalid_input`(=`unknown_item`)인데, 이는 갓 생성된 DB의 아이템 카탈로그가 비어 있어(`get_known_items` → 0건) 결정적 prevalidator가 `iron_ingot`/`copper_ingot`을 미등록 아이템으로 판정한 **정상 동작**이다. 시드 데이터 부재는 별도 데이터 과제이며 라우팅/DB 버그와 무관하다.
+
+### 관련 파일 (이번 재발)
+
+| 파일 | 역할 | 상태 |
+|------|------|------|
+| `backend/.env` | dev LLM 슬롯(local/gemma4:e4b) + `DATABASE_URL` (gitignore 대상, 신규 생성) | **Resolved** |
+| (마이그레이션) `0001`, `0002` | `alembic upgrade head`로 적용 | **Resolved** |
+
+### 운영 권고
+
+`.env` 부재 + 빈 DB는 신규 클론/머신마다 재현된다. dev 온보딩을 매끄럽게 하려면 (1) `.env.example`의 기본 모델을 실제 배포 환경에서 pull하는 모델과 맞추거나 주석으로 명시, (2) `migrations/env.py`가 `DATABASE_URL` 미설정 시 `db.engine.get_database_url()`과 동일한 sqlite 기본값을 쓰도록 통일, (3) 아이템 카탈로그 시드 스크립트 제공을 고려한다. (코드 변경이 필요하므로 이번 작업 범위 밖.)

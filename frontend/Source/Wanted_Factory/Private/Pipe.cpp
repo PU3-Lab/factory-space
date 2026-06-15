@@ -8,6 +8,8 @@
 #include "Engine/StaticMesh.h"
 #include "GameFramework/PlayerController.h"
 #include "MachineBase.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Resource/ResourceData.h"
 #include "TimerManager.h"
@@ -15,7 +17,15 @@
 
 namespace
 {
-	constexpr float BasicCylinderHeight = 200.0f;
+	FVector OJJ_MeshBoxSize(const UInstancedStaticMeshComponent* ISM)
+	{
+		const UStaticMesh* Mesh = ISM ? ISM->GetStaticMesh() : nullptr;
+		const FVector Size = Mesh ? Mesh->GetBounds().BoxExtent * 2.0f : FVector(100.0f);
+		return FVector(
+			FMath::Max(Size.X, KINDA_SMALL_NUMBER),
+			FMath::Max(Size.Y, KINDA_SMALL_NUMBER),
+			FMath::Max(Size.Z, KINDA_SMALL_NUMBER));
+	}
 }
 
 APipe::APipe()
@@ -25,9 +35,22 @@ APipe::APipe()
 	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
 
+	auto SetupTubeCollision = [](UInstancedStaticMeshComponent* ISM)
+	{
+		ISM->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		ISM->SetCollisionObjectType(ECC_WorldStatic);
+		ISM->SetCollisionResponseToAllChannels(ECR_Ignore);
+		ISM->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+		ISM->SetGenerateOverlapEvents(false);
+	};
+
 	SegmentInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("SegmentInstances"));
 	SegmentInstances->SetupAttachment(Root);
-	SegmentInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SetupTubeCollision(SegmentInstances);
+
+	JoinInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("JoinInstances"));
+	JoinInstances->SetupAttachment(Root);
+	SetupTubeCollision(JoinInstances);
 
 	LiquidVisualInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("LiquidVisualInstances"));
 	LiquidVisualInstances->SetupAttachment(Root);
@@ -48,11 +71,19 @@ APipe::APipe()
 		LiquidVisualInstances->SetStaticMesh(CylinderMesh.Object);
 	}
 
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	if (SphereMesh.Succeeded())
+	{
+		JoinInstances->SetStaticMesh(SphereMesh.Object);
+	}
+
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> MaterialAsset(
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	if (MaterialAsset.Succeeded())
 	{
+		PipeMaterialBase = MaterialAsset.Object;
 		SegmentInstances->SetMaterial(0, MaterialAsset.Object);
+		JoinInstances->SetMaterial(0, MaterialAsset.Object);
 		LiquidVisualInstances->SetMaterial(0, MaterialAsset.Object);
 	}
 
@@ -78,6 +109,7 @@ void APipe::BeginPlay()
 {
 	Super::BeginPlay();
 	RestartLiquidMoveTimer();
+	UpdateMaterialState();
 	RefreshLiquidVisualInstances();
 	UpdateDebugStateText();
 }
@@ -86,6 +118,7 @@ void APipe::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 	RebuildVisuals();
+	UpdateMaterialState();
 	RefreshLiquidVisualInstances();
 	UpdateDebugStateText();
 }
@@ -104,8 +137,16 @@ void APipe::SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize)
 	}
 
 	RebuildVisuals();
+	UpdateMaterialState();
 	RefreshLiquidVisualInstances();
 	UpdateDebugStateText();
+}
+
+void APipe::OJJ_SetPathCellLocalZs(const TArray<float>& InCellLifts)
+{
+	PathCellZs = (InCellLifts.Num() == PathCells.Num()) ? InCellLifts : TArray<float>();
+	RebuildVisuals();
+	RefreshLiquidVisualInstances();
 }
 
 void APipe::ConfigureTransport(
@@ -123,6 +164,7 @@ void APipe::ConfigureTransport(
 	TargetMachine = NewTargetMachine;
 	ResetLiquidSlots();
 	RestartLiquidMoveTimer();
+	UpdateMaterialState();
 	RefreshLiquidVisualInstances();
 	UpdateDebugStateText();
 }
@@ -136,6 +178,7 @@ void APipe::ClearPath()
 	TargetMachine.Reset();
 	StopLiquidMoveTimer();
 	RebuildVisuals();
+	UpdateMaterialState();
 	RefreshLiquidVisualInstances();
 	UpdateDebugStateText();
 }
@@ -213,48 +256,102 @@ void APipe::RebuildVisuals()
 	}
 
 	SegmentInstances->ClearInstances();
+	if (JoinInstances)
+	{
+		JoinInstances->ClearInstances();
+	}
 	if (PathCells.Num() == 0)
 	{
 		return;
 	}
 
+	const float Diameter = FMath::Max(1.0f, PipeRadius * 2.0f);
 	const FVector Centroid = GetPathCentroidLocal();
-	const float UniformScale = FMath::Max(0.01f, SegmentRadiusScale);
-	if (PathCells.Num() == 1)
+
+	auto CellLift = [this](int32 NodeIndex) -> float
 	{
-		const FIntPoint Cell = PathCells[0];
-		const FVector LocalLocation(
-			(Cell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
-			(Cell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
-			ZOffset);
-		const FVector SegmentScale(UniformScale, UniformScale, 0.5f);
-		SegmentInstances->AddInstance(FTransform(FRotator::ZeroRotator, LocalLocation, SegmentScale));
+		return PathCellZs.IsValidIndex(NodeIndex) ? PathCellZs[NodeIndex] : 0.0f;
+	};
+
+	const int32 NumCells = PathCells.Num();
+	TArray<FVector> Nodes;
+	Nodes.Reserve(NumCells + 4);
+	for (int32 Index = 0; Index < NumCells; ++Index)
+	{
+		const FIntPoint Cell = PathCells[Index];
+		const float LocalX = (Cell.X * CellSize) + (CellSize * 0.5f) - Centroid.X;
+		const float LocalY = (Cell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y;
+		const float Lift = CellLift(Index);
+		const float PrevLift = (Index > 0) ? CellLift(Index - 1) : Lift;
+		const float NextLift = (Index + 1 < NumCells) ? CellLift(Index + 1) : Lift;
+
+		if (Lift > PrevLift)
+		{
+			Nodes.Add(FVector(LocalX, LocalY, ZOffset + PrevLift));
+		}
+		Nodes.Add(FVector(LocalX, LocalY, ZOffset + Lift));
+		if (Lift > NextLift)
+		{
+			Nodes.Add(FVector(LocalX, LocalY, ZOffset + NextLift));
+		}
+	}
+
+	if (Nodes.Num() >= 2)
+	{
+		const float HalfCell = CellSize * 0.5f;
+		const FVector StartDir = (Nodes[1] - Nodes[0]).GetSafeNormal();
+		const FVector EndDir = (Nodes.Last() - Nodes[Nodes.Num() - 2]).GetSafeNormal();
+		Nodes[0] -= StartDir * HalfCell;
+		Nodes.Last() += EndDir * HalfCell;
+	}
+
+	const FVector SphereMeshSize = JoinInstances ? OJJ_MeshBoxSize(JoinInstances) : FVector(100.0f);
+	const FVector SphereScale(
+		Diameter / SphereMeshSize.X,
+		Diameter / SphereMeshSize.Y,
+		Diameter / SphereMeshSize.Z);
+
+	if (Nodes.Num() == 1)
+	{
+		if (JoinInstances)
+		{
+			JoinInstances->AddInstance(FTransform(FRotator::ZeroRotator, Nodes[0], SphereScale));
+		}
 		return;
 	}
 
-	for (int32 Index = 0; Index + 1 < PathCells.Num(); ++Index)
+	const FVector CylinderMeshSize = OJJ_MeshBoxSize(SegmentInstances);
+	for (int32 Index = 0; Index + 1 < Nodes.Num(); ++Index)
 	{
-		const FIntPoint StartCell = PathCells[Index];
-		const FIntPoint EndCell = PathCells[Index + 1];
-		const FVector StartLocation(
-			(StartCell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
-			(StartCell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
-			ZOffset);
-		const FVector EndLocation(
-			(EndCell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
-			(EndCell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
-			ZOffset);
-		const FVector SegmentVector = EndLocation - StartLocation;
-		if (SegmentVector.IsNearlyZero())
+		const FVector SegmentVector = Nodes[Index + 1] - Nodes[Index];
+		const float SegmentLength = SegmentVector.Length();
+		if (SegmentLength <= KINDA_SMALL_NUMBER)
 		{
 			continue;
 		}
 
-		const FVector SegmentMidpoint = (StartLocation + EndLocation) * 0.5f;
-		const FQuat SegmentRotation = FQuat::FindBetweenNormals(FVector::UpVector, SegmentVector.GetSafeNormal());
-		const float SegmentLengthScale = SegmentVector.Length() / BasicCylinderHeight;
-		const FVector SegmentScale(UniformScale, UniformScale, FMath::Max(0.01f, SegmentLengthScale));
+		const FQuat SegmentRotation = FQuat::FindBetweenNormals(FVector::UpVector, SegmentVector / SegmentLength);
+		const FVector SegmentMidpoint = (Nodes[Index] + Nodes[Index + 1]) * 0.5f;
+		const FVector SegmentScale(
+			Diameter / CylinderMeshSize.X,
+			Diameter / CylinderMeshSize.Y,
+			SegmentLength / CylinderMeshSize.Z);
 		SegmentInstances->AddInstance(FTransform(SegmentRotation, SegmentMidpoint, SegmentScale));
+	}
+
+	if (JoinInstances)
+	{
+		for (int32 Index = 1; Index + 1 < Nodes.Num(); ++Index)
+		{
+			const FVector PrevDir = (Nodes[Index] - Nodes[Index - 1]).GetSafeNormal();
+			const FVector NextDir = (Nodes[Index + 1] - Nodes[Index]).GetSafeNormal();
+			if (PrevDir.Equals(NextDir, KINDA_SMALL_NUMBER))
+			{
+				continue;
+			}
+
+			JoinInstances->AddInstance(FTransform(FRotator::ZeroRotator, Nodes[Index], SphereScale));
+		}
 	}
 }
 
@@ -265,6 +362,7 @@ void APipe::ResetLiquidSlots()
 	{
 		Slot.Reset();
 	}
+	UpdateMaterialState();
 }
 
 void APipe::RestartLiquidMoveTimer()
@@ -331,6 +429,7 @@ void APipe::MoveLiquidsOneSegment()
 		}
 	}
 
+	UpdateMaterialState();
 	RefreshLiquidVisualInstances();
 	UpdateDebugStateText();
 }
@@ -392,6 +491,25 @@ void APipe::UpdateDebugTextFacingPlayer()
 	DebugStateText->SetWorldRotation(FRotator(0.0f, ToCamera.Rotation().Yaw, 0.0f));
 }
 
+void APipe::UpdateMaterialState()
+{
+	const bool bHasLiquid = HasAnyLiquid();
+	UMaterialInterface* PipeMaterial = GetPipeMaterial(bHasLiquid);
+	if (SegmentInstances)
+	{
+		SegmentInstances->SetMaterial(0, PipeMaterial);
+	}
+	if (JoinInstances)
+	{
+		JoinInstances->SetVisibility(true);
+		JoinInstances->SetMaterial(0, PipeMaterial);
+	}
+	if (LiquidVisualInstances)
+	{
+		LiquidVisualInstances->SetMaterial(0, GetPipeMaterial(true));
+	}
+}
+
 bool APipe::TryPullLiquidFromSource(FPipeLiquidSlot& OutSlot)
 {
 	OutSlot.Reset();
@@ -446,6 +564,99 @@ bool APipe::IsLiquidItem(FName ItemID) const
 	return Resource && Resource->form == FName(TEXT("liquid"));
 }
 
+bool APipe::HasAnyLiquid() const
+{
+	for (const FPipeLiquidSlot& Slot : LiquidSlots)
+	{
+		if (!Slot.IsEmpty())
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+FName APipe::GetPrimaryLiquidID() const
+{
+	for (const FPipeLiquidSlot& Slot : LiquidSlots)
+	{
+		if (!Slot.IsEmpty())
+		{
+			return Slot.LiquidID;
+		}
+	}
+
+	return NAME_None;
+}
+
+FLinearColor APipe::GetFilledPipeColor() const
+{
+	const FName LiquidID = GetPrimaryLiquidID();
+	if (LiquidID.IsNone() || !ResourceTable)
+	{
+		return FilledPipeColor;
+	}
+
+	const FResourceData* Resource = ResourceTable->FindRow<FResourceData>(LiquidID, TEXT("Pipe.GetFilledPipeColor"));
+	if (!Resource)
+	{
+		return FilledPipeColor;
+	}
+
+	FLinearColor ResultColor = Resource->PipeColor;
+	ResultColor.A = FilledPipeColor.A;
+	return ResultColor;
+}
+
+UMaterialInterface* APipe::GetPipeMaterial(bool bHasLiquid)
+{
+	if (bHasLiquid && FilledPipeMaterial)
+	{
+		return FilledPipeMaterial;
+	}
+
+	if (!bHasLiquid && EmptyPipeMaterial)
+	{
+		return EmptyPipeMaterial;
+	}
+
+	UMaterialInterface* BaseMaterial = PipeMaterialBase
+		? PipeMaterialBase.Get()
+		: UMaterial::GetDefaultMaterial(MD_Surface);
+	TObjectPtr<UMaterialInstanceDynamic>& MaterialInstance = bHasLiquid
+		? FilledPipeMaterialInstance
+		: EmptyPipeMaterialInstance;
+
+	if (!MaterialInstance)
+	{
+		MaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
+	}
+
+	ConfigureMaterialInstance(MaterialInstance, bHasLiquid);
+	return MaterialInstance.Get();
+}
+
+void APipe::ConfigureMaterialInstance(UMaterialInstanceDynamic* MaterialInstance, bool bHasLiquid) const
+{
+	if (!MaterialInstance)
+	{
+		return;
+	}
+
+	const FLinearColor PipeColor = bHasLiquid ? GetFilledPipeColor() : EmptyPipeColor;
+	const float EmissiveStrength = bHasLiquid ? FilledPipeEmissiveStrength : 0.0f;
+	const FLinearColor EmissiveColor = PipeColor * EmissiveStrength;
+
+	MaterialInstance->SetVectorParameterValue(TEXT("Color"), PipeColor);
+	MaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), PipeColor);
+	MaterialInstance->SetVectorParameterValue(TEXT("Tint"), PipeColor);
+	MaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), EmissiveColor);
+	MaterialInstance->SetScalarParameterValue(TEXT("Opacity"), PipeColor.A);
+	MaterialInstance->SetScalarParameterValue(TEXT("Alpha"), PipeColor.A);
+	MaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), EmissiveStrength);
+}
+
 FVector APipe::GetPathCentroidLocal() const
 {
 	if (PathCells.Num() == 0)
@@ -467,8 +678,10 @@ FVector APipe::GetPathCentroidLocal() const
 FVector APipe::GetCellLocalCenter(FIntPoint Cell) const
 {
 	const FVector Centroid = GetPathCentroidLocal();
+	const int32 NodeIndex = PathCells.IndexOfByKey(Cell);
+	const float Lift = PathCellZs.IsValidIndex(NodeIndex) ? PathCellZs[NodeIndex] : 0.0f;
 	return FVector(
 		(Cell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
 		(Cell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
-		ZOffset);
+		ZOffset + Lift);
 }

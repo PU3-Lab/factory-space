@@ -110,8 +110,7 @@ def test_agent_websocket_logs_outgoing_response(
 
     assert any(
         record.name == "uvicorn.error"
-        and
-        "Factory agent WebSocket sending:" in record.message
+        and "Factory agent WebSocket sending:" in record.message
         and '"request_id": "request-log-ws"' in record.message
         and '"type": "agent.error"' in record.message
         and '"code": "ROUTING_UNAVAILABLE"' in record.message

@@ -166,6 +166,24 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_SetConveyorMode;
 
+	// 파이프 모드(F4-1 — 펌프→물탱크 액체 라인, 컨베이어와 드래그 공용). IMC_Build 매핑/에셋 연결은
+	// 에디터 작업(BP 후속 — IA 미지정 시 키 진입 불가, SetPlacementMode(Pipe) BP 직접 호출은 가능).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetPipeMode;
+
+	// 물탱크 모드(F4-4 — K키). IA_SetPipeMode 미러. IMC_Build의 K 매핑/에셋 연결은 에디터 작업
+	// (IA 미지정 시 키 진입 불가 — 콘솔 OJJ_SetBuildMode tank는 계속 동작).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetTankMode;
+
+	// 평판 Foundation 모드(G키 — #196 레거시 BindKey→IA 전환). IMC_Build의 G 매핑/에셋 연결은 에디터 작업.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetFoundationMode;
+
+	// 램프 Foundation 모드(H키 — #196 레거시 BindKey→IA 전환). IMC_Build의 H 매핑/에셋 연결은 에디터 작업.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_SetRampMode;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_SetPowerNodeMode;
 
@@ -273,6 +291,16 @@ protected:
 	// 배치 모드 전환 — BuildController->SetPlacementMode로 위임.
 	void SetMachineMode(const FInputActionValue& Value);
 	void SetConveyorMode(const FInputActionValue& Value);
+	void SetPipeMode(const FInputActionValue& Value);
+	void SetTankMode(const FInputActionValue& Value);
+
+public:
+	// [임시 진입로 — F4-1'] PIE 콘솔용 배치 모드 전환(예: `OJJ_SetBuildMode pipe`). IA 에셋/UI 슬롯이
+	// 없는 신규 모드(pipe/tank)의 검증 진입로 — 정식 키/UI 와이어링(BP·UI 소유자 안건) 후 제거 후보.
+	UFUNCTION(Exec)
+	void OJJ_SetBuildMode(const FString& ModeName);
+
+protected:
 	void SetPowerNodeMode(const FInputActionValue& Value);
 	void SetShieldMode(const FInputActionValue& Value);
 	void SetPowerLineMode(const FInputActionValue& Value);
@@ -284,12 +312,10 @@ protected:
 	void SetWarehouseMode(const FInputActionValue& Value);
 	void SetDemolishMode(const FInputActionValue& Value);
 
-	// 평판 Foundation 모드 직행(G키 — M/J/I와 같은 BindKey 직접 바인딩이라 무인자).
-	// F3.7' 키 개편: G=평판/H=램프 직행(F3-2.5 T 토글 대체). 정식 IA 전환 백로그에 G/H 함께 기록.
-	void SetFoundationMode();
-
-	// 램프 Foundation 모드 직행(H키 — F3.7' 키 개편, G와 같은 BindKey 임시. 정식 IA 백로그 G/H 쌍).
-	void SetRampFoundationMode();
+	// 평판/램프 Foundation 모드 진입(G/H — #196 Enhanced Input IA 전환, 탱크/파이프와 동일 구조).
+	// 이중발화 차단 위해 레거시 BindKey 제거 + IA 단일 경로로 통일.
+	void SetFoundationMode(const FInputActionValue& Value);
+	void SetRampFoundationMode(const FInputActionValue& Value);
 
 	// 스프린트 — Started=달리기 속도, Completed=걷기 속도로 복귀.
 	void StartSprint(const FInputActionValue& Value);

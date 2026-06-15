@@ -11,14 +11,23 @@ async def main() -> None:
         await websocket.send(
             json.dumps(
                 {
-                    "type": "agent_request",
-                    "version": "1.0",
+                    "type": "agent.request",
                     "request_id": "req-material-001",
                     "session_id": "test-session",
                     "client_id": "test-client",
                     "agent": "material_generation",
                     "payload": {
-                        "query": "새로운 신물질을 설계할 수 있는 재료 조합을 추천해줘.",
+                        "machine_type": "Synthesizer",
+                        "inputs": [
+                            {"item_id": "iron_ingot", "qty": 2},
+                            {"item_id": "copper_ingot", "qty": 1},
+                        ],
+                        "process_conditions": {
+                            "temperature": "1200C",
+                            "pressure": "5atm",
+                            "catalyst": "palladium",
+                        },
+                        "generate_visual_asset": True,
                     },
                 }
             )

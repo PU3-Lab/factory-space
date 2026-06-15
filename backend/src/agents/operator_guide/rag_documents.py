@@ -45,8 +45,7 @@ class ManualRagDocumentBuilder:
             for record in self._repository.list_resources()
         )
         documents.extend(
-            self._recipe_document(record)
-            for record in self._repository.list_recipes()
+            self._recipe_document(record) for record in self._repository.list_recipes()
         )
         documents.extend(
             self._troubleshooting_document(record)

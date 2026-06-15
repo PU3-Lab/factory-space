@@ -238,8 +238,6 @@ def test_google_llm_adapter_returns_response_text() -> None:
     assert getattr(config.http_options, "timeout") == 1234
 
 
-
-
 def test_google_llm_adapter_returns_none_for_empty_response() -> None:
     models = FakeGoogleModels(FakeGoogleResponse(""))
     adapter = GoogleGenAiLLMAdapter(
@@ -395,8 +393,6 @@ def test_openai_llm_adapter_sends_system_and_user_messages() -> None:
     assert completions.calls[0]["messages"] == messages
 
 
-
-
 def test_openai_llm_adapter_returns_none_without_api_key() -> None:
     completions = FakeOpenAiChatCompletions()
     client = FakeOpenAiClient(FakeOpenAiChat(completions))
@@ -521,8 +517,6 @@ def test_local_llm_adapter_sends_system_and_user_messages() -> None:
 
     assert result == '{"summary":"ok"}'
     assert http_client.calls[0]["json_body"]["messages"] == messages
-
-
 
 
 def test_local_llm_adapter_returns_none_without_base_url() -> None:

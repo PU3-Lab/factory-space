@@ -13,7 +13,7 @@ TopRoute = Literal[
     "process_optimizer",
     "operator_guide",
     "quest_generator",
-    "new_material_generator",
+    "material_generation",
     "error",
 ]
 
