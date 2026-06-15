@@ -7,6 +7,7 @@
 #include "Conveyor.generated.h"
 
 class AMachineBase;
+class UDataTable;
 class UInstancedStaticMeshComponent;
 class USceneComponent;
 class UTextRenderComponent;
@@ -140,6 +141,9 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Conveyor|Items")
 	TWeakObjectPtr<AMachineBase> TargetMachine;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UDataTable> ResourceTable;
+
 	FTimerHandle ItemMoveTimerHandle;
 	float LastItemMoveWorldTime = 0.0f;
 	int32 NextItemVisualId = 1;
@@ -206,6 +210,7 @@ private:
 	void RestartItemMoveTimer();
 	void StopItemMoveTimer();
 	void MoveItemsOneGrid();
+	bool IsSolidItem(FName ItemID) const;
 	void RefreshItemVisualInstances();
 	float GetCurrentMoveAlpha() const;
 	FVector GetCellLocalCenter(FIntPoint Cell) const;

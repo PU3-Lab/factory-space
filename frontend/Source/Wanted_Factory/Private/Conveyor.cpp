@@ -6,11 +6,13 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "Engine/DataTable.h"
 #include "Engine/StaticMesh.h"
 #include "FactoryManagerSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "MachineBase.h"
 #include "Materials/MaterialInterface.h"
+#include "Resource/ResourceData.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -122,6 +124,13 @@ AConveyor::AConveyor()
 		StraightSegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		CornerSegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		ItemVisualInstances->SetMaterial(0, MaterialAsset.Object);
+	}
+
+	static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
+		TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData"));
+	if (ResourceTableFinder.Succeeded())
+	{
+		ResourceTable = ResourceTableFinder.Object;
 	}
 }
 
@@ -569,7 +578,7 @@ void AConveyor::MoveItemsOneGrid()
 	const FName LastItem = ItemSlots[LastIndex];
 	if (!LastItem.IsNone())
 	{
-		if (TargetMachine->CanReceiveConveyorItem(LastItem, 1))
+		if (IsSolidItem(LastItem) && TargetMachine->CanReceiveConveyorItem(LastItem, 1))
 		{
 			if (TargetMachine->ReceiveConveyorItem(LastItem, 1))
 			{
@@ -593,7 +602,9 @@ void AConveyor::MoveItemsOneGrid()
 	if (ItemSlots[0].IsNone())
 	{
 		FName NewItem = NAME_None;
-		if (SourceMachine->TryTakeFirstOutputItem(NewItem))
+		if (SourceMachine->PeekFirstOutputItem(NewItem)
+			&& IsSolidItem(NewItem)
+			&& SourceMachine->TryTakeFirstOutputItem(NewItem))
 		{
 			ItemSlots[0] = NewItem;
 			ItemVisualIds[0] = NextItemVisualId++;
@@ -603,6 +614,17 @@ void AConveyor::MoveItemsOneGrid()
 	LastItemMoveWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastItemMoveWorldTime;
 	RefreshItemVisualInstances();
 	UpdateDebugStateText();
+}
+
+bool AConveyor::IsSolidItem(FName ItemID) const
+{
+	if (!ResourceTable || ItemID.IsNone())
+	{
+		return false;
+	}
+
+	const FResourceData* Resource = ResourceTable->FindRow<FResourceData>(ItemID, TEXT("Conveyor.IsSolidItem"));
+	return Resource && Resource->form == FName(TEXT("solid"));
 }
 
 void AConveyor::RefreshItemVisualInstances()
