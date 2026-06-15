@@ -18,6 +18,7 @@ AMinerMachine::AMinerMachine()
 	// DataTable 주입이 통째로 스킵 → GridSize가 기본 1x1로 남아 호버/배치 footprint·
 	// 인접 광맥 Claim·F키 라벨이 모두 어긋난다. CSV 행 이름과 일치시켜야 함("MinerMachine").
 	MachineType = TEXT("MinerMachine");
+	bNeedPower = true;
 }
 
 // Called when the game starts or when spawned
@@ -25,6 +26,25 @@ void AMinerMachine::BeginPlay()
 {
 	Super::BeginPlay();
 
+}
+
+void AMinerMachine::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	if (!CanMine())
+	{
+		if (GetWorldTimerManager().IsTimerActive(MineTimerHandle))
+		{
+			StopMining();
+		}
+		return;
+	}
+
+	if (!GetWorldTimerManager().IsTimerActive(MineTimerHandle))
+	{
+		StartMining();
+	}
 }
 
 void AMinerMachine::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -144,6 +164,12 @@ void AMinerMachine::SetLinkedResource(AResourceBase* NewResource)
 
 bool AMinerMachine::CanMine() const
 {
+	if (!HasEnoughPower())
+	{
+		LOG_SSR_W(TEXT("CanMine failed: not enough power."));
+		return false;
+	}
+
 	if (!LinkedResource)
 	{
 		LOG_SSR_W(TEXT("CanMine failed: LinkedResource is null."));
