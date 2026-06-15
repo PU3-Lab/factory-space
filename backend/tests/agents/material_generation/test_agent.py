@@ -1,4 +1,4 @@
-"""Integration tests for MaterialCreationAgent orchestration."""
+"""MaterialCreationAgent 오케스트레이션에 대한 통합 테스트입니다."""
 
 from __future__ import annotations
 
@@ -178,11 +178,11 @@ def test_agent_synthesize_experiment_cached_reuse(db_session: Session) -> None:
         patch("llm.adapter.OpenAILLMAdapter.invoke", return_value=None),
         patch("llm.adapter.LocalLLMAdapter.invoke", return_value=None),
     ):
-        # First attempt (creates new material)
+        # 첫 번째 시도 (새로운 재료 생성)
         res1 = agent.synthesize(db_session, req)
         assert res1.result_type == "new_material"
 
-        # Second attempt (should reuse cached experiment)
+        # 두 번째 시도 (캐시된 실험을 재사용해야 함)
         res2 = agent.synthesize(db_session, req)
         assert res2.result_type == "cached_experiment"
         assert res2.cached is True
@@ -204,7 +204,7 @@ def test_agent_synthesize_retry_loop_failure(db_session: Session) -> None:
         player_id="player_retry_test",
     )
 
-    # Mock generate_proposal to return invalid/failed proposal
+    # 유효하지 않거나 실패한 제안을 반환하도록 generate_proposal 모킹(Mocking)
     failed_proposal = MaterialProposal(
         proposal_type="failed",
         confidence=0.0,
@@ -218,11 +218,11 @@ def test_agent_synthesize_retry_loop_failure(db_session: Session) -> None:
     ) as mock_gen:
         res = agent.synthesize(db_session, req)
 
-        # Verify that it finally returns failed_result
+        # 최종적으로 failed_result를 반환하는지 확인
         assert res.result_type == "failed_result"
         assert res.failure_reason == "Synthesis rejected by LLM analysis."
 
-        # Verify that the LLM proposal generator was queried exactly 3 times (due to retry loop)
+        # LLM 제안 생성기가 정확히 3번 조회되었는지 확인 (재시도 루프 때문)
         assert mock_gen.call_count == 3
 
 
@@ -254,7 +254,7 @@ def test_agent_synthesize_new_material_visual_asset_false(db_session: Session) -
 def test_agent_synthesize_new_material_visual_asset_true_background_processing(
     db_session: Session,
 ) -> None:
-    """Test that setting generate_visual_asset=True runs the background task and updates the DB."""
+    """generate_visual_asset=True로 설정하면 백그라운드 작업이 실행되고 DB가 업데이트되는지 테스트합니다."""
     agent = MaterialCreationAgent()
     req = MaterialCreationRequest(
         machine_type="Synthesizer",
@@ -276,13 +276,13 @@ def test_agent_synthesize_new_material_visual_asset_true_background_processing(
         assert res.material_id is not None
         assert res.visual_status == "pending"
 
-        # Commit session to trigger "after_commit" event listener
+        # "after_commit" 이벤트 리스너를 트리거하기 위해 세션 커밋
         db_session.commit()
 
-        # Wait for all background executor jobs to complete
+        # 모든 백그라운드 실행자 작업이 완료될 때까지 대기
         MaterialEventPublisher.wait_for_jobs()
 
-        # Query the updated material from DB
+        # DB에서 업데이트된 재료를 쿼리
         db_session.expire_all()
         updated_material = db_session.execute(
             select(GeneratedMaterialModel).where(
@@ -298,35 +298,35 @@ def test_agent_synthesize_new_material_visual_asset_true_background_processing(
 
 
 def test_visual_executor_permanent_shutdown_and_block(db_session: Session) -> None:
-    """Test that permanently shutting down the executor rejects new jobs and doesn't recreate it."""
-    # Ensure executor is in a clean reset state before test
+    """실행자를 영구적으로 종료하면 새 작업이 거부되고 재생성되지 않는지 테스트합니다."""
+    # 테스트 전에 실행자가 깨끗하게 리셋된 상태인지 확인
     MaterialEventPublisher.reset_executor(wait=True)
 
-    # Trigger a normal event publication
+    # 정상적인 이벤트 게시 트리거
     MaterialEventPublisher.publish_material_created(
         material_id="mat_test_001",
         visual_prompt="A shiny metallic plate",
         category="plates",
     )
 
-    # Perform permanent shutdown
+    # 영구 종료 수행
     MaterialEventPublisher.shutdown_executor(wait=True)
 
-    # Attempt to publish another event after shutdown
-    # This should be safely ignored (logged) without raising errors
+    # 종료 후 다른 이벤트를 게시하도록 시도
+    # 이는 에러를 발생시키지 않고 안전하게 무시(로그 기록)되어야 함
     MaterialEventPublisher.publish_material_created(
         material_id="mat_test_002",
         visual_prompt="Another metallic plate",
         category="plates",
     )
 
-    # Finally, reset back the executor to not affect other tests
+    # 마지막으로 다른 테스트에 영향을 주지 않도록 실행자를 다시 리셋
     MaterialEventPublisher.reset_executor(wait=True)
 
 
 def test_consecutive_app_lifespans_processing_events(db_session: Session) -> None:
-    """Test that two consecutive app lifespans can both process visual events correctly."""
-    # App 1 execution
+    """두 개의 연속적인 앱 라이프사이클에서 시각적 이벤트를 모두 올바르게 처리할 수 있는지 테스트합니다."""
+    # 앱 1 실행
     app1 = create_app()
     with TestClient(app1):
         MaterialEventPublisher.publish_material_created(
@@ -334,12 +334,12 @@ def test_consecutive_app_lifespans_processing_events(db_session: Session) -> Non
             visual_prompt="Shiny metal",
             category="plates",
         )
-    # Exiting the client block shuts down the executor permanently
+    # client 블록을 종료하면 실행자가 영구적으로 종료됩니다.
 
-    # App 2 execution
+    # 앱 2 실행
     app2 = create_app()
     with TestClient(app2):
-        # A new material model in DB
+        # DB에 새로운 재료 모델 추가
         new_mat = GeneratedMaterialModel(
             id="mat_lifespan_test_2",
             material_hash="hash_test_lifecycle",
@@ -354,7 +354,7 @@ def test_consecutive_app_lifespans_processing_events(db_session: Session) -> Non
         db_session.add(new_mat)
         db_session.commit()
 
-        # Re-triggering a new event in the second lifespan
+        # 두 번째 라이프사이클에서 새 이벤트 재트리거
         MaterialEventPublisher.publish_material_created(
             material_id="mat_lifespan_test_2",
             visual_prompt="Shiny plate",

@@ -6,6 +6,8 @@
 #include "Engine/DataTable.h"
 #include "Resource/ResourceData.h"
 #include "Machines/MachineTable.h"
+#include "Machines/LiquidTank.h"
+#include "Machines/WarehousePort.h"
 #include "ItemDragDropOperation.h"
 #include "OJJ_Player.h"
 #include "UI/UI_Inventory.h"
@@ -16,9 +18,19 @@
 void UUI_MachineInteract::SetTargetMachine(AMachineBase* InMachine)
 {
     TargetMachine = InMachine;
+    ManualDroppedOutputItemID = NAME_None;
     
     if (TargetMachine)
     {
+        if (AWarehousePort* WarehousePort = Cast<AWarehousePort>(TargetMachine))
+        {
+            ManualDroppedOutputItemID = WarehousePort->GetSelectedOutputItem();
+        }
+        else if (ALiquidTank* LiquidTank = Cast<ALiquidTank>(TargetMachine))
+        {
+            ManualDroppedOutputItemID = LiquidTank->GetSelectedOutputLiquid();
+        }
+
         FName MachineTypeName = TargetMachine->GetMachineType();
         UpdateMachineName(MachineTypeName.ToString());
         
@@ -98,17 +110,35 @@ void UUI_MachineInteract::NativeTick(const FGeometry& MyGeometry, float InDeltaT
     // 좌측 입력(Input) UI 갱신
     UpdateInputUI(InputName, InputAmount, TargetMachine->GetMaxInput());
 
-    FRecipeTable Recipe = TargetMachine->GetCurrentRecipe();
+    FName OutputName = NAME_None;
+    int32 OutputAmount = 0;
+    int32 MaxOutputAmount = TargetMachine->GetMaxOutput();
+    if (AWarehousePort* WarehousePort = Cast<AWarehousePort>(TargetMachine))
+    {
+        OutputName = WarehousePort->GetSelectedOutputItem();
+        OutputAmount = WarehousePort->GetSelectedOutputItemCount();
+        MaxOutputAmount = FMath::Max(OutputAmount, 1);
+    }
+    else if (ALiquidTank* LiquidTank = Cast<ALiquidTank>(TargetMachine))
+    {
+        OutputName = LiquidTank->GetSelectedOutputLiquid();
+        OutputAmount = LiquidTank->GetStoredLiquidAmount();
+        MaxOutputAmount = LiquidTank->GetCapacity();
+    }
+    else
+    {
+        FRecipeTable Recipe = TargetMachine->GetCurrentRecipe();
     // 우측 출력(Output) UI 갱신
-    FName OutputName = Recipe.OutputItem1;
+        OutputName = Recipe.OutputItem1;
     if (!ManualDroppedOutputItemID.IsNone())
     {
-        OutputName = ManualDroppedOutputItemID;
+            OutputName = ManualDroppedOutputItemID;
     }
-    int32 OutputAmount = TargetMachine->GetOutputBuffer().FindRef(OutputName);
+        OutputAmount = TargetMachine->GetOutputBuffer().FindRef(OutputName);
+    }
     
     // 우측 출력(Output) UI 갱신 (이제 None으로 밀리지 않고 iron_ore가 똑바로 유지됩니다)
-    UpdateOutputUI(OutputName, OutputAmount, TargetMachine->GetMaxOutput());
+    UpdateOutputUI(OutputName, OutputAmount, MaxOutputAmount);
 
     // 상태 텍스트 갱신 
     EMachineState State = TargetMachine->GetMachineState();
@@ -325,6 +355,40 @@ bool UUI_MachineInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDragD
     }
 
     FName DroppedItemID = ItemDragOp->DraggedItemID;
+    if (DroppedItemID.IsNone())
+    {
+        return false;
+    }
+
+    if (AWarehousePort* WarehousePort = Cast<AWarehousePort>(TargetMachine))
+    {
+        const FName PreviousOutputItem = WarehousePort->GetSelectedOutputItem();
+        WarehousePort->SetSelectedOutputItem(DroppedItemID);
+        if (WarehousePort->GetSelectedOutputItem() != DroppedItemID && PreviousOutputItem != DroppedItemID)
+        {
+            return false;
+        }
+
+        ManualDroppedOutputItemID = DroppedItemID;
+
+        UE_LOG(LogTemp, Log, TEXT("[WarehousePort] Selected output item: %s"), *DroppedItemID.ToString());
+        return true;
+    }
+
+    if (ALiquidTank* LiquidTank = Cast<ALiquidTank>(TargetMachine))
+    {
+        const FName PreviousOutputLiquid = LiquidTank->GetSelectedOutputLiquid();
+        LiquidTank->SetSelectedOutputLiquid(DroppedItemID);
+        if (LiquidTank->GetSelectedOutputLiquid() != DroppedItemID && PreviousOutputLiquid != DroppedItemID)
+        {
+            return false;
+        }
+
+        ManualDroppedOutputItemID = DroppedItemID;
+
+        UE_LOG(LogTemp, Log, TEXT("[LiquidTank] Selected output liquid: %s"), *DroppedItemID.ToString());
+        return true;
+    }
 
     // --- 이하 서브시스템 아이템 차감 및 이미지/ID 세팅 로직 동일 ---
     int32 CurrentInputAmount = TargetMachine->GetInputInventory().FindRef(DroppedItemID);

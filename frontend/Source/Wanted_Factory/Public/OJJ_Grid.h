@@ -160,19 +160,19 @@ protected:
 
 	// 바닥 분류 오버레이(빨강/초록/파랑) 공통 불투명도 — "정보는 주되 시끄럽지 않게". 낮게.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float OverlayOpacity = 0.0f; // #215 윤곽선 그리드: 채움 0(바닥 비침). 선만 분류색으로 표시.
+	float OverlayOpacity = 0.1f; // #215 윤곽선 그리드: 선(분류색) + 아주 옅은 면(0.1)로 바닥 살짝 톤.
 
 	// 오버레이 건설가능(초록) — 차분한 톤(저채도/저명도).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
-	FLinearColor OverlayBuildableColor = FLinearColor(0.10f, 0.45f, 0.13f);
+	FLinearColor OverlayBuildableColor = FLinearColor(0.103158f, 0.288191f, 1.0f, 1.0f); // #215 윤곽선: 청색 선
 
 	// 오버레이 건설불가/blocked(빨강) — 차분한 톤.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
-	FLinearColor OverlayBlockedColor = FLinearColor(0.50f, 0.10f, 0.09f);
+	FLinearColor OverlayBlockedColor = FLinearColor(0.5f, 0.1f, 0.09f, 1.0f); // #215 윤곽선: 적색 선
 
 	// 오버레이 물(파랑) — 차분한 톤.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
-	FLinearColor OverlayWaterColor = FLinearColor(0.10f, 0.35f, 0.60f);
+	FLinearColor OverlayWaterColor = FLinearColor(0.007655f, 0.030338f, 0.6f, 1.0f); // #215 윤곽선: 파랑 선
 
 	// 캐릭터 점유 셀(노랑) — 빌드모드 중 플레이어 캡슐이 걸친 셀 표시(F2-4 후속 ② — 시각 전용, 점유 비등록).
 	// 정보 계층이라 OverlayOpacity 공유, 색은 오버레이 3색과 구분되는 밝은 노랑.
@@ -181,7 +181,7 @@ protected:
 
 	// 호버 공통 불투명도 — "지금 액션이 주인공". 높게(아래 오버레이를 거의 가림 → 색 섞임 제거).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float HoverOpacity = 0.90f;
+	float HoverOpacity = 0.1f; // #215 윤곽선: 호버도 옅게(채움 거의 없음).
 
 	// 호버 가능(밝은 초록 + 살짝 에미시브) — Unlit이라 채널>1이 글로우.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
@@ -200,7 +200,7 @@ protected:
 
 	// 격자 선 불투명도 — 채움(Overlay/Hover Opacity)과 독립. 스냅 기준선이라 높게 유지.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float GridLineOpacity = 0.90f;
+	float GridLineOpacity = 0.6f; // #215 윤곽선: 선 불투명도.
 
 	// 윤곽선 그리드 스타일(#215) — true면 셀 경계선을 **분류색(FillColor)** 으로 그린다
 	// (buildable=초록선 / water=청선 / blocked=적선). false면 기존 동작(공유 GridLineColor 선 + 채움).
@@ -405,6 +405,17 @@ protected:
 	// 미지정이면 고스트 비활성(안전한 no-op) — OJJ_EnsureGhostMIDs가 1회 경고.
 	UPROPERTY(EditAnywhere, Category = "Grid|Ghost")
 	TObjectPtr<UMaterialInterface> GhostBaseMaterial;
+
+	// 고스트 틴트(#187) — PIE 디테일 슬라이더 튜닝용(그리드 Visual Hierarchy 패턴). OJJ_EnsureGhostMIDs가
+	// GhostValidMID/InvalidMID의 TintColor/Opacity에 주입(PostEditChangeProperty로 라이브 반영).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Ghost", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float GhostOpacity = 0.1f; // #187 확정 — 텍스처 거의 그대로, 아주 옅은 틴트.
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Ghost")
+	FLinearColor GhostValidTint = FLinearColor(0.2f, 0.9f, 0.3f);   // 배치 가능(부드러운 초록)
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Ghost")
+	FLinearColor GhostInvalidTint = FLinearColor(1.0f, 0.2f, 0.2f); // 배치 불가(부드러운 빨강)
 
 	// 배치 가능(초록 틴트) / 불가(빨강 틴트) 고스트 MID. OJJ_EnsureGhostMIDs에서 lazy 생성.
 	UPROPERTY(Transient)

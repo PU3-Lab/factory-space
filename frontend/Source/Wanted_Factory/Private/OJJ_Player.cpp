@@ -28,6 +28,7 @@
 #include "UI/UI_MachineInteract.h"
 #include "UI/UI_MainHUD.h"
 #include "UI/UI_Inventory.h"
+#include "Machines/LiquidTank.h"
 #include "Machines/WarehousePort.h"
 #include "PlayerWarehouseSubsystem.h"
 
@@ -996,7 +997,9 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 	MachineInteractWidgetInstance = Widget;
 	Widget->AddToViewport(); //
 	Widget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
-	if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
+	const bool bIsWarehousePort = Machine->IsA(AWarehousePort::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse"));
+	const bool bIsLiquidTank = Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("LiquidTank"));
+	if (bIsWarehousePort || bIsLiquidTank)
 	{
 		// 인벤토리 위젯이 아직 없다면 새로 생성
 		if (!InventoryWidgetInstance && InventoryWidgetClass)
@@ -1006,6 +1009,7 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 
 		if (InventoryWidgetInstance)
 		{
+			InventoryWidgetInstance->SetItemFormFilter(bIsLiquidTank ? FName(TEXT("liquid")) : FName(TEXT("solid")));
 			InventoryWidgetInstance->AddToViewport();
 			InventoryWidgetInstance->RefreshInventoryWindow(); // 최초 1회 생성 레이아웃 틀 짜기
 			bIsInventoryOpen = true;
@@ -1149,10 +1153,21 @@ void AOJJ_Player::TriggerInventoryToggle()
     
     // 창고 컴포넌트 구조체 캐스팅
     bool bIsValidWarehouse = false;
+    FName InventoryFormFilter = NAME_None;
     if (bHit && Hit.GetActor())
     {
         // AWarehousePort 뿐만 아니라 일반 머신 베이스 계열인지도 체크
-        if (Hit.GetActor()->IsA(AMachineBase::StaticClass()) || Hit.GetActor()->GetName().Contains(TEXT("Warehouse")))
+        if (Hit.GetActor()->IsA(AWarehousePort::StaticClass()) || Hit.GetActor()->GetName().Contains(TEXT("Warehouse")))
+        {
+            bIsValidWarehouse = true;
+            InventoryFormFilter = TEXT("solid");
+        }
+        else if (Hit.GetActor()->IsA(ALiquidTank::StaticClass()) || Hit.GetActor()->GetName().Contains(TEXT("LiquidTank")))
+        {
+            bIsValidWarehouse = true;
+            InventoryFormFilter = TEXT("liquid");
+        }
+        else if (Hit.GetActor()->IsA(AMachineBase::StaticClass()))
         {
             bIsValidWarehouse = true;
         }
@@ -1173,6 +1188,7 @@ void AOJJ_Player::TriggerInventoryToggle()
 
     if (InventoryWidgetInstance)
     {
+       InventoryWidgetInstance->SetItemFormFilter(InventoryFormFilter);
        InventoryWidgetInstance->AddToViewport();
        InventoryWidgetInstance->RefreshInventoryWindow();
        bIsInventoryOpen = true;
