@@ -1,4 +1,4 @@
-"""Unit tests for the ExperimentSimilarityService, verifying SQL-side overlap calculation and limit."""
+"""SQL 기반의 중복도 계산 및 제한(limit) 검증을 위한 ExperimentSimilarityService 단위 테스트입니다."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from db.models import GeneratedExperimentModel, GeneratedMaterialModel
 
 
 def test_find_similar_experiments_ordering_and_limit(db_session: Session) -> None:
-    """Test that find_similar_experiments correctly orders by overlap count and respects limits."""
-    # 1. Insert sample materials and experiments
-    # Material 1
+    """find_similar_experiments가 중복 카운트 기준 정렬을 올바르게 수행하고 제한(limit)을 준수하는지 테스트합니다."""
+    # 1. 샘플 재료 및 실험 데이터 삽입
+    # 재료 1
     mat1 = GeneratedMaterialModel(
         id="mat_1",
         material_hash="hash_mat_1",
@@ -22,7 +22,7 @@ def test_find_similar_experiments_ordering_and_limit(db_session: Session) -> Non
     )
     db_session.add(mat1)
 
-    # Material 2
+    # 재료 2
     mat2 = GeneratedMaterialModel(
         id="mat_2",
         material_hash="hash_mat_2",
@@ -34,7 +34,7 @@ def test_find_similar_experiments_ordering_and_limit(db_session: Session) -> Non
     db_session.add(mat2)
     db_session.commit()
 
-    # Experiment 1: inputs_json has 'iron' (overlap 1)
+    # 실험 1: inputs_json에 'iron' 포함 (중복 1)
     exp1 = GeneratedExperimentModel(
         id="exp_1",
         experiment_hash="hash_exp_1",
@@ -47,7 +47,7 @@ def test_find_similar_experiments_ordering_and_limit(db_session: Session) -> Non
     )
     db_session.add(exp1)
 
-    # Experiment 2: inputs_json has 'iron' and 'copper' (overlap 2)
+    # 실험 2: inputs_json에 'iron' 및 'copper' 포함 (중복 2)
     exp2 = GeneratedExperimentModel(
         id="exp_2",
         experiment_hash="hash_exp_2",
@@ -64,20 +64,20 @@ def test_find_similar_experiments_ordering_and_limit(db_session: Session) -> Non
     db_session.add(exp2)
     db_session.commit()
 
-    # 2. Query for similar experiments with inputs containing 'iron' and 'copper'
+    # 2. 'iron' 및 'copper'가 포함된 입력을 대입하여 유사 실험 쿼리
     inputs = [{"item_id": "iron", "qty": 2}, {"item_id": "copper", "qty": 1}]
 
-    # Check that order is correct (exp2 has overlap 2, exp1 has overlap 1)
+    # 정렬 순서가 올바른지 확인 (exp2는 중복 2, exp1은 중복 1)
     results = ExperimentSimilarityService.find_similar_experiments(
         session=db_session, machine_type="Smelter", normalized_inputs=inputs, limit=2
     )
 
     assert len(results) == 2
-    # The first result must be 'Copper Compound' (mat_2) because it overlaps on both iron and copper
+    # 첫 번째 결과는 iron과 copper 둘 다 중복되는 'Copper Compound' (mat_2)여야 함
     assert results[0]["material_name"] == "Copper Compound"
     assert results[1]["material_name"] == "Super Iron Alloy"
 
-    # Test limit constraint
+    # limit 제약 조건 테스트
     limited_results = ExperimentSimilarityService.find_similar_experiments(
         session=db_session, machine_type="Smelter", normalized_inputs=inputs, limit=1
     )

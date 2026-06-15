@@ -18,6 +18,7 @@ from agents.operator_guide.manual_context_builder import (
 from agents.operator_guide.prompt_builder import ManualQAPromptBuilder
 from agents.operator_guide.question_classifier import ManualQAQuestionClassifier
 from agents.operator_guide.schemas import ManualQAResult
+from agents.operator_guide.session_memory import OPERATOR_GUIDE_RECENT_CONVERSATION_KEY
 
 
 class ManualQARagRuntime(Protocol):
@@ -55,16 +56,24 @@ class ManualQAService:
     ) -> ManualQAResult:
         """LLM 없이 CSV 기반 proto 답변 객체를 만든다."""
 
-        _ = context
-        return self.build_prompt_context(question).result
+        return self.build_prompt_context(question, context=context).result
 
-    def build_prompt_context(self, question: str) -> ManualQAPromptContext:
+    def build_prompt_context(
+        self,
+        question: str,
+        context: dict[str, object] | None = None,
+    ) -> ManualQAPromptContext:
         """질문을 분류하고, 그 질문에 맞는 CSV evidence를 모은다."""
 
         intent = self._question_classifier.classify(question)
         prompt_context = self._context_builder.build(question, intent)
+        recent_conversation = _recent_conversation(context)
         if self._rag_runtime is None:
-            return prompt_context
+            return ManualQAPromptContext(
+                result=prompt_context.result,
+                evidence=prompt_context.evidence,
+                recent_conversation=recent_conversation,
+            )
 
         rag_result = self._rag_runtime.retrieve(question)
         rag_metadata = _rag_metadata(rag_result)
@@ -74,6 +83,7 @@ class ManualQAService:
             evidence=prompt_context.evidence,
             rag_context_text=str(getattr(rag_result, "context_text", "")),
             rag_metadata=rag_metadata,
+            recent_conversation=recent_conversation,
         )
 
     def build_prompt(
@@ -82,10 +92,11 @@ class ManualQAService:
         *,
         topic: str,
         sub_agent: str,
+        context: dict[str, object] | None = None,
     ) -> str:
         """CSV evidence를 근거로 한 LLM용 단일 문자열 prompt를 만든다."""
 
-        prompt_context = self.build_prompt_context(question)
+        prompt_context = self.build_prompt_context(question, context=context)
         return self._prompt_builder.build(
             question=question,
             topic=topic,
@@ -99,10 +110,11 @@ class ManualQAService:
         *,
         topic: str,
         sub_agent: str,
+        context: dict[str, object] | None = None,
     ) -> list[dict[str, str]]:
         """system prompt와 user prompt가 분리된 chat messages를 만든다."""
 
-        prompt_context = self.build_prompt_context(question)
+        prompt_context = self.build_prompt_context(question, context=context)
         return self._prompt_builder.build_messages(
             question=question,
             topic=topic,
@@ -143,6 +155,7 @@ def build_manual_qa_prompt(
     *,
     topic: str,
     sub_agent: str,
+    context: dict[str, object] | None = None,
 ) -> str:
     """leaf agent가 사용할 CSV 근거 기반 LLM prompt를 만든다."""
 
@@ -150,6 +163,7 @@ def build_manual_qa_prompt(
         question,
         topic=topic,
         sub_agent=sub_agent,
+        context=context,
     )
 
 
@@ -158,6 +172,7 @@ def build_manual_qa_prompt_messages(
     *,
     topic: str,
     sub_agent: str,
+    context: dict[str, object] | None = None,
 ) -> list[dict[str, str]]:
     """leaf agent가 사용할 system/user chat messages를 만든다."""
 
@@ -165,7 +180,35 @@ def build_manual_qa_prompt_messages(
         question,
         topic=topic,
         sub_agent=sub_agent,
+        context=context,
     )
+
+
+def _recent_conversation(context: dict[str, object] | None) -> list[dict[str, str]]:
+    """AgentContext metadata에서 최근 대화 목록만 안전하게 꺼낸다.
+
+    초보자용 설명:
+        pipeline은 session memory를 metadata에 넣어 service로 넘깁니다.
+        이 함수는 그 값이 예상한 list/dict 형태인지 확인하고, prompt에 넣을 수 있는
+        question/answer 문자열만 골라냅니다.
+    """
+
+    if context is None:
+        return []
+
+    raw_turns = context.get(OPERATOR_GUIDE_RECENT_CONVERSATION_KEY)
+    if not isinstance(raw_turns, list):
+        return []
+
+    turns: list[dict[str, str]] = []
+    for raw_turn in raw_turns:
+        if not isinstance(raw_turn, dict):
+            continue
+        question = str(raw_turn.get("question") or "")
+        answer = str(raw_turn.get("answer") or "")
+        if question and answer:
+            turns.append({"question": question, "answer": answer})
+    return turns
 
 
 def _rag_metadata(rag_result: object) -> dict[str, object]:
