@@ -59,8 +59,10 @@ AResourceBase* APump::FindAdjacentWater(const AOJJ_Grid* Grid, FIntPoint Origin,
 	// 발밑에 form=liquid가 없으면(육상 펌프) 아무 영향 없이 인접 검사로 폴백 → 기존 모델 회귀 0.
 	for (const FIntPoint& Cell : Footprint)
 	{
-		AResourceBase* Under = Cast<AResourceBase>(Grid->GetActorAtCell(Cell));
-		if (Under && Under->HasForm(LiquidFormName))
+		// #182 발밑 수원: 자원 전용 레이어로 조회(GetActorAtCell이 아님). 펌프가 이 셀을 점유해
+		// OccupiedCells를 덮어써도 발밑 WaterArea가 보존돼 정상 연결된다(과거엔 펌프 자신을 반환해 실패).
+		AResourceBase* Under = Grid->GetLiquidResourceAtCell(Cell);
+		if (Under)
 		{
 			return Under;
 		}
@@ -84,8 +86,9 @@ AResourceBase* APump::FindAdjacentWater(const AOJJ_Grid* Grid, FIntPoint Origin,
 			Visited.Add(Neighbor);
 
 			// form=liquid 자원이면 채택. 채굴기와 달리 IsClaimed 판정 없음 — 무제한 공유(Claim 미사용).
-			AResourceBase* Resource = Cast<AResourceBase>(Grid->GetActorAtCell(Neighbor));
-			if (Resource && Resource->HasForm(LiquidFormName))
+			// 자원 전용 레이어 조회 — 인접 물 위에 다른 머신이 점유 중이어도 그 아래 WaterArea를 찾는다.
+			AResourceBase* Resource = Grid->GetLiquidResourceAtCell(Neighbor);
+			if (Resource)
 			{
 				return Resource;
 			}

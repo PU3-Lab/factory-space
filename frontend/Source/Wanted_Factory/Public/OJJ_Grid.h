@@ -10,6 +10,7 @@
 class AMachineBase;
 class AConveyor;
 class APipe;
+class AResourceBase;
 class AOJJ_Foundation;
 class UStaticMeshComponent;
 class UInstancedStaticMeshComponent;
@@ -471,6 +472,14 @@ protected:
 	// 비직사각형/등록 후 이동·회전에도 origin 식별 안정. GetMachineOrigin이 이 맵을 조회.
 	TMap<TWeakObjectPtr<AActor>, FIntPoint> OJJ_ActorToOrigin;
 
+	// #182 자원 전용 셀 레이어 — 셀 → 자원 액터(AResourceBase: WaterArea/광맥). OccupiedCells와 독립.
+	// 이유: OccupiedCells는 셀당 단일 슬롯이라 펌프(CanStandOnWater)가 물 위에 등록되면 그 셀의 WaterArea
+	// 참조를 덮어써(스택 아님) 잃는다 → GetWaterSurfaceZAtCell/펌프 수원조회가 WaterArea를 못 찾고 펌프가
+	// 지형바닥(-997)으로 폴백. 머신은 이 맵을 절대 쓰지 않으므로(OJJ_RegisterActorCells에서 AResourceBase만
+	// 기록) 펌프가 위에 점유해도 발밑 WaterArea가 보존된다. 등록/해제는 OJJ_RegisterActorCells/OJJ_RemoveActorAt
+	// 대칭 경로에 얹어 OJJ_ActorToCells와 같은 수명. weak ptr이라 stale은 조회 시 null로 자연 무효화.
+	TMap<FIntPoint, TWeakObjectPtr<AResourceBase>> OJJ_ResourceCellToActor;
+
 	// === Foundation 커버리지 레이어 (F1-a — 데이터/질의만. 소비처 연결은 F1-c 게이트 교체) ===
 
 	// 셀 → 커버 Foundation + 상면 Z. OccupiedCells와 완전 독립(점유=차단 / 커버리지=허가 — 의미 반대).
@@ -688,6 +697,11 @@ public:
 	// "교집합" 정책: 분류 water 셀(IsCellWater)이라도 WaterArea가 안 덮으면 false → 호출자가 거부(펌프=교집합만 허용).
 	UFUNCTION(BlueprintPure, Category = "Grid|Water")
 	bool GetWaterSurfaceZAtCell(FIntPoint Cell, float& OutSurfaceZ) const;
+
+	// 셀을 덮는 액체 자원(form=liquid)을 자원 전용 레이어(OJJ_ResourceCellToActor)에서 조회. 없으면 null.
+	// #182 펌프 발밑 수원 연결·수면 Z 공용 단일원 — OccupiedCells(머신 점유에 덮어쓰임)와 분리돼
+	// 펌프가 같은 셀을 점유해도 발밑 WaterArea를 찾는다. GetWaterSurfaceZAtCell도 이 함수로 위임.
+	AResourceBase* GetLiquidResourceAtCell(FIntPoint Cell) const;
 
 	// 지형 높이 베이크 — GridSize 전 셀 ↓트레이스로 buildable/blocked/void/water 재계산. BeginPlay 폴백 + 콘솔 재호출.
 	// bVerbose: 평탄(바닥)이 아닌 셀마다 (좌표/hit/Z/부호델타/분류)를 로그(캡 있음) — 큐브 등 베이크 진단용.

@@ -867,14 +867,27 @@ bool AOJJ_Grid::IsCellWater(FIntPoint Cell) const
 	return WaterCells.Contains(Cell);
 }
 
+AResourceBase* AOJJ_Grid::GetLiquidResourceAtCell(FIntPoint Cell) const
+{
+	// 자원 전용 레이어(OJJ_ResourceCellToActor)에서 조회 — OccupiedCells(머신 점유에 덮어쓰임)와 분리.
+	// 펌프가 물 위에 점유해도 발밑 WaterArea가 이 맵에 보존되므로 찾을 수 있다(#182 핵심 수정).
+	// weak ptr이 stale(액터 파괴)이면 Get()=null → 자연 무효화. form=liquid만 통과(광맥 등 비액체 자원 배제).
+	if (const TWeakObjectPtr<AResourceBase>* Found = OJJ_ResourceCellToActor.Find(Cell))
+	{
+		AResourceBase* Resource = Found->Get();
+		if (Resource && Resource->HasForm(FName(TEXT("liquid"))))
+		{
+			return Resource;
+		}
+	}
+	return nullptr;
+}
+
 bool AOJJ_Grid::GetWaterSurfaceZAtCell(FIntPoint Cell, float& OutSurfaceZ) const
 {
-	// 셀을 덮는 점유 액체 자원(WaterArea, form=liquid)의 액터 Z를 수면으로 반환.
-	// #182 펌프 물위 배치·파이프 수면 Z 공용 단일원. WaterArea는 OJJ_RegisterActorCells로 점유 등록되므로
-	// GetActorAtCell(점유 역참조)로 조회 — per-puddle 수면(WA1/WA2 다른 Z)이 셀별로 자동 해소.
-	// WaterArea가 안 덮은 셀(분류만 water)은 false → 호출자가 거부(펌프 "교집합" 정책) 또는 폴백.
-	AResourceBase* Resource = Cast<AResourceBase>(GetActorAtCell(Cell));
-	if (Resource && Resource->HasForm(FName(TEXT("liquid"))))
+	// 셀을 덮는 액체 자원(WaterArea, form=liquid)의 액터 Z를 수면으로 반환. 자원 전용 레이어 조회(위 함수)에
+	// 위임 — per-puddle 수면(WA1/WA2 다른 Z)이 셀별로 자동 해소. 없으면 false → 호출자가 거부/폴백.
+	if (AResourceBase* Resource = GetLiquidResourceAtCell(Cell))
 	{
 		OutSurfaceZ = Resource->GetActorLocation().Z;
 		return true;
@@ -2237,7 +2250,27 @@ bool AOJJ_Grid::OJJ_ValidatePipePlacement(const TArray<FIntPoint>& PathCells,
 
 	// ① 균일 SurfaceZ 한정 — 수집기는 균일 실패 시 경사 검사(F3.7-1)로 통과시킬 수 있으나 평면
 	// 파이프(F4-1)는 불채택. 오버패스/경사 파이프 Z는 F4-3(Chan Z 채널 후).
-	if (!OJJ_GetUniformSurfaceZ(OutPlacementCells, OutPathSurfaceZ))
+	// #182 물 위 파이프: 경로 셀이 균일 수면(WaterArea) 위면 수면 Z로 안착(펌프 GetMachinePlacementLocation과
+	// 동일 패턴, GetWaterSurfaceZAtCell). 펌프→탱크가 물 위에 있으면 그 사이 경로도 물이라 수면에 깔린다.
+	// 물이 아니면 기존 균일 지형/Foundation 면(OJJ_GetUniformSurfaceZ)로 폴백 — 둘 다 실패 시 거부.
+	bool bUniformWaterPath = OutPlacementCells.Num() > 0;
+	float PathWaterZ = 0.0f;
+	for (int32 i = 0; i < OutPlacementCells.Num(); ++i)
+	{
+		float CellZ = 0.0f;
+		if (!GetWaterSurfaceZAtCell(OutPlacementCells[i], CellZ)
+			|| (i > 0 && !FMath::IsNearlyEqual(CellZ, PathWaterZ)))
+		{
+			bUniformWaterPath = false;
+			break;
+		}
+		PathWaterZ = CellZ;
+	}
+	if (bUniformWaterPath)
+	{
+		OutPathSurfaceZ = PathWaterZ;
+	}
+	else if (!OJJ_GetUniformSurfaceZ(OutPlacementCells, OutPathSurfaceZ))
 	{
 		OutReason = TEXT("Pipe path must be on a single flat surface (slope/overpass arrives in F4-3).");
 		return false;
@@ -2935,11 +2968,19 @@ bool AOJJ_Grid::OJJ_RegisterActorCells(AActor* Actor, const TArray<FIntPoint>& C
 
 	// origin = 등록 셀의 lower-left(min corner). 머신과 동일 컨벤션으로 OJJ_ActorToOrigin 동기 유지.
 	FIntPoint Origin = UniqueCells[0];
+	AResourceBase* AsResource = Cast<AResourceBase>(Actor);
 	for (const FIntPoint& Cell : UniqueCells)
 	{
 		Origin.X = FMath::Min(Origin.X, Cell.X);
 		Origin.Y = FMath::Min(Origin.Y, Cell.Y);
 		OccupiedCells.Add(Cell, Actor);
+
+		// #182 자원이면 자원 전용 레이어에도 기록 — 위에 머신(펌프)이 점유해 OccupiedCells를 덮어써도
+		// 발밑 WaterArea가 보존된다. 머신은 이 경로(비머신 전용)로 안 오므로 이 맵엔 자원만 들어간다.
+		if (AsResource)
+		{
+			OJJ_ResourceCellToActor.Add(Cell, AsResource);
+		}
 	}
 	OJJ_ActorToOrigin.Add(Actor, Origin);
 	OJJ_ActorToCells.Add(Actor, MoveTemp(UniqueCells));
@@ -2995,6 +3036,14 @@ bool AOJJ_Grid::OJJ_RemoveActorAt(FIntPoint Cell)
 				It.RemoveCurrent();
 			}
 		}
+		// #182 자원 전용 레이어도 같은 actor 셀 전체 스캔 제거(등록/해제 대칭 — OccupiedCells와 동일 처리).
+		for (auto It = OJJ_ResourceCellToActor.CreateIterator(); It; ++It)
+		{
+			if (It.Value().Get() == Actor)
+			{
+				It.RemoveCurrent();
+			}
+		}
 		OJJ_ActorToOrigin.Remove(Actor);
 
 		// 비정상 복구 경로에서도 포트 셀 점유가 풀렸을 수 있으므로 화살표 시각 일관성 유지(Codex 리뷰 Low).
@@ -3008,6 +3057,14 @@ bool AOJJ_Grid::OJJ_RemoveActorAt(FIntPoint Cell)
 	for (const FIntPoint& C : *ActorCells)
 	{
 		OccupiedCells.Remove(C);
+		// #182 자원 전용 레이어도 대칭 해제 — 단, 이 셀이 정말 이 actor 것일 때만(타 자원/머신 무영향).
+		if (const TWeakObjectPtr<AResourceBase>* ResFound = OJJ_ResourceCellToActor.Find(C))
+		{
+			if (ResFound->Get() == Actor)
+			{
+				OJJ_ResourceCellToActor.Remove(C);
+			}
+		}
 	}
 	OJJ_ActorToCells.Remove(Actor);
 	OJJ_ActorToOrigin.Remove(Actor);
