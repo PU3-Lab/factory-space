@@ -13,25 +13,8 @@ AGrinder::AGrinder()
 	PrimaryActorTick.bCanEverTick = true;
 
 	MachineType = TEXT("Grinder");
-	InputPortCount = 1;
-	OutputPortCount = 1;
 	bNeedPower = true;
-	PowerConsumption = 10.f;
-	MaxDurability = 1000.f;
-	CurrentDurability = MaxDurability;
 	bDisableWhenBroken = true;
-
-	InputPorts.Reset();
-	FMachinePortData InputPort;
-	InputPort.PortIndex = 0;
-	InputPort.PortType = EPortType::Input;
-	InputPorts.Add(InputPort);
-
-	OutputPorts.Reset();
-	FMachinePortData OutputPort;
-	OutputPort.PortIndex = 0;
-	OutputPort.PortType = EPortType::Output;
-	OutputPorts.Add(OutputPort);
 }
 
 // Called when the game starts or when spawned

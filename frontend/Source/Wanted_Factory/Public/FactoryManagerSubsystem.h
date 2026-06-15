@@ -71,6 +71,24 @@ struct FPowerConnectionEdge
 	TWeakObjectPtr<APowerLine> PowerLineActor;
 };
 
+USTRUCT(BlueprintType)
+struct FFactorySectorSnapshot
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Sector")
+	FName SectorID = NAME_None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Sector")
+	int32 Revision = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Sector")
+	TArray<FName> CellIDs;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Sector")
+	TArray<FName> EdgeIDs;
+};
+
 UCLASS()
 class WANTED_FACTORY_API UFactoryManagerSubsystem : public UGameInstanceSubsystem
 {
@@ -145,8 +163,26 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Factory Manager")
 	TArray<FConnectionEdge> GetConnectionEdges();
 
+	UFUNCTION(BlueprintCallable, Category = "Factory Manager|Sector")
+	TArray<FFactorySectorSnapshot> GetSectorSnapshots();
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Manager|Sector")
+	TArray<FFactorySectorSnapshot> GetDirtySectorSnapshots();
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Manager|Sector")
+	TArray<FName> GetRemovedSectorIDs();
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Manager|Sector")
+	void ClearSectorDirtyState();
+
+	UFUNCTION(BlueprintPure, Category = "Factory Manager|Sector")
+	FName GetSectorIDForMachine(const AMachineBase* Machine);
+
 	UFUNCTION(BlueprintCallable, Category = "Factory Manager|Power")
 	TArray<FPowerConnectionEdge> GetPowerConnectionEdges();
+
+	UFUNCTION(BlueprintPure, Category = "Factory Manager|Power")
+	bool IsPowerLineEnergized(const APowerLine* PowerLine);
 
 	UFUNCTION(BlueprintPure, Category = "Factory Manager")
 	bool IsGraphDirty() const { return bGraphDirty; }
@@ -166,12 +202,18 @@ private:
 	TMap<FName, FMachineNode> Machines;
 	TMap<FName, FConnectionEdge> Connections;
 	TMap<FName, FPowerConnectionEdge> PowerConnections;
+	TMap<FName, FFactorySectorSnapshot> SectorSnapshots;
+	TMap<FName, FName> MachineToSector;
+	TSet<FName> DirtySectorIDs;
+	TSet<FName> RemovedSectorIDs;
 	bool bGraphDirty = true;
+	bool bPowerDirty = true;
 
 	float LastTotalGeneratedPower = 0.0f;
 	float LastTotalDemandPower = 0.0f;
 
 	void EnsureCachedData();
+	void RebuildSectorData();
 	void RemoveConnectionsForMachine(FName MachineID);
 	void RemoveConnectionsForConveyor(AConveyor* Conveyor);
 	void RemovePowerConnectionsForNode(FName NodeID);
@@ -197,4 +239,5 @@ private:
 	bool IsMachineConnectedToComponent(const AMachineBase* Machine, const TArray<APowerGridNode*>& ComponentNodes) const;
 	bool IsMachineSuppliedByComponent(const AMachineBase* Machine, const TArray<APowerGridNode*>& ComponentNodes) const;
 	void SetMachinePowerIfChanged(AMachineBase* Machine, float NewPower) const;
+	FName MakeSectorID(const TArray<FName>& CellIDs) const;
 };

@@ -35,6 +35,10 @@ public:
 	// Q/E 회전. Axis +1=시계, -1=반시계(에디터 매핑에 따름). yaw만 회전.
 	void Rotate(float Axis);
 
+	// 마우스 휠 줌. ScrollDelta +면 줌인(팔 길이 감소). MinArmLength~MaxArmLength로 클램프.
+	// 빌드모드에서 AOJJ_Player::Zoom()이 위임 호출(TPS/빌드 동일 휠 UX).
+	void Zoom(float ScrollDelta);
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -57,11 +61,22 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildCamera", meta = (ClampMin = "0.0"))
 	float RotateSpeed = 90.f;
 
-	// 카메라 하향 각도(도). 음수가 아래를 봄. -90이 정탑다운, 약간 기울이면 입체감.
+	// 카메라 하향 각도(도). 음수가 아래를 봄. -90이 정탑다운(바닥과 수평으로 내려다봄), 기울이면 입체감.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildCamera", meta = (ClampMin = "-90.0", ClampMax = "0.0"))
-	float CameraPitch = -70.f;
+	float CameraPitch = -90.f;
 
-	// SpringArm 길이(카메라 높이/거리).
+	// SpringArm 길이(카메라 높이/거리). 휠 줌이 이 값을 변경(런타임 현재값 역할도 겸함).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildCamera", meta = (ClampMin = "0.0"))
 	float ArmLength = 1500.f;
+
+	// 휠 한 틱당 팔 길이 변화량. 빌드캠은 스케일이 커서 TPS(50)보다 크게.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildCamera|Zoom", meta = (ClampMin = "0.0"))
+	float ZoomStep = 150.f;
+
+	// 줌 최소/최대 팔 길이. 너무 가까우면 그리드 일부만, 너무 멀면 전경 상실 — PIE 튜닝.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildCamera|Zoom", meta = (ClampMin = "0.0"))
+	float MinArmLength = 600.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildCamera|Zoom", meta = (ClampMin = "0.0"))
+	float MaxArmLength = 4000.f;
 };

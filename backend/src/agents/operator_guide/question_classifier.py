@@ -60,7 +60,9 @@ class ManualQAQuestionClassifier:
                     target_ids=[recipe_for_resource.recipe_id, resource.resource_id],
                 )
 
-        if resource is not None and self._has_any(question, RESOURCE_PRODUCTION_KEYWORDS):
+        if resource is not None and self._has_any(
+            question, RESOURCE_PRODUCTION_KEYWORDS
+        ):
             target_ids = [resource.resource_id]
             recipe_for_resource = self._repository.find_recipe_by_output_resource(
                 resource.resource_id
@@ -103,4 +105,3 @@ class ManualQAQuestionClassifier:
 
 def _recipe_resource_ids(recipe: object) -> list[str]:
     return [item.split(":", 1)[0] for item in getattr(recipe, "input_resources")]
-

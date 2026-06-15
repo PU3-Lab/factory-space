@@ -207,3 +207,7 @@ frontend/docs/presentation_images/questmanager_subsystem_diagram.png
 frontend/docs/presentation_images/planetmanager_subsystem_diagram.png
 frontend/docs/presentation_images/factorymanager_subsystem_diagram.png
 frontend/docs/presentation_images/agentclient_subsystem_diagram.png
+
+# Local SQLite databases
+backend/*.db
+backend/*.db-journal

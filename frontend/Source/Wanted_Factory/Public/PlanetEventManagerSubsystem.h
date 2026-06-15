@@ -92,6 +92,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Time", meta = (ClampMin = "1.0"))
 	float NightDurationSeconds = 360.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Time", meta = (ClampMin = "0.0", ClampMax = "23.0"))
+	float StartHour24 = 6.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Weather", meta = (ClampMin = "1.0"))
 	float WeatherUpdateIntervalSeconds = 180.0f;
 

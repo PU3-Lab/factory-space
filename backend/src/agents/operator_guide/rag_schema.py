@@ -7,7 +7,23 @@
 
 from __future__ import annotations
 
-from pgvector.sqlalchemy import Vector
+try:
+    from pgvector.sqlalchemy import Vector
+except ImportError:
+    from typing import Any
+
+    from sqlalchemy.types import UserDefinedType
+
+    class Vector(UserDefinedType):  # type: ignore
+        """Dummy Vector type for environments without pgvector (e.g. SQLite local development)."""
+
+        def __init__(self, dimensions: int | None = None) -> None:
+            self.dimensions = dimensions
+
+        def get_col_spec(self, **kw: Any) -> str:  # noqa: ANN401
+            return f"VECTOR({self.dimensions})"
+
+
 from sqlalchemy import (
     Boolean,
     Column,
@@ -41,7 +57,9 @@ manual_rag_documents = Table(
     Column("metadata_json", JSONB, nullable=False),
     Column("embedding", Vector(EMBEDDING_DIMENSIONS), nullable=False),
     Column("is_active", Boolean, nullable=False, default=True, server_default="true"),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column(
+        "created_at", DateTime(timezone=True), nullable=False, server_default=func.now()
+    ),
     Column(
         "updated_at",
         DateTime(timezone=True),

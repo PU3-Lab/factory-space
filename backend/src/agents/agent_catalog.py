@@ -57,7 +57,7 @@ TOP_LEVEL_AGENT_CAPABILITIES = (
         when_to_use="목표, 미션, 온보딩, 진행도, 게임플레이 퀘스트 요청에 사용한다.",
     ),
     AgentCapability(
-        agent_id="new_material_generator",
+        agent_id="material_generation",
         summary="설계 제약을 바탕으로 신소재 후보를 생성한다.",
         when_to_use="신소재 아이디어, 소재 목표, 속성, 희귀도, 생산 메모 요청에 사용한다.",
     ),

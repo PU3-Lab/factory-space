@@ -35,10 +35,14 @@ def ensure_ollama_running(url: str) -> None:
         return
 
     if not shutil.which("ollama"):
-        print("[Ollama] Warning: 'ollama' command not found in PATH. Please install Ollama or start it manually.")
+        print(
+            "[Ollama] Warning: 'ollama' command not found in PATH. Please install Ollama or start it manually."
+        )
         return
 
-    print("[Ollama] Ollama server is not running. Attempting to start 'ollama serve' in the background...")
+    print(
+        "[Ollama] Ollama server is not running. Attempting to start 'ollama serve' in the background..."
+    )
     try:
         creationflags = 0
         if sys.platform == "win32":
@@ -59,7 +63,9 @@ def ensure_ollama_running(url: str) -> None:
                 print("[Ollama] Ollama server successfully started and is now running.")
                 return
 
-        print("[Ollama] Warning: Ollama server started but is not responding yet. It might still be initializing.")
+        print(
+            "[Ollama] Warning: Ollama server started but is not responding yet. It might still be initializing."
+        )
     except Exception as e:
         print(f"[Ollama] Warning: Failed to start Ollama server: {e}")
 

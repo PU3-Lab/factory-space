@@ -7,6 +7,56 @@
 #include "Machines/PowerLine.h"
 #include "Machines/PowerGridNode.h"
 #include "Machines/PowerPlant.h"
+#include "Containers/Queue.h"
+
+namespace
+{
+	bool IsPowerRelevantMachine(const AMachineBase* Machine)
+	{
+		return Machine &&
+			(Machine->NeedsPower() ||
+			 Machine->IsA<APowerGridNode>() ||
+			 Machine->IsA<APowerPlant>() ||
+			 Machine->GetMachineType() == FName(TEXT("BasicGenerator")));
+	}
+
+	void SortNames(TArray<FName>& Names)
+	{
+		Names.Sort([](const FName& Left, const FName& Right)
+		{
+			return Left.LexicalLess(Right);
+		});
+	}
+
+	bool AreSectorSnapshotsEquivalent(
+		const FFactorySectorSnapshot& Left,
+		const FFactorySectorSnapshot& Right)
+	{
+		if (Left.CellIDs.Num() != Right.CellIDs.Num() ||
+			Left.EdgeIDs.Num() != Right.EdgeIDs.Num())
+		{
+			return false;
+		}
+
+		for (int32 Index = 0; Index < Left.CellIDs.Num(); ++Index)
+		{
+			if (Left.CellIDs[Index] != Right.CellIDs[Index])
+			{
+				return false;
+			}
+		}
+
+		for (int32 Index = 0; Index < Left.EdgeIDs.Num(); ++Index)
+		{
+			if (Left.EdgeIDs[Index] != Right.EdgeIDs[Index])
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+}
 
 void UFactoryManagerSubsystem::Deinitialize()
 {
@@ -18,7 +68,12 @@ void UFactoryManagerSubsystem::Deinitialize()
 	Machines.Reset();
 	Connections.Reset();
 	PowerConnections.Reset();
+	SectorSnapshots.Reset();
+	MachineToSector.Reset();
+	DirtySectorIDs.Reset();
+	RemovedSectorIDs.Reset();
 	bGraphDirty = true;
+	bPowerDirty = true;
 	Super::Deinitialize();
 }
 
@@ -36,6 +91,10 @@ void UFactoryManagerSubsystem::RegisterMachine(AMachineBase* Machine)
 		});
 	RegisteredMachines.Add(Machine);
 	MarkGraphDirty();
+	if (IsPowerRelevantMachine(Machine))
+	{
+		UpdatePowerGrid();
+	}
 }
 
 void UFactoryManagerSubsystem::UnregisterMachine(AMachineBase* Machine)
@@ -53,6 +112,10 @@ void UFactoryManagerSubsystem::UnregisterMachine(AMachineBase* Machine)
 		});
 	RemoveConnectionsForMachine(MakeMachineID(Machine));
 	MarkGraphDirty();
+	if (IsPowerRelevantMachine(Machine))
+	{
+		UpdatePowerGrid();
+	}
 }
 
 void UFactoryManagerSubsystem::NotifyMachineChanged(AMachineBase* Machine)
@@ -133,6 +196,7 @@ void UFactoryManagerSubsystem::RegisterPowerLine(APowerLine* PowerLine)
 		});
 	RegisteredPowerLines.Add(PowerLine);
 	MarkGraphDirty();
+	UpdatePowerGrid();
 }
 
 void UFactoryManagerSubsystem::UnregisterPowerLine(APowerLine* PowerLine)
@@ -144,6 +208,7 @@ void UFactoryManagerSubsystem::UnregisterPowerLine(APowerLine* PowerLine)
 		});
 	RemovePowerConnectionsForLine(PowerLine);
 	MarkGraphDirty();
+	UpdatePowerGrid();
 }
 
 bool UFactoryManagerSubsystem::AddPowerConnection(
@@ -273,6 +338,7 @@ void UFactoryManagerSubsystem::RemoveConnection(FName ConnectionID)
 void UFactoryManagerSubsystem::MarkGraphDirty()
 {
 	bGraphDirty = true;
+	bPowerDirty = true;
 }
 
 void UFactoryManagerSubsystem::RebuildCachedData()
@@ -331,6 +397,7 @@ void UFactoryManagerSubsystem::RebuildCachedData()
 		AddPowerConnection(SourceMachine, TargetMachine, PowerLine);
 	}
 
+	RebuildSectorData();
 	bGraphDirty = false;
 }
 
@@ -358,6 +425,16 @@ void UFactoryManagerSubsystem::UpdatePowerGrid()
 		BuildPowerGridComponent(Node, VisitedNodes, ComponentNodes);
 		SupplyPowerToComponent(ComponentNodes, SuppliedConsumers, UsedGenerators);
 	}
+
+	for (const TWeakObjectPtr<APowerLine>& WeakPowerLine : RegisteredPowerLines)
+	{
+		if (APowerLine* PowerLine = WeakPowerLine.Get())
+		{
+			PowerLine->UpdateLineVisual();
+		}
+	}
+
+	bPowerDirty = false;
 }
 
 TArray<AMachineBase*> UFactoryManagerSubsystem::GetConnectedMachines(AMachineBase* Machine)
@@ -407,6 +484,64 @@ TArray<FConnectionEdge> UFactoryManagerSubsystem::GetConnectionEdges()
 	return Result;
 }
 
+TArray<FFactorySectorSnapshot> UFactoryManagerSubsystem::GetSectorSnapshots()
+{
+	EnsureCachedData();
+
+	TArray<FFactorySectorSnapshot> Result;
+	SectorSnapshots.GenerateValueArray(Result);
+	Result.Sort([](const FFactorySectorSnapshot& Left, const FFactorySectorSnapshot& Right)
+	{
+		return Left.SectorID.LexicalLess(Right.SectorID);
+	});
+	return Result;
+}
+
+TArray<FFactorySectorSnapshot> UFactoryManagerSubsystem::GetDirtySectorSnapshots()
+{
+	EnsureCachedData();
+
+	TArray<FFactorySectorSnapshot> Result;
+	for (const FName& SectorID : DirtySectorIDs)
+	{
+		if (const FFactorySectorSnapshot* Snapshot = SectorSnapshots.Find(SectorID))
+		{
+			Result.Add(*Snapshot);
+		}
+	}
+
+	Result.Sort([](const FFactorySectorSnapshot& Left, const FFactorySectorSnapshot& Right)
+	{
+		return Left.SectorID.LexicalLess(Right.SectorID);
+	});
+	return Result;
+}
+
+TArray<FName> UFactoryManagerSubsystem::GetRemovedSectorIDs()
+{
+	EnsureCachedData();
+
+	TArray<FName> Result;
+	for (const FName& SectorID : RemovedSectorIDs)
+	{
+		Result.Add(SectorID);
+	}
+	SortNames(Result);
+	return Result;
+}
+
+void UFactoryManagerSubsystem::ClearSectorDirtyState()
+{
+	DirtySectorIDs.Reset();
+	RemovedSectorIDs.Reset();
+}
+
+FName UFactoryManagerSubsystem::GetSectorIDForMachine(const AMachineBase* Machine)
+{
+	EnsureCachedData();
+	return Machine ? MachineToSector.FindRef(MakeMachineID(Machine)) : NAME_None;
+}
+
 TArray<FPowerConnectionEdge> UFactoryManagerSubsystem::GetPowerConnectionEdges()
 {
 	EnsureCachedData();
@@ -416,11 +551,199 @@ TArray<FPowerConnectionEdge> UFactoryManagerSubsystem::GetPowerConnectionEdges()
 	return Result;
 }
 
+bool UFactoryManagerSubsystem::IsPowerLineEnergized(const APowerLine* PowerLine)
+{
+	EnsureCachedData();
+
+	if (!PowerLine)
+	{
+		return false;
+	}
+
+	const FPowerConnectionEdge* MatchingEdge = nullptr;
+	for (const TPair<FName, FPowerConnectionEdge>& ConnectionPair : PowerConnections)
+	{
+		if (ConnectionPair.Value.PowerLineActor.Get() == PowerLine)
+		{
+			MatchingEdge = &ConnectionPair.Value;
+			break;
+		}
+	}
+
+	if (!MatchingEdge)
+	{
+		return false;
+	}
+
+	AMachineBase* SourceMachine = nullptr;
+	AMachineBase* TargetMachine = nullptr;
+	if (const FMachineNode* SourceNode = Machines.Find(MatchingEdge->SourceMachine))
+	{
+		SourceMachine = SourceNode->MachineActor.Get();
+	}
+	if (const FMachineNode* TargetNode = Machines.Find(MatchingEdge->TargetMachine))
+	{
+		TargetMachine = TargetNode->MachineActor.Get();
+	}
+
+	APowerGridNode* SourceGridNode = Cast<APowerGridNode>(SourceMachine);
+	APowerGridNode* TargetGridNode = Cast<APowerGridNode>(TargetMachine);
+	APowerPlant* SourcePowerPlant = Cast<APowerPlant>(SourceMachine);
+	APowerPlant* TargetPowerPlant = Cast<APowerPlant>(TargetMachine);
+
+	if (SourcePowerPlant && TargetGridNode)
+	{
+		return SourcePowerPlant->CanGeneratePower() && TargetGridNode->IsPowerGridActive();
+	}
+
+	if (TargetPowerPlant && SourceGridNode)
+	{
+		return TargetPowerPlant->CanGeneratePower() && SourceGridNode->IsPowerGridActive();
+	}
+
+	if (!SourceGridNode || !TargetGridNode ||
+		!SourceGridNode->IsPowerGridActive() || !TargetGridNode->IsPowerGridActive())
+	{
+		return false;
+	}
+
+	TSet<APowerGridNode*> VisitedNodes;
+	TArray<APowerGridNode*> ComponentNodes;
+	BuildPowerGridComponent(SourceGridNode, VisitedNodes, ComponentNodes);
+
+	for (const TWeakObjectPtr<AMachineBase>& WeakMachine : RegisteredMachines)
+	{
+		APowerPlant* PowerPlant = Cast<APowerPlant>(WeakMachine.Get());
+		if (!PowerPlant || !PowerPlant->CanGeneratePower())
+		{
+			continue;
+		}
+
+		if (IsMachineConnectedToComponent(PowerPlant, ComponentNodes))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void UFactoryManagerSubsystem::EnsureCachedData()
 {
 	if (bGraphDirty)
 	{
 		RebuildCachedData();
+	}
+}
+
+void UFactoryManagerSubsystem::RebuildSectorData()
+{
+	const TMap<FName, FFactorySectorSnapshot> PreviousSectors = SectorSnapshots;
+	const TSet<FName> PreviousDirtySectorIDs = DirtySectorIDs;
+	const TSet<FName> PreviousRemovedSectorIDs = RemovedSectorIDs;
+
+	SectorSnapshots.Reset();
+	MachineToSector.Reset();
+	DirtySectorIDs = PreviousDirtySectorIDs;
+	RemovedSectorIDs = PreviousRemovedSectorIDs;
+
+	TSet<FName> VisitedMachines;
+	for (const TPair<FName, FMachineNode>& MachinePair : Machines)
+	{
+		const FName RootMachineID = MachinePair.Key;
+		if (RootMachineID.IsNone() || VisitedMachines.Contains(RootMachineID))
+		{
+			continue;
+		}
+
+		TArray<FName> ComponentCellIDs;
+		TArray<FName> ComponentEdgeIDs;
+		TSet<FName> ComponentEdgeSet;
+		TQueue<FName> PendingMachines;
+		PendingMachines.Enqueue(RootMachineID);
+		VisitedMachines.Add(RootMachineID);
+
+		while (!PendingMachines.IsEmpty())
+		{
+			FName CurrentMachineID = NAME_None;
+			PendingMachines.Dequeue(CurrentMachineID);
+			ComponentCellIDs.Add(CurrentMachineID);
+
+			const FMachineNode* CurrentNode = Machines.Find(CurrentMachineID);
+			if (!CurrentNode)
+			{
+				continue;
+			}
+
+			TArray<FName> NeighborConnectionIDs = CurrentNode->InputConnections;
+			NeighborConnectionIDs.Append(CurrentNode->OutputConnections);
+			for (const FName& ConnectionID : NeighborConnectionIDs)
+			{
+				const FConnectionEdge* Connection = Connections.Find(ConnectionID);
+				if (!Connection)
+				{
+					continue;
+				}
+
+				if (!ComponentEdgeSet.Contains(ConnectionID))
+				{
+					ComponentEdgeSet.Add(ConnectionID);
+					ComponentEdgeIDs.Add(ConnectionID);
+				}
+
+				const FName NeighborMachineID =
+					Connection->SourceMachine == CurrentMachineID
+						? Connection->TargetMachine
+						: Connection->SourceMachine;
+				if (NeighborMachineID.IsNone() || VisitedMachines.Contains(NeighborMachineID))
+				{
+					continue;
+				}
+
+				VisitedMachines.Add(NeighborMachineID);
+				PendingMachines.Enqueue(NeighborMachineID);
+			}
+		}
+
+		SortNames(ComponentCellIDs);
+		SortNames(ComponentEdgeIDs);
+
+		FFactorySectorSnapshot Snapshot;
+		Snapshot.SectorID = MakeSectorID(ComponentCellIDs);
+		Snapshot.CellIDs = ComponentCellIDs;
+		Snapshot.EdgeIDs = ComponentEdgeIDs;
+
+		const FFactorySectorSnapshot* PreviousSnapshot = PreviousSectors.Find(Snapshot.SectorID);
+		if (PreviousSnapshot)
+		{
+			Snapshot.Revision = AreSectorSnapshotsEquivalent(*PreviousSnapshot, Snapshot)
+				? PreviousSnapshot->Revision
+				: PreviousSnapshot->Revision + 1;
+		}
+		else
+		{
+			Snapshot.Revision = 1;
+		}
+
+		if (!PreviousSnapshot || !AreSectorSnapshotsEquivalent(*PreviousSnapshot, Snapshot))
+		{
+			DirtySectorIDs.Add(Snapshot.SectorID);
+		}
+
+		for (const FName& CellID : Snapshot.CellIDs)
+		{
+			MachineToSector.Add(CellID, Snapshot.SectorID);
+		}
+
+		SectorSnapshots.Add(Snapshot.SectorID, Snapshot);
+	}
+
+	for (const TPair<FName, FFactorySectorSnapshot>& PreviousPair : PreviousSectors)
+	{
+		if (!SectorSnapshots.Contains(PreviousPair.Key))
+		{
+			RemovedSectorIDs.Add(PreviousPair.Key);
+		}
 	}
 }
 
@@ -620,11 +943,31 @@ void UFactoryManagerSubsystem::SupplyPowerToComponent(
 		return;
 	}
 
-	const float SupplyRatio = FMath::Clamp(ComponentGeneratedPower / ComponentDemandPower, 0.0f, 1.0f);
+	float RemainingPower = ComponentGeneratedPower;
 	for (AMachineBase* Consumer : ComponentConsumers)
 	{
-		SetMachinePowerIfChanged(Consumer, Consumer->GetPowerConsumption() * SupplyRatio);
+		const float RequiredPower = FMath::Max(0.0f, Consumer->GetPowerConsumption());
+		if (RequiredPower <= 0.0f)
+		{
+			continue;
+		}
+
+		if (RemainingPower + 0.01f >= RequiredPower)
+		{
+			SetMachinePowerIfChanged(Consumer, RequiredPower);
+			RemainingPower -= RequiredPower;
+		}
 	}
+}
+
+FName UFactoryManagerSubsystem::MakeSectorID(const TArray<FName>& CellIDs) const
+{
+	if (CellIDs.Num() == 0)
+	{
+		return NAME_None;
+	}
+
+	return FName(*FString::Printf(TEXT("sector:%s"), *CellIDs[0].ToString()));
 }
 
 FName UFactoryManagerSubsystem::MakeMachineID(const AMachineBase* Machine) const

@@ -12,22 +12,15 @@ AOJJ_ProtectionTower::AOJJ_ProtectionTower()
 	PrimaryActorTick.bCanEverTick = true;
 
 	// 비-생산 머신 설정 (APowerGridNode 패턴). 루트/메시는 AMachineBase가 생성하므로 여기서 만들지 않는다.
-	MachineType = TEXT("ShieldGenerator");
-	InputPortCount = 0;
-	OutputPortCount = 0;
+	MachineType = TEXT("MagneticShield");
 	bNeedPower = false;
-	PowerConsumption = 0.f;
-	MaxDurability = 1000.f;
-	CurrentDurability = MaxDurability;
 	bDisableWhenBroken = true;
 
 	// 포트가 없어 입출력 버퍼 디버그 텍스트("Input None / Output None")가 무의미 → 끔.
 	bShowDebugBufferText = false;
 
-	// GridSize는 AMachineBase 기본값(1x1) 사용 — APowerGridNode와 동일.
+	// GridSize and ports come from the MagneticShield MachineTable row.
 
-	InputPorts.Reset();
-	OutputPorts.Reset();
 }
 
 void AOJJ_ProtectionTower::BeginPlay()

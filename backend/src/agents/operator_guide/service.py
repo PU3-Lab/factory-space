@@ -138,4 +138,3 @@ def build_manual_qa_prompt_messages(
         topic=topic,
         sub_agent=sub_agent,
     )
-

@@ -257,6 +257,10 @@ void UPlanetEventManagerSubsystem::StartSimulation(UWorld& InWorld)
 	StopSimulation();
 
 	TimeState = FPlanetTimeState();
+	const float StartHourClamped = FMath::Clamp(StartHour24, 0.0f, 23.0f);
+	const float FullDaySeconds = GetFullDaySeconds();
+	TimeState.DaySeconds = FullDaySeconds * (StartHourClamped / 24.0f);
+	TimeState.Phase = ResolvePhase(TimeState.DaySeconds);
 	WeatherState = FPlanetWeatherState();
 	WeatherStartState = WeatherState;
 	WeatherTargetState = WeatherState;

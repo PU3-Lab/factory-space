@@ -1,8 +1,0 @@
-MachineName,CostType,CostQty,Durability,Power,InputPortCnt,InputBufCnt,OutputPortCnt,OutputBufCnt,Xlen,Ylen,ImgAsset
-Smelter,iron_ingot,10,1000,10,1,1,1,1,3,3,
-Grinder,iron_ingot,10,1000,10,1,1,1,1,3,3,
-MinerMachine,iron_ingot,10,1000,10,1,1,1,1,3,3,
-Pump,iron_ingot,10,1000,10,1,1,1,1,3,3,
-AirCompressor,iron_ingot,10,1000,10,1,1,1,1,3,3,
-PowerPlant,iron_ingot,10,1000,30,0,0,0,0,3,3,
-PowerGridNode,iron_ingot,10,1000,40,0,0,0,0,1,1,

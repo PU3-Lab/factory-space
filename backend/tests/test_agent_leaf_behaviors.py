@@ -5,7 +5,7 @@ from typing import Protocol
 import pytest
 
 from agents.base import AgentContext, AgentRunResult
-from agents.new_material_generator import NewMaterialGeneratorAgent
+from agents.material_generation.agent import MaterialCreationAgent
 from agents.operator_guide.machine_help import MachineHelpAgent
 from agents.operator_guide.recipe_explainer import RecipeExplainerAgent
 from agents.operator_guide.troubleshooter import TroubleshooterAgent
@@ -71,19 +71,17 @@ def test_process_optimizer_fallback_counts_nested_factory_state(
     assert "1개 설비" in result.payload["recommendations"][0]["reason"]
 
 
-def test_new_material_generator_uses_goal_as_material_role(
+def test_material_creation_agent_contract(
     context: AgentContext,
 ) -> None:
-    agent = NewMaterialGeneratorAgent()
+    agent = MaterialCreationAgent()
 
-    prompt = agent.build_prompt({"goal": "heat resistant plate"}, context)
-    result = agent.fallback({"goal": "heat resistant plate"}, context)
+    prompt = agent.build_prompt({}, context)
+    result = agent.fallback({}, context)
 
-    assert "공장 신소재 후보" in prompt
-    assert context.request_id not in prompt
-    assert result.agent == "new_material_generator"
-    assert result.payload["materials"][0]["role"] == "heat resistant plate"
-    assert result.metadata == {"fallback": True}
+    assert prompt == "Initiating material synthesis agent."
+    assert result.agent == "material_generation"
+    assert result.payload["result_type"] == "failed_result"
 
 
 @pytest.mark.parametrize(

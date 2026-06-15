@@ -9,13 +9,14 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from agents.operator_guide.rag_schema import metadata
+from db.models import Base
 
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-target_metadata = metadata
+target_metadata = [Base.metadata, metadata]
 
 
 def _database_url() -> str:

@@ -30,7 +30,9 @@ def prepare_environment(backend_root: Path) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the Factory Space backend in PRODUCTION mode.")
+    parser = argparse.ArgumentParser(
+        description="Run the Factory Space backend in PRODUCTION mode."
+    )
     parser.add_argument("--host", default=os.getenv("HOST", "0.0.0.0"))
     parser.add_argument(
         "--port",
@@ -66,7 +68,9 @@ def main() -> None:
                 ensure_ollama_running(target_url)
                 break
 
-    print(f"[Prod Server] Starting production server on {args.host}:{args.port} (reload=False)")
+    print(
+        f"[Prod Server] Starting production server on {args.host}:{args.port} (reload=False)"
+    )
     uvicorn.run(
         args.app,
         host=args.host,

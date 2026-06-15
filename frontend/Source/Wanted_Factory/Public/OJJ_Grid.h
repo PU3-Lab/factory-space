@@ -9,10 +9,66 @@
 
 class AMachineBase;
 class AConveyor;
+class APipe;
 class UStaticMeshComponent;
 class UInstancedStaticMeshComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
+
+/**
+ * 그리드 셀 베이크 분류 (사전베이크 캐시 2bit 패킹용). 상호배타 4상태.
+ * Water는 Blocked와 별개 상태지만 IsCellBuildable=false는 동일(건설금지 불변식 — §3).
+ * 값(0~3)이 패킹 비트와 직결되므로 재정렬 금지(직렬화 캐시 호환 깨짐).
+ */
+UENUM()
+enum class EOJJCellClass : uint8
+{
+	Buildable = 0,  // 건설 가능(초록)
+	Blocked   = 1,  // 높이 단차 초과(빨강) — 건설 불가
+	Void      = 2,  // 트레이스 미히트(바닥 없음) — 건설 불가, 오버레이 제외
+	Water     = 3   // 물(셀 최저 Z 상대델타 < WaterSurfaceZ, 파랑) — 건설 불가 + 펌프 수원 후보(Phase B)
+};
+
+/**
+ * Foundation 커버리지 셀 정보 (F1-a). 점유(OccupiedCells=차단)와 반대 의미의 "허가" 레이어 값.
+ * Foundation 참조는 AActor 약참조로 일반화 — AOJJ_Foundation 클래스는 F1-b 신규라 그리드가 몰라도
+ * 되게 한다(OJJ_RegisterActorCells(AActor*) 일반화와 동일 패턴). SurfaceZ는 상면 월드 Z — F1은
+ * footprint 전 셀 동일값이지만 F2(높이 스냅/경사) 대비 셀별 저장.
+ */
+USTRUCT()
+struct FOJJFoundationCellInfo
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TWeakObjectPtr<AActor> Foundation;
+
+	UPROPERTY()
+	float SurfaceZ = 0.0f;
+};
+
+/**
+ * 파이프 점유 셀 정보 (F4-0, f4_pipe_plan.md 결정 ㉠ — 파이프 전용 레이어). 머신/컨베이어
+ * 점유(OccupiedCells)·Foundation 커버리지와 전부 직교하는 세 번째 레이어 — FoundationCells가
+ * 선례인 독립 레이어 패턴 미러. 파이프 참조는 AActor 약참조 일반화(APipe는 타 소유(Chan) 클래스라
+ * 그리드가 몰라도 되게 — Foundation F1-a와 동일 계약). CellZ = 파이프 중심 월드 Z,
+ * bElevated = 오버패스 공중 셀(결정 ㉡ — 지상 셀만 컨베이어를 차단, 공중 셀 아래는 통과 허용.
+ * F4-0은 보관만, 산출/소비는 F4-3).
+ */
+USTRUCT()
+struct FOJJPipeCellInfo
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TWeakObjectPtr<AActor> Pipe;
+
+	UPROPERTY()
+	float CellZ = 0.0f;
+
+	UPROPERTY()
+	bool bElevated = false;
+};
 
 /**
  * AOJJ_Grid is the source of truth for grid occupancy.
@@ -56,6 +112,16 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid Settings", meta = (ClampMin = "1.0"))
 	float CellSize;
 
+	// 컨베이어 경사 게이트 한계(uu) — 접근은 OJJ_GetMaxConveyorStepZ(주석도 거기). F3.7' 개정:
+	// 45 고정(보행 기준) → 프로퍼티(기본 100 = 램프 MaxRampStepPerRow 기본과 동기).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Grid|Conveyor", meta = (ClampMin = "1.0"))
+	float OJJ_MaxConveyorStepZ = 100.0f;
+
+	// F4-3 오버패스 클리어런스(uu) — 컨베이어 교차 셀에서 파이프가 경로 기준면 위로 상승하는 높이.
+	// ㄷ자 상판 높이 + 수직 라이저 길이를 동시에 결정. 기본 100 = PIE 실측 확정(벨트 아이템 여유 + 비율).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Grid|Conveyor", meta = (ClampMin = "1.0"))
+	float OJJ_PipeOverpassClearance = 100.0f;
+
 	// 실제 placement 가능 영역 (X 칸 × Y 칸).
 	// CanPlaceMachine / IsValidGridCell이 권위 있는 grid extent로 사용. 머신은 이 범위 내에서만 등록 가능.
 	// VisualizationRange (시각화 한 변당 셀 수) 와 독립 — 디자이너가 두 값을 분리 가능.
@@ -72,11 +138,75 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visualization", meta = (ClampMin = "1"))
 	int32 VisualizationRange;
 
+	// 시각 타일 리프트(uu) — GroundZ 추종 셀에서 평탄 타일이 경사 지형면과 교차해 줄무늬로 썰리는 것 방지.
+	// F2-1부터 GroundZ가 최고점 기준이라 셀 내 교차는 구조적으로 해소 — 단 5점 샘플이 ±0.4셀이라
+	// 가장자리 미샘플 잔존 교차 가능. 리프트는 PIE 실측 후 0 축소 재검토(F2 계획 §1).
+	// 판정 무관(시각 전용). 급경사 셀에서 오프셋으로도 부족한 잔존 교차는 F2(지형 스냅 — 셀 대표높이
+	// 평균화/타일 기울임)에서 재검토.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visualization", meta = (ClampMin = "0.0"))
+	float VisualZLift = 20.0f;
+
+	// 호버 계열(머신/Foundation/컨베이어/철거 하이라이트) 추가 리프트(uu) — 분류 오버레이 위에 떠서 식별.
+	// 대안(호버 머티리얼 에미시브 강화) 중 에셋 작업이 없는 쪽 채택.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visualization", meta = (ClampMin = "0.0"))
+	float HoverExtraZLift = 30.0f;
+
+	// === 시각 위계: 오버레이(정보, 차분) vs 호버(현재 액션, 주인공) ===
+	// 문제(F1-c 후속): 오버레이와 호버가 같은 반투명 MI를 공유 → 호버가 빨강 오버레이 위에서 비쳐
+	// 주황으로 합성됨. 해결: 둘을 전용 MID로 분리(OJJ_EnsureTileMIDs)하고 색/불투명을 아래 프로퍼티로
+	// 구동. M_OJJ_GridFloor는 Unlit이라 색이 곧 발광(emissive) — 호버 색 채널을 1.0 초과로 주면 글로우.
+	// 전부 EditAnywhere → PIE 디테일 패널에서 실시간 튜닝(PostEditChangeProperty가 즉시 재적용).
+
+	// 바닥 분류 오버레이(빨강/초록/파랑) 공통 불투명도 — "정보는 주되 시끄럽지 않게". 낮게.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float OverlayOpacity = 0.30f;
+
+	// 오버레이 건설가능(초록) — 차분한 톤(저채도/저명도).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
+	FLinearColor OverlayBuildableColor = FLinearColor(0.10f, 0.45f, 0.13f);
+
+	// 오버레이 건설불가/blocked(빨강) — 차분한 톤.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
+	FLinearColor OverlayBlockedColor = FLinearColor(0.50f, 0.10f, 0.09f);
+
+	// 오버레이 물(파랑) — 차분한 톤.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
+	FLinearColor OverlayWaterColor = FLinearColor(0.10f, 0.35f, 0.60f);
+
+	// 캐릭터 점유 셀(노랑) — 빌드모드 중 플레이어 캡슐이 걸친 셀 표시(F2-4 후속 ② — 시각 전용, 점유 비등록).
+	// 정보 계층이라 OverlayOpacity 공유, 색은 오버레이 3색과 구분되는 밝은 노랑.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
+	FLinearColor CharacterCellColor = FLinearColor(0.95f, 0.80f, 0.10f);
+
+	// 호버 공통 불투명도 — "지금 액션이 주인공". 높게(아래 오버레이를 거의 가림 → 색 섞임 제거).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float HoverOpacity = 0.90f;
+
+	// 호버 가능(밝은 초록 + 살짝 에미시브) — Unlit이라 채널>1이 글로우.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
+	FLinearColor HoverValidColor = FLinearColor(0.10f, 1.50f, 0.22f);
+
+	// 호버 불가(밝은 빨강 + 살짝 에미시브).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
+	FLinearColor HoverInvalidColor = FLinearColor(1.60f, 0.12f, 0.10f);
+
+	// === 격자 선(셀 경계 = 스냅 기준선) — 채움과 독립. "선은 항상 선명." ===
+	// 보이는 격자선은 별도 요소가 아니라 분류/호버 타일 머티리얼(M_OJJ_GridFloor)이 WorldPosition 기반으로
+	// 그리는 셀 경계선이다(LineColor/LineOpacity). 채움(BaseColor/Opacity)을 0.30으로 낮춰도 선은 아래 값으로
+	// 선명 유지 — 모든 타일(오버레이+호버)이 같은 선을 공유해 스냅 격자가 일관되게 또렷.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy")
+	FLinearColor GridLineColor = FLinearColor(0.85f, 0.88f, 0.95f);
+
+	// 격자 선 불투명도 — 채움(Overlay/Hover Opacity)과 독립. 스냅 기준선이라 높게 유지.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visual Hierarchy", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float GridLineOpacity = 0.90f;
+
 	// === 지형 높낮이 건설 제약 (정적 지형 — BeginPlay 1회 베이크) ===
 	// BeginPlay에서 GridSize 전 셀 중심에서 ↓라인트레이스 → 지형 높이가 그리드 평면 Z와
 	// BuildableHeightTolerance를 넘게 차이나면 UnbuildableCells에 마킹. CanPlaceMachine/컨베이어 경로가 게이트로 참조.
+	// 100 = F2-2 확정(L_Planet 실측: 50→8,149셀 9.1% / 100→16,484셀 18.3%, PIE 뜸 체감 수용).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Terrain", meta = (ClampMin = "0.0"))
-	float BuildableHeightTolerance = 50.0f;
+	float BuildableHeightTolerance = 100.0f;
 
 	// 베이크 ↓트레이스 시작 높이(그리드 평면 Z 상대, uu). 예상 지형 최고점보다 높게.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Terrain", meta = (ClampMin = "1.0"))
@@ -94,6 +224,24 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Terrain", meta = (ClampMin = "0.0", ClampMax = "90.0"))
 	float BuildableSlopeThresholdDeg = 90.0f;
 
+	// === 물 자동 감지 (베이크 4번째 분류 — 시각화/건설금지까지. 펌프 연동은 Phase B) ===
+
+	// 물 표면 고도 임계(그리드 평면 Z 상대, uu). 셀 최저 트레이스 hit의 평면대비 델타가 이 값 미만이면 water 분류.
+	// 강바닥이 평면보다 파여 있으므로 음수. ⚠️ §0(BuildableReport) 미측정 — 에디터 Rebake+OJJ.Grid.ShowWater로
+	// 분포 보며 튜닝(PIE 400줄 cap 회피). 변경 시 캐시 시그니처 불일치 → 재트레이스 폴백.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Water")
+	float WaterSurfaceZ = -20.0f;
+
+	// 최소 연속 물 영역(셀 수). flood-fill 4-연결 영역 크기 < 이 값이면 일반 지형으로 환원(잔웅덩이 무시).
+	// 0/1 = 필터 없음(기본). Rebake 시 적용. 변경 시 캐시 무효화.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Water", meta = (ClampMin = "0"))
+	int32 MinWaterCellCount = 0;
+
+	// 셀별 지형 높이(평면 Z 상대 uu) 캐시 저장 여부. 높이추종 스폰(Phase B)용 — 기본 off(umap 비대 방지:
+	// 셀당 int16 2바이트, 718²이면 ~1MB 추가). Phase B 진입 시 켜고 Rebake.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Water")
+	bool bBakeGroundHeights = false;
+
 	// 베이크 3단 분류 중 [2] blocked — 트레이스 hit이나 높이델타 초과(지형 단차). 빨강 오버레이 + 호버/배치 거부.
 	UPROPERTY(Transient)
 	TSet<FIntPoint> UnbuildableCells;
@@ -103,6 +251,57 @@ protected:
 	UPROPERTY(Transient)
 	TSet<FIntPoint> VoidCells;
 
+	// 베이크 분류 [4] water — 별도 태그(파랑). blocked와 상호배타 상태지만 IsCellBuildable=false 유지(건설금지 불변식 §3).
+	// 캐시 로드 또는 트레이스로 채워짐. 펌프 수원 인정(Phase B)은 미구현 — 현재는 분류+시각화+건설금지 전용.
+	UPROPERTY(Transient)
+	TSet<FIntPoint> WaterCells;
+
+	// === 사전베이크 캐시 (직렬화 — 에디터 RebakeAndCache로 채우고 BeginPlay는 로드만, 런타임 트레이스 0) ===
+
+	// 셀당 2bit EOJJCellClass 패킹. 인덱스 idx = X*CacheGridSize.Y + Y, byte = idx>>2, shift = (idx&3)*2.
+	// 비-Transient → 레벨 저장 시 .umap에 직렬화. 718²면 ~129KB.
+	UPROPERTY()
+	TArray<uint8> PackedCellClasses;
+
+	// 셀별 지형 높이(평면 Z 상대 uu, int16 양자화 클램프 ±32767). 대표값 = 5점 샘플 최고점(F2-1 결정 ① —
+	// 직배치 안착 기준, 묻힘 0). 분류(blocked)는 별도로 최악점 유지. bBakeGroundHeights일 때만 채움. 빈 배열=미저장.
+	UPROPERTY()
+	TArray<int16> CellGroundZQuant;
+
+	// 캐시 존재 여부 — false면 BeginPlay가 트레이스 폴백.
+	UPROPERTY()
+	bool bHasBakeCache = false;
+
+	// 캐시 무효화 시그니처 — BeginPlay 로드 시 현재값과 불일치하면 경고 + 재트레이스(인덱싱/분류 정합 보장).
+	UPROPERTY()
+	FIntPoint CacheGridSize = FIntPoint(0, 0);
+	UPROPERTY()
+	float CacheCellSize = 0.0f;
+	UPROPERTY()
+	FVector CacheGridOrigin = FVector::ZeroVector;
+	UPROPERTY()
+	float CacheHeightTolerance = 0.0f;
+	UPROPERTY()
+	float CacheWaterSurfaceZ = 0.0f;
+	UPROPERTY()
+	int32 CacheMinWaterCellCount = 0;
+	// 트레이스 파라미터도 분류(hit 여부=void/blocked/water)에 영향 → 시그니처 포함(변경 시 stale 캐시 차단).
+	UPROPERTY()
+	float CacheTraceStartHeight = 0.0f;
+	UPROPERTY()
+	float CacheTraceDepth = 0.0f;
+	UPROPERTY()
+	TEnumAsByte<ECollisionChannel> CacheTraceChannel = ECC_Visibility;
+	// GroundZ 저장 토글 — off→on 시 캐시에 높이가 없으므로 무효화(Phase B 진입 시 자동 재트레이스 유도).
+	UPROPERTY()
+	bool bCacheBakeGroundHeights = false;
+	// 베이크 산식 버전 — 파라미터가 같아도 산식 자체가 바뀌면 옛 캐시를 자동 무효화(F2-1 결정 ②).
+	// 옛 맵은 필드 부재로 0 로드 → 불일치 → 재베이크 유도. 산식 변경 시 OJJ_CurrentBakeVersion 상향.
+	UPROPERTY()
+	int32 CacheBakeVersion = 0;
+	// 현재 산식 버전: 2 = GroundZ 대표값 최고점(F2-1). 0/1(필드 도입 전 — 최악점 시절)은 자동 무효.
+	static constexpr int32 OJJ_CurrentBakeVersion = 2;
+
 	// 건설 가능(초록) 셀 per-cell 비주얼 ISM — 빌드모드 진입 시 표시. void 셀 제외 → 바닥 모양 자동 추종.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Terrain")
 	TObjectPtr<UInstancedStaticMeshComponent> BuildableCellISM;
@@ -111,13 +310,64 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Terrain")
 	TObjectPtr<UInstancedStaticMeshComponent> BlockedCellISM;
 
+	// Foundation 커버 셀(초록 — constructible 기준, F3.5') per-cell 비주얼 ISM. 오버레이 색의 의미를
+	// 분류(지형)가 아니라 건설 가능성으로: blocked 셀이라도 커버되면 초록(깔면 초록, 철거하면 빨강 복귀).
+	// 머티리얼은 BuildableCellMID 공유(의미 동일 — 같은 초록).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Terrain")
+	TObjectPtr<UInstancedStaticMeshComponent> CoveredCellISM;
+
+	// 물(파랑) 셀 per-cell 비주얼 ISM — water 분류만. ShowBlocked 패턴 미러. 머티리얼은 RefreshGridVisual에서 lazy MID(파랑).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Water")
+	TObjectPtr<UInstancedStaticMeshComponent> WaterCellISM;
+
+	// 캐릭터 점유 셀 비주얼 ISM(F2-4 후속 ②) — 빌드모드 중 BuildController가 OJJ_UpdateCharacterCellOverlay로
+	// 구동. 시각 전용 — OccupiedCells 비등록(캐릭터 위치 Foundation 배치 허용, 깔리면 올려태우기가 받음).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Terrain")
+	TObjectPtr<UInstancedStaticMeshComponent> CharacterCellISM;
+
+	// water 오버레이 파랑 틴트용 동적 머티리얼. OJJ_EnsureTileMIDs에서 최초 1회 생성(에디터/PIE 공용).
+	// 이제 다른 타일 MID와 동일하게 translucent M_OJJ_GridFloor(HoverValidBaseMaterial) 기반 — OverlayWaterColor/OverlayOpacity 구동.
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> WaterCellMID;
+
+	// === 타일 전용 동적 머티리얼(시각 위계 분리) ===
+	// 오버레이와 호버가 같은 MI를 공유하던 구조(색 섞임 원인)를 끊고 각 용도별 MID로 분리.
+	// 색/불투명은 위 Visual Hierarchy 프로퍼티로 구동. OJJ_EnsureTileMIDs에서 lazy 생성.
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> ValidHoverMID;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> InvalidHoverMID;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> BuildableCellMID;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> BlockedCellMID;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> CharacterCellMID;
+
+	// MID 생성용 베이스 머티리얼(생성자에서 MI 에셋 캐싱). 호버/오버레이/물 MID가 이 둘에서 파생.
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> HoverValidBaseMaterial;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> HoverInvalidBaseMaterial;
+
 	// 디버그 토글(OJJ.Grid.ShowBlocked) — 빌드모드 밖에서도 오버레이 강제 표시.
 	UPROPERTY(Transient)
 	bool bForceShowBlocked = false;
 
+	// 디버그 토글(OJJ.Grid.ShowWater) — 빌드모드 밖에서도 물 오버레이 강제 표시. ShowBlocked와 독립.
+	UPROPERTY(Transient)
+	bool bForceShowWater = false;
+
 	// 베이크 완료 여부 — "불가 0개"와 "아직 베이크 안 됨"을 구분(진단/콘솔 리포트용).
 	UPROPERTY(Transient)
 	bool bBuildableBaked = false;
+
+	// 오버레이 부분 갱신 장부(F3.5' — 커버 전환을 90k 전체 리빌드 없이 셀 단위로): 셀→인스턴스 인덱스.
+	// 인스턴스는 제거 대신 zero-scale 숨김(UpdateInstanceTransform — 인덱스 불변)이라 RemoveInstance의
+	// 인덱스 시프트 시맨틱(Codex F3.5' ①) 의존이 없음. 빌드모드 오버레이(RefreshGridVisual의
+	// bVisualizationActive 경로)가 재구축, ShowBlocked 디버그는 미사용(원 분류 표시).
+	TMap<FIntPoint, int32> BlockedCellToInstance;
+	TMap<FIntPoint, int32> CoveredCellToInstance;
 
 	// 빌드모드 시각화 활성 상태 — bForceShowBlocked 토글이 빌드모드 오버레이를 끄지 않도록 참조.
 	UPROPERTY(Transient)
@@ -179,6 +429,27 @@ protected:
 	// 비직사각형/등록 후 이동·회전에도 origin 식별 안정. GetMachineOrigin이 이 맵을 조회.
 	TMap<TWeakObjectPtr<AActor>, FIntPoint> OJJ_ActorToOrigin;
 
+	// === Foundation 커버리지 레이어 (F1-a — 데이터/질의만. 소비처 연결은 F1-c 게이트 교체) ===
+
+	// 셀 → 커버 Foundation + 상면 Z. OccupiedCells와 완전 독립(점유=차단 / 커버리지=허가 — 의미 반대).
+	// 불변식: F1-a 동안 기존 어떤 read/write 경로도 이 맵을 참조하지 않는다(회귀 0 보장).
+	UPROPERTY(Transient)
+	TMap<FIntPoint, FOJJFoundationCellInfo> FoundationCells;
+
+	// Foundation → 커버 셀 목록 (RemoveFoundation 일괄 해제용). OJJ_ActorToCells 패턴 미러(비-UPROPERTY, weak 키).
+	TMap<TWeakObjectPtr<AActor>, TArray<FIntPoint>> OJJ_FoundationToCells;
+
+	// === 파이프 레이어 (F4-0 — 데이터/질의만. 배치/게이트 소비처 연결은 F4-1, 오버패스 산출은 F4-3) ===
+
+	// 셀 → 파이프 + 셀 Z/공중 여부. 점유·커버리지와 완전 독립 — 교차 규칙(파이프↔컨베이어)은
+	// 레이어 간 명시 규칙으로 표현(결정 ㉠(b)). 불변식: F4-0 동안 기존 어떤 read/write 경로도
+	// 이 맵을 참조하지 않는다(회귀 0 — FoundationCells F1-a와 동일 도입 방식).
+	UPROPERTY(Transient)
+	TMap<FIntPoint, FOJJPipeCellInfo> OJJ_PipeCells;
+
+	// 파이프 → 점유 셀 목록 (일괄 해제용) — OJJ_FoundationToCells 패턴 미러(비-UPROPERTY, weak 키).
+	TMap<TWeakObjectPtr<AActor>, TArray<FIntPoint>> OJJ_PipeToCells;
+
 private:
 	// Origin부터 머신 풋프린트가 차지하는 셀 좌표 목록. RotationSteps로 90° 회전 footprint 지원(기본 0).
 	TArray<FIntPoint> CalculateFootprint(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
@@ -202,9 +473,100 @@ private:
 	// GC/Destroy된 머신 엔트리를 양방향 맵에서 정리. write 경로 진입부에서 호출.
 	void SweepStaleEntries();
 
+	// GC/Destroy된 Foundation 엔트리를 커버리지 양방향 맵에서 정리. Foundation write 경로 진입부에서 호출.
+	// SweepStaleEntries의 커버리지판 — 점유 맵과 레이어 독립이라 별도 함수(서로 호출하지 않음).
+	void SweepStaleFoundationEntries();
+
+	// GC/Destroy된 파이프 엔트리를 레이어 양방향 맵에서 정리 — SweepStaleFoundationEntries 미러
+	// (레이어 독립이라 별도 함수). 오버레이 복원 없음(F4-0 파이프 레이어는 시각 표현 0 — F4-1 호버에서 재검토).
+	void SweepStalePipeEntries();
+
+	// 파이프 배치 검증 단일원(F4-1 — 호버/클릭 공유): 정규화·수집(포트/건설 게이트/점유/연속)은
+	// 컨베이어 체인 위임, 그 위에 파이프 게이트 ① 균일 SurfaceZ 한정(수집기의 경사 폴백 불채택 —
+	// 평면 파이프, 오버패스/경사는 F4-3) ② ㉤ 액체 끝점(Pump→LiquidTank) ③ ㉥ 파이프 레이어 겹침.
+	bool OJJ_ValidatePipePlacement(const TArray<FIntPoint>& PathCells, TArray<FIntPoint>& OutPlacementCells,
+		TArray<FIntPoint>& OutReservedCells, AMachineBase*& OutSourceMachine, AMachineBase*& OutTargetMachine,
+		float& OutPathSurfaceZ, FString& OutReason) const;
+
+	// Foundation 등록의 검증/커밋 단일원(F3-1) — 단일값(TryPlaceFoundation)과 셀별(PerCell) 공용.
+	// SurfaceZForCell은 검증 통과 셀에만 호출(배열 없는 단일값 경로의 할당 0 유지).
+	bool OJJ_TryPlaceFoundationInternal(AActor* Foundation, FIntPoint Origin, FIntPoint Size,
+		TFunctionRef<float(FIntPoint Cell)> SurfaceZForCell, FString& OutReason);
+
+	// 영역 셀들의 Foundation SurfaceZ 집계(IsNearlyEqual 그룹 누산) — 지배 SurfaceZ 조회 2종의 공용
+	// 누산기. SnapGridOriginZ 기준 단 격자(±0.1uu) 위 후보만 누산(램프 중간 행 제외 — Codex F3.5 C).
+	// 그리드 교집합만 순회(int64 끝좌표 — 거대 입력 방어 미러).
+	void OJJ_AccumulateFoundationSurfaceZ(FIntPoint RectOrigin, FIntPoint RectSize,
+		float SnapGridOriginZ, TArray<TPair<float, int32>>& InOutGroups) const;
+
+	// 오버레이 셀 트랜스폼(기준면 +3 — RefreshGridVisual과 부분 갱신이 공유하는 단일원).
+	FTransform OJJ_MakeOverlayCellTransform(FIntPoint Cell, bool bGroundZValid) const;
+
+	// 장부 동반 표시/숨김(F3.5' 부분 갱신). 숨김 = zero-scale 트랜스폼(UpdateInstanceTransform, O(1)) —
+	// 인덱스가 불변이라 RemoveInstance의 시프트/스왑 시맨틱에 비의존(Codex F3.5' ① 해소). 표시는
+	// 장부에 있으면 트랜스폼 복원, 없으면 append(인덱스 안정). 숨김 잔존분은 다음 RefreshGridVisual의
+	// ClearInstances가 정리(세션 내 상한 = blocked 셀 수).
+	void OJJ_ShowOverlayInstance(UInstancedStaticMeshComponent* ISM, TMap<FIntPoint, int32>& CellToInstance,
+		FIntPoint Cell, bool bGroundZValid);
+	void OJJ_HideOverlayInstance(UInstancedStaticMeshComponent* ISM,
+		const TMap<FIntPoint, int32>& CellToInstance, FIntPoint Cell);
+
+	// Foundation 커버 변경의 오버레이 부분 갱신(F3.5' — 이벤트 구동, 전체 RefreshGridVisual 금지).
+	// bCovered=true: 커버된 blocked 셀 빨강→초록(슬래브 상면 Z). false: 초록→빨강(지형 Z) 복귀.
+	// 커버 상태 반영 "후" 호출 전제(Z 단일원이 올바른 면을 읽도록). 빌드모드 오버레이 비활성이면 no-op
+	// (다음 RefreshGridVisual 전체 재적재가 정합 복원).
+	void OJJ_OnFoundationCoverageVisualChanged(const TArray<FIntPoint>& Cells, bool bCovered);
+
 	// 양방향 맵에 머신 등록. 위치 갱신은 호출자가 별도 처리. 모든 write 검증을 포함.
 	// RotationSteps는 점유 footprint 계산(CanPlace/CalculateFootprint)에 전달(기본 0).
 	bool RegisterMachineInternal(AMachineBase* Machine, FIntPoint Origin, FString& OutReason, int32 RotationSteps = 0);
+
+	// === 사전베이크 캐시 직렬화 헬퍼 ===
+
+	// 시그니처 일치 시 PackedCellClasses를 풀어 UnbuildableCells/VoidCells/WaterCells 재구성. 성공 시 true(트레이스 생략).
+	// 불일치/크기오류면 경고 후 false → 호출자(BeginPlay)가 트레이스 폴백.
+	bool TryLoadBakeCache();
+
+	// 셀 → 선형 인덱스(패킹/언패킹 공통 규약). X*GridSz.Y + Y. 음수/범위 밖은 호출자가 보장.
+	static int32 OJJ_CellLinearIndex(FIntPoint Cell, FIntPoint GridSz);
+
+	// PackedCellClasses 2bit 접근자(인덱스 범위는 호출자 보장). Get은 범위 밖이면 Buildable 반환(안전 기본).
+	EOJJCellClass OJJ_GetPackedClass(int32 LinearIdx) const;
+	void OJJ_SetPackedClass(int32 LinearIdx, EOJJCellClass CellClass);
+
+	// 베이크 캐시 시그니처 비교 단일원 — TryLoadBakeCache(분류 로드)와 GroundZ 유효성 검사가 공유.
+	// struct=패킹 인덱싱 정확성(GridSize/CellSize/Origin), param=분류 결과 정확성(tol/waterZ/트레이스 등).
+	void OJJ_GetBakeCacheSignatureMatch(bool& bOutStructMatch, bool& bOutParamMatch) const;
+
+	// GroundZ 데이터 유효성 — 크기 정합 + 캐시 존재 + GroundZ 포함 + 시그니처 일치.
+	// 크기 정합만으론 시그니처 불일치 폴백 후 남는 같은 크기의 stale 직렬화 배열을 못 거름(Codex F1-a #4-1).
+	bool OJJ_HasValidGroundZData() const;
+
+	// 셀 비주얼 기준 Z(F1-c d): Foundation 커버 → 상면 SurfaceZ / 지형 → 평면 + GroundZ 델타(유효 시) /
+	// 폴백 → 평면(기존 동작 — 회귀 0). 오버레이·호버·철거 하이라이트·포트 화살표와 머신 Z 안착이
+	// 같은 높이 데이터를 소비(단일원) — 굴곡 지형 묻힘/뜸 해결.
+	float OJJ_GetCellVisualBaseZ(FIntPoint Cell) const;
+
+	// 호이스팅 버전 — GroundZ 유효성(시그니처 비교)은 셀 불변이라 호출자가 1회 계산해 전달.
+	// RefreshGridVisual의 90k셀 루프가 사용(Codex F1-c #5 — 셀당 시그니처 재검사 제거).
+	float OJJ_GetCellVisualBaseZInternal(FIntPoint Cell, bool bGroundZValid) const;
+
+	// === 타일 MID(시각 위계) 헬퍼 ===
+	// 호버/오버레이/물 ISM에 전용 MID를 lazy 생성·할당하고 현재 프로퍼티 값을 적용. 호버 진입점
+	// (ClearHoverPreview)·오버레이 갱신(RefreshGridVisual)·BeginPlay에서 호출 — 멱등(이미 있으면 재적용만).
+	void OJJ_EnsureTileMIDs();
+
+	// 현재 Visual Hierarchy 프로퍼티 값을 존재하는 MID들에 (재)적용. PIE 실시간 튜닝 경로 공용.
+	void OJJ_ApplyTileMIDParams();
+
+	// 단일 MID에 채움/선을 독립 세팅 — 채움(BaseColor/Opacity)=인자(분류색·연하게), 선(LineColor/LineOpacity)=
+	// 공유 GridLineColor/GridLineOpacity(스냅 기준선·선명). 채움 투명도가 선을 흐리지 않게 분리. MID==null/없는 파라미터는 무시.
+	void OJJ_SetTileParams(UMaterialInstanceDynamic* MID, const FLinearColor& FillColor, float FillOpacity) const;
+
+#if WITH_EDITOR
+	// 디테일 패널/PIE에서 Visual Hierarchy 값 변경 시 MID에 즉시 재적용 + 오버레이 갱신(실시간 튜닝).
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 
 public:
 	virtual void Tick(float DeltaTime) override;
@@ -229,6 +591,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
 	static FIntPoint EffectiveSize(FVector2D RawSize, int32 RotationSteps);
 
+	// cursor cell → lower-left origin 공통 수식("마우스 = 풋프린트 중심" — (Size-1)/2 정수 나눗셈
+	// lower-left bias). F3.6-0(결정 ㉽): BuildController 정적에서 이관 — 머신/Foundation 호버·배치
+	// (컨트롤러 위임)와 Foundation 풋프린트 훅(OJJ_ComputeHoverFootprint 베이스)이 한 수식을 공유.
+	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
+	static FIntPoint OJJ_OriginFromCursorCellForSize(FIntPoint CursorCell, FIntPoint EffSize);
+
 	// 머신 mesh는 center anchor (머신 팀과 합의된 contract). 그리드 lower-left 좌표계와
 	// 정렬을 맞추기 위해 풋프린트 전체 center에 머신 액터 중심을 배치한다.
 	// 1x1은 offset (0,0) → GridToWorld(Origin)과 동일하므로 회귀 없음.
@@ -245,17 +613,40 @@ public:
 	// === 지형 높낮이 건설 제약 ===
 
 	// 셀이 건설 가능한지(blocked·void 둘 다 아님). 베이크 전이면 항상 true.
+	// F1-c부터 "지형 분류 질의"로 의미 한정 — 배치 게이트는 IsCellConstructible(OR)이 담당.
 	UFUNCTION(BlueprintPure, Category = "Grid|Terrain")
 	bool IsCellBuildable(FIntPoint Cell) const;
+
+	// 건설 허용 게이트(F1-c §7-3) — 지형 가능(buildable) OR Foundation 커버. 머신/컨베이어 배치 소비처가
+	// IsCellBuildable 대신 이 함수를 사용. OR은 허용 집합을 넓히기만 — 기존 지형 직배치(추출기 포함)는
+	// 전부 그대로 통과(§5-2 F1~F2 직배치 유지).
+	UFUNCTION(BlueprintPure, Category = "Grid|Terrain")
+	bool IsCellConstructible(FIntPoint Cell) const;
+
+	// 단일 건설면 규칙(F1-c §7-3): 셀 집합이 전부 같은 SurfaceZ의 Foundation 위(→OutZ=SurfaceZ)거나
+	// 전부 비-Foundation(→OutZ=그리드 평면 Z — F1은 지형=평면이라 항상 균일)이면 true.
+	// 혼합/이높이(Foundation 경계 걸침)는 false — Z 안착 모호성 제거. 머신 풋프린트/컨베이어 경로 공용.
+	bool OJJ_GetUniformSurfaceZ(const TArray<FIntPoint>& Cells, float& OutZ) const;
 
 	// 셀이 그리드 외(void = 바닥 없음/트레이스 미히트)인지. 그리드 비주얼 셀 제외 판정용.
 	UFUNCTION(BlueprintPure, Category = "Grid|Terrain")
 	bool IsCellVoid(FIntPoint Cell) const;
 
-	// 지형 높이 베이크 — GridSize 전 셀 ↓트레이스로 buildable/blocked/void 재계산. BeginPlay 1회 + 콘솔 재호출.
+	// 셀이 물(water 분류)인지. 건설은 IsCellBuildable이 별도로 막음 — 이 질의는 수원/시각화 판정용(Phase B 펌프).
+	UFUNCTION(BlueprintPure, Category = "Grid|Water")
+	bool IsCellWater(FIntPoint Cell) const;
+
+	// 지형 높이 베이크 — GridSize 전 셀 ↓트레이스로 buildable/blocked/void/water 재계산. BeginPlay 폴백 + 콘솔 재호출.
 	// bVerbose: 평탄(바닥)이 아닌 셀마다 (좌표/hit/Z/부호델타/분류)를 로그(캡 있음) — 큐브 등 베이크 진단용.
+	// bWriteCache: 분류 결과를 PackedCellClasses(+선택 GroundZ)로 패킹하고 시그니처 기록(에디터 RebakeAndCache 경로).
 	UFUNCTION(BlueprintCallable, Category = "Grid|Terrain")
-	void BakeBuildableCells(bool bVerbose = false);
+	void BakeBuildableCells(bool bVerbose = false, bool bWriteCache = false);
+
+	// [에디터 전용 버튼] 트레이스 1회 → 패킹 캐시 저장 + 맵 dirty + 즉시 오버레이(blocked+water) 표시.
+	// ⚠️ "빈 부지"(머신/컨베이어 제거)에서 실행할 것 — 베이크는 월드의 머신/컨베이어/자원을 ignore-list로 순회하므로
+	//    채워진 상태로 구우면 시간만 늘고(결과는 동일) 불필요. 실행 후 반드시 레벨 저장해야 캐시가 .umap에 영속.
+	UFUNCTION(CallInEditor, BlueprintCallable, Category = "Grid|Terrain")
+	void RebakeAndCache();
 
 	// 그리드 셀 비주얼 갱신 — 현재 상태(bVisualizationActive/bForceShowBlocked) 기준으로 초록(가능)/빨강(blocked)
 	// per-cell ISM 재적재. void 셀은 양쪽 다 제외. 클리어 후 재적재라 진입/퇴장 반복에도 중복·잔존 없음.
@@ -263,6 +654,166 @@ public:
 
 	// 디버그(OJJ.Grid.ShowBlocked) — 빌드모드와 무관하게 오버레이 강제 표시 토글.
 	void SetForceShowBlocked(bool bShow);
+
+	// 디버그(OJJ.Grid.ShowWater) — 빌드모드와 무관하게 물 오버레이 강제 표시 토글.
+	void SetForceShowWater(bool bShow);
+
+	// === Foundation 커버리지 (F1-a — 데이터 레이어/질의 전용. 게이트 연결은 F1-c, 액터 스폰/위치는 F1-b) ===
+
+	// Origin부터 Size(X×Y) 풋프린트가 Foundation 배치 가능한지. 전 셀을 끝까지 순회해 사유별 셀 수를
+	// 집계하고 OutReason에 기록(예: "water 9 / occupied 3") — water 43% 지형에서 분포 실측이
+	// F1-b 디버깅·§5-3 waterZ 재검토의 근거가 되도록 조기 종료 없이 센다.
+	// 게이트: off-grid·겹침(기존 Foundation)·void·water(§5-3 미결 — F1 기본 금지)·점유(머신/컨베이어/자원) 금지.
+	// blocked(높이 단차)는 의도적으로 허용 — 단차 흡수가 Foundation의 존재 이유.
+	// ※ 자원 점유 셀 거부는 F1 보수 기본값 — "광맥 위 Foundation+추출기" 시나리오는 §5-2 결정 후 재검토(F1-c).
+	UFUNCTION(BlueprintPure, Category = "Grid|Foundation")
+	bool CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& OutReason) const;
+
+	// Foundation 커버리지 등록 — 검증(CanPlaceFoundation) + 양방향 맵 등록만 수행. 액터 위치/비주얼은
+	// 건드리지 않음(F1-b BuildController 책임 — 그리드는 Foundation 메시/Thickness를 모름).
+	// SurfaceZ는 호출자 전달(F2-4: 평면 + Thickness + 스냅 리프트 — 컨트롤러가 OJJ_ComputeFoundationSnapLift로
+	// 산출). 전 셀 동일값 — 셀별은 OJJ_TryPlaceFoundationPerCell(F3-1). 서버 권위 전용, 중복 등록 거부.
+	UFUNCTION(BlueprintCallable, Category = "Grid|Foundation")
+	bool TryPlaceFoundation(AActor* Foundation, FIntPoint Origin, FIntPoint Size, float SurfaceZ, FString& OutReason);
+
+	// 셀별 SurfaceZ 등록(F3-1, 결정 ㉲ — 램프 등 비평탄 Foundation용). CellSurfaceZs 인덱싱:
+	// (X−Origin.X)×Size.Y + (Y−Origin.Y) (OJJ_CellLinearIndex와 동일 row-major). 산식은 액터(클래스) 책임,
+	// 그리드는 배열 불변식 검증(액터 신뢰 금지): ① 크기 = Size.X×Size.Y ② 전 값 유한 ③ (max−min)이
+	// 단 간격(OJJ_FoundationSnapStep)의 정수배 — 절대 단 격자 정합은 그리드가 Thickness를 모르는 계약상
+	// 상대 검증(턱 0 산식의 양 끝 정합이 이를 보장). 위반 시 거부 + OutReason. UFUNCTION 오버로드 불가(UHT)라 별도 이름.
+	bool OJJ_TryPlaceFoundationPerCell(AActor* Foundation, FIntPoint Origin, FIntPoint Size,
+		const TArray<float>& CellSurfaceZs, FString& OutReason);
+
+	// Foundation 커버리지 해제. 커버 셀 위에 유효 점유(머신/컨베이어)가 하나라도 있으면 거부 + 점유 셀 수
+	// 기록 — F1은 연쇄 철거 대신 거부가 안전. 서버 권위 전용.
+	UFUNCTION(BlueprintCallable, Category = "Grid|Foundation")
+	bool RemoveFoundation(AActor* Foundation, FString& OutReason);
+
+	// 셀이 유효한 Foundation에 커버되는지. 파괴된(stale) Foundation의 셀은 false(점유 stale 처리와 일관).
+	UFUNCTION(BlueprintPure, Category = "Grid|Foundation")
+	bool IsCellOnFoundation(FIntPoint Cell) const;
+
+	// 커버 셀의 Foundation 상면 월드 Z. 비커버/stale 셀이면 false + OutSurfaceZ=0.
+	UFUNCTION(BlueprintPure, Category = "Grid|Foundation")
+	bool GetFoundationSurfaceZ(FIntPoint Cell, float& OutSurfaceZ) const;
+
+	// 셀을 커버하는 Foundation 액터(비커버/stale이면 nullptr) — Demolish(F1-b')의 셀→Foundation 역조회.
+	// Foundation은 점유(OccupiedCells)와 별개 레이어라 GetActorAtCell로는 안 보인다.
+	UFUNCTION(BlueprintPure, Category = "Grid|Foundation")
+	AActor* GetFoundationAtCell(FIntPoint Cell) const;
+
+	// Foundation의 커버 셀 목록(미등록이면 nullptr) — GetActorCells의 Foundation판(철거 호버 하이라이트용).
+	const TArray<FIntPoint>* GetFoundationCells(AActor* Foundation) const;
+
+	// Foundation 커버 셀 중 유효 점유(머신/컨베이어) 셀 수 — 철거 가능 판정의 read-only 단일원(F2-0,
+	// Codex F1-b' #4): RemoveFoundation(클릭 거부)과 철거 호버(UpdateDemolishHover)가 같은 식을 공유해
+	// "호버 빨강인데 클릭 거부" 불일치 차단. 미등록 Foundation이면 INDEX_NONE.
+	int32 OJJ_CountOccupiedFoundationCells(AActor* Foundation) const;
+
+	// 사각 영역 내 셀들의 지배 Foundation SurfaceZ(F3.5) — 접촉 셀 수 최다, 동률이면 낮은 단(결정 ㉷).
+	// stale Foundation은 GetFoundationSurfaceZ의 weak IsValid가 걸러 비후보(유령 단 상속 차단).
+	// SnapGridOriginZ(호출 클래스가 평면+Thickness로 산출 — 그리드는 Thickness를 모름): 이 원점 기준
+	// 단 간격(100) 정수배가 아닌 SurfaceZ(램프 중간 행 등)는 집계에서 제외 — 비격자 단 상속 차단
+	// (Codex F3.5 C). off-grid 셀 스킵, 후보 없으면 false. 램프 엣지 스냅(F3.5 ③)이 직접 소비.
+	bool OJJ_GetDominantFoundationSurfaceZInRect(FIntPoint RectOrigin, FIntPoint RectSize,
+		float SnapGridOriginZ, float& OutSurfaceZ, int32& OutContactCells) const;
+
+	// 풋프린트 둘레(면접촉 4방 변 — 결정 ㉶, 대각 모서리 제외)의 지배 이웃 SurfaceZ — F3.5 ① 높이
+	// 상속(평면 확장)용. 4변 라인을 합산 집계 후 ㉷ 규칙으로 선출. 비격자 단 필터는 위와 동일.
+	// 이웃 없으면 false(씨앗 경로).
+	bool OJJ_GetNeighborFoundationSurfaceZ(FIntPoint Origin, FIntPoint Size,
+		float SnapGridOriginZ, float& OutSurfaceZ, int32& OutContactCells) const;
+
+	// Foundation 풋프린트 중심 월드 좌표(F1-b 결정점 ② — 그리드는 좌표만, 액터 이동은 호출자).
+	// 머신 GetMachinePlacementLocation과 동형 수식(lower-left 셀 중심 + (Size-1)/2)이되 메시 AABB Z 보정은
+	// 없음 — Foundation이 자체 메시 오프셋(상면=액터Z+Thickness)을 책임진다. Z = 그리드 평면 —
+	// 높이 스냅(F2-4)은 호출자가 OJJ_ComputeFoundationSnapLift 반환값을 Z에 더해 적용.
+	UFUNCTION(BlueprintPure, Category = "Grid|Foundation")
+	FVector GetFoundationPlacementLocation(FIntPoint Origin, FIntPoint Size) const;
+
+	// Foundation 높이 스냅 리프트(F2-4 §5-4): 풋프린트 GroundZ 최고점에 맞춘 단(段) 오프셋 N×100uu 반환.
+	// N = ceil((max GroundZ − Thickness) / 100) clamp ≥0 → 상면(평면+Thickness+반환값)이 항상 지형 최고점
+	// 이상(묻힘 0)이고 초과 < 100. 평탄 지대 N=0 = F1 동작 그대로. GroundZ 무효(미베이크/시그니처 불일치)
+	// 또는 풋프린트가 그리드 밖이면 0 — 평면 폴백(회귀 0). N 상한 없음(결정 ⑤) — 분포는 배치 로그 N으로 실측.
+	float OJJ_ComputeFoundationSnapLift(FIntPoint Origin, FIntPoint Size, float Thickness) const;
+
+	// 단 간격(1m). 고정 상수 — "같은 단 = 같은 SurfaceZ"가 걸침 허용/거부(OJJ_GetUniformSurfaceZ)의
+	// 기준이라 디자이너 튜닝 비노출(단 간격이 갈라지면 동일성 판정이 무의미해짐).
+	static constexpr float OJJ_FoundationSnapStep = 100.0f;
+
+	// 컨베이어 경사 게이트 한계(F3.7-1 ㊆, F3.7' 개정): 인접 경로 셀 간 허용 |ΔZ|(uu).
+	// 기본 100 = 램프 MaxRampStepPerRow 기본과 동기 — 급경사 램프(행당 ≤100, 보행 불가) 위
+	// 컨베이어 허용. 보행 불가 경고는 램프 배치 로그가 담당(컨베이어는 어차피 비보행).
+	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
+	float OJJ_GetMaxConveyorStepZ() const { return OJJ_MaxConveyorStepZ; }
+
+	// Foundation 배치 호버 미리보기 — 풋프린트 전체를 단일색 녹(가능)/적(불가)으로 표시.
+	// 단일 진실원: 색 판정 = 클릭 시 판정(CanPlaceFoundation) — 머신 UpdateHoverPreview와 동일 정책
+	// (셀별 색은 실제 배치 판정과 어긋나는 "거짓말"이라 과거 회귀로 제거된 방식 — 재도입 금지).
+	// bForceInvalid(F3.6-1): 풋프린트 자체가 구성 불가(자동 맞춤 경사 한계 — 클릭도 같은 훅 bValid로
+	// 거부되므로 단일 진실원 유지)일 때 호출자가 빨강을 강제.
+	UFUNCTION(BlueprintCallable, Category = "Grid|Hover")
+	void OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size, bool bForceInvalid = false);
+
+	// 캐릭터 점유 셀 표시 갱신(F2-4 후속 ② — 시각 전용). 빈 배열 = 클리어. 셀 변경 시에만 호출하는
+	// 책임은 호출자(BuildController가 이전 셀 비교) — 여기는 ClearInstances+재적재만. Z는
+	// OJJ_GetCellVisualBaseZ 단일원(Foundation 위에 서 있으면 상면에 표시) + 호버보다 1uu 위(겹침 시 식별).
+	void OJJ_UpdateCharacterCellOverlay(const TArray<FIntPoint>& Cells);
+
+	// === 파이프 레이어 API (F4-0, f4_pipe_plan.md — 등록/해제/질의만. 경로 검증·포트 정합은 F4-1) ===
+
+	// 파이프 셀 등록 — 유효 셀·배열 1:1(액터 신뢰 금지)·파이프 간 겹침 거부(결정 ㉥) + 양방향 맵
+	// 등록만 수행. 액터 위치/비주얼 불관여(Foundation 계약 미러 — 그리드는 파이프 메시를 모름).
+	// 머신/컨베이어 점유 셀과의 공존 규칙은 검사하지 않음 — OJJ_RegisterActorCells와 동일 경계
+	// ("점유 데이터 등록" 전용, placement 유효성은 F4-1 수집기 소관). 서버 권위 전용, 중복 등록 거부.
+	bool OJJ_TryRegisterPipeCells(AActor* Pipe, const TArray<FIntPoint>& Cells,
+		const TArray<float>& CellZs, const TArray<bool>& ElevatedFlags, FString& OutReason);
+
+	// 파이프 셀 일괄 해제(철거) — RemoveFoundation 미러. 파이프는 위 건물 게이트가 없음(레이어 위에
+	// 아무것도 안 올라감 — 거부 사유 없이 항상 해제). 미등록이면 false. 서버 권위 전용.
+	bool OJJ_UnregisterPipeCells(AActor* Pipe, FString& OutReason);
+
+	// 셀의 파이프 조회(없거나 stale이면 nullptr). 점유(GetActorAtCell)와 별개 레이어 — 그쪽에 안 보임.
+	AActor* OJJ_GetPipeAtCell(FIntPoint Cell) const;
+
+	// 셀이 "지상" 파이프에 점유됐는지 — 컨베이어 역방향 게이트 입력(결정 ㉡: 지상 셀만 차단,
+	// 공중(bElevated) 셀 아래는 통과 허용). stale은 false. 소비처 연결은 F4-3(F4-0은 질의만 제공).
+	bool OJJ_IsCellBlockedByGroundPipe(FIntPoint Cell) const;
+
+	// 파이프의 점유 셀 목록(미등록이면 nullptr) — GetFoundationCells 미러(F4-1 철거 호버용).
+	const TArray<FIntPoint>* OJJ_GetPipeCells(AActor* Pipe) const;
+
+	// === 파이프 배치 (F4-1 — 컨베이어 배치 체인 위임 + 파이프 전용 게이트) ===
+
+	// 파이프 경로 정규화 — 컨베이어 정규화(OJJ_BuildConveyorPlacementPath)에 위임: 끝점 포트 규칙이
+	// 동일(펌프 back-output 출발 / 탱크 front-input 도착 — MachineTable In/Out 1 SSOT, f4 §4).
+	// OutReason의 "Conveyor" 명칭은 위임 수용(문구 일반화 = 컨베이어 거동 영역 변경이라 기각).
+	bool OJJ_BuildPipePlacementPath(const TArray<FIntPoint>& DragCells, TArray<FIntPoint>& OutPathCells,
+		FString& OutReason) const;
+
+	// 파이프 배치 — 검증(OJJ_ValidatePipePlacement) → 파이프 레이어 등록(평면: bElevated=false) →
+	// SetPath/앵커·Z 안착/ConfigureTransport. OJJ_TryPlaceConveyor 미러(점유 대신 레이어 등록).
+	bool OJJ_TryPlacePipe(APipe* Pipe, const TArray<FIntPoint>& PathCells, FString& OutReason);
+
+	// 파이프 경로 호버 — 검증 = 클릭 판정 전체 공유(호버 색 = 클릭 가부 단일 진실원, F2-0 계약).
+	// 컨베이어 프리뷰(정규화만 검사)보다 강함 — 파이프는 게이트가 많아(액체 끝점/균일/레이어 겹침)
+	// 정규화만으론 호버≠클릭 불일치가 잦다.
+	void OJJ_UpdatePipePathHoverPreview(const TArray<FIntPoint>& PathCells);
+
+	// 머신을 끝점으로 갖는 등록 파이프 수집(철거 캐스케이드 — CollectConveyorsConnectedToMachine판).
+	// 컨베이어판(둘레 셀 스캔)과 달리 레이어 역방향 맵 순회 + Source/Target 직접 대조(파이프가 끝점 보관).
+	void OJJ_GetPipesConnectedToMachine(AMachineBase* Machine, TArray<APipe*>& OutPipes) const;
+
+	// === 지형 높이 캐시 접근 (F0 갭 해소 — CellGroundZQuant 소비처 첫 도입) ===
+
+	// 셀 지형 높이(그리드 평면 Z 상대 부호 델타, uu — 베이크 "최악점" 기준 저장값 그대로). 월드 Z는
+	// 호출자가 액터 Z를 더한다. 높이 캐시 미존재(GroundZ off 베이크/GridSize 불일치 잔존 배열)면 false.
+	UFUNCTION(BlueprintPure, Category = "Grid|Terrain")
+	bool GetCellGroundZ(FIntPoint Cell, float& OutGroundZDelta) const;
+
+	// GroundZ 캐시 리포트 — 요약(min/max/평균/비제로 + 10버킷 히스토그램) + Center/Radius 지정 시
+	// 셀별 덤프(캡 400줄 — 베이크 verbose와 동일). 콘솔 OJJ.Grid.GroundZReport가 호출. C++ 전용.
+	void DumpGroundZReport(FIntPoint Center = FIntPoint(-1, -1), int32 Radius = 0) const;
 
 	// === Grid Query (GridManager/컨베이어용 읽기 전용 조회) ===
 	// OccupiedCells / OJJ_ActorToCells를 노출만 함 — write 경로/데이터는 건드리지 않음.
@@ -370,10 +921,13 @@ public:
 
 	// 드래그 셀 목록을 정규 컨베이어 경로로 보정 — 시작이 머신 출력 셀 위/인접인지 검사해 출력셀 포함 경로 생성.
 	// 실패 시 OutReason에 사유. (포트 판정/연속성/충돌은 내부 OJJ_CollectConveyorReservedCells로 검증.) C++ 전용.
+	// bAllowConveyorOverpass: 파이프 정규화(OJJ_BuildPipePlacementPath)가 true 전달 — 내부 수집 검증이
+	// 컨베이어 점유 셀을 타넘기로 허용. 컨베이어 호출(기본 false)은 기존 동작 그대로.
 	bool OJJ_BuildConveyorPlacementPath(
 		const TArray<FIntPoint>& DragCells,
 		TArray<FIntPoint>& OutPathCells,
-		FString& OutReason) const;
+		FString& OutReason,
+		bool bAllowConveyorOverpass = false) const;
 
 	// 주어진 경로가 배치 가능한지만 판정(예약셀 산출 없이 OJJ_CollectConveyorReservedCells 래핑). C++ 전용.
 	bool OJJ_CanPlaceConveyorPath(const TArray<FIntPoint>& PathCells) const;

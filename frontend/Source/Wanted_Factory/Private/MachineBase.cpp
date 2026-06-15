@@ -8,7 +8,9 @@
 #include "FactoryManagerSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "Machines/MachineSubsystem.h"
+#include "Materials/MaterialInterface.h"
 #include "PlanetEventManagerSubsystem.h"
+#include "PlayerWarehouseSubsystem.h"
 #include "RecipeManagerSubsystem.h"
 #include "Wanted_Factory.h"
 #include "Algo/Count.h"
@@ -65,6 +67,45 @@ namespace
 		}
 
 		return Result.IsEmpty() ? FString(TEXT("None")) : Result;
+	}
+
+	void FitMeshToGrid(UStaticMeshComponent* MeshComponent, FIntPoint GridSize, FVector MeshScaleMultiplier)
+	{
+		if (!MeshComponent)
+		{
+			return;
+		}
+
+		static constexpr float MeshFitCellWorld = 100.0f;
+		FVector Scale(GridSize.X, GridSize.Y, 1.0f);
+		if (const UStaticMesh* StaticMeshAsset = MeshComponent->GetStaticMesh())
+		{
+			const FVector MeshSize = StaticMeshAsset->GetBoundingBox().GetSize();
+			if (MeshSize.X > KINDA_SMALL_NUMBER && MeshSize.Y > KINDA_SMALL_NUMBER)
+			{
+				const float SX = (GridSize.X * MeshFitCellWorld) / MeshSize.X;
+				const float SY = (GridSize.Y * MeshFitCellWorld) / MeshSize.Y;
+				Scale = FVector(SX, SY, FMath::Min(SX, SY));
+			}
+		}
+
+		MeshComponent->SetWorldScale3D(Scale * MeshScaleMultiplier);
+	}
+
+	void RequestPowerGridRefresh(AMachineBase* Machine)
+	{
+		if (!Machine)
+		{
+			return;
+		}
+
+		if (UGameInstance* GameInstance = Machine->GetGameInstance())
+		{
+			if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
+			{
+				FactoryManager->UpdatePowerGrid();
+			}
+		}
 	}
 }
 
@@ -124,6 +165,29 @@ void AMachineBase::ApplyMachineData(const FMachineTableRow& MachineData)
 	MaxDurability = FMath::Max(1.f, MachineData.Durability);
 	CurrentDurability = FMath::Clamp(CurrentDurability, 0.f, MaxDurability);
 	PowerConsumption = FMath::Max(0.f, MachineData.Power);
+	RepairCostItemID = MachineData.CostType;
+	RepairBaseCostQty = FMath::Max(0, MachineData.CostQty);
+
+	if (MeshComponent)
+	{
+		if (!MachineData.StaticMeshAsset.IsNull())
+		{
+			if (UStaticMesh* StaticMeshAsset = MachineData.StaticMeshAsset.LoadSynchronous())
+			{
+				MeshComponent->SetStaticMesh(StaticMeshAsset);
+			}
+		}
+
+		if (!MachineData.MaterialAsset.IsNull())
+		{
+			if (UMaterialInterface* MaterialAsset = MachineData.MaterialAsset.LoadSynchronous())
+			{
+				MeshComponent->SetMaterial(0, MaterialAsset);
+			}
+		}
+
+		FitMeshToGrid(MeshComponent, GridSize, MeshScaleMultiplier);
+	}
 
 	InputPorts.Reset();
 	for (int32 PortIndex = 0; PortIndex < InputPortCount; ++PortIndex)
@@ -960,6 +1024,7 @@ void AMachineBase::DamageDurability(float DamageAmount)
 	
 	OnDurabilityChanged.Broadcast(CurrentDurability, MaxDurability);
 	RefreshMachineState();
+	RequestPowerGridRefresh(this);
 }
 
 void AMachineBase::RepairDurability(float RepairAmount)
@@ -978,6 +1043,77 @@ void AMachineBase::RepairDurability(float RepairAmount)
 	
 	OnDurabilityChanged.Broadcast(CurrentDurability, MaxDurability);
 	RefreshMachineState();
+	RequestPowerGridRefresh(this);
+}
+
+int32 AMachineBase::GetMaxRepairCostQty() const
+{
+	return FMath::FloorToInt(static_cast<float>(RepairBaseCostQty) * 0.8f);
+}
+
+int32 AMachineBase::GetRepairCostQtyForCurrentDurability() const
+{
+	const int32 MaxRepairCostQty = GetMaxRepairCostQty();
+	if (MaxRepairCostQty <= 0 || MaxDurability <= 0.f)
+	{
+		return 0;
+	}
+
+	const float MissingDurability = FMath::Max(0.f, MaxDurability - CurrentDurability);
+	if (MissingDurability <= 0.f)
+	{
+		return 0;
+	}
+
+	return FMath::FloorToInt((MissingDurability / MaxDurability) * MaxRepairCostQty);
+}
+
+bool AMachineBase::RepairUsingWarehouse()
+{
+	if (RepairCostItemID.IsNone())
+	{
+		return false;
+	}
+
+	const int32 RequiredCostQty = GetRepairCostQtyForCurrentDurability();
+	if (RequiredCostQty <= 0)
+	{
+		return false;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	UPlayerWarehouseSubsystem* Warehouse = GameInstance
+		? GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>()
+		: nullptr;
+	if (!Warehouse)
+	{
+		return false;
+	}
+
+	const int32 AvailableCostQty = Warehouse->GetItemCount(RepairCostItemID);
+	const int32 ConsumedCostQty = FMath::Min(RequiredCostQty, AvailableCostQty);
+	const int32 MaxRepairCostQty = GetMaxRepairCostQty();
+	if (ConsumedCostQty <= 0 || MaxRepairCostQty <= 0)
+	{
+		return false;
+	}
+
+	if (!Warehouse->TakeItem(RepairCostItemID, ConsumedCostQty))
+	{
+		return false;
+	}
+
+	const float RepairAmount = MaxDurability * static_cast<float>(ConsumedCostQty) / MaxRepairCostQty;
+	RepairDurability(RepairAmount);
+
+	LOG_SSR_W(TEXT("Machine Repaired Using Warehouse : %s x %d -> %.1f / %.1f"),
+		*RepairCostItemID.ToString(),
+		ConsumedCostQty,
+		CurrentDurability,
+		MaxDurability
+	);
+
+	return true;
 }
 
 void AMachineBase::ApplyDurabilityDamage(float DamageAmount)
@@ -987,6 +1123,7 @@ void AMachineBase::ApplyDurabilityDamage(float DamageAmount)
 
 void AMachineBase::SetProvidedPower(float NewPower)
 {
+	const bool bHadEnoughPower = HasEnoughPower();
 	CurrentProvidedPower = FMath::Max(0.f, NewPower);
 	
 	LOG_SSR_W(TEXT("Power Updated : %.1f / %.1f"),
@@ -995,6 +1132,10 @@ void AMachineBase::SetProvidedPower(float NewPower)
 	);
 	
 	RefreshMachineState();
+	if (!bHadEnoughPower && HasEnoughPower() && MachineState == EMachineState::Idle)
+	{
+		TryStartProcess();
+	}
 }
 
 bool AMachineBase::HasEnoughPower() const
