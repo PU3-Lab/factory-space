@@ -17,6 +17,10 @@ from agents.operator_guide.agent import (
     OPERATOR_GUIDE_LEAF_AGENT_IDS,
     OperatorGuideAgent,
 )
+from agents.operator_guide.session_memory import (
+    OPERATOR_GUIDE_RECENT_CONVERSATION_KEY,
+    OperatorGuideSessionMemory,
+)
 from agents.orchestrator import TOP_LEVEL_AGENT_IDS, OrchestratorAgent
 from agents.pipeline.graph_edges import wire_agent_graph
 from agents.pipeline.llm_fallback import (
@@ -127,6 +131,7 @@ class AgentPipeline:
         routing_llm = self.llm or _FallbackRoutingLLM(list(llm_slots))
         orchestrator = OrchestratorAgent()
         operator_guide = OperatorGuideAgent()
+        operator_guide_memory = OperatorGuideSessionMemory()
         quest_generator = QuestGeneratorAgent()
 
         def build_context(state: AgentGraphState) -> AgentGraphState:
@@ -336,6 +341,37 @@ class AgentPipeline:
                 },
             }
 
+        def operator_guide_memory_context(
+            state: AgentGraphState,
+        ) -> tuple[AgentContext, dict[str, Any]]:
+            context = state["context"]
+            if state.get("selectedAgent") != "operator_guide":
+                return context, {}
+
+            recent_turns = operator_guide_memory.recent_turns(context.session_id)
+            memory_metadata = {
+                "used": bool(recent_turns),
+                "turn_count": len(recent_turns),
+                "max_turns": operator_guide_memory.max_turns,
+            }
+            if not recent_turns:
+                return context, memory_metadata
+
+            return (
+                AgentContext(
+                    request_id=context.request_id,
+                    session_id=context.session_id,
+                    client_id=context.client_id,
+                    metadata={
+                        **context.metadata,
+                        OPERATOR_GUIDE_RECENT_CONVERSATION_KEY: [
+                            turn.to_prompt_dict() for turn in recent_turns
+                        ],
+                    },
+                ),
+                memory_metadata,
+            )
+
         def build_prompt(state: AgentGraphState) -> AgentGraphState:
             try:
                 agent = agent_router.get(state["selectedLeafAgent"])
@@ -347,13 +383,16 @@ class AgentPipeline:
                         details={"agent": state["selectedLeafAgent"]},
                     )
                 }
-            prompt = agent.build_prompt(state["typedPayload"], state["context"])
+            runtime_context, memory_metadata = operator_guide_memory_context(state)
+            prompt = agent.build_prompt(state["typedPayload"], runtime_context)
             output: AgentGraphState = {"prompt": prompt}
+            if memory_metadata:
+                output["operatorGuideMemory"] = memory_metadata
             build_prompt_messages = getattr(agent, "build_prompt_messages", None)
             if callable(build_prompt_messages):
                 output["promptMessages"] = build_prompt_messages(
                     state["typedPayload"],
-                    state["context"],
+                    runtime_context,
                 )
             return output
 
@@ -447,6 +486,8 @@ class AgentPipeline:
             current_model = build_current_model_metadata(state)
             if current_model is not None:
                 metadata["currentModel"] = current_model
+            if state.get("operatorGuideMemory"):
+                metadata["memory"] = state["operatorGuideMemory"]
             metadata = {
                 **metadata,
                 **append_tool_metadata(state),
@@ -459,6 +500,8 @@ class AgentPipeline:
             current_model = build_current_model_metadata(state)
             if current_model is not None:
                 metadata["currentModel"] = current_model
+            if state.get("operatorGuideMemory"):
+                metadata["memory"] = state["operatorGuideMemory"]
             metadata = {
                 **metadata,
                 **append_tool_metadata(state),
@@ -502,6 +545,13 @@ class AgentPipeline:
                 state["responsePayload"],
                 state.get("responseMetadata", {}),
             )
+            if state.get("selectedAgent") == "operator_guide":
+                payload = state.get("responsePayload", {})
+                operator_guide_memory.remember(
+                    state["context"].session_id,
+                    question=str(payload.get("question") or ""),
+                    answer=str(payload.get("final_answer") or ""),
+                )
             return {}
 
         def log_agent_finished(state: AgentGraphState) -> AgentGraphState:

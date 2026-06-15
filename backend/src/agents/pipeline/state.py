@@ -45,6 +45,7 @@ class AgentGraphState(TypedDict, total=False):
     middlewareLogs: list[dict[str, Any]]
     responsePayload: dict[str, Any]
     responseMetadata: dict[str, Any]
+    operatorGuideMemory: dict[str, Any]
     streams: list[dict[str, Any]]
     error: dict[str, Any]
     responseEnvelope: dict[str, Any]

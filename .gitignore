@@ -211,3 +211,5 @@ frontend/docs/presentation_images/agentclient_subsystem_diagram.png
 # Local SQLite databases
 backend/*.db
 backend/*.db-journal
+# Test DB (migrated schema, no data) committed for tests/first-run
+!backend/factory_space.test.db

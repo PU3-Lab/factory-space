@@ -1,4 +1,4 @@
-"""Unit tests for input normalizer and hashing functions."""
+"""입력 정규화기(Normalizer) 및 해싱 함수에 대한 단위 테스트입니다."""
 
 from __future__ import annotations
 

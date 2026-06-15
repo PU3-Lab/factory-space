@@ -1,4 +1,4 @@
-"""Event publisher to distribute material synthesis lifecycle events."""
+"""재료 합성 생명주기 이벤트를 배포하기 위한 이벤트 게시자(Publisher)입니다."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from agents.material_generation.visual_pipeline import VisualAssetPipeline
 
 logger = logging.getLogger(__name__)
 
-# Bounded thread pool executor for processing visual assets in the background
+# 백그라운드에서 시각적 자산을 처리하기 위한 바운디드(Bounded) 스레드 풀 실행자
 _executor: ThreadPoolExecutor | None = ThreadPoolExecutor(
     max_workers=4, thread_name_prefix="VisualPipeline"
 )
@@ -17,7 +17,7 @@ _shutdown = False
 
 
 class MaterialEventPublisher:
-    """Dispatches in-memory events to decouple post-processing workflows like texturing."""
+    """텍스처링과 같은 후처리 워크플로를 디커플링하기 위해 인메모리 이벤트를 디스패치합니다."""
 
     @classmethod
     def publish_material_created(
@@ -26,7 +26,7 @@ class MaterialEventPublisher:
         visual_prompt: str,
         category: str,
     ) -> None:
-        """Fire MaterialCreated event and run visual asset generation in the background."""
+        """MaterialCreated 이벤트를 발생시키고 백그라운드에서 시각적 자원 생성을 실행합니다."""
         global _executor, _shutdown
         if _shutdown or _executor is None:
             logger.warning(
@@ -35,7 +35,7 @@ class MaterialEventPublisher:
             )
             return
 
-        # Enqueue background asset texturing to the thread pool executor to prevent unbounded thread creation
+        # 제한 없는 스레드 생성을 방지하기 위해 백그라운드 자산 텍스처링 작업을 스레드 풀 실행자에 큐잉합니다.
         try:
             _executor.submit(
                 VisualAssetPipeline.process_visual_asset,
@@ -52,7 +52,7 @@ class MaterialEventPublisher:
 
     @classmethod
     def shutdown_executor(cls, wait: bool = True) -> None:
-        """Permanently shutdown the background thread pool executor."""
+        """백그라운드 스레드 풀 실행자를 영구적으로 종료합니다."""
         global _executor, _shutdown
         _shutdown = True
         if _executor is not None:
@@ -62,7 +62,7 @@ class MaterialEventPublisher:
 
     @classmethod
     def reset_executor(cls, wait: bool = True) -> None:
-        """Shutdown the current executor and initialize a new one (for testing / reload)."""
+        """현재 실행자를 종료하고 새 실행자를 초기화합니다 (테스트 / 재로드용)."""
         global _executor, _shutdown
         if _executor is not None:
             _executor.shutdown(wait=wait)
@@ -74,5 +74,5 @@ class MaterialEventPublisher:
 
     @classmethod
     def wait_for_jobs(cls) -> None:
-        """Wait for all currently submitted jobs to complete and reset the executor (for testing)."""
+        """현재 제출된 모든 작업이 완료될 때까지 대기하고 실행자를 재설정합니다 (테스트용)."""
         cls.reset_executor(wait=True)

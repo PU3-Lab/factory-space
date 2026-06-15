@@ -1,4 +1,4 @@
-"""LangGraph subgraph orchestrating the material generation workflow."""
+"""재료 생성 워크플로를 오케스트레이션하는 LangGraph 서브그래프입니다."""
 
 from __future__ import annotations
 
@@ -28,10 +28,10 @@ from agents.material_generation.routing import (
 
 
 def build_material_subgraph() -> StateGraph:
-    """Compile and return the material generation StateGraph subgraph."""
+    """재료 생성 StateGraph 서브그래프를 컴파일하고 반환합니다."""
     builder = StateGraph(MaterialGraphState)
 
-    # Add nodes
+    # 노드 추가
     builder.add_node("normalize", normalize_node)
     builder.add_node("lookup_cache", lookup_cache_node)
     builder.add_node("recipe_match", recipe_match_node)
@@ -44,10 +44,10 @@ def build_material_subgraph() -> StateGraph:
     builder.add_node("deduplicate_material", deduplicate_material_node)
     builder.add_node("register_material", register_material_node)
 
-    # Set entry point
+    # 진입점 설정
     builder.set_entry_point("normalize")
 
-    # Add linear edges and conditional routing
+    # 선형 엣지(Edge) 및 조건부 라우팅 추가
     builder.add_edge("normalize", "lookup_cache")
 
     builder.add_conditional_edges(
@@ -107,5 +107,5 @@ def build_material_subgraph() -> StateGraph:
     return builder.compile()
 
 
-# Export the compiled subgraph
+# 컴파일된 서브그래프 내보내기
 material_subgraph = build_material_subgraph()
