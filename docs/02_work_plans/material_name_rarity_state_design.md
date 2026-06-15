@@ -98,13 +98,16 @@ prop = Σ(재료ᵢ.prop × qtyᵢ) / Σ(qtyᵢ)      (4속성 각각)
 
 ### 4.5 state 결정론 산출
 
-조합·보정이 끝난 최종 속성으로 판정한다.
+조합·보정이 끝난 최종 속성으로 판정한다. 허용 값: `solid` / `liquid` / `gas` / `plasma`. 위에서부터 순서대로 평가(가장 극단적인 `plasma` 우선).
 
 | 조건 | state |
 |------|-------|
+| reactivity ≥ 9 그리고 stability ≤ 1 | `plasma` |
 | reactivity ≥ 7 그리고 stability ≤ 3 | `gas` |
-| reactivity ≥ 5 그리고 stability ≤ 5 (위 미해당) | `liquid` |
+| reactivity ≥ 5 그리고 stability ≤ 5 | `liquid` |
 | 그 외 | `solid` |
+
+> `plasma`는 가장 고에너지 상태로, 기초 재료만으로는 거의 도달하지 못하고 고반응 재료(sulfur·magnesium 등) + 공정 보정(high temp·catalyst)이 겹칠 때만 나오는 희소 상태다.
 
 ### 4.6 희귀도 결정론 공식
 
@@ -133,9 +136,10 @@ material_hash = sha256( machine_type | 정규화_입력(item:qty 정렬) | temp 
 ### 4.8 이름 `name` (LLM 자율 + 검증)
 
 **프롬프트 가이드**: 결정론으로 산출된 `state`·`category`를 프롬프트에 주입하고, "실제 화학 물질·신소재처럼, 해당 상태가 연상되는 한글 명칭으로 지어라"를 지시한다.
-- 고체: 「~정(晶)」, 「~합금」, 「~석」
-- 액체: 「~용액」, 「~유(油)」, 「~액」
-- 기체: 「~기체」, 「~가스」, 「~증기」
+- 고체(solid): 「~정(晶)」, 「~합금」, 「~석」
+- 액체(liquid): 「~용액」, 「~유(油)」, 「~액」
+- 기체(gas): 「~기체」, 「~가스」, 「~증기」
+- 플라즈마(plasma): 「~플라즈마」, 「~이온체」, 「~화염체」
 
 **검증 규칙** (순서대로, 실패 시 fallback):
 1. 공백 정리 후 빈 값 → fallback
@@ -166,7 +170,7 @@ material_hash = sha256( machine_type | 정규화_입력(item:qty 정렬) | temp 
 - **속성 조합**: 단일/복수 입력 수량 가중 평균 검증
 - **공정 보정**: high/low/catalyst 가산 + 클램핑 검증
 - **category**: 금속/비금속/혼합 케이스
-- **state**: gas/liquid/solid 경계 케이스
+- **state**: plasma/gas/liquid/solid 경계 케이스
 - **rarity**: score 4.9/5.0/6.9/7.0/8.4/8.5 경계
 - **hash 재현성**: 같은 입력 → 같은 material_hash, 다른 입력 → 다른 hash
 - **이름 검증**: 빈 값/초과 길이/금지어/순수 기호/정상
