@@ -10,6 +10,7 @@ from agents.material_generation.derivation import (
     apply_process,
     combine_properties,
     derive_category,
+    derive_state,
 )
 from agents.material_generation.schemas import ProcessConditionsSchema
 
@@ -110,3 +111,24 @@ def test_derive_category_composite() -> None:
         {"item_id": "sulfur_powder", "qty": 1},
     ]
     assert derive_category(inputs) == "composite"
+
+
+def test_derive_state_plasma() -> None:
+    """반응성이 매우 높고 안정성이 극도로 낮을 때 plasma(플라즈마) 상태로 판정되는지 테스트합니다."""
+    # reactivity>=9, stability<=1
+    assert derive_state((5.0, 5.0, 1.0, 9.0)) == "plasma"
+
+
+def test_derive_state_gas() -> None:
+    """반응성이 높고 안정성이 낮을 때 gas(기체) 상태로 판정되는지 테스트합니다."""
+    assert derive_state((5.0, 5.0, 3.0, 7.0)) == "gas"
+
+
+def test_derive_state_liquid() -> None:
+    """일정한 반응성 및 안정성 범위에서 liquid(액체) 상태로 판정되는지 테스트합니다."""
+    assert derive_state((5.0, 5.0, 5.0, 5.0)) == "liquid"
+
+
+def test_derive_state_solid() -> None:
+    """반응성이 낮고 안정성이 높을 때 solid(고체) 상태로 판정되는지 테스트합니다."""
+    assert derive_state((7.0, 5.0, 7.0, 4.0)) == "solid"
