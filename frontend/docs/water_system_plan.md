@@ -82,3 +82,20 @@
 3. 그 셀이 #215 파랑 윤곽선으로 보이면 → 진실원 살아남 → #182 펌프 배치 + 비주얼로 확장.
 
 > ⚠️ 1차 조형 전 결정: **그리드 평면 Z = 수면 높이**로 합의(봉우리는 위로, 웅덩이는 아래로). 이래야 `WaterSurfaceZ≈0~−30` 단순 임계로 웅덩이가 깔끔히 분류됨.
+
+---
+
+## WaterSurfaceZ 튜닝 절차 (웅덩이만 잡히게)
+
+분류는 **베이크 타임**(라이브 슬라이더 아님). 현재 `WaterSurfaceZ=-20`(평면 Z 상대), `bWater = 셀 5점 최저점 < WaterSurfaceZ`(`OJJ_Grid.cpp:932`).
+
+**측정 → 임계 결정 → 검증 루프:**
+1. 그리드 디테일 `Grid|Water`에서 **`bBakeGroundHeights = true`** 체크.
+2. 그리드 디테일 `Grid|Terrain`의 **`RebakeAndCache` 버튼**(CallInEditor) 클릭 → 레벨 저장.
+3. **`OJJ.Grid.GroundZReport <X> <Y> [Radius]`** 콘솔 — 웅덩이 영역 셀별 GroundZ(평면대비 델타) 덤프 → **바닥 델타 / 가장자리 델타** 확인.
+4. **`WaterSurfaceZ`를 가장자리와 바닥 델타 사이**로 설정 (예: 가장자리 −5 / 바닥 −60 → `WaterSurfaceZ ≈ −30`).
+5. **`RebakeAndCache` 재클릭** → **`OJJ.Grid.ShowWater 1`** 로 파랑 분포 확인 → 웅덩이에만 칠해질 때까지 4~5 반복.
+6. 잔웅덩이/노이즈는 **`MinWaterCellCount`** (flood-fill 최소 영역)로 필터.
+7. 확정 후 **레벨 저장**(캐시 .umap 영속). 그 위에 **WaterArea(M_Water 평면)** 를 수면 높이에 배치.
+
+⚠️ `WaterSurfaceZ`/`bBakeGroundHeights`/`MinWaterCellCount` 변경은 **캐시 시그니처 불일치 → 재트레이스**라 반드시 RebakeAndCache 동반. 콘솔: `OJJ.Grid.BuildableReport`(요약) / `ShowWater 0|1`(파랑 토글) / `GroundZReport`(높이 덤프).
