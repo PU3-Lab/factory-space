@@ -96,7 +96,7 @@ class MaterialProposalGenerator:
             '    "visual_prompt": "아이콘 및 2D 텍스처 생성을 위한 영문 프롬프트 (예: \'reddish brown metal ingot, sci-fi style\')"\n'
             "  }\n"
             "}\n"
-            "주의: properties의 4가지 값(strength, conductivity, stability, reactivity)은 반드시 0.0 ~ 10.0 사이의 실수로 정의하십시오.\n"
+            "주의: properties(강도, 전도도, 안정성, 반응성), category, rarity 필드는 시스템 백엔드에서 결정론적으로 자동 연산 및 대체되므로, JSON 구조 정합성을 위해 properties 내부 각 속성은 5.0 등 임의의 실수로 채워주시고, category와 rarity 역시 임의의 더미 문자열을 채워 반환하십시오.\n"
         )
         return prompt
 

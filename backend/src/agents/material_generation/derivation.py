@@ -125,13 +125,13 @@ def derive_category(normalized_inputs: list[dict[str, Any]]) -> str:
 def derive_state(props: tuple[float, float, float, float]) -> str:
     """최종 속성으로 물리적 상태(state)를 판정합니다. (plasma/gas/liquid/solid)
 
-    - 반응성(reactivity) >= 9.0 이고 안정성(stability) <= 1.0 이면 "plasma"
+    - 반응성(reactivity) >= 9.0 이고 안정성(stability) <= 2.0 이면 "plasma"
     - 반응성 >= 7.0 이고 안정성 <= 3.0 이면 "gas"
     - 반응성 >= 5.0 이고 안정성 <= 5.0 이면 "liquid"
     - 그 외에는 모두 "solid" (고체)
     """
     _, _, stability, reactivity = props
-    if reactivity >= 9.0 and stability <= 1.0:
+    if reactivity >= 9.0 and stability <= 2.0:
         return "plasma"
     if reactivity >= 7.0 and stability <= 3.0:
         return "gas"

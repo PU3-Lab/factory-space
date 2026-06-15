@@ -97,3 +97,13 @@ def test_candidates_capped_at_five() -> None:
     )
     assert out.result is not None
     assert out.result.next_recipe_candidates == ["c1", "c2", "c3", "c4", "c5"]
+
+
+def test_sanitize_does_not_strip_substring_keywords() -> None:
+    """단어 내부에 금지 키워드가 부분 문자열로 섞여 있을 때 치환되지 않는지 테스트합니다."""
+    out = MaterialResultValidator.validate_and_correct(
+        _make("Latest Protest", id_hint="latest_protest")
+    )
+    assert out.result is not None
+    assert out.result.name == "Latest Protest"
+    assert out.result.id_hint == "latest_protest"

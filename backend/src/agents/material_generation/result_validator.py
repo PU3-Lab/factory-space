@@ -43,7 +43,7 @@ class MaterialResultValidator:
             return FALLBACK_NAME
 
         for term in FORBIDDEN_KEYWORDS:
-            cleaned = re.sub(term, "합금", cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r"\b" + term + r"\b", "합금", cleaned, flags=re.IGNORECASE)
 
         cleaned = _DISALLOWED_NAME_CHARS.sub("", cleaned).strip()
 
@@ -64,7 +64,7 @@ class MaterialResultValidator:
         """
         cleaned = id_hint.strip().lower()
         for term in FORBIDDEN_KEYWORDS:
-            cleaned = cleaned.replace(term, "alloy")
+            cleaned = re.sub(r"\b" + term + r"\b", "alloy", cleaned)
         cleaned = _DISALLOWED_ID_CHARS.sub("_", cleaned)
         cleaned = re.sub(r"_+", "_", cleaned).strip("_")
         return cleaned or "material"

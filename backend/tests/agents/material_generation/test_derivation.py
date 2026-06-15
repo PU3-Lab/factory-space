@@ -117,8 +117,8 @@ def test_derive_category_composite() -> None:
 
 def test_derive_state_plasma() -> None:
     """반응성이 매우 높고 안정성이 극도로 낮을 때 plasma(플라즈마) 상태로 판정되는지 테스트합니다."""
-    # reactivity>=9, stability<=1
-    assert derive_state((5.0, 5.0, 1.0, 9.0)) == "plasma"
+    # reactivity>=9, stability<=2
+    assert derive_state((5.0, 5.0, 2.0, 9.0)) == "plasma"
 
 
 def test_derive_state_gas() -> None:

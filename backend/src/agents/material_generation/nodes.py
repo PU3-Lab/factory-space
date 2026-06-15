@@ -403,7 +403,14 @@ def validate_result_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
-    """노드: 기존 재료 해시를 확인하여 속성을 중복 제거합니다."""
+    """노드: 기존 재료 해시를 확인하여 속성을 중복 제거합니다.
+
+    참고: material_hash가 (장비+정규화 입력+공정조건) 합성 정체성 기반으로 재정의되었기 때문에,
+    동일 합성 조건은 1차로 상위 `lookup_cache_node`(experiment_hash 캐시)에서 이미 걸러집니다.
+    따라서 이 노드의 `existing_mat` 매칭 분기는 주로 캐시 테이블(experiments)에 기록은 안 남아있으나
+    materials 테이블에는 존재하거나, 다른 장비/공정에서 같은 정체성을 유도하는 등의 드문 경로에 대한
+    안전장치(fallback) 성격으로 잔존 및 작동합니다.
+    """
     if state.get("response"):
         return {}
 
