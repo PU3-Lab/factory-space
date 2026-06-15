@@ -20,7 +20,6 @@ void UUI_BuildModeMain::NativeConstruct()
     if (BTN_Slot_0_MagneticShield) BTN_Slot_0_MagneticShield->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnMagneticShieldClicked);
 }
 
-// 2. 징검다리 구역: 각 함수는 기획하신 '키보드 단축키 번호'를 그대로 넘겨줍니다.
 void UUI_BuildModeMain::OnStorageClicked()        { ExecutePlacementMode(1); } // 1번: 창고
 void UUI_BuildModeMain::OnConveyorClicked()       { ExecutePlacementMode(2); } // 2번: 컨베이어
 void UUI_BuildModeMain::OnSmelterClicked()        { ExecutePlacementMode(3); } // 3번: 제련기
@@ -40,7 +39,7 @@ void UUI_BuildModeMain::ExecutePlacementMode(int32 SlotIndex)
 
     if (!BuildController) return;
     
-    // 유저님이 짜놓으신 직관적인 단축키 번호 규칙 그대로 완벽하게 동작합니다.
+    // 단축키 번호
     switch (SlotIndex)
     {
         case 1: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Warehouse); break;   // 1번: 창고

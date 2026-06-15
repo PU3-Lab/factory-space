@@ -21,6 +21,7 @@ class WANTED_FACTORY_API UUI_MachineInteract : public UUserWidget
 public:
 	virtual void NativeConstruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	virtual bool NativeOnDrop(const FGeometry& MyGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 
 	// 모든 닫힘 경로(BTN_Close·외부 RemoveFromParent)를 NativeDestruct 한 곳에서 커버해 OnClosed를 1회 Broadcast.
 	virtual void NativeDestruct() override;
@@ -52,11 +53,13 @@ public:
 
 protected:
 	// --- 입력(Input) 위젯 ---
+	UPROPERTY(meta = (BindWidget)) class UImage* IMG_InputIcon;
 	UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_InputName;
 	UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_InputCount;
 	UPROPERTY(meta = (BindWidget)) UProgressBar* PB_InputBuffer;
 	
 	// --- 출력(Output) 위젯 ---
+	UPROPERTY(meta = (BindWidget)) class UImage* IMG_OutputIcon;
 	UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_OutputName;
 	UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_OutputCount;
 	UPROPERTY(meta = (BindWidget)) UProgressBar* PB_OutputBuffer;
@@ -65,12 +68,12 @@ protected:
 	UPROPERTY(meta = (BindWidget)) UProgressBar* PB_CraftingProgress;
 	UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_ProgressPercent;
 	UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_MachineState;
-	
 	UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_MachineName;
+	UPROPERTY(meta = (BindWidget))
+	class UImage* IMG_MachinePreview;
 	
 	UPROPERTY(meta = (BindWidget))
 	class UButton* BTN_Close;
-
 	UPROPERTY(meta = (BindWidgetOptional))
 	class UButton* BTN_Repair;
 	
@@ -80,6 +83,14 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	class UProgressBar* PB_Durability;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Data")
+	class UDataTable* ResourceDataTable;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Data")
+	class UDataTable* MachineDataTable;
+	
+	UPROPERTY(meta = (BindWidget))
+	class UBorder* B_InputDropZone;
 
 private:
 	// 테스트하기 위한 임시 변수
