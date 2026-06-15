@@ -1,9 +1,44 @@
 #include "UI/UI_Inventory.h"
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
+#include "Engine/DataTable.h"
 #include "Layout/Margin.h"               
 #include "PlayerWarehouseSubsystem.h"
+#include "Resource/ResourceData.h"
 #include "UI/UI_InventorySlot.h"
+#include "UObject/ConstructorHelpers.h"
+
+UUI_Inventory::UUI_Inventory(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
+		TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData"));
+	if (ResourceTableFinder.Succeeded())
+	{
+		ResourceDataTable = ResourceTableFinder.Object;
+	}
+}
+
+void UUI_Inventory::SetItemFormFilter(FName FormFilter)
+{
+	ItemFormFilter = FormFilter;
+}
+
+bool UUI_Inventory::IsAllowedItem(FName ItemID) const
+{
+	if (ItemID.IsNone() || ItemFormFilter.IsNone())
+	{
+		return !ItemID.IsNone();
+	}
+
+	if (!ResourceDataTable)
+	{
+		return false;
+	}
+
+	const FResourceData* Resource = ResourceDataTable->FindRow<FResourceData>(ItemID, TEXT("Inventory.IsAllowedItem"));
+	return Resource && Resource->form == ItemFormFilter;
+}
 
 void UUI_Inventory::RefreshInventoryWindow()
 {
@@ -19,7 +54,13 @@ void UUI_Inventory::RefreshInventoryWindow()
 
 	const TMap<FName, int32>& CurrentItems = WarehouseSubsystem->GetStoredItems();
 	TArray<FName> ItemIDs;
-	CurrentItems.GetKeys(ItemIDs);
+	for (const TPair<FName, int32>& Item : CurrentItems)
+	{
+		if (Item.Value > 0 && IsAllowedItem(Item.Key))
+		{
+			ItemIDs.Add(Item.Key);
+		}
+	}
 	
 	int32 MaxColumns = 5;  
 	int32 TotalSlots = 30; // 총 슬롯은 30개로 유지 (5칸 * 6줄 = 30)
@@ -59,7 +100,13 @@ void UUI_Inventory::UpdateSlotQuantitiesOnly()
 	// 현재 서브시스템에 담긴 최신 물품 내역 가져오기
 	const TMap<FName, int32>& CurrentItems = WarehouseSubsystem->GetStoredItems();
 	TArray<FName> ItemIDs;
-	CurrentItems.GetKeys(ItemIDs);
+	for (const TPair<FName, int32>& Item : CurrentItems)
+	{
+		if (Item.Value > 0 && IsAllowedItem(Item.Key))
+		{
+			ItemIDs.Add(Item.Key);
+		}
+	}
 
 	// 격자판에 생성되어 있는 자식 슬롯 개수를 파악합니다
 	int32 ChildCount = GDP_ItemGrid->GetChildrenCount();
