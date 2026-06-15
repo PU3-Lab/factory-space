@@ -3519,8 +3519,15 @@ void AOJJ_Grid::OJJ_SetTileParams(UMaterialInstanceDynamic* MID, const FLinearCo
 	// LineWidth는 베이스 MI 기본값 유지(미설정). 없는 파라미터 set은 안전 무시.
 	MID->SetVectorParameterValue(TEXT("BaseColor"), FillColor);
 	MID->SetScalarParameterValue(TEXT("Opacity"), FillOpacity);
-	MID->SetVectorParameterValue(TEXT("LineColor"), GridLineColor);
+	// 윤곽선 모드(#215): 선 색 = 분류색(FillColor) → buildable=초록선/water=청선/blocked=적선.
+	// 기본 모드: 공유 GridLineColor(한 색 스냅 기준선). 채움 제거는 Overlay/HoverOpacity로 별도 제어.
+	MID->SetVectorParameterValue(TEXT("LineColor"), bOutlineGridStyle ? FillColor : GridLineColor);
 	MID->SetScalarParameterValue(TEXT("LineOpacity"), GridLineOpacity);
+	// 윤곽선 모드일 때만 LineWidth 주입(라이브 슬라이더). 끄면 미설정 → 마스터 기본값 유지(회귀 0).
+	if (bOutlineGridStyle)
+	{
+		MID->SetScalarParameterValue(TEXT("LineWidth"), GridLineWidth);
+	}
 }
 
 void AOJJ_Grid::OJJ_ApplyTileMIDParams()
