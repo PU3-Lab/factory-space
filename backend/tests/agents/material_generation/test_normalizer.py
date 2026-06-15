@@ -9,8 +9,6 @@ from agents.material_generation.normalizer import (
 )
 from agents.material_generation.schemas import (
     InputItemSchema,
-    MaterialProperties,
-    MaterialProposalResult,
     ProcessConditionsSchema,
 )
 
@@ -66,38 +64,30 @@ def test_normalize_inputs_merges_duplicates() -> None:
     assert normalized[1]["qty"] == 3
 
 
-def test_material_hash_is_stable() -> None:
-    proposal1 = MaterialProposalResult(
-        id_hint="alloy_iron_copper",
-        name="Iron Copper Alloy",
-        category="alloy",
-        rarity="common",
-        description="A simple alloy.",
-        properties=MaterialProperties(
-            strength=6.5, conductivity=5.8, stability=7.2, reactivity=2.1
-        ),
-        risks=["oxidation"],
-        usage=["wire", "frame"],
-        next_recipe_candidates=["reinforced_wire"],
-        visual_prompt="iron copper alloy ingot",
+def test_material_hash_is_synthesis_identity() -> None:
+    """합성 장비, 정규화된 입력 재료, 공정 조건이 동일할 때 동일한 해시가 생성되는지 테스트합니다."""
+    from agents.material_generation.schemas import ProcessConditionsSchema
+
+    inputs = [
+        {"item_id": "copper_ingot", "qty": 1},
+        {"item_id": "iron_ingot", "qty": 2},
+    ]
+    h1 = generate_material_hash("Synthesizer", inputs, ProcessConditionsSchema())
+    h2 = generate_material_hash("Synthesizer", inputs, ProcessConditionsSchema())
+    assert h1 == h2
+    assert len(h1) == 64
+
+
+def test_material_hash_differs_on_inputs() -> None:
+    """입력이 다를 경우 해시값이 다르게 생성되는지 테스트합니다."""
+    from agents.material_generation.schemas import ProcessConditionsSchema
+
+    a = generate_material_hash(
+        "Synthesizer", [{"item_id": "iron_ingot", "qty": 1}], ProcessConditionsSchema()
     )
-
-    proposal2 = MaterialProposalResult(
-        id_hint="alloy_iron_copper",
-        name="Iron Copper Alloy",
-        category="alloy",
-        rarity="common",
-        description="A simple alloy.",
-        properties=MaterialProperties(
-            strength=6.5, conductivity=5.8, stability=7.2, reactivity=2.1
-        ),
-        risks=["oxidation"],
-        usage=["wire", "frame"],
-        next_recipe_candidates=["reinforced_wire"],
-        visual_prompt="iron copper alloy ingot",
+    b = generate_material_hash(
+        "Synthesizer",
+        [{"item_id": "copper_ingot", "qty": 1}],
+        ProcessConditionsSchema(),
     )
-
-    hash1 = generate_material_hash(proposal1)
-    hash2 = generate_material_hash(proposal2)
-
-    assert hash1 == hash2
+    assert a != b
