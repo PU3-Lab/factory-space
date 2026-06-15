@@ -15,6 +15,7 @@ from agents.material_generation.material_properties import (
 )
 from agents.material_generation.schemas import (
     MaterialProperties,
+    ProcessConditionsSchema,
 )
 
 
@@ -56,4 +57,42 @@ def combine_properties(
         sums[1] / total_qty,
         sums[2] / total_qty,
         sums[3] / total_qty,
+    )
+
+
+def apply_process(
+    props: tuple[float, float, float, float],
+    conditions: ProcessConditionsSchema,
+) -> tuple[float, float, float, float]:
+    """공정 조건(온도/압력/촉매)에 따라 속성을 보정하고 0~10으로 클램핑합니다.
+
+    - 고온(temperature="high"): 반응성 +1.0, 안정성 -1.0
+    - 저온(temperature="low"): 반응성 -1.0, 안정성 +1.0
+    - 고압(pressure="high"): 강도 +1.0, 안정성 +1.0
+    - 촉매(catalyst): 반응성 +1.0
+    """
+    strength, conductivity, stability, reactivity = props
+
+    temp = (conditions.temperature or "").strip().lower()
+    pressure = (conditions.pressure or "").strip().lower()
+
+    if temp == "high":
+        reactivity += 1.0
+        stability -= 1.0
+    elif temp == "low":
+        reactivity -= 1.0
+        stability += 1.0
+
+    if pressure == "high":
+        strength += 1.0
+        stability += 1.0
+
+    if conditions.catalyst:
+        reactivity += 1.0
+
+    return (
+        _clamp(strength),
+        _clamp(conductivity),
+        _clamp(stability),
+        _clamp(reactivity),
     )

@@ -6,7 +6,8 @@
 
 from __future__ import annotations
 
-from agents.material_generation.derivation import combine_properties
+from agents.material_generation.derivation import apply_process, combine_properties
+from agents.material_generation.schemas import ProcessConditionsSchema
 
 
 def test_combine_single_input() -> None:
@@ -38,3 +39,37 @@ def test_combine_respects_quantity_weight() -> None:
         ]
     )
     assert result[0] == 6.25
+
+
+def test_apply_process_high_temp() -> None:
+    """고온 조건에서 반응성이 증가하고 안정성이 감소하는지 테스트합니다."""
+    # base (5,5,5,5), high temp -> reactivity+1, stability-1
+    out = apply_process(
+        (5.0, 5.0, 5.0, 5.0), ProcessConditionsSchema(temperature="high")
+    )
+    assert out == (5.0, 5.0, 4.0, 6.0)
+
+
+def test_apply_process_catalyst_and_pressure() -> None:
+    """압력 및 촉매 조건이 반영되는지 테스트합니다."""
+    out = apply_process(
+        (5.0, 5.0, 5.0, 5.0),
+        ProcessConditionsSchema(pressure="high", catalyst="platinum"),
+    )
+    # strength+1, stability+1, reactivity+1
+    assert out == (6.0, 5.0, 6.0, 6.0)
+
+
+def test_apply_process_clamps() -> None:
+    """속성이 0.0 미만 또는 10.0 초과로 나가지 않고 클램핑되는지 테스트합니다."""
+    out = apply_process(
+        (10.0, 10.0, 0.5, 9.5), ProcessConditionsSchema(temperature="high")
+    )
+    # stability 0.5-1 -> clamp 0, reactivity 9.5+1 -> clamp 10
+    assert out == (10.0, 10.0, 0.0, 10.0)
+
+
+def test_apply_process_default_is_noop() -> None:
+    """기본 공정 조건일 때 속성 변화가 없는지 테스트합니다."""
+    out = apply_process((5.0, 5.0, 5.0, 5.0), ProcessConditionsSchema())
+    assert out == (5.0, 5.0, 5.0, 5.0)
