@@ -1,4 +1,9 @@
-"""PostgreSQL schema metadata for operator_guide RAG documents."""
+"""operator_guide RAG 문서를 저장할 PostgreSQL + pgvector 테이블 정의.
+
+초보자용 설명:
+    이 파일은 SQLAlchemy로 `manual_rag_documents` 테이블 모양을 정의한다.
+    실제 migration과 테스트가 이 metadata를 기준으로 테이블/인덱스를 확인한다.
+"""
 
 from __future__ import annotations
 
@@ -18,10 +23,12 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 
 EMBEDDING_DIMENSIONS = 1536
+"""OpenAI `text-embedding-3-small` 기준 embedding vector 길이."""
 
 metadata = MetaData()
 
 manual_rag_documents = Table(
+    # CSV에서 만든 RAG 문서와 embedding vector를 함께 저장하는 테이블이다.
     "manual_rag_documents",
     metadata,
     Column("id", Integer, primary_key=True),

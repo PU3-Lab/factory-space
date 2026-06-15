@@ -1,4 +1,9 @@
-"""Plan and execute Manual Q&A RAG document upserts."""
+"""RAG 문서를 DB에 얼마나 insert/update/skip할지 계산하고 실행하는 모듈.
+
+초보자용 설명:
+    CSV가 자주 바뀌어도 모든 문서를 매번 다시 embedding하면 비용이 든다.
+    이 파일은 content hash를 비교해서 새 문서, 바뀐 문서, 그대로인 문서를 나눈다.
+"""
 
 from __future__ import annotations
 
@@ -12,21 +17,21 @@ from agents.operator_guide.rag_ingestion import (
 
 
 class ManualRagDocumentStore(Protocol):
-    """Storage contract for Manual Q&A RAG documents."""
+    """RAG upsert 서비스가 기대하는 저장소 인터페이스."""
 
     def list_active_content_hashes(self) -> dict[str, str]:
-        """Return active document content hashes by document id."""
+        """활성 문서의 content hash를 doc_id 기준으로 반환한다."""
 
     def upsert_records(self, records: list[ManualRagIngestionRecord]) -> None:
-        """Insert or update RAG ingestion records."""
+        """RAG ingestion record를 insert 또는 update한다."""
 
     def deactivate_missing(self, doc_ids: list[str]) -> None:
-        """Mark documents inactive when they no longer exist in CSV."""
+        """CSV에서 사라진 문서를 inactive로 표시한다."""
 
 
 @dataclass(frozen=True)
 class ManualRagUpsertSummary:
-    """Summary of a Manual Q&A RAG ingestion run."""
+    """ingestion 실행 결과 요약."""
 
     inserted: int
     updated: int
@@ -36,7 +41,7 @@ class ManualRagUpsertSummary:
 
 
 class ManualRagUpsertService:
-    """Compare new ingestion records with storage and apply minimal changes."""
+    """기존 DB 상태와 새 batch를 비교해서 필요한 변경만 적용한다."""
 
     def __init__(self, store: ManualRagDocumentStore) -> None:
         self._store = store
@@ -48,6 +53,8 @@ class ManualRagUpsertService:
         dry_run: bool = False,
         force: bool = False,
     ) -> ManualRagUpsertSummary:
+        """record 목록을 받아 바로 upsert batch로 처리한다."""
+
         return self.upsert_batch(
             ManualRagIngestionBatch(
                 records=records,
@@ -64,6 +71,8 @@ class ManualRagUpsertService:
         dry_run: bool = False,
         force: bool = False,
     ) -> ManualRagUpsertSummary:
+        """insert/update/skip/deactivate 수를 계산하고, dry-run이 아니면 DB에 반영한다."""
+
         existing_hashes = self._store.list_active_content_hashes()
         incoming_ids = set(batch.content_hashes)
         records_by_id = {record.doc_id: record for record in batch.records}

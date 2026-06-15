@@ -1,4 +1,9 @@
-"""Manual Q&A service for the operator_guide agent."""
+"""operator_guide agent의 Manual Q&A 흐름을 조율하는 service 모듈.
+
+초보자용 설명:
+    이 파일은 질문을 바로 답하지 않고, 먼저 질문 유형을 분류한 뒤 CSV 근거를 모은다.
+    이후 prompt builder가 그 근거를 LLM 프롬프트로 만들 수 있게 연결한다.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +21,7 @@ from agents.operator_guide.schemas import ManualQAResult
 
 
 class ManualQAService:
-    """Coordinate intent routing and CSV evidence building."""
+    """질문 분류, CSV 근거 수집, prompt 생성을 한 곳에서 조율한다."""
 
     def __init__(
         self,
@@ -32,13 +37,13 @@ class ManualQAService:
         question: str,
         context: dict[str, object] | None = None,
     ) -> ManualQAResult:
-        """Return a Manual Q&A proto answer for one question."""
+        """LLM 없이 CSV 기반 proto 답변 객체를 만든다."""
 
         _ = context
         return self.build_prompt_context(question).result
 
     def build_prompt_context(self, question: str) -> ManualQAPromptContext:
-        """Return classified CSV evidence for one question."""
+        """질문을 분류하고, 그 질문에 맞는 CSV evidence를 모은다."""
 
         intent = self._question_classifier.classify(question)
         return self._context_builder.build(question, intent)
@@ -50,7 +55,7 @@ class ManualQAService:
         topic: str,
         sub_agent: str,
     ) -> str:
-        """Return an LLM prompt grounded in matched CSV evidence."""
+        """CSV evidence를 근거로 한 LLM용 단일 문자열 prompt를 만든다."""
 
         prompt_context = self.build_prompt_context(question)
         return self._prompt_builder.build(
@@ -67,7 +72,7 @@ class ManualQAService:
         topic: str,
         sub_agent: str,
     ) -> list[dict[str, str]]:
-        """Return chat messages grounded in matched CSV evidence."""
+        """system prompt와 user prompt가 분리된 chat messages를 만든다."""
 
         prompt_context = self.build_prompt_context(question)
         return self._prompt_builder.build_messages(
@@ -85,7 +90,7 @@ def build_manual_qa_agent_result(
     topic: str,
     sub_agent: str,
 ) -> AgentRunResult:
-    """Build an operator_guide fallback result from the CSV Manual Q&A service."""
+    """LLM 호출 실패 시 사용할 operator_guide fallback 응답을 만든다."""
 
     question = str(payload.get("question") or payload.get("message") or "")
     result = ManualQAService().answer(question, context=context.metadata)
@@ -111,7 +116,7 @@ def build_manual_qa_prompt(
     topic: str,
     sub_agent: str,
 ) -> str:
-    """Build a CSV-grounded LLM prompt for an operator guide leaf agent."""
+    """leaf agent가 사용할 CSV 근거 기반 LLM prompt를 만든다."""
 
     return ManualQAService().build_prompt(
         question,
@@ -126,7 +131,7 @@ def build_manual_qa_prompt_messages(
     topic: str,
     sub_agent: str,
 ) -> list[dict[str, str]]:
-    """Build system/user chat messages for an operator guide leaf agent."""
+    """leaf agent가 사용할 system/user chat messages를 만든다."""
 
     return ManualQAService().build_prompt_messages(
         question,
