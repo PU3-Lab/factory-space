@@ -10,6 +10,7 @@
 
 class UTextRenderComponent;
 class AOJJ_Grid;
+class UStaticMesh;
 
 // 효율 modifier 키 모음 (요인별). 새 효율 요인은 여기에 한 줄 추가 — 머신/이벤트 매니저 등
 // 양쪽 파일의 문자열 중복을 방지하는 단일 정의 지점. 정의는 MachineBase.cpp.
@@ -276,6 +277,14 @@ public:
 
 	// 배치 Z(바닥 안착) 계산 등에서 메시 로컬 바운즈/월드스케일을 읽기 위한 접근자.
 	UStaticMeshComponent* GetMeshComponent() const { return MeshComponent; }
+
+	// 고스트 프리뷰(#187)가 머신 메시별 미세조정 배율을 액터 스폰 없이 재현하기 위한 접근자.
+	FVector GetMeshScaleMultiplier() const { return MeshScaleMultiplier; }
+
+	// 메시 바운즈를 footprint(GridSize × MeshFitCellWorld)에 정규화하는 단일 진실원(#187).
+	// FitMeshToGrid / OnConstruction / 고스트 프리뷰가 모두 이 식을 공유 — 수치 동작 동일(무회귀).
+	// 폴백: Mesh 널/바운즈 0이면 Scale=(GridSize.X,GridSize.Y,1). 최종 결과에 MeshScaleMultiplier를 곱한다.
+	static FVector OJJ_ComputeMeshFitScale(const UStaticMesh* Mesh, FIntPoint GridSize, FVector MeshScaleMultiplier);
 
 	// 설치 가능 여부
 	UFUNCTION(BlueprintCallable)

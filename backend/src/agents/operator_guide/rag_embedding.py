@@ -1,4 +1,9 @@
-"""Embedding providers for operator_guide RAG ingestion."""
+"""operator_guide RAG 문서를 벡터로 바꾸는 embedding provider 모듈.
+
+초보자용 설명:
+    LLM 검색에서 "비슷한 문서"를 찾으려면 텍스트를 숫자 배열(vector)로 바꿔야 한다.
+    이 파일은 OpenAI embedding API 또는 테스트용 no-op provider를 같은 인터페이스로 다룬다.
+"""
 
 from __future__ import annotations
 
@@ -35,7 +40,7 @@ class _OpenAIEmbeddingsClient(Protocol):
         input: list[str],
         dimensions: int | None = None,
     ) -> _OpenAIEmbeddingResponse:
-        """Create embeddings for input texts."""
+        """텍스트 목록을 OpenAI embedding 응답으로 변환한다."""
 
 
 class _OpenAIClient(Protocol):
@@ -44,7 +49,10 @@ class _OpenAIClient(Protocol):
 
 @dataclass(frozen=True)
 class EmbeddingSettings:
-    """Embedding provider settings for Manual Q&A RAG ingestion."""
+    """embedding 실행에 필요한 설정 묶음.
+
+    env 파일에서 provider, model, dimensions, api key를 읽어 온다.
+    """
 
     provider: EmbeddingProviderName
     model: str | None = None
@@ -54,6 +62,8 @@ class EmbeddingSettings:
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> EmbeddingSettings:
+        """환경변수에서 embedding 설정을 만든다."""
+
         source = os.environ if env is None else env
         provider = _provider_from_env(source)
         if provider == "none":
@@ -75,7 +85,10 @@ class EmbeddingSettings:
 
 @dataclass(frozen=True)
 class NoopEmbeddingProvider:
-    """Disabled embedding provider."""
+    """embedding을 실제로 만들지 않는 provider.
+
+    테스트나 비활성화 환경에서 외부 API 호출을 막기 위해 사용한다.
+    """
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         _ = texts
@@ -84,13 +97,15 @@ class NoopEmbeddingProvider:
 
 @dataclass(frozen=True)
 class OpenAIEmbeddingProvider:
-    """OpenAI embedding provider using the official SDK."""
+    """OpenAI SDK로 텍스트 embedding을 생성하는 provider."""
 
     settings: EmbeddingSettings
     client: _OpenAIClient | None = None
     timeout_ms: int = 20000
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        """여러 문장을 한 번에 embedding vector 목록으로 바꾼다."""
+
         if not texts:
             return []
         if not self.settings.api_key:
@@ -120,6 +135,8 @@ class OpenAIEmbeddingProvider:
 def create_embedding_provider(
     settings: EmbeddingSettings | None = None,
 ) -> NoopEmbeddingProvider | OpenAIEmbeddingProvider:
+    """설정에 맞는 embedding provider를 만들어 반환한다."""
+
     resolved_settings = settings or EmbeddingSettings.from_env()
     if resolved_settings.provider == "none":
         return NoopEmbeddingProvider()

@@ -292,3 +292,104 @@ SlopeAuto = saturate( (Slope_Threshold − Z) / Slope_Falloff )
 - `LandscapeLayerSample`의 ParameterName 철자(`Ground`/`Snow`)가 §3 LayerInfo 이름과 **정확히 일치**해야 Paint 인식.
 - Saturate 노드가 안 보이면: 우클릭 검색 "Saturate" 없을 시 **Clamp**(Min Default 0, Max Default 1)로 대체.
 - 컴파일 후 한 번 **Apply→Save**, 셰이더 컴파일 끝까지 대기.
+
+---
+
+## 10. Falloff 튜닝 가이드 (#188 후속) — 완만 지형 대응 + 흑백 검증
+
+> 배경: 지형이 완만해 경사 자동 마스크만으론 Ground가 잘 안 드러남. `Slope_Threshold`/`Slope_Falloff`를
+> 올려/조정해 더 완만한 면도 Ground로 전환. **MI_Land 파라미터라 라이브 조정(컴파일 불필요).**
+> ⚠️ 페인트는 Git LFS 도입 후로 보류(.umap 용량) — 이번엔 **파라미터 튜닝만**(MI_Land 작은 파일).
+
+### 10-1. 수식 복습 (§2)
+```
+SlopeAuto = saturate( (Slope_Threshold − VertexNormalWS.Z) / Slope_Falloff )
+   Z = VertexNormalWS.Z :  평지 Z≈1.0  →  수직 Z≈0.0      (Z = cos(경사각))
+```
+- **Slope_Threshold** = 이 Z값보다 낮아지면(=더 가팔라지면) Ground 시작. 값 ↑ → 더 완만한 면도 Ground.
+- **Slope_Falloff** = 전환 밴드 폭. 값 ↓ 또렷(칼선) / 값 ↑ 부드러운 그라데이션.
+
+### 10-2. Slope_Threshold 값별 효과 (= 임계 경사각)
+| Threshold | ≈ 경사각(acos) | 효과 |
+|---|---|---|
+| 0.85 (현재) | ~31.8° | 32°보다 가파른 면만 Ground (완만 지형엔 거의 안 나옴) |
+| 0.90 | ~25.8° | 26°부터 |
+| **0.92** | ~23° | 23°부터 — 완만한 둔덕도 땅 (권장 시작점) |
+| **0.95** | ~18° | 18°부터 — 꽤 완만해도 땅 |
+| 0.97 | ~14° | 거의 평지 빼고 전부 땅 |
+> 완만 지형이면 **0.92~0.95**에서 시작해 Ground 면적 보며 조절.
+
+### 10-3. Slope_Falloff 값별 효과 (전환 폭)
+| Falloff | 효과 |
+|---|---|
+| 0.03 | 칼 같은 경계(Snow↔Ground 딱 끊김) |
+| 0.05 | 또렷 |
+| 0.10 (현재) | 중간 |
+| 0.20 | 부드러운 그라데이션 |
+| 0.30+ | 매우 넓은 혼합(뿌옇게 섞임) |
+> 자연스러운 전환은 0.05~0.12. Threshold를 먼저 맞추고 Falloff로 경계 느낌만 다듬기.
+
+### 10-4. ⭐ 흑백 검증 절차 (어제 N18 방식)
+경사 분포를 흑백으로 눈으로 보며 값 확정. **마스크 출력을 BaseColor에 임시 직결.**
+
+1. `M_Landscape_PlanetBlend`(마스터) 열기.
+2. **N18(Saturate = SlopeAuto) 출력 → Material 의 Base Color** 에 임시 연결.
+   - (페인트 0 상태면 최종 가중치 `w`(N23)도 SlopeAuto와 사실상 동일 — N18로 충분)
+3. **Apply → Save**, 셰이더 컴파일 대기. 지형이 흑백으로:
+   - **흰색 = Ground(경사로 판정)** / **검정 = Snow(평지)** / 회색 = 전환 밴드
+4. **MI_Land 디테일 패널**에서 `Slope_Threshold`/`Slope_Falloff` 슬라이더 라이브 조정 → 흰 면적이 실시간 변함.
+   - 원하는 Ground 분포(능선·비탈이 적당히 흰색) 나올 때까지 Threshold↑/Falloff 조정.
+   - 회색 밴드 폭이 곧 전환 부드러움 = Falloff 체감.
+5. 값 확정(예: Threshold 0.93, Falloff 0.08) → **기록**해 둠.
+
+### 10-5. 원복 절차 (검증 후 필수)
+1. 마스터에서 **N18→BaseColor 임시 연결 제거**.
+2. **N24(Lerp, BaseColor용) 출력 → Material Base Color** 재연결(§1-2 원래 상태).
+3. Normal(N25)·Roughness(N26) Lerp 연결은 안 건드렸으면 그대로.
+4. **Apply → Save**, 컴파일 대기 → 컬러 블렌드 정상 복귀.
+> ⚠️ **흑백 디버그 와이어 상태로 커밋 금지** — 반드시 N24 원복 후 저장.
+
+### 10-6. 확정값 커밋
+- MI_Land 오버라이드로 둘지(인스턴스값) / 마스터 ScalarParameter 기본값(N14·N16)에 박을지 선택.
+  - **마스터 기본값에 박기**(권장): 새 인스턴스에도 적용. M_Landscape_PlanetBlend의 `Slope_Threshold`/`Slope_Falloff` Default Value 수정 → Save.
+- 변경 파일: `M_Landscape_PlanetBlend.uasset`(+ MI_Land.uasset 오버라이드 시) — **작은 파일, 용량 영향 미미**.
+- 페인트 가중치(.umap)는 **이번에 안 건드림** → LFS 보류 무영향.
+
+---
+
+## 11. 눈/땅 반전 — 평지=Ground, 경사=Snow (산봉우리 눈)
+
+> 목표: 현재 *평지=Snow / 경사=Ground* → **평지=Ground / 경사·봉우리=Snow** 로 반전.
+
+### 11-A. ⭐ 권장 — Subtract 노드 한 곳만 스왑 (1 edit)
+경사 마스크의 부호만 뒤집으면 끝. **Lerp·페인트 항·LayerSample 이름 전부 그대로** → 의미 안 꼬임.
+
+- **N15 Subtract 입력 A↔B 스왑**: `A=N14(Threshold), B=N13(Z)` → **`A=N13(Z), B=N14(Threshold)`**
+  - 기존: `(Threshold − Z)` = 경사에서 높음 → 경사=Ground
+  - 변경: `(Z − Threshold)` = **평지에서 높음** → 평지=Ground(Lerp B), 경사=Snow(Lerp A)
+- 나머지 **무수정**: Lerp(A=Snow/B=Ground) 그대로, `w = saturate(mask + GroundPaint − SnowPaint)` 그대로.
+- **페인트 의미 자동 정합**: GroundPaint(+)는 여전히 Ground 추가(경사에 땅 강제), SnowPaint(−)는 Snow 추가(평지에 눈 강제). 직관 유지.
+
+> 결과적으로 N18 마스크는 이제 "평지 Ground 가중치"(평지 흰색). 노드 1개만 만지므로 실수 위험 최저.
+
+### 11-B. 대안 — Lerp 스왑 + 페인트 항 스왑 (5 edits, 동등하지만 번거로움)
+- N24/N25/N26 **Lerp 3개 A↔B 스왑**: `A=Ground, B=Snow`
+- **w 페인트 항 스왑**: `w = saturate(SlopeAuto + SnowPaint − GroundPaint)` (N21/N22의 GroundPaint/SnowPaint 입력 교체)
+- 결과 동일하나 5곳을 일관되게 맞춰야 함(하나라도 누락 시 색/페인트 꼬임). **11-A 권장.**
+
+### 11-C. 흑백 검증 해석 (반전 후)
+- 11-A 적용 시 N18→BaseColor 직결하면: **흰 = Ground(평지) / 검정 = Snow(경사·봉우리)**.
+- (11-B 적용 시엔 반대: 흰=Snow(경사)/검정=Ground(평지) — w를 보면 Snow쪽.)
+
+### 11-D. ⚠️ Falloff 튜닝 방향 반전 (§10 보정)
+11-A에서 마스크 = `saturate((Z − Threshold)/Falloff)` 라 **Threshold 의미가 뒤집힘**:
+| Slope_Threshold | 효과 (11-A 기준) |
+|---|---|
+| ↑ (예 0.95, cos18°) | 18°보다 가파르면 Snow → **눈 많음**(평지 가까운 면만 땅) |
+| ↓ (예 0.82, cos35°) | 35°보다 가파라야 Snow → **눈 적음**(가파른 봉우리만 눈) |
+> "봉우리에만 눈"은 **낮은 Threshold(0.80~0.85)**, "눈 많은 설원"은 높은 Threshold. Falloff는 §10 동일(전환 폭).
+
+### 11-E. 원복·커밋
+- 검증 후 N18→BaseColor 임시 와이어 제거 → N24(Lerp)→BaseColor 재연결(§10-5).
+- 11-A는 N15 스왑이 **영구 변경**(원복 대상 아님) — 검증 와이어만 원복.
+- 커밋: `M_Landscape_PlanetBlend.uasset`만(작은 파일). 페인트 .umap 무관 → LFS 보류 무영향.

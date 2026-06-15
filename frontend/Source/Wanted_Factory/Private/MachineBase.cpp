@@ -76,20 +76,9 @@ namespace
 			return;
 		}
 
-		static constexpr float MeshFitCellWorld = 100.0f;
-		FVector Scale(GridSize.X, GridSize.Y, 1.0f);
-		if (const UStaticMesh* StaticMeshAsset = MeshComponent->GetStaticMesh())
-		{
-			const FVector MeshSize = StaticMeshAsset->GetBoundingBox().GetSize();
-			if (MeshSize.X > KINDA_SMALL_NUMBER && MeshSize.Y > KINDA_SMALL_NUMBER)
-			{
-				const float SX = (GridSize.X * MeshFitCellWorld) / MeshSize.X;
-				const float SY = (GridSize.Y * MeshFitCellWorld) / MeshSize.Y;
-				Scale = FVector(SX, SY, FMath::Min(SX, SY));
-			}
-		}
-
-		MeshComponent->SetWorldScale3D(Scale * MeshScaleMultiplier);
+		// 정규화 스케일은 단일 진실원(OJJ_ComputeMeshFitScale)에 위임 — 고스트 프리뷰와 동일 식(무회귀).
+		MeshComponent->SetWorldScale3D(
+			AMachineBase::OJJ_ComputeMeshFitScale(MeshComponent->GetStaticMesh(), GridSize, MeshScaleMultiplier));
 	}
 
 	void RequestPowerGridRefresh(AMachineBase* Machine)
@@ -107,6 +96,27 @@ namespace
 			}
 		}
 	}
+}
+
+FVector AMachineBase::OJJ_ComputeMeshFitScale(const UStaticMesh* Mesh, FIntPoint GridSize, FVector MeshScaleMultiplier)
+{
+	// 메시 네이티브 바운즈를 footprint(GridSize × MeshFitCellWorld)에 정규화 → 셀 자동 정합.
+	// 폴백: 메시 널/바운즈 0이면 기존 식(GridSize 그대로). 기본 큐브(100uu) + CellWorld 100이면
+	// SX/SY = GridSize라 기존과 수치 동일(무회귀). 높이(Z)는 XY 중 작은 스케일을 따라 키 큰 메시 왜곡 방지.
+	FVector Scale(GridSize.X, GridSize.Y, 1.0f);
+	if (Mesh)
+	{
+		const FVector MeshSize = Mesh->GetBoundingBox().GetSize();
+		if (MeshSize.X > KINDA_SMALL_NUMBER && MeshSize.Y > KINDA_SMALL_NUMBER)
+		{
+			const float SX = (GridSize.X * MeshFitCellWorld) / MeshSize.X;
+			const float SY = (GridSize.Y * MeshFitCellWorld) / MeshSize.Y;
+			Scale = FVector(SX, SY, FMath::Min(SX, SY));
+		}
+	}
+
+	// 머신별 미세조정 배율(기본 1,1,1 → 정규화 결과 그대로).
+	return Scale * MeshScaleMultiplier;
 }
 
 AMachineBase::AMachineBase()
@@ -289,25 +299,9 @@ void AMachineBase::OnConstruction(const FTransform& Transform)
 	ApplyMachineDataFromSubsystem();
 	if (MeshComponent)
 	{
-		// 메시 네이티브 바운즈를 footprint(GridSize × MeshFitCellWorld)에 정규화 → 셀 자동 정합.
-		// 폴백: 메시 널/바운즈 0이면 기존 식(GridSize 그대로).
-		// 기본 큐브(100uu) + CellWorld 100이면 SX/SY = GridSize라 기존과 수치 동일(무회귀).
-		FVector Scale(GridSize.X, GridSize.Y, 1.0f);
-		if (const UStaticMesh* StaticMeshAsset = MeshComponent->GetStaticMesh())
-		{
-			const FVector MeshSize = StaticMeshAsset->GetBoundingBox().GetSize();
-			if (MeshSize.X > KINDA_SMALL_NUMBER && MeshSize.Y > KINDA_SMALL_NUMBER)
-			{
-				const float SX = (GridSize.X * MeshFitCellWorld) / MeshSize.X;
-				const float SY = (GridSize.Y * MeshFitCellWorld) / MeshSize.Y;
-				// 높이(Z)는 XY 중 작은 스케일을 따름. XY는 셀에 맞춰 축별로 늘어나 메시 전체 종횡비가
-				// 보존되진 않지만, Z가 과도하게 늘어나 키 큰 메시(송전탑 등)가 왜곡되는 것을 막는다.
-				Scale = FVector(SX, SY, FMath::Min(SX, SY));
-			}
-		}
-		// 머신별 미세조정 배율(기본 1,1,1 → 정규화 결과 그대로).
-		Scale *= MeshScaleMultiplier;
-		MeshComponent->SetWorldScale3D(Scale);
+		// 정규화 스케일은 단일 진실원(OJJ_ComputeMeshFitScale)에 위임 — 고스트 프리뷰와 동일 식(무회귀).
+		MeshComponent->SetWorldScale3D(
+			OJJ_ComputeMeshFitScale(MeshComponent->GetStaticMesh(), GridSize, MeshScaleMultiplier));
 	}
 
 	CurrentDurability = FMath::Clamp(CurrentDurability, 0.f, MaxDurability);

@@ -1,4 +1,9 @@
-"""Convert Manual Q&A CSV rows into RAG-ready documents."""
+"""CSV 한 줄을 RAG 검색에 넣기 좋은 문서 형태로 바꾸는 모듈.
+
+초보자용 설명:
+    RAG는 질문과 비슷한 문서를 먼저 찾고, 그 문서를 근거로 LLM이 답하는 방식이다.
+    이 파일은 장비/자원/레시피 같은 CSV row를 검색 가능한 텍스트 문서로 정리한다.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +21,11 @@ from agents.operator_guide.csv_repository import (
 
 @dataclass(frozen=True)
 class ManualRagDocument:
-    """One normalized manual row ready for embedding and vector storage."""
+    """RAG에 저장할 문서 한 개.
+
+    CSV row 하나를 사람이 읽기 쉬운 `content`로 만들고, 나중에 어디서 온
+    문서인지 추적할 수 있게 `source_file`, `source_row_id`, `metadata`를 함께 들고 간다.
+    """
 
     doc_id: str
     source_file: str
@@ -27,13 +36,13 @@ class ManualRagDocument:
 
 
 class ManualRagDocumentBuilder:
-    """Build RAG documents from the current Manual Q&A CSV repository."""
+    """CSV repository에서 모든 매뉴얼 row를 읽어 RAG 문서 목록으로 만든다."""
 
     def __init__(self, repository: CsvManualQARepository) -> None:
         self._repository = repository
 
     def build_all(self) -> list[ManualRagDocument]:
-        """Return one RAG document per source CSV row."""
+        """현재 CSV의 주요 row를 모두 RAG 문서로 변환한다."""
 
         documents: list[ManualRagDocument] = []
         documents.extend(

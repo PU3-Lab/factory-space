@@ -512,6 +512,23 @@ AOJJ_Grid::AOJJ_Grid()
 		InvalidHoverISM->SetMaterial(0, InvalidHoverMat.Object);  // MID 생성 전 정적 폴백
 	}
 
+	// 고스트 프리뷰(#187) — 호버 셀 위 반투명 미리보기 메시. 액터 spawn 없이 단일 컴포넌트로 그린다.
+	// 메시/머티리얼/트랜스폼은 런타임(OJJ_ShowGhostFor*)에서 부여 — 생성자는 충돌/그림자 차단 + 초기 숨김만.
+	GhostMeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("GhostMeshComp"));
+	GhostMeshComp->SetupAttachment(RootComponent);
+	GhostMeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GhostMeshComp->SetCastShadow(false);
+	GhostMeshComp->SetVisibility(false);
+
+	// 고스트 틴트 머티리얼 기본값(#187) — CDO에 박아 모든 그리드가 자동 적용(레벨별 수동 지정·맵 변경 불필요).
+	// 오버레이용 반투명(Translucent) 틴트 머티(파라미터 TintColor/Opacity). 인스턴스에서 교체 가능(EditAnywhere).
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> GhostMat(
+		TEXT("/Game/OJJ/Materials/M_Ghost_Preview.M_Ghost_Preview"));
+	if (GhostMat.Succeeded())
+	{
+		GhostBaseMaterial = GhostMat.Object;
+	}
+
 	// 건설 가능(초록) per-cell 그리드 비주얼 — ValidHover와 동일 초록 재사용, void 제외해 바닥 모양 추종.
 	BuildableCellISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("BuildableCellISM"));
 	BuildableCellISM->SetupAttachment(RootComponent);
@@ -655,6 +672,9 @@ void AOJJ_Grid::BeginPlay()
 
 	// 타일 전용 MID(호버/오버레이/물) lazy 생성 + 현재 시각 위계 값 적용 — 색 섞임 방지 위해 공유 MI 분리.
 	OJJ_EnsureTileMIDs();
+
+	// 고스트 프리뷰(#187) MID lazy 생성 — 기존 타일 MID 패턴 미러. GhostBaseMaterial 미지정이면 no-op.
+	OJJ_EnsureGhostMIDs();
 
 	// 정적 지형 높낮이 건설 제약 — 사전베이크 캐시가 유효하면 로드만(런타임 트레이스 0), 없으면/불일치면 트레이스 폴백.
 	// 오버레이는 빌드모드 진입 시 표시되므로 여기선 채우지 않음.
@@ -3459,6 +3479,9 @@ void AOJJ_Grid::UpdateHoverPreview(AMachineBase* Machine, FIntPoint Origin, int3
 		// World-space 좌표로 추가 (액터 위치 무관)
 		TargetISM->AddInstance(InstanceTransform, /*bWorldSpace=*/true);
 	}
+
+	// 고스트 프리뷰(#187): 호버 셀 위 반투명 머신 메시. bCanPlace 재사용(타일 색과 동일 판정원).
+	OJJ_ShowGhostForMachine(Machine, Origin, RotationSteps, bCanPlace);
 }
 
 void AOJJ_Grid::ClearHoverPreview()
@@ -3477,6 +3500,10 @@ void AOJJ_Grid::ClearHoverPreview()
 
 	// 호버 셀 ISM과 동반 생멸 — 커서가 유효 셀을 떠나면(트레이스 실패/off-grid/퇴장) 호버 화살표도 사라짐.
 	ClearHoverMachineArrows();
+
+	// 고스트 프리뷰(#187)도 동반 숨김. UpdateHoverPreview/UpdateFoundationHover는 이 후 다시 Show하므로
+	// 호버 리빌드 흐름엔 영향 없고, 모드 전환/빌드모드 종료 시 잔존 방지(Foundation→Machine 전환 포함).
+	OJJ_HideGhost();
 }
 
 void AOJJ_Grid::OJJ_SetTileParams(UMaterialInstanceDynamic* MID, const FLinearColor& FillColor, float FillOpacity) const
@@ -3544,12 +3571,217 @@ void AOJJ_Grid::OJJ_EnsureTileMIDs()
 	OJJ_ApplyTileMIDParams();
 }
 
+// === 고스트 프리뷰(#187) ===
+
+void AOJJ_Grid::OJJ_EnsureGhostMIDs()
+{
+	// 이미 생성됐으면 멱등 — 매 호출 현재 색/불투명만 재적용(PIE 실시간 튜닝, 타일 MID 패턴 미러).
+	if (!GhostBaseMaterial)
+	{
+		// 1회 경고 후 비활성(크래시 금지). 미지정이면 OJJ_ShowGhostFor*가 MID 없음을 보고 안전하게 숨긴다.
+		static bool bWarnedOnce = false;
+		if (!bWarnedOnce)
+		{
+			bWarnedOnce = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Grid] GhostBaseMaterial 미지정 — 고스트 프리뷰 비활성(반투명 머티리얼 에셋을 Grid에 지정 필요)."));
+		}
+		return;
+	}
+
+	// PIE/디테일 패널에서 GhostBaseMaterial을 교체하면 기존 MID의 parent가 달라지므로 재생성
+	// (안 하면 옛 머티리얼 기반 MID가 계속 사용됨 — 튜닝 동작 예측 가능하게).
+	if (GhostValidMID && GhostValidMID->Parent != GhostBaseMaterial)
+	{
+		GhostValidMID = nullptr;
+	}
+	if (GhostInvalidMID && GhostInvalidMID->Parent != GhostBaseMaterial)
+	{
+		GhostInvalidMID = nullptr;
+	}
+
+	if (!GhostValidMID)
+	{
+		GhostValidMID = UMaterialInstanceDynamic::Create(GhostBaseMaterial, this);
+		if (GhostValidMID)
+		{
+			GhostValidMID->SetFlags(RF_Transient); // 레벨 dirty(가짜 diff) 차단 — EnsureTileMIDs와 동일(F2-0).
+		}
+	}
+	if (!GhostInvalidMID)
+	{
+		GhostInvalidMID = UMaterialInstanceDynamic::Create(GhostBaseMaterial, this);
+		if (GhostInvalidMID)
+		{
+			GhostInvalidMID->SetFlags(RF_Transient);
+		}
+	}
+
+	// 오버레이 틴트 — 호버 타일 색(HoverValid/InvalidColor)과 분리한 고스트 전용 톤(#187 PIE 튜닝).
+	// 오버레이는 베이스 텍스처 위에 합성되므로 옅게: Opacity 0.22 + 채도·명도 낮춘 색. 채널>1.0은
+	// Emissive 글로우라 쨍해지므로 회피(빨강 R=1.0은 경계값). 타일 색을 안 건드리려 별도 상수로 둠.
+	const float GhostTintOpacity = 0.38f;
+	const FLinearColor GhostValidTint(0.2f, 0.9f, 0.3f);     // 부드러운 초록(배치 가능)
+	const FLinearColor GhostInvalidTint(1.0f, 0.2f, 0.2f);   // 부드러운 빨강(배치 불가)
+	if (GhostValidMID)
+	{
+		GhostValidMID->SetVectorParameterValue(TEXT("TintColor"), GhostValidTint);
+		GhostValidMID->SetScalarParameterValue(TEXT("Opacity"), GhostTintOpacity);
+	}
+	if (GhostInvalidMID)
+	{
+		GhostInvalidMID->SetVectorParameterValue(TEXT("TintColor"), GhostInvalidTint);
+		GhostInvalidMID->SetScalarParameterValue(TEXT("Opacity"), GhostTintOpacity);
+	}
+}
+
+void AOJJ_Grid::OJJ_ShowGhostForMachine(AMachineBase* MachineCDO, FIntPoint Origin, int32 RotationSteps, bool bValid)
+{
+	if (!GhostMeshComp || !MachineCDO)
+	{
+		OJJ_HideGhost();
+		return;
+	}
+
+	const UStaticMeshComponent* MeshComp = MachineCDO->GetMeshComponent();
+	UStaticMesh* Mesh = MeshComp ? MeshComp->GetStaticMesh() : nullptr;
+	if (!Mesh)
+	{
+		OJJ_HideGhost();
+		return;
+	}
+
+	// 미지정 머티리얼이면 MID 없음 → 안전하게 숨김(고스트 비활성). 멱등 재적용도 겸함.
+	OJJ_EnsureGhostMIDs();
+	UMaterialInstanceDynamic* GhostMID = bValid ? GhostValidMID.Get() : GhostInvalidMID.Get();
+	// IsValid 가드(#187): null뿐 아니라 GC pending/무효 MID도 SetOverlayMaterial에 넘기지 않도록.
+	// Invalid(빨강) MID가 무효면 EnsureGhostMIDs가 다음 호출에 재생성하므로 이번 프레임만 숨김.
+	if (!IsValid(GhostMID))
+	{
+		OJJ_HideGhost();
+		return;
+	}
+
+	// 메시 fit은 회전 전 raw GridSize 사용(회전은 yaw로) — 머신 OnConstruction/FitMeshToGrid와 동일 식.
+	const FVector2D RawSize2D = MachineCDO->GetMachineSize();
+	const FIntPoint RawGridSize(FMath::RoundToInt(RawSize2D.X), FMath::RoundToInt(RawSize2D.Y));
+	const FVector Scale =
+		AMachineBase::OJJ_ComputeMeshFitScale(Mesh, RawGridSize, MachineCDO->GetMeshScaleMultiplier());
+
+	// XY 중심 = GetMachinePlacementLocation 산식 재사용(EffectiveSize + footprint center offset).
+	const FIntPoint EffSize = EffectiveSize(RawSize2D, RotationSteps);
+	const FVector LowerLeftCenter = GridToWorld(Origin);
+	const float OffsetX = (EffSize.X - 1) * CellSize * 0.5f;
+	const float OffsetY = (EffSize.Y - 1) * CellSize * 0.5f;
+
+	// BaseZ = GetMachinePlacementLocation과 동일: footprint 균일면 성공 시 그 값, 아니면 평면(LowerLeftCenter.Z).
+	float BaseZ = LowerLeftCenter.Z;
+	float UniformZ = 0.0f;
+	if (OJJ_GetUniformSurfaceZ(CalculateFootprint(MachineCDO, Origin, RotationSteps), UniformZ))
+	{
+		BaseZ = UniformZ;
+	}
+
+	// 고스트 회전 = 액터 yaw(90×steps) ∘ 메시 상대회전. 머신 메시는 생성자에서 +90° 상대 yaw 시각 보정
+	// (MachineBase.cpp:144 — 시각 입출력부를 논리 포트 방향에 정렬)이 CDO에도 박혀 있다. 이를 합성하지 않으면
+	// 방향성 머신 고스트가 실제 배치보다 90° 어긋난다("프리뷰=배치" 계약 깨짐). ZOffset도 같은 회전 기준 AABB로.
+	const FRotator ActorYaw(0.0f, 90.0f * RotationSteps, 0.0f);
+	const FRotator GhostRot = (ActorYaw.Quaternion() * MeshComp->GetRelativeRotation().Quaternion()).Rotator();
+	// ZOffset(바닥 안착) — CDO-safe. 라이브 컴포넌트 트랜스폼 대신 (회전+fit 스케일)을 적용한 메시 AABB로 산출.
+	// yaw는 Z 범위에 무영향이지만, 회전 합성을 일관 적용해 라이브 산식(GetMachinePlacementLocation)과 평행 유지.
+	const FTransform GhostXform(GhostRot, FVector::ZeroVector, Scale);
+	const FBox GhostBox = Mesh->GetBoundingBox().TransformBy(GhostXform);
+	const float ZOffset = -GhostBox.Min.Z;
+
+	// Nanite 메시는 SetOverlayMaterial(translucent overlay 패스)을 그리지 않는다(UE5.7 + Substrate 환경 확인 —
+	// 코드/머티리얼은 무결, 단독 큐브 테스트 통과). 고스트 컴포넌트만 Nanite 강제 비활성 → Nanite 폴백 메시로
+	// 일반 렌더 패스 진입 → overlay 틴트 복원. 원본 머티리얼(텍스처)은 그대로라 "텍스처 + 초록/빨강 틴트" 유지.
+	// 런타임 set(IsForceDisableNanite 가드로 멱등) — 기존 인스턴스에도 즉시 적용(Live Coding 친화).
+	if (!GhostMeshComp->IsForceDisableNanite())
+	{
+		GhostMeshComp->SetForceDisableNanite(true);
+	}
+
+	GhostMeshComp->SetStaticMesh(Mesh);
+	GhostMeshComp->SetWorldScale3D(Scale);
+	GhostMeshComp->SetWorldLocationAndRotation(
+		FVector(LowerLeftCenter.X + OffsetX, LowerLeftCenter.Y + OffsetY, BaseZ + ZOffset), GhostRot);
+
+	// 틴트는 Overlay Material 패스(#187 B안) — 베이스는 메시 원본 머티리얼(텍스처) 유지, 그 위에
+	// 초록/빨강 틴트를 추가 패스로 합성. 이전 프레임 오버라이드 잔존을 비워 원본 텍스처 복원 후 오버레이만.
+	GhostMeshComp->EmptyOverrideMaterials();
+	GhostMeshComp->SetOverlayMaterial(GhostMID);
+	GhostMeshComp->SetVisibility(true);
+}
+
+void AOJJ_Grid::OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize, bool bValid)
+{
+	if (!GhostMeshComp || !FoundationCDO || EffSize.X < 1 || EffSize.Y < 1)
+	{
+		OJJ_HideGhost();
+		return;
+	}
+
+	UStaticMeshComponent* SlabMesh = FoundationCDO->GetSlabMesh();
+	UStaticMesh* Mesh = SlabMesh ? SlabMesh->GetStaticMesh() : nullptr;
+	if (!Mesh)
+	{
+		OJJ_HideGhost();
+		return;
+	}
+
+	OJJ_EnsureGhostMIDs();
+	UMaterialInstanceDynamic* GhostMID = bValid ? GhostValidMID.Get() : GhostInvalidMID.Get();
+	if (!GhostMID)
+	{
+		OJJ_HideGhost();
+		return;
+	}
+
+	const float Thickness = FMath::Max(1.0f, FoundationCDO->GetThickness());
+
+	// UpdateSlabVisual 산식 재현: Cube(100uu, 중심 피벗) → 풋프린트(EffSize×CellSize) × Thickness 스케일.
+	const FVector Scale(EffSize.X * CellSize / 100.0f, EffSize.Y * CellSize / 100.0f, Thickness / 100.0f);
+
+	// XY 중심 = GetFoundationPlacementLocation 산식(머신과 동일 (EffSize-1)*CellSize/2 offset).
+	const FVector LowerLeftCenter = GridToWorld(Origin);
+	const float OffsetX = (EffSize.X - 1) * CellSize * 0.5f;
+	const float OffsetY = (EffSize.Y - 1) * CellSize * 0.5f;
+
+	// Z: 배치(PlaceFoundationAtCursor)와 동일 — 액터 Z = 평면 + 스냅 리프트, 슬래브 중심 = 액터 Z + Thickness/2.
+	// SnapLift는 평판 OJJ_ComputeSnapLift(이웃 상속 → 지형 씨앗)로 산출 — 호버=배치 정합(CDO-safe: Grid+Thickness만 사용).
+	const float SnapLift = FoundationCDO->OJJ_ComputeSnapLift(*this, Origin, EffSize, /*RotationSteps=*/0, nullptr);
+	const float SlabCenterZ = LowerLeftCenter.Z + SnapLift + Thickness * 0.5f;
+
+	GhostMeshComp->SetStaticMesh(Mesh);
+	GhostMeshComp->SetWorldScale3D(Scale);
+	GhostMeshComp->SetWorldLocationAndRotation(
+		FVector(LowerLeftCenter.X + OffsetX, LowerLeftCenter.Y + OffsetY, SlabCenterZ), FRotator::ZeroRotator);
+
+	// 틴트는 Overlay Material 패스(#187 B안) — 머신 고스트와 동일. 베이스(슬래브 원본) 위에 초록/빨강 합성.
+	GhostMeshComp->EmptyOverrideMaterials();
+	GhostMeshComp->SetOverlayMaterial(GhostMID);
+	GhostMeshComp->SetVisibility(true);
+}
+
+void AOJJ_Grid::OJJ_HideGhost()
+{
+	if (GhostMeshComp)
+	{
+		GhostMeshComp->SetVisibility(false);
+		GhostMeshComp->SetOverlayMaterial(nullptr); // 오버레이 패스도 해제(전환 잔존 0).
+	}
+}
+
 #if WITH_EDITOR
 void AOJJ_Grid::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 	// 디테일 패널/PIE에서 Visual Hierarchy 색·불투명을 만지면 즉시 MID에 재적용 + 오버레이 리빌드(실시간 튜닝).
 	OJJ_EnsureTileMIDs();
+	// 고스트 MID(녹/적 틴트)도 동일 색·불투명을 공유하므로 함께 재적용 — 같은 셀 호버 중엔 리빌드가 스킵되어
+	// 표시 중인 고스트가 갱신 안 되는 문제 방지(#187 리뷰 Minor). GhostBaseMaterial 교체도 여기서 반영.
+	OJJ_EnsureGhostMIDs();
 	RefreshGridVisual();
 }
 #endif

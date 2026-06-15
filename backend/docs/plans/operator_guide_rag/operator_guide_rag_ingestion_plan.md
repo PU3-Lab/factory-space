@@ -55,3 +55,18 @@ CSV row를 `ManualRagDocument`로 정규화한 다음 단계로, embedding과 Po
 2. `content_hash` 기반 upsert
 3. `embedding vector(...)` 저장
 4. 질문 embedding 후 top-k similarity search
+
+## CSV 변경 동기화 원칙
+
+CSV 파일이 수정된다고 자동으로 embedding과 PostgreSQL/pgvector 저장이 일어나는 것은 아니다. RAG 저장소를 최신 상태로 맞추려면 ingestion script 또는 후속 admin/CI job 같은 trigger가 필요하다.
+
+```text
+CSV 수정
+-> ingestion trigger 실행
+-> RAG document 변환
+-> content_hash 비교
+-> 변경된 row만 embedding
+-> PostgreSQL/pgvector upsert
+```
+
+초기 구현에서는 수동 실행과 `--dry-run`을 우선한다. watcher, admin endpoint, CI/CD ingestion job은 운영 확장 단계에서 다룬다.

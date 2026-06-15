@@ -10,7 +10,11 @@ from agents.operator_guide.rag_ingestion import (
 
 
 class FakeEmbeddingProvider:
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(texts)
         return [[float(len(text)), 1.0] for text in texts]
 
 
@@ -55,6 +59,59 @@ def test_ingestion_record_content_hash_is_stable() -> None:
 
     assert first.content_hash == second.content_hash
     assert len(first.content_hash) == 64
+
+
+def test_ingestion_batch_embeds_only_changed_documents() -> None:
+    unchanged = ManualRagDocument(
+        doc_id="equipment:unchanged",
+        source_file="equipment.csv",
+        source_row_id="unchanged",
+        title="변경 없음",
+        content="장비: 변경 없음",
+        metadata={"record_type": "equipment"},
+    )
+    changed = ManualRagDocument(
+        doc_id="equipment:changed",
+        source_file="equipment.csv",
+        source_row_id="changed",
+        title="변경됨",
+        content="장비: 변경됨",
+        metadata={"record_type": "equipment"},
+    )
+    provider = FakeEmbeddingProvider()
+    service = ManualRagIngestionService(provider)
+    unchanged_hash = service.build_records([unchanged])[0].content_hash
+
+    batch = service.build_batch(
+        [unchanged, changed],
+        existing_content_hashes={"equipment:unchanged": unchanged_hash},
+    )
+
+    assert [record.doc_id for record in batch.records] == ["equipment:changed"]
+    assert provider.calls[-1] == [changed.content]
+    assert set(batch.content_hashes) == {"equipment:unchanged", "equipment:changed"}
+
+
+def test_dry_run_ingestion_batch_does_not_call_embedding_provider() -> None:
+    document = ManualRagDocument(
+        doc_id="equipment:new",
+        source_file="equipment.csv",
+        source_row_id="new",
+        title="신규",
+        content="장비: 신규",
+        metadata={"record_type": "equipment"},
+    )
+    provider = FakeEmbeddingProvider()
+
+    batch = ManualRagIngestionService(provider).build_batch(
+        [document],
+        existing_content_hashes={},
+        dry_run=True,
+    )
+
+    assert batch.records == []
+    assert list(batch.content_hashes) == ["equipment:new"]
+    assert provider.calls == []
 
 
 def test_embedding_provider_contract_is_structural() -> None:
