@@ -37,6 +37,7 @@ public:
 	AOJJ_Player();
 
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	FORCEINLINE class UUI_Inventory* GetInventoryWidgetInstance() const { return InventoryWidgetInstance; }
 
 protected:
 	virtual void BeginPlay() override;
