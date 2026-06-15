@@ -35,10 +35,10 @@ class MaterialCreationRequest(BaseModel):
 class MaterialProperties(BaseModel):
     """재료의 물리적 속성을 정의하는 특성들입니다."""
 
-    strength: float = 0.0
-    conductivity: float = 0.0
-    stability: float = 0.0
-    reactivity: float = 0.0
+    strength: float = 5.0
+    conductivity: float = 5.0
+    stability: float = 5.0
+    reactivity: float = 2.0
 
 
 class MaterialProposalResult(BaseModel):
