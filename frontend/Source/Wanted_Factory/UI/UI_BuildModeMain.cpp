@@ -1,6 +1,7 @@
 #include "UI_BuildModeMain.h"
 #include "Components/Button.h"
 #include "OJJ_BuildController.h"
+#include "QuestManagerSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 
 void UUI_BuildModeMain::NativeConstruct()
@@ -53,6 +54,27 @@ void UUI_BuildModeMain::ExecutePlacementMode(int32 SlotIndex)
         case 9: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerLine); break;   // 9번: 송전선
         case 0: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Shield); break;      // 0번: 차폐막
         
+        default: break;
+    }
+
+    UGameInstance* GameInstance = GetGameInstance();
+    UQuestManagerSubsystem* QuestManager = GameInstance
+        ? GameInstance->GetSubsystem<UQuestManagerSubsystem>()
+        : nullptr;
+    if (!QuestManager)
+    {
+        return;
+    }
+
+    switch (SlotIndex)
+    {
+        case 1: QuestManager->NotifyTutorialEvent(TEXT("SelectWarehouseMode")); break;
+        case 2: QuestManager->NotifyTutorialEvent(TEXT("SelectConveyorMode")); break;
+        case 3: QuestManager->NotifyTutorialEvent(TEXT("SelectSmelterMode")); break;
+        case 5: QuestManager->NotifyTutorialEvent(TEXT("SelectMinerMode")); break;
+        case 7: QuestManager->NotifyTutorialEvent(TEXT("SelectPowerPlantMode")); break;
+        case 8: QuestManager->NotifyTutorialEvent(TEXT("SelectPowerNodeMode")); break;
+        case 9: QuestManager->NotifyTutorialEvent(TEXT("SelectPowerLineMode")); break;
         default: break;
     }
 }

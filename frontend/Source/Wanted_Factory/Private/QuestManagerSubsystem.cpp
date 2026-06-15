@@ -245,7 +245,7 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	{
 		SetEventRequirement(TutorialEventDemolishMode);
 	}
-	else if (QuestId == TEXT("TUT_BUILD_008"))
+	else if (QuestId == TEXT("TUT_BUILD_007"))
 	{
 		SetEventRequirement(TutorialEventDemolishRemoved);
 	}
@@ -253,7 +253,7 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	{
 		SetEventRequirement(TutorialEventSelectMinerMode);
 	}
-	else if (QuestId == TEXT("TUT_MINING_004"))
+	else if (QuestId == TEXT("TUT_MINING_003"))
 	{
 		SetEventRequirement(TEXT("PlaceMachine"), TEXT("MinerMachine"));
 	}
@@ -261,27 +261,27 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	{
 		SetEventRequirement(TutorialEventSelectPowerPlantMode);
 	}
-	else if (QuestId == TEXT("TUT_POWER_003"))
+	else if (QuestId == TEXT("TUT_POWER_002"))
 	{
 		SetEventRequirement(TEXT("PlaceMachine"), TEXT("PowerPlant"));
 	}
-	else if (QuestId == TEXT("TUT_POWER_004"))
+	else if (QuestId == TEXT("TUT_POWER_003"))
 	{
 		SetEventRequirement(TutorialEventSelectPowerNodeMode);
 	}
-	else if (QuestId == TEXT("TUT_POWER_006"))
+	else if (QuestId == TEXT("TUT_POWER_004"))
 	{
 		SetEventRequirement(TEXT("PlaceMachine"), TEXT("PowerGridNode"));
 	}
-	else if (QuestId == TEXT("TUT_POWER_007"))
+	else if (QuestId == TEXT("TUT_POWER_005"))
 	{
 		SetEventRequirement(TutorialEventSelectPowerLineMode);
 	}
-	else if (QuestId == TEXT("TUT_POWER_008") || QuestId == TEXT("TUT_POWER_009"))
+	else if (QuestId == TEXT("TUT_POWER_006") || QuestId == TEXT("TUT_POWER_007"))
 	{
 		SetEventRequirement(TutorialEventPowerLineConnected);
 	}
-	else if (QuestId == TEXT("TUT_POWER_010"))
+	else if (QuestId == TEXT("TUT_POWER_008"))
 	{
 		SetWarehouseRequirement(TEXT("iron_ore"), 1);
 	}
@@ -290,10 +290,6 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 		SetWarehouseRequirement(TEXT("iron_ore"), 10);
 	}
 	else if (QuestId == TEXT("TUT_SMELT_002"))
-	{
-		SetEventRequirement(TutorialEventSelectSmelterMode);
-	}
-	else if (QuestId == TEXT("TUT_SMELT_004"))
 	{
 		SetEventRequirement(TEXT("PlaceMachine"), TEXT("Smelter"));
 	}
