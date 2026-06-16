@@ -199,3 +199,8 @@
 
 ### `Source/Wanted_Factory/Private/QuestManagerSubsystem.cpp`
 - 번호 재정리에 맞춰 `BUILD`, `MINING`, `LOGI` 구간의 튜토리얼 완료 조건 매핑을 같은 순서로 다시 맞췄다.
+
+## 2026-06-16
+
+### `Source/Wanted_Factory/Data/tutorial_quest_dialogue.csv`
+- 사용자가 대사 문장을 다듬은 뒤 `line_order`가 비연속 상태로 남아 있던 `TUT_BASIC_005 / on_start`를 `1`부터 시작하도록 정리했다.
