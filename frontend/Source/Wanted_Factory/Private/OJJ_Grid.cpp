@@ -11,6 +11,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "FactoryManagerSubsystem.h"
+#include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "MachineBase.h"
 #include "Materials/MaterialInterface.h"
@@ -111,6 +112,20 @@ bool OJJ_IsLiquidTransportMachine(const AMachineBase* Machine)
 	return MachineType == TEXT("Pump") || MachineType == TEXT("LiquidTank");
 }
 
+// #182 셀 점유자가 액체 자원(WaterArea, form=liquid)인지. 파이프 점유 검사에서 물 셀 면제 판정에 사용 —
+// 물 위는 파이프가 깔리는 정상 케이스(펌프 출력셀/경로/탱크 진입이 WaterArea 점유와 겹침). 머신/컨베이어/
+// 파이프 점유자는 false → 계속 차단(무분별 통과 금지). occupant 직접 검사라 머신이 물 위 점유를 덮어쓴 셀은
+// 머신으로 잡혀 차단 유지(자원 레이어가 아닌 OccupiedCells 점유자 기준).
+bool OJJ_IsLiquidResourceOccupant(const TWeakObjectPtr<AActor>* Occupant)
+{
+	if (!Occupant || !Occupant->IsValid())
+	{
+		return false;
+	}
+	AResourceBase* Resource = Cast<AResourceBase>(Occupant->Get());
+	return Resource && Resource->HasForm(FName(TEXT("liquid")));
+}
+
 bool OJJ_IsMachineBackOutputPair(
 	const AOJJ_Grid* Grid,
 	const AMachineBase* Machine,
@@ -191,7 +206,8 @@ bool OJJ_FindInputMachineAtPathEnd(
 	AMachineBase* StartMachine,
 	AMachineBase*& OutEndMachine,
 	bool& bOutEndsOnMachine,
-	FString& OutReason)
+	FString& OutReason,
+	bool bExemptWaterOccupant = false)
 {
 	OutEndMachine = nullptr;
 	bOutEndsOnMachine = false;
@@ -205,8 +221,12 @@ bool OJJ_FindInputMachineAtPathEnd(
 	const FIntPoint EndCell = PathCells.Last();
 	const FIntPoint PreviousCell = PathCells[PathCells.Num() - 2];
 
+	// #182 물 위 파이프: 끝 셀이 액체 자원(WaterArea)이면 비점유로 간주 → 아래 인접-머신 분기로 넘겨, 물 위
+	// 탱크 입력면 앞 셀에서 끝나는 경로도 인접 탱크를 찾게 한다(지상 빈 셀과 동일 처리). 끝 셀이 머신(탱크)이면
+	// 그대로 머신 분기(머신은 OccupiedCells에서 물을 덮어쓰므로 탱크 셀은 탱크로 잡힘).
 	const TWeakObjectPtr<AActor>* EndOccupant = OccupiedCells.Find(EndCell);
-	if (EndOccupant && EndOccupant->IsValid())
+	if (EndOccupant && EndOccupant->IsValid()
+		&& !(bExemptWaterOccupant && OJJ_IsLiquidResourceOccupant(EndOccupant)))
 	{
 		AMachineBase* EndMachine = Cast<AMachineBase>(EndOccupant->Get());
 		const TArray<FIntPoint>* EndMachineCells = EndMachine ? ActorToCells.Find(EndMachine) : nullptr;
@@ -219,8 +239,11 @@ bool OJJ_FindInputMachineAtPathEnd(
 			return false;
 		}
 
+		// #182 물 위 파이프: 입력 포트 앞 셀이 액체 자원(WaterArea)이면 비어있는 것으로 간주(파이프가 물 위로
+		// 탱크에 진입). 머신/컨베이어/파이프 점유는 기존대로 거부(무분별 통과 금지).
 		const TWeakObjectPtr<AActor>* PreviousOccupant = OccupiedCells.Find(PreviousCell);
-		if (PreviousOccupant && PreviousOccupant->IsValid())
+		if (PreviousOccupant && PreviousOccupant->IsValid()
+			&& !(bExemptWaterOccupant && OJJ_IsLiquidResourceOccupant(PreviousOccupant)))
 		{
 			OutReason = TEXT("The cell before a machine input port must be empty.");
 			return false;
@@ -333,7 +356,12 @@ bool OJJ_CollectConveyorReservedCells(
 	// F4-3: true면 컨베이어 점유 셀을 타넘기(오버패스)로 허용·예약(파이프 전용). false(기본)는 기존
 	// 컨베이어 동작 그대로 — 컨베이어 배치는 이 인자를 안 넘기므로 수치/판정 완전 항등.
 	bool bAllowConveyorOverpass = false,
-	bool bAllowLiquidMachines = false)
+	bool bAllowLiquidMachines = false,
+	// F4(물 위 파이프): true면 게이트(:401)에서 water 셀 통과 허용(파이프 전용). 컨베이어는 기본 false → 무변경.
+	bool bAllowWaterCells = false,
+	// #182 파이프 굴곡 통과: true면 게이트에서 blocked(굴곡/경사/절벽) 셀도 통과 허용(파이프 전용). 절벽/벽
+	// 거부는 호출자(OJJ_ValidatePipePlacement)의 경사 게이트가 |ΔZ|로 별도 판정. void는 여기서 계속 거부.
+	bool bAllowBlockedCells = false)
 {
 	OutReservedCells.Reset();
 	if (OutSourceMachine)
@@ -377,7 +405,8 @@ bool OJJ_CollectConveyorReservedCells(
 		StartMachine,
 		EndMachine,
 		bEndsOnMachine,
-		OutReason))
+		OutReason,
+		/*bExemptWaterOccupant=*/ bAllowWaterCells))
 	{
 		return false;
 	}
@@ -398,7 +427,12 @@ bool OJJ_CollectConveyorReservedCells(
 		}
 
 		// 건설 게이트(F1-c: buildable OR Foundation) — 컨베이어는 CanPlaceMachine을 안 거치므로 여기서 직접 차단.
-		if (!Grid->IsCellConstructible(Cell))
+		// F4(물 위 파이프): bAllowWaterCells면 water 셀도 통과 허용(파이프 전용) — 물 위 OK. 수면 Z는 2단계 후속.
+		// #182: bAllowBlockedCells면 blocked(굴곡) 셀도 통과 허용 — 절벽/벽은 호출자 경사 게이트(|ΔZ|)가 거부.
+		// void(바닥 없음)는 어느 플래그로도 안 열림 → 계속 거부. 컨베이어 호출은 둘 다 기본 false라 판정 항등.
+		if (!Grid->IsCellConstructible(Cell)
+			&& !(bAllowWaterCells && Grid->IsCellWater(Cell))
+			&& !(bAllowBlockedCells && Grid->IsCellBlocked(Cell)))
 		{
 			OutReason = TEXT("Conveyor path crosses unbuildable terrain (no foundation).");
 			return false;
@@ -428,13 +462,17 @@ bool OJJ_CollectConveyorReservedCells(
 				&& Occupant->Get() == EndMachine;
 			// F4-3 오버패스: 파이프는 컨베이어 점유 셀을 타넘기 — 차단 대신 예약 유지(공중 셀로 등록).
 			const bool bConveyorOverpass = bAllowConveyorOverpass && Grid->OJJ_GetConveyorAtCell(Cell) != nullptr;
-			if (!bAllowedOutputCell && !bAllowedInputCell && !bConveyorOverpass)
+			// #182 물 위 파이프: 점유자가 액체 자원(WaterArea)이고 파이프 경로(bAllowWaterCells)면 차단 면제 —
+			// 펌프 출력셀/경로/탱크 진입이 WaterArea 점유와 겹치는 건 정상(물 위에 파이프가 깔린다). 머신/컨베이어/
+			// 파이프 점유자는 면제 안 됨(무분별 통과 금지). 파이프 레이어는 OccupiedCells와 독립이라 물자원과 공존.
+			const bool bWaterResourceOccupant = bAllowWaterCells && OJJ_IsLiquidResourceOccupant(Occupant);
+			if (!bAllowedOutputCell && !bAllowedInputCell && !bConveyorOverpass && !bWaterResourceOccupant)
 			{
 				OutReason = TEXT("Conveyor path is blocked by an occupied cell.");
 				return false;
 			}
-			// 머신 끝점 셀은 예약 제외(기존). 오버패스 셀은 fall-through → 아래 AddUnique로 공중 예약.
-			if (!bConveyorOverpass)
+			// 머신 끝점 셀은 예약 제외(기존). 오버패스/물자원 셀은 fall-through → AddUnique로 예약(파이프가 실제 점유).
+			if (!bConveyorOverpass && !bWaterResourceOccupant)
 			{
 				continue;
 			}
@@ -796,9 +834,35 @@ FVector AOJJ_Grid::GetMachinePlacementLocation(AMachineBase* Machine, FIntPoint 
 
 	// F1-c: 바닥 기준면 = 풋프린트의 단일 건설면(Foundation 상면 또는 평면). 걸침은 CanPlaceMachine이
 	// 사전 거부하므로 여기 도달 시 균일 보장 — 그래도 실패하면 평면 폴백(방어, 기존 동작과 동일).
+	const TArray<FIntPoint> Footprint = CalculateFootprint(Machine, Origin, RotationSteps);
 	float BaseZ = LowerLeftCenter.Z;
+
+	// #182 물 위 머신(펌프): 풋프린트가 균일 수면(WaterArea) 위면 수면 Z로 안착 — 지형바닥(-997)에 잠기지 않게.
+	// CanPlaceMachine이 전 셀 water∩WaterArea를 보장하지만, 방어적으로 전 셀 수면 균일을 재확인(혼합 웅덩이 안전).
+	bool bUniformWater = false;
+	float WaterZ = 0.0f;
+	if (Machine->CanStandOnWater() && Footprint.Num() > 0)
+	{
+		bUniformWater = true;
+		for (int32 i = 0; i < Footprint.Num(); ++i)
+		{
+			float CellZ = 0.0f;
+			if (!GetWaterSurfaceZAtCell(Footprint[i], CellZ)
+				|| (i > 0 && !FMath::IsNearlyEqual(CellZ, WaterZ)))
+			{
+				bUniformWater = false;
+				break;
+			}
+			WaterZ = CellZ;
+		}
+	}
+
 	float UniformZ = 0.0f;
-	if (OJJ_GetUniformSurfaceZ(CalculateFootprint(Machine, Origin, RotationSteps), UniformZ))
+	if (bUniformWater)
+	{
+		BaseZ = WaterZ;
+	}
+	else if (OJJ_GetUniformSurfaceZ(Footprint, UniformZ))
 	{
 		BaseZ = UniformZ;
 	}
@@ -834,6 +898,195 @@ bool AOJJ_Grid::IsCellVoid(FIntPoint Cell) const
 bool AOJJ_Grid::IsCellWater(FIntPoint Cell) const
 {
 	return WaterCells.Contains(Cell);
+}
+
+bool AOJJ_Grid::IsCellBlocked(FIntPoint Cell) const
+{
+	// blocked = 베이크 분류 "건설 불가 지형"(UnbuildableCells). void(VoidCells)·water(WaterCells)와 배타 집합.
+	return UnbuildableCells.Contains(Cell);
+}
+
+AResourceBase* AOJJ_Grid::GetLiquidResourceAtCell(FIntPoint Cell) const
+{
+	// 자원 전용 레이어(OJJ_ResourceCellToActor)에서 조회 — OccupiedCells(머신 점유에 덮어쓰임)와 분리.
+	// 펌프가 물 위에 점유해도 발밑 WaterArea가 이 맵에 보존되므로 찾을 수 있다(#182 핵심 수정).
+	// weak ptr이 stale(액터 파괴)이면 Get()=null → 자연 무효화. form=liquid만 통과(광맥 등 비액체 자원 배제).
+	if (const TWeakObjectPtr<AResourceBase>* Found = OJJ_ResourceCellToActor.Find(Cell))
+	{
+		AResourceBase* Resource = Found->Get();
+		if (Resource && Resource->HasForm(FName(TEXT("liquid"))))
+		{
+			return Resource;
+		}
+	}
+	return nullptr;
+}
+
+bool AOJJ_Grid::GetWaterSurfaceZAtCell(FIntPoint Cell, float& OutSurfaceZ) const
+{
+	// 셀을 덮는 액체 자원(WaterArea, form=liquid)의 액터 Z를 수면으로 반환. 자원 전용 레이어 조회(위 함수)에
+	// 위임 — per-puddle 수면(WA1/WA2 다른 Z)이 셀별로 자동 해소. 없으면 false → 호출자가 거부/폴백.
+	if (AResourceBase* Resource = GetLiquidResourceAtCell(Cell))
+	{
+		OutSurfaceZ = Resource->GetActorLocation().Z;
+		return true;
+	}
+	return false;
+}
+
+float AOJJ_Grid::OJJ_GetPipeCellSurfaceZ(FIntPoint Cell) const
+{
+	// #182 파이프 셀별 안착 Z. 우선순위: 물(수면) > Foundation(상면) > 지형(GroundZ 추종) > 평면 —
+	// 펌프 안착/OJJ_GetUniformSurfaceZ 면 우선순위와 일관하되 셀 단위(균일 요구 없이 셀마다 지형 추종).
+	float Z = 0.0f;
+	if (GetWaterSurfaceZAtCell(Cell, Z))
+	{
+		return Z;
+	}
+	if (GetFoundationSurfaceZ(Cell, Z))
+	{
+		return Z;
+	}
+	// 지형(buildable/blocked): GroundZ 유효면 셀 대표높이(베이크 최고점, F2-1) 추종, 무효(미베이크/시그니처
+	// 불일치)면 평면 폴백 = 기존 동작(회귀 0). 굴곡 blocked 셀도 이 경로로 자기 지형 높이에 안착한다.
+	if (OJJ_HasValidGroundZData() && IsValidGridCell(Cell))
+	{
+		return GetActorLocation().Z + (float)CellGroundZQuant[OJJ_CellLinearIndex(Cell, GridSize)];
+	}
+	return GetActorLocation().Z;
+}
+
+bool AOJJ_Grid::OJJ_TraceCursorToWaterSurface(const FVector& RayOrigin, const FVector& RayDir, float MaxDistance, FIntPoint& OutCell) const
+{
+	// 수평 레이(Dir.Z≈0)는 수면 평면과 교차 불가 → 실패(호출자 지형 히트 폴백).
+	if (FMath::IsNearlyZero(RayDir.Z))
+	{
+		return false;
+	}
+
+	// 고유 액체자원(WaterArea)만 1회씩 검사 — OJJ_ResourceCellToActor는 셀당 항목이라 Seen으로 중복 제거.
+	// WA1/WA2가 다른 수면 Z여도 각 평면과 교차해 "그 자원이 덮는 셀"인 것만 채택 → 올바른 웅덩이 자동 선택.
+	const FName LiquidForm(TEXT("liquid"));
+	bool bFound = false;
+	float BestDist = MaxDistance; // 지형 히트보다 가까운(=보이는) 수면만 채택 — 앞 육지/머신을 물로 오판 방지.
+	TSet<const AResourceBase*> Seen;
+	for (const TPair<FIntPoint, TWeakObjectPtr<AResourceBase>>& Pair : OJJ_ResourceCellToActor)
+	{
+		AResourceBase* Resource = Pair.Value.Get();
+		if (!Resource || Seen.Contains(Resource))
+		{
+			continue;
+		}
+		Seen.Add(Resource);
+		if (!Resource->HasForm(LiquidForm))
+		{
+			continue;
+		}
+
+		const float SurfaceZ = Resource->GetActorLocation().Z;
+		const float T = (SurfaceZ - RayOrigin.Z) / RayDir.Z; // Dir 단위벡터(Deproject) → T = 거리.
+		if (T <= 0.0f || T >= BestDist)
+		{
+			continue;
+		}
+
+		const FVector SurfacePoint = RayOrigin + RayDir * T;
+		const FIntPoint Cell = WorldToGrid(SurfacePoint);
+		// 교차 XY가 정말 이 WaterArea가 덮는 셀이어야 채택(수면 범위 밖 평면 교차 배제).
+		if (GetLiquidResourceAtCell(Cell) == Resource)
+		{
+			BestDist = T;
+			OutCell = Cell;
+			bFound = true;
+		}
+	}
+	return bFound;
+}
+
+bool AOJJ_Grid::OJJ_GetPipeOutputStartCell(FIntPoint ClickedCell, int32 MaxSnap, FIntPoint& OutStartCell) const
+{
+	// 1) 클릭이 액체 출력 머신(펌프/탱크) 풋프린트 위면 그 머신의 등록 출력 포트 셀로 스냅.
+	if (AMachineBase* OnMachine = GetMachineAtCell(ClickedCell))
+	{
+		if (OJJ_IsLiquidTransportMachine(OnMachine) && OnMachine->GetOutputPortCount() > 0)
+		{
+			const TArray<FIntPoint> OutCells = GetMachineOutputCells(OnMachine);
+			if (OutCells.Num() > 0)
+			{
+				OutStartCell = OutCells[0]; // 단일 출력 포트(펌프/탱크) — 다중이면 첫 셀.
+				return true;
+			}
+		}
+	}
+
+	// 2) 풋프린트 밖이면 근방 MaxSnap칸(맨해튼) 내 액체 출력 머신의 출력 포트 셀 중 가장 가까운 것으로 스냅.
+	// 펌프가 멀리 떨어져 있어 오스냅 위험 낮음(가까운 포트만). 방향/물류는 등록 포트 그대로 — 위치만 보정.
+	int32 BestDist = MaxSnap + 1;
+	bool bFound = false;
+	for (const TPair<TWeakObjectPtr<AActor>, TArray<FIntPoint>>& Pair : OJJ_ActorToCells)
+	{
+		AMachineBase* Machine = Cast<AMachineBase>(Pair.Key.Get());
+		if (!Machine || !OJJ_IsLiquidTransportMachine(Machine) || Machine->GetOutputPortCount() <= 0)
+		{
+			continue;
+		}
+		for (const FIntPoint& PortCell : GetMachineOutputCells(Machine))
+		{
+			const int32 Dist = FMath::Abs(PortCell.X - ClickedCell.X) + FMath::Abs(PortCell.Y - ClickedCell.Y);
+			if (Dist < BestDist)
+			{
+				BestDist = Dist;
+				OutStartCell = PortCell;
+				bFound = true;
+			}
+		}
+	}
+	return bFound;
+}
+
+bool AOJJ_Grid::OJJ_FindLiquidOutputPortUnderCursorScreen(APlayerController* PC, float MaxScreenDist, FIntPoint& OutPortCell) const
+{
+	if (!PC)
+	{
+		return false;
+	}
+	float MouseX = 0.0f;
+	float MouseY = 0.0f;
+	if (!PC->GetMousePosition(MouseX, MouseY))
+	{
+		return false;
+	}
+	const FVector2D Mouse(MouseX, MouseY);
+
+	float BestDist = MaxScreenDist;
+	bool bFound = false;
+	for (const TPair<TWeakObjectPtr<AActor>, TArray<FIntPoint>>& Pair : OJJ_ActorToCells)
+	{
+		AMachineBase* Machine = Cast<AMachineBase>(Pair.Key.Get());
+		if (!Machine || !OJJ_IsLiquidTransportMachine(Machine) || Machine->GetOutputPortCount() <= 0)
+		{
+			continue;
+		}
+		for (const FIntPoint& PortCell : GetMachineOutputCells(Machine))
+		{
+			// 포트 셀 월드 중심을 화살표/오버레이와 같은 비주얼 Z로 투영 → 화면상 박스 위치와 일치.
+			const FVector C = GridToWorld(PortCell);
+			const FVector World(C.X, C.Y, OJJ_GetCellVisualBaseZ(PortCell));
+			FVector2D Screen = FVector2D::ZeroVector;
+			if (!PC->ProjectWorldLocationToScreen(World, Screen))
+			{
+				continue; // 화면 밖/뒤 — 스킵.
+			}
+			const float Dist = FVector2D::Distance(Screen, Mouse);
+			if (Dist < BestDist)
+			{
+				BestDist = Dist;
+				OutPortCell = PortCell;
+				bFound = true;
+			}
+		}
+	}
+	return bFound;
 }
 
 void AOJJ_Grid::BakeBuildableCells(bool bVerbose, bool bWriteCache)
@@ -1811,6 +2064,14 @@ float AOJJ_Grid::OJJ_GetCellVisualBaseZ(FIntPoint Cell) const
 
 float AOJJ_Grid::OJJ_GetCellVisualBaseZInternal(FIntPoint Cell, bool bGroundZValid) const
 {
+	// #182 ⭐ 물 위 가시성: water 셀이면 수면 Z + 리프트로 — 오버레이/호버/포트 화살표가 WaterArea 수면 메시
+	// 위에 렌더돼 보인다(지형바닥 −997에 깔려 수면 메시 −980에 가리던 문제 해소 → 물 위 정확한 클릭 가능).
+	// 시각 전용 단일원이라 오버레이·호버·화살표가 한 번에 수면 위로 올라온다. 판정 Z는 별도(영향 없음).
+	float WaterZ = 0.0f;
+	if (GetWaterSurfaceZAtCell(Cell, WaterZ))
+	{
+		return WaterZ + VisualZLift;
+	}
 	// 우선순위: Foundation 상면 > 지형(GroundZ 추종) > 평면. GroundZ 무효(미베이크/시그니처 불일치) 맵은
 	// 평면 폴백 = 기존 동작(회귀 0). GroundZ는 셀 최고점 기준(F2-1) — 타일이 셀 안 지형면 위에 위치.
 	// 직배치 액터 Z도 풋프린트 최고점(OJJ_GetUniformSurfaceZ)이라 비주얼-액터 편차는 풋프린트 내
@@ -2149,7 +2410,9 @@ bool AOJJ_Grid::OJJ_BuildPipePlacementPath(const TArray<FIntPoint>& DragCells,
 		OutPathCells,
 		OutReason,
 		/*bAllowConveyorOverpass=*/ true,
-		/*bAllowLiquidMachines=*/ true);
+		/*bAllowLiquidMachines=*/ true,
+		/*bAllowWaterCells=*/ true,
+		/*bAllowBlockedCells=*/ true);
 }
 
 bool AOJJ_Grid::OJJ_ValidatePipePlacement(const TArray<FIntPoint>& PathCells,
@@ -2172,7 +2435,9 @@ bool AOJJ_Grid::OJJ_ValidatePipePlacement(const TArray<FIntPoint>& PathCells,
 	if (!OJJ_CollectConveyorReservedCells(this, OccupiedCells, OJJ_ActorToCells, OutPlacementCells,
 		OutReservedCells, OutReason, &OutSourceMachine, &OutTargetMachine,
 		/*bAllowConveyorOverpass=*/ true,
-		/*bAllowLiquidMachines=*/ true))
+		/*bAllowLiquidMachines=*/ true,
+		/*bAllowWaterCells=*/ true,
+		/*bAllowBlockedCells=*/ true))
 	{
 		return false;
 	}
@@ -2187,12 +2452,36 @@ bool AOJJ_Grid::OJJ_ValidatePipePlacement(const TArray<FIntPoint>& PathCells,
 		return false;
 	}
 
-	// ① 균일 SurfaceZ 한정 — 수집기는 균일 실패 시 경사 검사(F3.7-1)로 통과시킬 수 있으나 평면
-	// 파이프(F4-1)는 불채택. 오버패스/경사 파이프 Z는 F4-3(Chan Z 채널 후).
-	if (!OJJ_GetUniformSurfaceZ(OutPlacementCells, OutPathSurfaceZ))
+	// ① 셀별 지형추종 Z + 완만 경사 게이트(#182) — 파이프는 물·땅·Foundation·굴곡(blocked) 어디든 깔린다.
+	// OJJ_GetPipeCellSurfaceZ가 셀마다 면 Z(물 수면/Foundation 상면/지형 GroundZ/평면)를 주고, 인접 셀
+	// |ΔZ|가 OJJ_MaxSlopeStepZ(공유 경사 한계, 기본 300) 이하면 통과(자연 경사: 물가 둑/언덕), 초과면 거부
+	// (수직 벽/절벽) — blocked 게이트(bAllowBlockedCells)로 들어온 셀을 여기서 절벽/자연경사로 가른다. 컨베이어는
+	// blocked 자체가 수집기에서 막혀 이 경로에 도달하지 않음(파이프 전용). 구 균일 SurfaceZ 규칙 대체(F4-1 평면 한정 → 경사 확장).
+	// ※ Z는 셀별 지형추종(CellLifts, OJJ_TryPlacePipe) → 단순 한계값 상향이 아니라 면을 따라가 박힘 없음. 게이트는
+	// 추종 후 셀간 |ΔZ|로 수직 벽만 거른다(Codex 교차검증 Q1·Q2 동의). 공유 상수라 다음 패스에서 컨베이어도 재사용.
+	// OutPathSurfaceZ = 경로 최저 면 Z(액터 base) — OJJ_TryPlacePipe가 셀별 lift로 base 위에서 지형을 추종.
+	float MinSurfaceZ = TNumericLimits<float>::Max();
+	float PrevCellZ = 0.0f;
+	for (int32 i = 0; i < OutPlacementCells.Num(); ++i)
 	{
-		OutReason = TEXT("Pipe path must be on a single flat surface (slope/overpass arrives in F4-3).");
-		return false;
+		const float CellZ = OJJ_GetPipeCellSurfaceZ(OutPlacementCells[i]);
+		if (i > 0)
+		{
+			const float StepZ = FMath::Abs(CellZ - PrevCellZ);
+			if (StepZ > OJJ_MaxSlopeStepZ + KINDA_SMALL_NUMBER)
+			{
+				OutReason = FString::Printf(
+					TEXT("Pipe path is too steep between cells (%.0fuu > %.0fuu) — cliff/wall blocked, reroute around it."),
+					StepZ, OJJ_MaxSlopeStepZ);
+				return false;
+			}
+		}
+		MinSurfaceZ = FMath::Min(MinSurfaceZ, CellZ);
+		PrevCellZ = CellZ;
+	}
+	if (OutPlacementCells.Num() > 0)
+	{
+		OutPathSurfaceZ = MinSurfaceZ;
 	}
 
 	// ② ㉤ 액체 끝점 사전 게이트 — 잘못 깐 라인의 침묵 유휴(런타임 IsLiquidItem 필터만)를 배치 시점
@@ -2266,8 +2555,9 @@ bool AOJJ_Grid::OJJ_TryPlacePipe(APipe* Pipe, const TArray<FIntPoint>& PathCells
 		return false;
 	}
 
-	// F4-3 오버패스 산출 — 컨베이어 점유 셀과 교차하는 파이프 셀은 경로 기준면 위로 상승(공중) 처리.
-	// 교차 셀: CellZ = 기준면 + 클리어런스, bElevated=true(아래 컨베이어 통과 허용). 그 외: 기준면, 지상.
+	// #182 셀별 지형추종 절대 Z(물 수면/Foundation 상면/지형 GroundZ) — 굴곡을 따라 셀마다 안착.
+	// F4-3 오버패스 합성: 컨베이어 교차 셀은 그 면 Z 위로 클리어런스만큼 상승(공중) + bElevated=true(아래
+	// 컨베이어 통과 허용). 그 외는 지상(면 Z, bElevated=false) — 굴곡 지상 파이프는 여전히 그 아래 컨베이어 차단.
 	// 등록 실패 시 부작용 없이 false(가드 조기 종료) → 롤백 불필요(컨베이어 등록과 동일 계약).
 	TArray<float> CellZs;
 	CellZs.Reserve(ReservedCells.Num());
@@ -2276,7 +2566,8 @@ bool AOJJ_Grid::OJJ_TryPlacePipe(APipe* Pipe, const TArray<FIntPoint>& PathCells
 	for (const FIntPoint& Cell : ReservedCells)
 	{
 		const bool bCrossesConveyor = OJJ_GetConveyorAtCell(Cell) != nullptr;
-		CellZs.Add(bCrossesConveyor ? PathSurfaceZ + OJJ_PipeOverpassClearance : PathSurfaceZ);
+		const float CellSurfaceZ = OJJ_GetPipeCellSurfaceZ(Cell);
+		CellZs.Add(bCrossesConveyor ? CellSurfaceZ + OJJ_PipeOverpassClearance : CellSurfaceZ);
 		ElevatedFlags.Add(bCrossesConveyor);
 	}
 	if (!OJJ_TryRegisterPipeCells(Pipe, ReservedCells, CellZs, ElevatedFlags, OutReason))
@@ -2301,16 +2592,19 @@ bool AOJJ_Grid::OJJ_TryPlacePipe(APipe* Pipe, const TArray<FIntPoint>& PathCells
 	{
 		bCrossesConveyor[i] = OJJ_GetConveyorAtCell(PipePathCells[i]) != nullptr;
 	}
+	// #182 비주얼 lift = 셀별 지형추종(면 Z − 액터 base) + 오버패스 다리 클리어런스. 액터 base = PathSurfaceZ
+	// (경로 최저 면 Z)라 lift ≥ 0. RebuildVisuals가 인접 lift 차를 세그먼트 기울기로 렌더 → 굴곡/다리 자동 표현.
 	TArray<float> CellLifts;
 	CellLifts.Init(0.0f, NumPipeCells);
 	for (int32 i = 0; i < NumPipeCells; ++i)
 	{
+		CellLifts[i] = OJJ_GetPipeCellSurfaceZ(PipePathCells[i]) - PathSurfaceZ;
 		const bool bBridge = bCrossesConveyor[i]
 			|| (i > 0 && bCrossesConveyor[i - 1])
 			|| (i + 1 < NumPipeCells && bCrossesConveyor[i + 1]);
 		if (bBridge)
 		{
-			CellLifts[i] = OJJ_PipeOverpassClearance;
+			CellLifts[i] += OJJ_PipeOverpassClearance;
 		}
 	}
 	Pipe->OJJ_SetPathCellLocalZs(CellLifts);
@@ -2327,7 +2621,7 @@ bool AOJJ_Grid::OJJ_TryPlacePipe(APipe* Pipe, const TArray<FIntPoint>& PathCells
 	const FVector HalfExtent(GridSize.X * CellSize * 0.5f, GridSize.Y * CellSize * 0.5f, 0.0f);
 	FVector PipeLocation =
 		GetActorLocation() + Pipe->GetActorRotation().RotateVector(CentroidLocal) - HalfExtent;
-	PipeLocation.Z += PathSurfaceZ - GetActorLocation().Z; // 균일 경로 기준면 안착(F1-c 컨베이어 ② 미러)
+	PipeLocation.Z += PathSurfaceZ - GetActorLocation().Z; // 경로 최저 면 Z에 액터 base 안착 — 셀별 lift가 굴곡 추종(#182)
 	Pipe->SetActorLocation(PipeLocation);
 	Pipe->ConfigureTransport(ReservedCells, SourceMachine, TargetMachine);
 	return true;
@@ -2887,11 +3181,19 @@ bool AOJJ_Grid::OJJ_RegisterActorCells(AActor* Actor, const TArray<FIntPoint>& C
 
 	// origin = 등록 셀의 lower-left(min corner). 머신과 동일 컨벤션으로 OJJ_ActorToOrigin 동기 유지.
 	FIntPoint Origin = UniqueCells[0];
+	AResourceBase* AsResource = Cast<AResourceBase>(Actor);
 	for (const FIntPoint& Cell : UniqueCells)
 	{
 		Origin.X = FMath::Min(Origin.X, Cell.X);
 		Origin.Y = FMath::Min(Origin.Y, Cell.Y);
 		OccupiedCells.Add(Cell, Actor);
+
+		// #182 자원이면 자원 전용 레이어에도 기록 — 위에 머신(펌프)이 점유해 OccupiedCells를 덮어써도
+		// 발밑 WaterArea가 보존된다. 머신은 이 경로(비머신 전용)로 안 오므로 이 맵엔 자원만 들어간다.
+		if (AsResource)
+		{
+			OJJ_ResourceCellToActor.Add(Cell, AsResource);
+		}
 	}
 	OJJ_ActorToOrigin.Add(Actor, Origin);
 	OJJ_ActorToCells.Add(Actor, MoveTemp(UniqueCells));
@@ -2947,6 +3249,14 @@ bool AOJJ_Grid::OJJ_RemoveActorAt(FIntPoint Cell)
 				It.RemoveCurrent();
 			}
 		}
+		// #182 자원 전용 레이어도 같은 actor 셀 전체 스캔 제거(등록/해제 대칭 — OccupiedCells와 동일 처리).
+		for (auto It = OJJ_ResourceCellToActor.CreateIterator(); It; ++It)
+		{
+			if (It.Value().Get() == Actor)
+			{
+				It.RemoveCurrent();
+			}
+		}
 		OJJ_ActorToOrigin.Remove(Actor);
 
 		// 비정상 복구 경로에서도 포트 셀 점유가 풀렸을 수 있으므로 화살표 시각 일관성 유지(Codex 리뷰 Low).
@@ -2960,6 +3270,14 @@ bool AOJJ_Grid::OJJ_RemoveActorAt(FIntPoint Cell)
 	for (const FIntPoint& C : *ActorCells)
 	{
 		OccupiedCells.Remove(C);
+		// #182 자원 전용 레이어도 대칭 해제 — 단, 이 셀이 정말 이 actor 것일 때만(타 자원/머신 무영향).
+		if (const TWeakObjectPtr<AResourceBase>* ResFound = OJJ_ResourceCellToActor.Find(C))
+		{
+			if (ResFound->Get() == Actor)
+			{
+				OJJ_ResourceCellToActor.Remove(C);
+			}
+		}
 	}
 	OJJ_ActorToCells.Remove(Actor);
 	OJJ_ActorToOrigin.Remove(Actor);
@@ -2978,7 +3296,9 @@ bool AOJJ_Grid::OJJ_BuildConveyorPlacementPath(
 	TArray<FIntPoint>& OutPathCells,
 	FString& OutReason,
 	bool bAllowConveyorOverpass,
-	bool bAllowLiquidMachines) const
+	bool bAllowLiquidMachines,
+	bool bAllowWaterCells,
+	bool bAllowBlockedCells) const
 {
 	OutPathCells.Reset();
 	if (DragCells.Num() == 0)
@@ -3049,7 +3369,7 @@ bool AOJJ_Grid::OJJ_BuildConveyorPlacementPath(
 
 	TArray<FIntPoint> ReservedCells;
 	return OJJ_CollectConveyorReservedCells(this, OccupiedCells, OJJ_ActorToCells, OutPathCells, ReservedCells,
-		OutReason, nullptr, nullptr, bAllowConveyorOverpass, bAllowLiquidMachines);
+		OutReason, nullptr, nullptr, bAllowConveyorOverpass, bAllowLiquidMachines, bAllowWaterCells, bAllowBlockedCells);
 }
 
 bool AOJJ_Grid::OJJ_CanPlaceConveyorPath(const TArray<FIntPoint>& PathCells) const
@@ -3269,6 +3589,7 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 R
 
 	// 모든 placement entry point가 같은 invariant 따르도록 풋프린트 전체 셀에 대해
 	// bounds + 점유를 동시에 검사 (단일 패스).
+	const bool bMachineWater = Machine->CanStandOnWater();
 	const TArray<FIntPoint> Footprint = CalculateFootprint(Machine, Origin, RotationSteps);
 	for (const FIntPoint& Cell : Footprint)
 	{
@@ -3277,15 +3598,21 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 R
 			return false;
 		}
 
-		// 건설 게이트(F1-c: buildable OR Foundation 커버) — 호버도 같은 함수라 자동 빨강.
-		if (!IsCellConstructible(Cell))
+		// #182 교집합: 물 위 배치 머신(펌프)은 (분류 water AND WaterArea liquid가 덮음)인 셀에서만 게이트 면제.
+		// GetWaterSurfaceZAtCell이 true면 그 셀을 덮는 liquid WaterArea가 존재(=점유)함을 동시에 보장한다.
+		// WaterArea 없는 분류-only water 셀·일반 셀은 bWaterCellOk=false → 기존 게이트 그대로(회귀 0).
+		float UnusedWaterZ = 0.0f;
+		const bool bWaterCellOk = bMachineWater && IsCellWater(Cell) && GetWaterSurfaceZAtCell(Cell, UnusedWaterZ);
+
+		// 게이트 A 건설(F1-c: buildable OR Foundation 커버) — 호버도 같은 함수라 자동 빨강. 물 위는 예외 허용.
+		if (!IsCellConstructible(Cell) && !bWaterCellOk)
 		{
 			return false;
 		}
 
-		// AActor 점유 기준 (현재 머신만 담기므로 동작 무변경; 컨베이어 차단 의미 확정은 1-c).
+		// 게이트 B 점유 — WaterArea(수원) 점유 셀은 물 위 배치 머신만 통과(bWaterCellOk가 해당 액터 존재를 보장).
 		const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell);
-		if (Found && Found->IsValid())
+		if (Found && Found->IsValid() && !bWaterCellOk)
 		{
 			return false;
 		}
@@ -3892,6 +4219,7 @@ void AOJJ_Grid::OJJ_EmitPortArrows(
 
 		const FVector CellCenter = GridToWorld(Cell);
 		// F1-c: 기준면 추종 — Foundation 위 머신의 화살표가 평면 높이에 묻히지 않게(머신 Z 안착과 동일 데이터).
+		// #182 물 위 포트: OJJ_GetCellVisualBaseZ가 water 셀에 수면 Z를 반환(중앙화) → 화살표도 수면 위에 표시.
 		const FVector Location(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(Cell) + PortArrowHeightOffset);
 
 		// 콘 메시 apex(+Z)를 수평 FacingDir로 정렬.
