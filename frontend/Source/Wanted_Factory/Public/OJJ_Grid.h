@@ -790,8 +790,11 @@ public:
 	// 그리드는 배열 불변식 검증(액터 신뢰 금지): ① 크기 = Size.X×Size.Y ② 전 값 유한 ③ (max−min)이
 	// 단 간격(OJJ_FoundationSnapStep)의 정수배 — 절대 단 격자 정합은 그리드가 Thickness를 모르는 계약상
 	// 상대 검증(턱 0 산식의 양 끝 정합이 이를 보장). 위반 시 거부 + OutReason. UFUNCTION 오버로드 불가(UHT)라 별도 이름.
+	// #261: bClampLedgerBelowGroundToTerrain=true면 한쪽 지면 램프 전용 — 불변식 ③ 검증은 원본 CellSurfaceZs로
+	// 하되(span 정합 보존), 등록 장부(FoundationCells.SurfaceZ)만 지면 아래로 파고드는 셀을 max(cellZ, GroundRaw)로
+	// 클램프해 오버레이/클릭/컨베이어가 지면에서 만나게 한다. 쐐기 메시는 액터 base+Thickness+RiseSteps로 별개라 무변경.
 	bool OJJ_TryPlaceFoundationPerCell(AActor* Foundation, FIntPoint Origin, FIntPoint Size,
-		const TArray<float>& CellSurfaceZs, FString& OutReason);
+		const TArray<float>& CellSurfaceZs, FString& OutReason, bool bClampLedgerBelowGroundToTerrain = false);
 
 	// Foundation 커버리지 해제. 커버 셀 위에 유효 점유(머신/컨베이어)가 하나라도 있으면 거부 + 점유 셀 수
 	// 기록 — F1은 연쇄 철거 대신 거부가 안전. 서버 권위 전용.

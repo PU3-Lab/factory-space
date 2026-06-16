@@ -84,27 +84,173 @@ FOJJFoundationFitResult AOJJ_RampFoundation::OJJ_ComputeHoverFootprint(const AOJ
 	// 축 = R키(입력 step parity — ㊁: 자동 맞춤에서 R은 축만, 부호는 이웃이 결정).
 	// 폭 W = CDO FoundationSize.Y 고정(㊀), 측면 정렬 = 베이스 origin 공통 수식의 수직 성분과 동일.
 	const int32 Step = ((RotationSteps % 4) + 4) % 4;
-	const bool bAxisX = (Step % 2 == 0);
-	const int32 Width = FMath::Max(1, FoundationSize.Y);
-	const int32 LateralOrigin = (bAxisX ? CursorCell.Y : CursorCell.X) - (Width - 1) / 2;
+	bool bAxisX = (Step % 2 == 0);
+	int32 Width = FMath::Max(1, FoundationSize.Y);
+	int32 LateralOrigin = (bAxisX ? CursorCell.Y : CursorCell.X) - (Width - 1) / 2;
 
 	// 양방향 스캔(㉾ MaxAutoFitScanCells 한계). 단 격자 원점은 Thickness를 아는 클래스가 산출(F1-b 계약).
 	const float SnapGridOriginZ = Grid.GetActorLocation().Z + Thickness;
 	const int32 MaxScan = FMath::Max(1, MaxAutoFitScanCells);
 	int32 DistNeg = 0, DistPos = 0;
 	float ZNeg = 0.0f, ZPos = 0.0f;
-	const bool bNeg = OJJ_ScanNeighborLine(Grid, CursorCell, bAxisX, -1, LateralOrigin, Width,
+	bool bNeg = OJJ_ScanNeighborLine(Grid, CursorCell, bAxisX, -1, LateralOrigin, Width,
 		MaxScan, SnapGridOriginZ, DistNeg, ZNeg);
-	const bool bPos = OJJ_ScanNeighborLine(Grid, CursorCell, bAxisX, +1, LateralOrigin, Width,
+	bool bPos = OJJ_ScanNeighborLine(Grid, CursorCell, bAxisX, +1, LateralOrigin, Width,
 		MaxScan, SnapGridOriginZ, DistPos, ZPos);
 
-	// ② 한쪽/무이웃 → 고정 램프 폴백(계획 §4): 베이스 풋프린트(CDO 크기·R이 축+부호 전부 결정),
+	// #261 한쪽-지면 하강 램프: 한쪽 분기에서 합성하면 true로 올려, fall-through 후 공유 블록이 만드는
+	// Result에 bOneSideGroundRamp 표식을 단다(OJJ_ComputeSnapLift 높은끝 스냅 게이트).
+	bool bResultOneSideGroundRamp = false;
+
+	// #261 수직 엣지 보정: 스캔 축(bAxisX)이 R키로만 정해져 실제 Foundation이 직교 엣지에 있으면
+	// bNeg=bPos=0이 되어 한쪽 분기에 진입조차 못 한다(스캔 축과 Foundation 접촉 변이 어긋난 경우).
+	// 양방향(bNeg&&bPos) 자동 맞춤은 그대로 두고(게이트), 그 외에는 커서 중심 CDO 풋프린트 둘레
+	// 4변을 직접 탐침해 정확히 한 변에만 Foundation이 닿으면 그 축/부호로 전환 후 재스캔한다.
+	// 코너/모호(0개 또는 ≥2개)면 아무것도 바꾸지 않고 기존 고정 폴백/양방향 로직에 맡긴다(Codex #2).
+	if (!(bNeg && bPos))
+	{
+		const FIntPoint ProbeSize = FoundationSize;
+		const FIntPoint ProbeOrigin = AOJJ_Grid::OJJ_OriginFromCursorCellForSize(CursorCell, ProbeSize);
+
+		float WZ = 0.0f, EZ = 0.0f, SZ = 0.0f, NZ = 0.0f;
+		int32 WC = 0, EC = 0, SC = 0, NC = 0;
+		const bool hasW = Grid.OJJ_GetDominantFoundationSurfaceZInRect(
+			FIntPoint(ProbeOrigin.X - 1, ProbeOrigin.Y), FIntPoint(1, ProbeSize.Y), SnapGridOriginZ, WZ, WC) && WC > 0;
+		const bool hasE = Grid.OJJ_GetDominantFoundationSurfaceZInRect(
+			FIntPoint(ProbeOrigin.X + ProbeSize.X, ProbeOrigin.Y), FIntPoint(1, ProbeSize.Y), SnapGridOriginZ, EZ, EC) && EC > 0;
+		const bool hasS = Grid.OJJ_GetDominantFoundationSurfaceZInRect(
+			FIntPoint(ProbeOrigin.X, ProbeOrigin.Y - 1), FIntPoint(ProbeSize.X, 1), SnapGridOriginZ, SZ, SC) && SC > 0;
+		const bool hasN = Grid.OJJ_GetDominantFoundationSurfaceZInRect(
+			FIntPoint(ProbeOrigin.X, ProbeOrigin.Y + ProbeSize.Y), FIntPoint(ProbeSize.X, 1), SnapGridOriginZ, NZ, NC) && NC > 0;
+
+		const int32 EdgeCount = (hasW ? 1 : 0) + (hasE ? 1 : 0) + (hasS ? 1 : 0) + (hasN ? 1 : 0);
+
+		// 정확히 한 변에만 Foundation → 그 변의 축/부호로 전환 + 재스캔(Codex #2/#3 일관성).
+		if (EdgeCount == 1)
+		{
+			bool bRescan = false;
+			if (hasW)        // 서쪽(−X)
+			{
+				bAxisX = true;
+				Width = FMath::Max(1, FoundationSize.Y);
+				LateralOrigin = CursorCell.Y - (Width - 1) / 2;
+				bRescan = OJJ_ScanNeighborLine(Grid, CursorCell, bAxisX, -1, LateralOrigin, Width,
+					MaxScan, SnapGridOriginZ, DistNeg, ZNeg);
+				if (bRescan) { bNeg = true; bPos = false; DistPos = 0; ZPos = 0.0f; }
+			}
+			else if (hasE)   // 동쪽(+X)
+			{
+				bAxisX = true;
+				Width = FMath::Max(1, FoundationSize.Y);
+				LateralOrigin = CursorCell.Y - (Width - 1) / 2;
+				bRescan = OJJ_ScanNeighborLine(Grid, CursorCell, bAxisX, +1, LateralOrigin, Width,
+					MaxScan, SnapGridOriginZ, DistPos, ZPos);
+				if (bRescan) { bPos = true; bNeg = false; DistNeg = 0; ZNeg = 0.0f; }
+			}
+			else if (hasS)   // 남쪽(−Y)
+			{
+				bAxisX = false;
+				Width = FMath::Max(1, FoundationSize.Y);
+				LateralOrigin = CursorCell.X - (Width - 1) / 2;
+				bRescan = OJJ_ScanNeighborLine(Grid, CursorCell, bAxisX, -1, LateralOrigin, Width,
+					MaxScan, SnapGridOriginZ, DistNeg, ZNeg);
+				if (bRescan) { bNeg = true; bPos = false; DistPos = 0; ZPos = 0.0f; }
+			}
+			else             // 북쪽(+Y)
+			{
+				bAxisX = false;
+				Width = FMath::Max(1, FoundationSize.Y);
+				LateralOrigin = CursorCell.X - (Width - 1) / 2;
+				bRescan = OJJ_ScanNeighborLine(Grid, CursorCell, bAxisX, +1, LateralOrigin, Width,
+					MaxScan, SnapGridOriginZ, DistPos, ZPos);
+				if (bRescan) { bPos = true; bNeg = false; DistNeg = 0; ZNeg = 0.0f; }
+			}
+		}
+	}
+
+	// ② 무이웃(양쪽 다 없음) → 고정 램프 폴백(계획 §4): 베이스 풋프린트(CDO 크기·R이 축+부호 전부 결정),
 	// Z는 기존 F3.5 ③ 엣지 스냅/씨앗 폴백 그대로(OJJ_ComputeSnapLift 무변경). 고립 램프 용도 보존(㉹).
-	if (!bNeg || !bPos)
+	if (!bNeg && !bPos)
 	{
 		FOJJFoundationFitResult Result = Super::OJJ_ComputeHoverFootprint(Grid, CursorCell, RotationSteps);
 		Result.DirectionSource = TEXT("방향 수동(R)");
 		return Result;
+	}
+
+	// #261 한쪽 Foundation → 맨땅(지형) 하강 램프: 한쪽만 Foundation이 잡혔으면(bNeg != bPos)
+	// 반대편(맨땅) 라인의 지형 Z를 합성해 두-이웃 자동 맞춤 산식(①, 110行+)을 그대로 재사용한다.
+	//   · 지형 Z는 OJJ_ComputeFoundationSnapLift(올림-스냅 = SnapSteps×100, 격자 정합)로 산출 →
+	//     Foundation SurfaceZ와 동일한 100uu 단 격자에 떨어지므로 ΔZ가 정확히 100의 정수배(①의 전제 유지).
+	//   · 결정 B: 지형이 Foundation 윗면보다 낮지 않으면(하강 케이스 아님) 고정 폴백(Super) — 범위 외.
+	//   · GroundZ 무효(베이크 전) → 고정 폴백(Super). 평면 폴백 없음(#249 패턴).
+	//   · 합성 후 return 하지 않고 ①로 fall-through → GapLength/EffSize/Origin/RiseSteps(=실 ΔZ/스냅)/
+	//     방향(ZNeg<=ZPos)/급경사 게이트/DirectionSource 전부 두-이웃 경로와 동일하게 재사용.
+	//   · 등록은 풋프린트(틈) 한정이라 램프 셀만 Foundation이 되고 맨땅은 그대로 남는다.
+	if (bNeg != bPos)
+	{
+		// (c) 누락(맨땅)측 지형 기준선 = 커서 한 칸 바깥의 W폭 라인(OJJ_ScanNeighborLine 미러).
+		//     bNeg(Foundation이 −쪽) → 맨땅은 +쪽(CursorCell+1), bPos → 맨땅은 −쪽(CursorCell−1).
+		const FIntPoint GroundLineOrigin = bNeg
+			? (bAxisX ? FIntPoint(CursorCell.X + 1, LateralOrigin) : FIntPoint(LateralOrigin, CursorCell.Y + 1))
+			: (bAxisX ? FIntPoint(CursorCell.X - 1, LateralOrigin) : FIntPoint(LateralOrigin, CursorCell.Y - 1));
+
+		// (a) GroundZ 무효(미베이크/off-grid) → 고정 폴백(평면 폴백 없음 — #249 패턴). OJJ_GetRawTerrainSurfaceZ가
+		//     베이크 유효성 + in-grid를 함께 검사해 무효면 false(public 단일원 — OJJ_HasValidGroundZData는 private).
+		float GroundRawZ = 0.0f;
+		if (!Grid.OJJ_GetRawTerrainSurfaceZ(GroundLineOrigin, GroundRawZ))
+		{
+			FOJJFoundationFitResult Result = Super::OJJ_ComputeHoverFootprint(Grid, CursorCell, RotationSteps);
+			Result.DirectionSource = TEXT("방향 수동(R)");
+			return Result;
+		}
+
+		// (d) 결정 B(#261 분기): 실제 하강 폭 = Foundation 윗면 − 실제 지면 GroundRawZ.
+		//     "지면+Thickness"(슬래브 윗면 가정)로 산정하면 평지 슬래브에서 FoundationZ와 상쇄돼 ΔZ=0 오판
+		//     (Codex #5 Thickness 결합) — 하강폭/flush/단수는 raw 지면(GroundRawZ) 기준으로 산정한다.
+		const float FoundationZ = bNeg ? ZNeg : ZPos;
+		const float DeltaReal = FoundationZ - GroundRawZ;
+
+		// (d-1) flush(Foundation 윗면 == 실제 지면, ΔZ≈0): 램프 불필요 → INVALID 반환(수동 고정 램프 합성 안 함).
+		//        배치는 OJJ_BuildController.cpp:1295-1298에서 bValid=false를 거부 → 진짜 스킵.
+		if (DeltaReal <= KINDA_SMALL_NUMBER && DeltaReal >= -KINDA_SMALL_NUMBER)
+		{
+			FOJJFoundationFitResult Result = Super::OJJ_ComputeHoverFootprint(Grid, CursorCell, RotationSteps);
+			Result.bValid = false;
+			Result.FailReason = TEXT("Foundation flush with ground — no ramp needed");
+			Result.DirectionSource = TEXT("방향 수동(R)");
+			return Result;
+		}
+		// (d-2) 지면이 Foundation 윗면보다 높음(DeltaReal < −eps): 하강 케이스 아님 → 고정 폴백(범위 외).
+		if (DeltaReal < -KINDA_SMALL_NUMBER)
+		{
+			FOJJFoundationFitResult Result = Super::OJJ_ComputeHoverFootprint(Grid, CursorCell, RotationSteps);
+			Result.DirectionSource = TEXT("방향 수동(R)");
+			return Result;
+		}
+
+		// (d-3) 하강(DeltaReal > eps): RiseSteps = ceil(ΔZ/100), 최소 1 (round 아님 — 낮은끝이 지면에 닿거나
+		//        아래로 파고들어 float gap 없음, Codex #2). 합성 끝점 = FoundationZ − RiseSteps×100 (양자화) →
+		//        공유 블록 round(|ZPos−ZNeg|/100)이 정확히 RiseSteps. PART D(OJJ_ComputeSnapLift 높은끝 스냅)가
+		//        base = FoundationZ − RiseSteps×100을 잡아 HIGH end == FoundationZ 보장, 낮은끝은 지면 아래(수용).
+		const int32 OneSideRiseSteps = FMath::Max(1, FMath::CeilToInt(
+			DeltaReal / AOJJ_Grid::OJJ_FoundationSnapStep - KINDA_SMALL_NUMBER));
+		const float SynthGroundZ = FoundationZ - OneSideRiseSteps * AOJJ_Grid::OJJ_FoundationSnapStep;
+
+		// (e) 보행(완경사) 보장에 필요한 램프 길이 산출(단수 = OneSideRiseSteps).
+		const float WalkLimit = FMath::Max(1.0f, OJJ_WalkableStepPerRow);
+		const int32 WalkGap = FMath::CeilToInt(
+			OneSideRiseSteps * AOJJ_Grid::OJJ_FoundationSnapStep / WalkLimit) + 1;
+		const int32 DistFound = bNeg ? DistNeg : DistPos;
+		const int32 DistGround = FMath::Max(1, WalkGap - DistFound);
+
+		// (f) 누락측 합성 Dist/Z 채움 → ①이 양쪽을 다 보게 한다. Z는 SynthGroundZ(FoundationZ 앵커).
+		if (bNeg) { DistPos = DistGround; ZPos = SynthGroundZ; }  // Foundation −쪽, 맨땅 +쪽 합성
+		else      { DistNeg = DistGround; ZNeg = SynthGroundZ; }  // Foundation +쪽, 맨땅 −쪽 합성
+
+		// (f-2) #261 한쪽-지면 하강 램프 확정 → fall-through 후 Result에 표식(높은끝 스냅 게이트).
+		bResultOneSideGroundRamp = true;
+
+		// (g) return 없음 — 아래 ① 자동 맞춤 블록으로 fall-through.
 	}
 
 	// ① 자동 맞춤(계획 §1): 풋프린트 = 두 이웃 라인 사이 틈 전체(D칸 × W — 커서는 틈/측면 선택만).
@@ -169,6 +315,11 @@ FOJJFoundationFitResult AOJJ_RampFoundation::OJJ_ComputeHoverFootprint(const AOJ
 		Result.DirectionSource = FString::Printf(TEXT("방향 자동(이웃 낮→높) — 틈 %d칸, Δ%d단"),
 			GapLength, Result.RiseSteps);
 	}
+	// #261 한쪽-지면 하강 램프 표식 — OJJ_ComputeSnapLift가 높은끝(Foundation쪽) 엣지로 스냅하게 게이트.
+	if (bResultOneSideGroundRamp)
+	{
+		Result.bOneSideGroundRamp = true;
+	}
 	return Result;
 }
 
@@ -180,6 +331,7 @@ void AOJJ_RampFoundation::OJJ_NotifyFitResult(const FOJJFoundationFitResult& Fit
 	PlacedClimbLengthCells = FMath::Max(1, (Step % 2 == 0) ? Fit.EffSize.X : Fit.EffSize.Y);
 	PlacedRiseSteps = FMath::Max(0, Fit.RiseSteps);
 	PlacedRotationSteps = Step; // F3.8' — 쐐기 월드 방향 규약 + 액터 yaw 역회전용.
+	bPlacedOneSideGroundRamp = Fit.bOneSideGroundRamp; // #261 — OJJ_ComputeSnapLift 높은끝 스냅 게이트.
 }
 
 bool AOJJ_RampFoundation::OJJ_BuildPerCellSurfaceZ(FIntPoint EffSize, int32 RotationSteps, float BaseSurfaceZ,
@@ -231,23 +383,30 @@ float AOJJ_RampFoundation::OJJ_ComputeSnapLift(const AOJJ_Grid& Grid, FIntPoint 
 	FIntPoint RowSize = EffSize;
 	FIntPoint LineOrigin = Origin;  // 낮은 끝 바깥 인접 라인(이웃 판)
 	FIntPoint LineSize = EffSize;
+	// #261 높은 끝(Foundation쪽) 바깥 인접 라인 — 낮은끝의 반대 변(한쪽-지면 램프 스냅용).
+	FIntPoint HighLineOrigin = Origin;
+	FIntPoint HighLineSize = EffSize;
 	switch (Step)
 	{
 	case 0: // 낮은 끝 = 서쪽 변
 		RowSize = FIntPoint(1, EffSize.Y);
 		LineOrigin.X = Origin.X - 1;             LineSize = FIntPoint(1, EffSize.Y);
+		HighLineOrigin.X = Origin.X + EffSize.X; HighLineSize = FIntPoint(1, EffSize.Y); // 높은끝 = 동쪽
 		break;
 	case 1: // 남쪽 변
 		RowSize = FIntPoint(EffSize.X, 1);
 		LineOrigin.Y = Origin.Y - 1;             LineSize = FIntPoint(EffSize.X, 1);
+		HighLineOrigin.Y = Origin.Y + EffSize.Y; HighLineSize = FIntPoint(EffSize.X, 1); // 높은끝 = 북쪽
 		break;
 	case 2: // 동쪽 변
 		RowOrigin.X = Origin.X + EffSize.X - 1;  RowSize = FIntPoint(1, EffSize.Y);
 		LineOrigin.X = Origin.X + EffSize.X;     LineSize = FIntPoint(1, EffSize.Y);
+		HighLineOrigin.X = Origin.X - 1;         HighLineSize = FIntPoint(1, EffSize.Y); // 높은끝 = 서쪽
 		break;
 	case 3: // 북쪽 변
 		RowOrigin.Y = Origin.Y + EffSize.Y - 1;  RowSize = FIntPoint(EffSize.X, 1);
 		LineOrigin.Y = Origin.Y + EffSize.Y;     LineSize = FIntPoint(EffSize.X, 1);
+		HighLineOrigin.Y = Origin.Y - 1;         HighLineSize = FIntPoint(EffSize.X, 1); // 높은끝 = 남쪽
 		break;
 	}
 
@@ -263,6 +422,20 @@ float AOJJ_RampFoundation::OJJ_ComputeSnapLift(const AOJJ_Grid& Grid, FIntPoint 
 			*OutHeightSource = FString::Printf(TEXT("상속-엣지(이웃 접촉 %d셀)"), ContactCells);
 		}
 		return NeighborZ - Thickness - Grid.GetActorLocation().Z;
+	}
+
+	// #261 한쪽-지면 하강 램프: 낮은끝(지면쪽)엔 Foundation 없어 위 엣지스냅 실패 → 높은끝(Foundation쪽) 엣지로
+	// 스냅해 HIGH end == FoundationZ 보장. base = highNeighborZ - PlacedRiseSteps*100 (낮은끝은 지면 아래로 파고듦, 수용).
+	// 한쪽-지면 auto 램프(bPlacedOneSideGroundRamp)만 — 양쪽/고정폴백은 위 낮은끝 스냅이 먼저 잡혀 무진입(격리).
+	if (bPlacedOneSideGroundRamp)
+	{
+		float HighNeighborZ = 0.0f;
+		int32 HighContact = 0;
+		if (Grid.OJJ_GetDominantFoundationSurfaceZInRect(HighLineOrigin, HighLineSize, SnapGridOriginZ, HighNeighborZ, HighContact))
+		{
+			if (OutHeightSource) { *OutHeightSource = FString::Printf(TEXT("상속-높은끝(이웃 %d셀, rise=%d)"), HighContact, PlacedRiseSteps); }
+			return (HighNeighborZ - PlacedRiseSteps * AOJJ_Grid::OJJ_FoundationSnapStep) - Thickness - Grid.GetActorLocation().Z;
+		}
 	}
 
 	// 씨앗 폴백(고립 램프 = 지형 오르기): 낮은 끝 행 지형 스냅(F3-2 Codex ② — 풋프린트 전체 max를
