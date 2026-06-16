@@ -530,10 +530,16 @@ bool OJJ_CollectConveyorReservedCells(
 	// ⚠ 컨베이어 전용: 파이프(bAllowWaterCells=true)는 자체 경사 게이트(OJJ_ValidatePipePlacement, 코너 회전·물 허용)를
 	// 쓰며 all-raw 경로가 기존엔 uniform=true로 이 분기를 건너뛰었다. raw-follow를 파이프까지 켜면 컨베이어의 코너-평탄
 	// 규칙이 파이프 경사 회전을 거부(회귀). bAllowWaterCells로 파이프를 식별해 컨베이어 경로만 raw-follow 적용.
-	const bool bConveyorPath = !bAllowWaterCells; // 파이프=물 위 허용(true), 컨베이어=false.
+	// bAllowWaterCells를 "파이프 경로" 식별자로 사용(파이프만 물 위 허용=true). ⚠ 미래에 물 위 컨베이어가
+	// 이 플래그를 켜면 경사 검증을 잘못 스킵하므로, 그때는 명시적 bIsPipe 인자로 분리할 것.
+	const bool bConveyorPath = !bAllowWaterCells; // 파이프=물 위 허용(true)→false, 컨베이어=false→true.
 	const bool bRawTerrainFollow = bConveyorPath && Grid->OJJ_IsRawTerrainFollowPath(PathCells);
 	float UnusedUniformZ = 0.0f;
-	if (bRawTerrainFollow || !Grid->OJJ_GetUniformSurfaceZ(PathCells, UnusedUniformZ))
+	// 컨베이어 경사 validator(혼합 거부·100/300 STEP·corner-flat)는 **컨베이어 전용 정책**. 파이프는 압송이라
+	// 경사 제한이 이미 제거됐고 셀별 Z(OJJ_GetPipeCellSurfaceZ)로 독립 추종하므로 이 validator에서 완전 면제한다
+	// (bConveyorPath 가드). 파이프의 정당 검증(엔드포인트/점유/water/포트/Pump-Tank/overlap)은 전부 이 블록 밖에 있어
+	// 면제해도 손실 없음. 컨베이어(bConveyorPath=true)는 종전과 byte-identical.
+	if (bConveyorPath && (bRawTerrainFollow || !Grid->OJJ_GetUniformSurfaceZ(PathCells, UnusedUniformZ)))
 	{
 		TArray<float> UnusedCellZs;
 		if (!OJJ_ValidateConveyorSlopePath(Grid, PathCells, UnusedCellZs, OutReason))
