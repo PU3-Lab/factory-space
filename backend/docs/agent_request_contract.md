@@ -4,8 +4,9 @@ Unreal/웹 클라이언트가 WebSocket으로 보내는 `agent.request` 메시�
 
 - **WebSocket 경로**: `/ws/agent`
 - **연결 매니페스트(GET)**: `/api/v1/agent-connection` — 사용 가능한 에이전트 목록과 샘플 요청을 런타임에 조회할 수 있습니다.
+- **생성 이미지 정적 경로(GET)**: `/materials/{material_id}/{asset_name}.png` — 생성된 material 이미지 파일을 직접 조회합니다.
 - **헬스 체크**: `/health`
-- 근거 소스: `src/protocol/messages.py`, `src/agent_connection/router.py`, `src/agents/material_generation/schemas.py`, `src/agents/pipeline/runtime.py`
+- 근거 소스: `src/app.py`, `src/protocol/messages.py`, `src/agent_connection/router.py`, `src/agents/material_generation/schemas.py`, `src/agents/material_generation/router.py`, `src/agents/pipeline/runtime.py`
 
 ---
 
@@ -93,6 +94,31 @@ Unreal/웹 클라이언트가 WebSocket으로 보내는 `agent.request` 메시�
 | `generate_visual_asset` | bool | 선택 | `true` | 합성 성공 시 아이콘/텍스처/썸네일 생성 여부 |
 
 > `player_id`는 payload에 넣지 않습니다 — 엔벨로프의 `session_id`에서 파생됩니다(`runtime.py:239`).
+
+**생성 이미지 조회**
+
+`generate_visual_asset=true`인 신규 material은 백그라운드에서 이미지 생성이 진행됩니다. 생성 상태와 asset key는
+`GET /api/v1/materials/{material_id}/visual-status`로 조회합니다.
+
+```json
+{
+  "material_id": "mat_001",
+  "visual_status": "visual_ready",
+  "visual_asset_key": "materials/mat_001/icon.png",
+  "texture_asset_key": "materials/mat_001/texture.png",
+  "thumbnail_asset_key": "materials/mat_001/thumbnail.png"
+}
+```
+
+asset key는 서버의 `FACTORY_IMAGE_STORAGE_PATH`(기본값: `var/assets`) 아래 상대 경로입니다. 클라이언트가 이미지를 직접 받을 때는 asset key 앞에 `/`를 붙여 요청합니다.
+
+| asset key | GET 경로 |
+|-----------|----------|
+| `materials/{material_id}/icon.png` | `/materials/{material_id}/icon.png` |
+| `materials/{material_id}/texture.png` | `/materials/{material_id}/texture.png` |
+| `materials/{material_id}/thumbnail.png` | `/materials/{material_id}/thumbnail.png` |
+
+아직 생성되지 않았거나 존재하지 않는 파일은 정적 경로에서 `404`를 반환합니다.
 
 **머신 × 입력 조합에 따른 결과(`result_type`)**
 
