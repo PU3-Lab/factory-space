@@ -124,11 +124,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Grid|Conveyor", meta = (ClampMin = "1.0"))
 	float OJJ_PipeOverpassClearance = 100.0f;
 
-	// #182 ⭐ 공유 경사 주행 한계(uu) — 파이프·컨베이어 공용 경사 게이트 단일 상수(설계: 경사 한계는 두 시스템 동일).
-	// 경로 인접 셀 간 |ΔZ|가 이 값 이하면 통과(자연 경사: 물가 둑/언덕/완경사), 초과면 거부(진짜 수직 벽/절벽).
-	// 기본 300 = 물가 둑(펌프 수면 −980 → 물가 지형, 실측 ~208uu)은 통과시키고 수직 벽(500uu+)은 막는 값.
-	// #249: 파이프(OJJ_GetPipeCellSurfaceZ 경로)와 컨베이어 **raw-terrain 경로**가 이 상수를 공유(공용화 완성).
-	// 단 컨베이어의 Foundation/램프 경로는 여전히 OJJ_MaxConveyorStepZ(100) — 램프 MaxRampStepPerRow=100 가정 보존.
+	// ⭐ 컨베이어 raw-terrain 경사 주행 한계(uu) — 인접 경로 셀 간 |ΔZ|가 이 값 이하면 통과(자연 경사: 물가
+	// 둑/언덕/완경사), 초과면 거부(수직 벽/절벽). 기본 300 = 물가 둑(실측 ~208uu)은 통과·수직 벽(500uu+)은 막는 값.
+	// ※ 소비처는 **컨베이어 raw 경로 전용**(OJJ_ValidateConveyorSlopePath). 컨베이어는 중력 의존이라 절벽 거부 유지.
+	// [파이프 경사 제한 제거] 파이프는 압송이라 수직 포함 임의 |ΔZ| 통과 — 이 상수를 더는 참조하지 않는다(과거 #182에서
+	// 공유했으나 분리됨). Foundation/램프 컨베이어 경로는 OJJ_MaxConveyorStepZ(100) 별도(램프 MaxRampStepPerRow 가정 보존).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Conveyor", meta = (ClampMin = "1.0"))
 	float OJJ_MaxSlopeStepZ = 300.0f;
 
@@ -856,9 +856,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
 	float OJJ_GetMaxConveyorStepZ() const { return OJJ_MaxConveyorStepZ; }
 
-	// #249 raw-terrain 컨베이어/파이프 공유 경사 게이트 한계(uu) 접근자. 파이프(OJJ_GetPipeCellSurfaceZ 경로)와
-	// 컨베이어 raw-terrain 경로가 동일 상수를 참조해 자연 경사(물가 둑 등)는 통과·수직 벽은 거부. Foundation/램프
-	// 컨베이어 경로는 여전히 OJJ_GetMaxConveyorStepZ(100)을 쓴다(램프 MaxRampStepPerRow 가정 보존).
+	// #249 컨베이어 raw-terrain 경사 게이트 한계(uu) 접근자 — **컨베이어 raw 경로 전용**(파이프는 경사 제한 제거됨).
+	// raw 경로 인접 셀 |ΔZ| 판정에 쓰여 자연 경사(물가 둑 등)는 통과·수직 벽은 거부. Foundation/램프 컨베이어
+	// 경로는 OJJ_GetMaxConveyorStepZ(100) 별도(램프 MaxRampStepPerRow 가정 보존).
 	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
 	float OJJ_GetMaxSlopeStepZ() const { return OJJ_MaxSlopeStepZ; }
 

@@ -2553,32 +2553,19 @@ bool AOJJ_Grid::OJJ_ValidatePipePlacement(const TArray<FIntPoint>& PathCells,
 		return false;
 	}
 
-	// ① 셀별 지형추종 Z + 완만 경사 게이트(#182) — 파이프는 물·땅·Foundation·굴곡(blocked) 어디든 깔린다.
-	// OJJ_GetPipeCellSurfaceZ가 셀마다 면 Z(물 수면/Foundation 상면/지형 GroundZ/평면)를 주고, 인접 셀
-	// |ΔZ|가 OJJ_MaxSlopeStepZ(공유 경사 한계, 기본 300) 이하면 통과(자연 경사: 물가 둑/언덕), 초과면 거부
-	// (수직 벽/절벽) — blocked 게이트(bAllowBlockedCells)로 들어온 셀을 여기서 절벽/자연경사로 가른다. 컨베이어는
-	// blocked 자체가 수집기에서 막혀 이 경로에 도달하지 않음(파이프 전용). 구 균일 SurfaceZ 규칙 대체(F4-1 평면 한정 → 경사 확장).
-	// ※ Z는 셀별 지형추종(CellLifts, OJJ_TryPlacePipe) → 단순 한계값 상향이 아니라 면을 따라가 박힘 없음. 게이트는
-	// 추종 후 셀간 |ΔZ|로 수직 벽만 거른다(Codex 교차검증 Q1·Q2 동의). 공유 상수라 다음 패스에서 컨베이어도 재사용.
-	// OutPathSurfaceZ = 경로 최저 면 Z(액터 base) — OJJ_TryPlacePipe가 셀별 lift로 base 위에서 지형을 추종.
+	// ① 셀별 지형추종 Z(#182) — 파이프는 물·땅·Foundation·굴곡(blocked) 어디든 깔린다. OJJ_GetPipeCellSurfaceZ가
+	// 셀마다 면 Z(물 수면/Foundation 상면/지형 GroundZ/평면)를 준다.
+	// [경사 제한 제거] 파이프는 압송이라 수직 포함 임의 |ΔZ| 통과 — 인접 셀 경사/절벽 STEP 게이트를 삭제했다.
+	// (게임 설계: 펌프 압력으로 둑/절벽을 넘어 압송 가능. 컨베이어는 중력 의존이라 OJJ_ValidateConveyorSlopePath에서
+	//  여전히 절벽 거부 — OJJ_MaxSlopeStepZ는 이제 컨베이어-raw 전용 한계.) water/blocked 통과 허용·거부는
+	//  OJJ_CollectConveyorReservedCells 공유 게이트가 처리(void는 계속 거부). Z는 셀별 지형추종(CellLifts,
+	//  OJJ_TryPlacePipe)이라 면을 따라가 박힘 없음.
+	// OutPathSurfaceZ = 경로 최저 면 Z(액터 base) — OJJ_TryPlacePipe가 셀별 lift로 base 위에서 지형을 추종(제한 제거 후에도 유지).
 	float MinSurfaceZ = TNumericLimits<float>::Max();
-	float PrevCellZ = 0.0f;
 	for (int32 i = 0; i < OutPlacementCells.Num(); ++i)
 	{
 		const float CellZ = OJJ_GetPipeCellSurfaceZ(OutPlacementCells[i]);
-		if (i > 0)
-		{
-			const float StepZ = FMath::Abs(CellZ - PrevCellZ);
-			if (StepZ > OJJ_MaxSlopeStepZ + KINDA_SMALL_NUMBER)
-			{
-				OutReason = FString::Printf(
-					TEXT("Pipe path is too steep between cells (%.0fuu > %.0fuu) — cliff/wall blocked, reroute around it."),
-					StepZ, OJJ_MaxSlopeStepZ);
-				return false;
-			}
-		}
 		MinSurfaceZ = FMath::Min(MinSurfaceZ, CellZ);
-		PrevCellZ = CellZ;
 	}
 	if (OutPlacementCells.Num() > 0)
 	{
