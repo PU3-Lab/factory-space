@@ -38,13 +38,20 @@ class ManualQARagRuntime(Protocol):
 class ManualQAService:
     """질문 분류, CSV 근거 수집, prompt 생성을 한 곳에서 조율한다."""
 
+    _global_rag_runtime: ManualQARagRuntime | None = None
+
+    @classmethod
+    def set_global_rag_runtime(cls, rag_runtime: ManualQARagRuntime | None) -> None:
+        """글로벌 RAG 런타임 인스턴스를 설정한다."""
+        cls._global_rag_runtime = rag_runtime
+
     def __init__(
         self,
         repository: CsvManualQARepository | None = None,
         rag_runtime: ManualQARagRuntime | None = None,
     ) -> None:
         self._repository = repository or CsvManualQARepository()
-        self._rag_runtime = rag_runtime
+        self._rag_runtime = rag_runtime or self._global_rag_runtime
         self._question_classifier = ManualQAQuestionClassifier(self._repository)
         self._context_builder = ManualQAContextBuilder(self._repository)
         self._prompt_builder = ManualQAPromptBuilder()
