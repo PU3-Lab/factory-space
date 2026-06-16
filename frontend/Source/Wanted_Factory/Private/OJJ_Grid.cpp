@@ -1870,6 +1870,14 @@ float AOJJ_Grid::OJJ_GetCellVisualBaseZ(FIntPoint Cell) const
 
 float AOJJ_Grid::OJJ_GetCellVisualBaseZInternal(FIntPoint Cell, bool bGroundZValid) const
 {
+	// #182 ⭐ 물 위 가시성: water 셀이면 수면 Z + 리프트로 — 오버레이/호버/포트 화살표가 WaterArea 수면 메시
+	// 위에 렌더돼 보인다(지형바닥 −997에 깔려 수면 메시 −980에 가리던 문제 해소 → 물 위 정확한 클릭 가능).
+	// 시각 전용 단일원이라 오버레이·호버·화살표가 한 번에 수면 위로 올라온다. 판정 Z는 별도(영향 없음).
+	float WaterZ = 0.0f;
+	if (GetWaterSurfaceZAtCell(Cell, WaterZ))
+	{
+		return WaterZ + VisualZLift;
+	}
 	// 우선순위: Foundation 상면 > 지형(GroundZ 추종) > 평면. GroundZ 무효(미베이크/시그니처 불일치) 맵은
 	// 평면 폴백 = 기존 동작(회귀 0). GroundZ는 셀 최고점 기준(F2-1) — 타일이 셀 안 지형면 위에 위치.
 	// 직배치 액터 Z도 풋프린트 최고점(OJJ_GetUniformSurfaceZ)이라 비주얼-액터 편차는 풋프린트 내
@@ -4005,6 +4013,7 @@ void AOJJ_Grid::OJJ_EmitPortArrows(
 
 		const FVector CellCenter = GridToWorld(Cell);
 		// F1-c: 기준면 추종 — Foundation 위 머신의 화살표가 평면 높이에 묻히지 않게(머신 Z 안착과 동일 데이터).
+		// #182 물 위 포트: OJJ_GetCellVisualBaseZ가 water 셀에 수면 Z를 반환(중앙화) → 화살표도 수면 위에 표시.
 		const FVector Location(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(Cell) + PortArrowHeightOffset);
 
 		// 콘 메시 apex(+Z)를 수평 FacingDir로 정렬.
