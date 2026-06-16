@@ -31,6 +31,7 @@
 #include "Machines/LiquidTank.h"
 #include "Machines/WarehousePort.h"
 #include "PlayerWarehouseSubsystem.h"
+#include "UI/UI_WarehouseInteract.h"
 
 AOJJ_Player::AOJJ_Player()
 {
@@ -928,120 +929,144 @@ void AOJJ_Player::SendOperatorGuideRequest()
 
 void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 {
-	// UI는 로컬 전용 — 멀티플레이에서 비로컬 폰의 입력으로 위젯을 띄우지 않도록 가드.
 	if (!IsLocallyControlled()) return;
 
 	APlayerController* PC = Cast<APlayerController>(GetController());
 	if (!PC) return;
 
 	if (BuildController && BuildController->IsInBuildMode()) return;
+	
+	FInputModeGameAndUI QuickFixMode;
+	QuickFixMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	// 현재 포커스를 강제로 게임 뷰포트로 지정하여 굳어버린 키보드 입력을 깨웁니다.
+	QuickFixMode.SetWidgetToFocus(nullptr); 
+	PC->SetInputMode(QuickFixMode);
 
-	if (bIsInventoryOpen || (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()))
-	{
-		if (MachineInteractWidgetInstance.IsValid())
-		{
-			MachineInteractWidgetInstance->RemoveFromParent();
-			MachineInteractWidgetInstance = nullptr;
-		}
+    // 일반 기계창, 창고창, 가방창 중 하나라도 열려 있으면 무조건 전부 다 닫습니다.
+    if (bIsInventoryOpen || 
+        (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()) ||
+        (WarehouseInteractWidgetInstance && WarehouseInteractWidgetInstance->IsInViewport())) // 창고 닫기 가드 추가
+    {
+       if (MachineInteractWidgetInstance.IsValid())
+       {
+          MachineInteractWidgetInstance->RemoveFromParent();
+          MachineInteractWidgetInstance = nullptr;
+       }
 
-		if (InventoryWidgetInstance)
-		{
-			InventoryWidgetInstance->RemoveFromParent();
-		}
-		bIsInventoryOpen = false; // 락 해제
-		GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle); // 타이머 확실히 소멸
+       // 띄워져 있던 창고 창을 부모로부터 제거하고 메모리 초기화
+       if (WarehouseInteractWidgetInstance)
+       {
+          WarehouseInteractWidgetInstance->RemoveFromParent();
+          WarehouseInteractWidgetInstance = nullptr;
+       }
 
-		PC->SetInputMode(FInputModeGameOnly());
-		PC->SetShowMouseCursor(false);
-		return;
-	}
+       if (InventoryWidgetInstance)
+       {
+          InventoryWidgetInstance->RemoveFromParent();
+       }
+       bIsInventoryOpen = false;
+       GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
 
-	UWorld* World = GetWorld();
-	if (!Camera || !World)
-	{
-		return;
-	}
+       PC->SetInputMode(FInputModeGameOnly());
+       PC->SetShowMouseCursor(false);
+       return;
+    }
 
-	// 카메라 전방 라인 트레이스 — 빌드모드 호버와 동일 채널(ECC_Visibility), 거리만 MaxInteractDistance.
-	const FVector TraceStart = Camera->GetComponentLocation();
-	const FVector TraceEnd = TraceStart + Camera->GetForwardVector() * MaxInteractDistance;
-	FHitResult Hit;
-	FCollisionQueryParams TraceParams(FName(TEXT("OJJMachineInteract")), /*bTraceComplex=*/ false, this);
-	const bool bHit = World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, TraceParams);
-	if (!bHit)
-	{
-		return;
-	}
+    UWorld* World = GetWorld();
+    if (!Camera || !World) return;
 
-	// 히트 액터가 머신(또는 파생)일 때만 상호작용.
-	AMachineBase* Machine = Cast<AMachineBase>(Hit.GetActor());
-	if (!Machine)
-	{
-		return;
-	}
+    const FVector TraceStart = Camera->GetComponentLocation();
+    const FVector TraceEnd = TraceStart + Camera->GetForwardVector() * MaxInteractDistance;
+    FHitResult Hit;
+    FCollisionQueryParams TraceParams(FName(TEXT("OJJMachineInteract")), false, this);
+    const bool bHit = World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, TraceParams);
+    if (!bHit) return;
 
-	if (!MachineInteractWidgetClass)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[OJJ_Player] MachineInteractWidgetClass 미할당 — 머신 상호작용(F) 비활성. ")
-			TEXT("BP_OJJ_Player에 WBP_MachineInteract 할당 필요."));
-		return;
-	}
+    AMachineBase* Machine = Cast<AMachineBase>(Hit.GetActor());
+    if (!Machine) return;
 
-	UUI_MachineInteract* Widget = CreateWidget<UUI_MachineInteract>(PC, MachineInteractWidgetClass);
-	if (!Widget)
-	{
-		return;
-	}
-	Widget->SetTargetMachine(Machine);
-	MachineInteractWidgetInstance = Widget;
-	Widget->AddToViewport(); //
-	Widget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
-	const bool bIsWarehousePort = Machine->IsA(AWarehousePort::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse"));
-	const bool bIsLiquidTank = Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("LiquidTank"));
-	if (bIsWarehousePort || bIsLiquidTank)
-	{
-		// 인벤토리 위젯이 아직 없다면 새로 생성
-		if (!InventoryWidgetInstance && InventoryWidgetClass)
-		{
-			InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
-		}
+    // 바라본 기계가 '창고' 계열인지 검사합니다
+    if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
+    {
+       if (!WarehouseInteractWidgetClass)
+       {
+          UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] WarehouseInteractWidgetClass 미할당! BP에서 할당하세요."));
+          return;
+       }
 
-		if (InventoryWidgetInstance)
-		{
-			InventoryWidgetInstance->SetItemFormFilter(bIsLiquidTank ? FName(TEXT("liquid")) : FName(TEXT("solid")));
-			InventoryWidgetInstance->AddToViewport();
-			InventoryWidgetInstance->RefreshInventoryWindow(); // 최초 1회 생성 레이아웃 틀 짜기
-			bIsInventoryOpen = true;
-			
-			GetWorldTimerManager().SetTimer(
-			   InventoryRefreshTimerHandle, 
-			   this, 
-			   &AOJJ_Player::UpdateInventoryRealtime, 
-			   0.1f, 
-			   true
-			);
+       // 창고 전용 UI 창
+       UUI_WarehouseInteract* WHWidget = CreateWidget<UUI_WarehouseInteract>(PC, WarehouseInteractWidgetClass);
+       if (WHWidget)
+       {
+          WHWidget->SetTargetMachine(Machine);
+          WarehouseInteractWidgetInstance = WHWidget;
+          WHWidget->AddToViewport();
+          WHWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
+       }
+    }
+    else
+    {
+       // 일반 기계(제련기, 분쇄기 등)라면 기존 일반 상호작용 UI 창
+       if (!MachineInteractWidgetClass) return;
+
+       UUI_MachineInteract* Widget = CreateWidget<UUI_MachineInteract>(PC, MachineInteractWidgetClass);
+       if (Widget)
+       {
+          Widget->SetTargetMachine(Machine);
+          MachineInteractWidgetInstance = Widget;
+          Widget->AddToViewport();
+          Widget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
+       }
+    }
+
+    // 창고 포트 계열일 때 우측에 유저 가방 창 세트로 동시 소환하는 로직 (기존 유지)
+    if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
+    {
+       if (!InventoryWidgetInstance && InventoryWidgetClass)
+       {
+          InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
+       }
+
+       if (InventoryWidgetInstance)
+       {
+          InventoryWidgetInstance->AddToViewport();
+          InventoryWidgetInstance->RefreshInventoryWindow();
+          bIsInventoryOpen = true;
+
+          GetWorldTimerManager().SetTimer(
+             InventoryRefreshTimerHandle, 
+             this, 
+             &AOJJ_Player::UpdateInventoryRealtime, 
+             0.1f, 
+             true
+          );
             
-			UE_LOG(LogTemp, Log, TEXT("[F키 성공] 창고와 가방 창을 동시에 성공적으로 활성화했습니다."));
-		}
-	}
+          UE_LOG(LogTemp, Log, TEXT("[창고 F키 성공] 창고 전용 창과 가방 창을 완벽하게 동시 활성화했습니다!"));
+       }
+    }
 
-	// 마우스 가로채기 억까(TakeWidget)가 완벽히 배제된 정석 프리 인풋 세팅
-	FInputModeGameAndUI InputModeData;
-	InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	PC->SetInputMode(InputModeData);
-	PC->SetShowMouseCursor(true);
+    FInputModeGameAndUI InputModeData;
+    InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+    PC->SetInputMode(InputModeData);
+    PC->SetShowMouseCursor(true);
 }
 
 void AOJJ_Player::CloseMachineInteractWidget(APlayerController* PC)
 {
+	// 1. 기존 일반 기계창 끄기
 	if (UUI_MachineInteract* Widget = MachineInteractWidgetInstance.Get())
 	{
 		Widget->RemoveFromParent();
 	}
 	MachineInteractWidgetInstance = nullptr;
 
-	// 닫을 때: 게임 전용 입력 복원 + 커서 숨김.
+	// 2. 창고 전용 UI 창이 켜져 있었다면 부모에게서 떼어내고 클리어
+	if (WarehouseInteractWidgetInstance)
+	{
+		WarehouseInteractWidgetInstance->RemoveFromParent();
+		WarehouseInteractWidgetInstance = nullptr;
+	}
+
 	if (PC)
 	{
 		PC->SetInputMode(FInputModeGameOnly());

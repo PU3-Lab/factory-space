@@ -3,18 +3,17 @@
 #include "Components/TextBlock.h"
 #include "Components/ProgressBar.h"
 #include "Components/Button.h"
-#include "Components/Border.h"
 #include "Engine/DataTable.h"
 #include "Resource/ResourceData.h"
 #include "Machines/MachineTable.h"
+#include "Machines/WarehousePort.h"
 #include "ItemDragDropOperation.h"
 #include "OJJ_Player.h"
 #include "UI/UI_Inventory.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "Blueprint/SlateBlueprintLibrary.h"
-#include "MachineBase.h"
-#include "Machines/MachineTable.h"
-#include "UI_WarehouseInteract.generated.h"
+#include "Components/Border.h"
+
 
 
 void UUI_WarehouseInteract::SetTargetMachine(AMachineBase* InMachine)
@@ -59,9 +58,6 @@ void UUI_WarehouseInteract::NativeTick(const FGeometry& MyGeometry, float InDelt
 {
     Super::NativeTick(MyGeometry, InDeltaTime);
     if (!TargetMachine) return;
-    
-    // 🌟 [입력 UI 갱신 로직 통째로 삭제 완료!]
-
     // 우측 출력 버퍼 실시간 스캔 및 노출
     FRecipeTable Recipe = TargetMachine->GetCurrentRecipe();
     FName OutputName = Recipe.OutputItem1;
@@ -131,26 +127,30 @@ void UUI_WarehouseInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, 
 
 bool UUI_WarehouseInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
+    // 1. 드래그 오퍼레이션 안전성 캐스팅 검사
     UItemDragDropOperation* ItemDragOp = Cast<UItemDragDropOperation>(InOperation);
     if (!ItemDragOp || !TargetMachine || !B_OutputDropZone) return false;
     
-    // 센서 패드 범위 검사
+    // 배달부 안의 진짜 변수명인 DraggedItemID를 안전하게 꺼내옵니다.
+    FName TargetItemID = ItemDragOp->DraggedItemID; 
+
+    // 2. 센서 패드 마우스 핫존 범위 검사
     FVector2D DropScreenPos = InDragDropEvent.GetScreenSpacePosition();
     if (!USlateBlueprintLibrary::IsUnderLocation(B_OutputDropZone->GetCachedGeometry(), DropScreenPos)) return false;
 
-    FName DroppedItemID = ItemDragOp->DraggedItemID;
-
+    // 3. 서브시스템 아이템 차감 및 창고 출력 버퍼 가산 진행
     UGameInstance* GI = GetGameInstance();
     if (GI)
     {
         UPlayerWarehouseSubsystem* WarehouseSubsystem = GI->GetSubsystem<UPlayerWarehouseSubsystem>();
-        if (WarehouseSubsystem && WarehouseSubsystem->TakeItem(DroppedItemID, 1)) 
+        
+        if (WarehouseSubsystem && WarehouseSubsystem->TakeItem(TargetItemID, 1)) 
         {
-            // 🌟 [정정] 창고이므로 입력칸이 아닌 출력 버퍼(OutputBuffer)에 아이템을 누적 가산합니다!
-            //TargetMachine->GetOutputBuffer().FindOrAdd(DroppedItemID) += 1;
-            ManualDroppedOutputItemID = DroppedItemID;
+            TargetMachine->AddItem(TargetItemID, 1);
             
-            // 가방 UI 새로고침 촉발
+            ManualDroppedOutputItemID = TargetItemID;
+            
+            // 가방 슬롯 UI 실시간 동기화 새로고침 촉발
             APlayerController* PC = GetOwningPlayer();
             if (PC)
             {

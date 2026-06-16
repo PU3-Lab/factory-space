@@ -64,6 +64,12 @@ protected:
 	UPROPERTY()
 	class UUI_Inventory* InventoryWidgetInstance;
 	FTimerHandle InventoryRefreshTimerHandle;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
+	TSubclassOf<class UUI_WarehouseInteract> WarehouseInteractWidgetClass;
+
+	UPROPERTY()
+	class UUI_WarehouseInteract* WarehouseInteractWidgetInstance;
 	bool bIsInventoryOpen = false;
 	void TriggerInventoryToggle();
 	void UpdateInventoryRealtime();
