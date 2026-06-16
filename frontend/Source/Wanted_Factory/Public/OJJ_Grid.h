@@ -124,11 +124,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Grid|Conveyor", meta = (ClampMin = "1.0"))
 	float OJJ_PipeOverpassClearance = 100.0f;
 
-	// #182 ⭐ 공유 경사 주행 한계(uu) — 파이프·컨베이어 공용 경사 게이트 단일 상수(설계: 경사 한계는 두 시스템 동일).
-	// 경로 인접 셀 간 |ΔZ|가 이 값 이하면 통과(자연 경사: 물가 둑/언덕/완경사), 초과면 거부(진짜 수직 벽/절벽).
-	// 기본 300 = 물가 둑(펌프 수면 −980 → 물가 지형, 실측 ~208uu)은 통과시키고 수직 벽(500uu+)은 막는 값.
-	// 현재 파이프 게이트만 이 상수를 참조(셀별 지형추종 후 |ΔZ| 판정). 컨베이어는 별도 OJJ_MaxConveyorStepZ(100)
-	// 유지 → 이번 패스 회귀 0. 다음 컨베이어 지형추종 패스에서 컨베이어 게이트도 이 상수로 이관(공용화 완성).
+	// ⭐ 컨베이어 raw-terrain 경사 주행 한계(uu) — 인접 경로 셀 간 |ΔZ|가 이 값 이하면 통과(자연 경사: 물가
+	// 둑/언덕/완경사), 초과면 거부(수직 벽/절벽). 기본 300 = 물가 둑(실측 ~208uu)은 통과·수직 벽(500uu+)은 막는 값.
+	// ※ 소비처는 **컨베이어 raw 경로 전용**(OJJ_ValidateConveyorSlopePath). 컨베이어는 중력 의존이라 절벽 거부 유지.
+	// [파이프 경사 제한 제거] 파이프는 압송이라 수직 포함 임의 |ΔZ| 통과 — 이 상수를 더는 참조하지 않는다(과거 #182에서
+	// 공유했으나 분리됨). Foundation/램프 컨베이어 경로는 OJJ_MaxConveyorStepZ(100) 별도(램프 MaxRampStepPerRow 가정 보존).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Conveyor", meta = (ClampMin = "1.0"))
 	float OJJ_MaxSlopeStepZ = 300.0f;
 
@@ -720,6 +720,16 @@ public:
 	// 물·땅·Foundation·굴곡(blocked) 어디든 지형을 따라가는 파이프 Z를 셀 단위로 산출(경사 게이트/등록/비주얼 공용).
 	float OJJ_GetPipeCellSurfaceZ(FIntPoint Cell) const;
 
+	// #249 raw 지형 컨베이어 셀별 안착 Z = 베이크 GroundZ. 평면 폴백 금지(무효 GroundZ/off-grid면 false) —
+	// 검증·배치가 "유효 지형 높이 없으면 거부"를 단일원으로 공유(회귀가드: 장부/평면 의미 불변).
+	bool OJJ_GetRawTerrainSurfaceZ(FIntPoint Cell, float& OutSurfaceZ) const;
+
+	// #249 경로가 raw-terrain 지형추종 대상인지 판정(검증 OJJ_CollectConveyorReservedCells와 배치 OJJ_TryPlaceConveyor가
+	// 동일 소스 참조 → 분기 불일치 방지). 조건: ① 베이크 GroundZ 유효 ② 전 셀 valid grid ③ Foundation 셀 0개
+	// (all-raw — 혼합은 이번 패스 거부) ④ 셀 간 GroundZ 변화 존재(평탄 raw는 기존 uniform 평면 경로 유지 → 회귀 0).
+	// water 셀은 호출 게이트(bAllowWaterCells=false)가 이미 거부하므로 여기 도달 안 함.
+	bool OJJ_IsRawTerrainFollowPath(const TArray<FIntPoint>& PathCells) const;
+
 	// #182 커서 레이 ∩ 수면. 마우스 레이(RayOrigin/Dir)를 각 액체자원(WaterArea)의 수면 Z 평면과 교차시켜,
 	// 교차점이 그 WaterArea가 덮는 셀이면 그 셀을 OutCell로 반환(MaxDistance보다 가까운 가장 앞 수면). 깊은 물에서
 	// 커서 레이가 물을 통과해 물 밖 지형을 맞아 셀이 빗나가는 패럴랙스를 보이는 수면 기준으로 교정한다. C++ 전용.
@@ -845,6 +855,12 @@ public:
 	// 컨베이어 허용. 보행 불가 경고는 램프 배치 로그가 담당(컨베이어는 어차피 비보행).
 	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
 	float OJJ_GetMaxConveyorStepZ() const { return OJJ_MaxConveyorStepZ; }
+
+	// #249 컨베이어 raw-terrain 경사 게이트 한계(uu) 접근자 — **컨베이어 raw 경로 전용**(파이프는 경사 제한 제거됨).
+	// raw 경로 인접 셀 |ΔZ| 판정에 쓰여 자연 경사(물가 둑 등)는 통과·수직 벽은 거부. Foundation/램프 컨베이어
+	// 경로는 OJJ_GetMaxConveyorStepZ(100) 별도(램프 MaxRampStepPerRow 가정 보존).
+	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
+	float OJJ_GetMaxSlopeStepZ() const { return OJJ_MaxSlopeStepZ; }
 
 	// Foundation 배치 호버 미리보기 — 풋프린트 전체를 단일색 녹(가능)/적(불가)으로 표시.
 	// 단일 진실원: 색 판정 = 클릭 시 판정(CanPlaceFoundation) — 머신 UpdateHoverPreview와 동일 정책
@@ -1022,7 +1038,10 @@ public:
 	// 실패 시 OutReason에 사유. (포트 판정/연속성/충돌은 내부 OJJ_CollectConveyorReservedCells로 검증.) C++ 전용.
 	// bAllowConveyorOverpass: 파이프 정규화(OJJ_BuildPipePlacementPath)가 true 전달 — 내부 수집 검증이
 	// 컨베이어 점유 셀을 타넘기로 허용. 컨베이어 호출(기본 false)은 기존 동작 그대로.
-	// bAllowBlockedCells: 파이프가 blocked(굴곡) 셀을 통과 허용(절벽 거부는 경사 게이트가 별도). 컨베이어 false.
+	// bAllowBlockedCells: blocked(굴곡/경사/절벽) 셀 통과 허용(절벽 거부는 경사 게이트가 |ΔZ|로 별도 판정).
+	// #249부터 컨베이어 기본값 true — raw-terrain 지형추종이 가파른 자연 둑(blocked)을 GroundZ 따라 타고 넘되
+	// |ΔZ|>OJJ_MaxSlopeStepZ(300)인 수직 벽은 경사 게이트가 거부. water 거부는 bAllowWaterCells=false가 유지.
+	// (호버/빌드/드래그/CanPlace 전 컨베이어 호출이 이 기본값을 공유 → 셀 확정 소스 일치, 분기 divergence 0.)
 bool OJJ_BuildConveyorPlacementPath(
 	const TArray<FIntPoint>& DragCells,
 	TArray<FIntPoint>& OutPathCells,
@@ -1030,7 +1049,7 @@ bool OJJ_BuildConveyorPlacementPath(
 	bool bAllowConveyorOverpass = false,
 	bool bAllowLiquidMachines = false,
 	bool bAllowWaterCells = false,
-	bool bAllowBlockedCells = false) const;
+	bool bAllowBlockedCells = true) const;
 
 	// 주어진 경로가 배치 가능한지만 판정(예약셀 산출 없이 OJJ_CollectConveyorReservedCells 래핑). C++ 전용.
 	bool OJJ_CanPlaceConveyorPath(const TArray<FIntPoint>& PathCells) const;
