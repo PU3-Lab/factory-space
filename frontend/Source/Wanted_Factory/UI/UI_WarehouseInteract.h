@@ -2,6 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Machines/WarehousePort.h" 
+#include "MachineBase.h"
+#include "Machines/MachineTable.h"
+#include "Machines/LiquidTank.h"    
 #include "UI_WarehouseInteract.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnWarehouseClosed);
@@ -27,6 +31,8 @@ protected:
     UPROPERTY(meta = (BindWidget)) class UProgressBar* PB_OutputBuffer;
     UPROPERTY(meta = (BindWidget)) class UBorder* B_OutputDropZone; // 마우스 센서 패드
     UPROPERTY(meta = (BindWidget)) class UImage* IMG_OutputIcon;
+    UPROPERTY(meta = (BindWidget)) class UProgressBar* PB_CraftingProgress;
+    UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_ProgressPercent;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Data") class UDataTable* MachineDataTable;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Data") class UDataTable* ResourceDataTable;
@@ -43,13 +49,19 @@ protected:
     void UpdateMachineName(FString MachineName);
     void UpdateMachineState(FString StateText, FLinearColor StateColor);
     void UpdateDurabilityUI(float CurrentDurability, float MaxDurability);
-
+    void UpdateCraftingProgress(float Percent);
+    
     UFUNCTION() void OnCloseClicked();
     UFUNCTION() void OnRepairClicked();
 
     // 드래그 앤 드롭 수용
     virtual bool NativeOnDrop(const FGeometry& MyGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+    // 출력 칸에서 아이템을 집어 가방으로 던지기 위한 마우스 인풋 오버라이드
+    virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+    virtual void NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation) override;
 
+    // 아이템을 뺏을 때 기계 가동을 취소하고 품목을 초기화하는 함수
+    void CancelMachineProcess();
 public:
     void SetTargetMachine(AMachineBase* InMachine);
     
