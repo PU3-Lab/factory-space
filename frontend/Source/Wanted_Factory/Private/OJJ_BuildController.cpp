@@ -22,13 +22,17 @@
 #include "Machines/Grinder.h"
 #include "Machines/MachineSubsystem.h"
 #include "Machines/MinerMachine.h"
+#include "Machines/MoldingMachine.h"
 #include "Machines/Pump.h"
 #include "Machines/LiquidTank.h"
 #include "Machines/Smelter.h"
+#include "Machines/Synthesizer.h"
+#include "Machines/TeleCommunicationTower.h"
 #include "Machines/WarehousePort.h"
 #include "OJJ_Foundation.h"
 #include "OJJ_ProtectionTower.h"
 #include "Pipe.h"
+#include "PlayerWarehouseSubsystem.h"
 #include "QuestManagerSubsystem.h"
 #include "Resource/ResourceBase.h"
 
@@ -80,6 +84,12 @@ namespace
 			return TEXT("Conveyor");
 		case EOJJ_BuildPlacementMode::LiquidTank:
 			return TEXT("LiquidTank"); // F4-1' — ALiquidTank ctor의 MachineType과 동일 표기.
+		case EOJJ_BuildPlacementMode::MoldingMachine:
+			return TEXT("MoldingMachine");
+		case EOJJ_BuildPlacementMode::Synthesizer:
+			return TEXT("Synthesizer");
+		case EOJJ_BuildPlacementMode::TeleCommunicationTower:
+			return TEXT("TeleCommunicationTower");
 		default:
 			return NAME_None;
 		}
@@ -105,6 +115,24 @@ namespace
 			QuestManager->NotifyMainQuestMachinePlaced(MachineType);
 			QuestManager->NotifyTutorialEvent(TEXT("PlaceMachine"), MachineType);
 		}
+	}
+
+	FName GetRequiredInventoryItemForPlacement(const AMachineBase* Machine)
+	{
+		if (Machine && Machine->GetMachineType() == TEXT("TeleCommunicationTower"))
+		{
+			return TEXT("TeleCommunicationTower");
+		}
+
+		return NAME_None;
+	}
+
+	UPlayerWarehouseSubsystem* GetWarehouseSubsystem(UObject* Context)
+	{
+		UGameInstance* GameInstance = Context && Context->GetWorld()
+			? Context->GetWorld()->GetGameInstance()
+			: nullptr;
+		return GameInstance ? GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>() : nullptr;
 	}
 
 	void NotifyTutorialQuestEvent(UObject* Context, FName EventId)
@@ -149,6 +177,9 @@ AOJJ_BuildController::AOJJ_BuildController()
 	PumpClass = APump::StaticClass();
 	SmelterClass = ASmelter::StaticClass();
 	WarehouseClass = AWarehousePort::StaticClass();
+	MoldingMachineClass = AMoldingMachine::StaticClass();
+	SynthesizerClass = ASynthesizer::StaticClass();
+	TeleCommunicationTowerClass = ATeleCommunicationTower::StaticClass();
 }
 
 void AOJJ_BuildController::Tick(float DeltaSeconds)
@@ -220,6 +251,21 @@ void AOJJ_BuildController::EnterBuildMode()
 	if (PlacementMode == EOJJ_BuildPlacementMode::LiquidTank && !LiquidTankClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] LiquidTankClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::MoldingMachine && !MoldingMachineClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] MoldingMachineClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::Synthesizer && !SynthesizerClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] SynthesizerClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::TeleCommunicationTower && !TeleCommunicationTowerClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] TeleCommunicationTowerClass missing. EnterBuildMode stopped."));
 		return;
 	}
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor && !ConveyorClass)
@@ -346,6 +392,8 @@ void AOJJ_BuildController::RotateHoverClockwise()
 			&& PlacementMode != EOJJ_BuildPlacementMode::Smelter
 			&& PlacementMode != EOJJ_BuildPlacementMode::Warehouse
 			&& PlacementMode != EOJJ_BuildPlacementMode::LiquidTank
+			&& PlacementMode != EOJJ_BuildPlacementMode::MoldingMachine
+			&& PlacementMode != EOJJ_BuildPlacementMode::Synthesizer
 			&& PlacementMode != EOJJ_BuildPlacementMode::Foundation))
 	{
 		return;
@@ -468,6 +516,21 @@ TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
 	if (PlacementMode == EOJJ_BuildPlacementMode::Warehouse)
 	{
 		return WarehouseClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::MoldingMachine)
+	{
+		return MoldingMachineClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::Synthesizer)
+	{
+		return SynthesizerClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::TeleCommunicationTower)
+	{
+		return TeleCommunicationTowerClass;
 	}
 
 	return MachineClass;
@@ -1043,6 +1106,20 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	// 써야 점유·중심·메시가 일치(Codex 지적 핵심). 호버 미리보기(UpdateMouseHover)와도 동일 step이라
 	// "미리보기 = 실제 배치" 정합.
 	ApplyMachineDataToDefault(this, DefaultMachine);
+	const FName RequiredPlacementItem = GetRequiredInventoryItemForPlacement(DefaultMachine);
+	UPlayerWarehouseSubsystem* WarehouseSubsystem = nullptr;
+	if (!RequiredPlacementItem.IsNone())
+	{
+		WarehouseSubsystem = GetWarehouseSubsystem(this);
+		if (!WarehouseSubsystem || !WarehouseSubsystem->CanTakeItem(RequiredPlacementItem, 1))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[BuildController] %s item is required before placing this machine."),
+				*RequiredPlacementItem.ToString());
+			return;
+		}
+	}
+
 	const FIntPoint Origin = ComputeOriginFromCursorCell(CurrentHoverCell, DefaultMachine, HoverRotationSteps);
 
 	if (!TargetGrid->CanPlaceMachine(DefaultMachine, Origin, HoverRotationSteps))
@@ -1085,6 +1162,16 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	// 메시 yaw 회전 — TryPlaceMachine이 회전 footprint 중심(GetMachinePlacementLocation(.., step))에
 	// 액터를 놓았으므로, 그 중심을 기준으로 yaw만 돌리면 center-anchor 메시가 회전 footprint와 정렬.
 	// 시계방향 90°×step (R 방향). 부호가 R 의도와 반대면 -90.f로.
+	if (!RequiredPlacementItem.IsNone() && (!WarehouseSubsystem || !WarehouseSubsystem->TakeItem(RequiredPlacementItem, 1)))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[BuildController] Failed to consume %s item after placement. Reverting placement."),
+			*RequiredPlacementItem.ToString());
+		TargetGrid->RemoveMachine(NewMachine);
+		NewMachine->Destroy();
+		return;
+	}
+
 	NewMachine->SetActorRotation(FRotator(0.f, 90.f * HoverRotationSteps, 0.f));
 	NotifyMainQuestMachinePlaced(this, GetQuestPlacementTargetId(PlacementMode));
 
@@ -1444,6 +1531,9 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::Foundation: ModeName = TEXT("Foundation"); break;
 	case EOJJ_BuildPlacementMode::Pipe:      ModeName = TEXT("Pipe");       break;
 	case EOJJ_BuildPlacementMode::LiquidTank: ModeName = TEXT("LiquidTank"); break;
+	case EOJJ_BuildPlacementMode::MoldingMachine: ModeName = TEXT("MoldingMachine"); break;
+	case EOJJ_BuildPlacementMode::Synthesizer: ModeName = TEXT("Synthesizer"); break;
+	case EOJJ_BuildPlacementMode::TeleCommunicationTower: ModeName = TEXT("TeleCommunicationTower"); break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 

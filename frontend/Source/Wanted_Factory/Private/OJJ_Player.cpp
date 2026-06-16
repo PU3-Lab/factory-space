@@ -339,6 +339,9 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
 	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
+	PlayerInputComponent->BindKey(EKeys::O, IE_Pressed, this, &AOJJ_Player::SetMoldingMachineModeShortcut);
+	PlayerInputComponent->BindKey(EKeys::P, IE_Pressed, this, &AOJJ_Player::SetSynthesizerModeShortcut);
+	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &AOJJ_Player::SetTeleCommunicationTowerModeShortcut);
 	// Foundation G/H는 #196에서 Enhanced Input(IA_SetFoundationMode/IA_SetRampMode)로 전환 —
 	// 레거시 BindKey 제거(이중발화 차단). 바인딩은 위 BindAction 블록 + IMC_Build/BP 매핑(에디터).
 }
@@ -840,9 +843,13 @@ void AOJJ_Player::OJJ_SetBuildMode(const FString& ModeName)
 	{
 		BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::LiquidTank);
 	}
+	else if (Lower == TEXT("tower") || Lower == TEXT("telecommunicationtower"))
+	{
+		BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::TeleCommunicationTower);
+	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] OJJ_SetBuildMode: 알 수 없는 모드 '%s' (pipe|tank)"), *ModeName);
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] OJJ_SetBuildMode: unknown mode '%s' (pipe|tank|tower)"), *ModeName);
 	}
 }
 
@@ -959,7 +966,34 @@ void AOJJ_Player::SetSmelterMode(const FInputActionValue& Value)
 	}
 }
 
-// 창고 모드 진입(1키, generic Machine 진입 키 대체). generic SetMachineMode는 보존(미바인딩 시 dead) — 코드 삭제 없음.
+void AOJJ_Player::SetMoldingMachineModeShortcut()
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::MoldingMachine);
+}
+
+void AOJJ_Player::SetSynthesizerModeShortcut()
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Synthesizer);
+}
+
+// TeleCommunicationTower build mode shortcut.
+void AOJJ_Player::SetTeleCommunicationTowerModeShortcut()
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::TeleCommunicationTower);
+}
+
 void AOJJ_Player::SetWarehouseMode(const FInputActionValue& Value)
 {
 	if (!BuildController)
