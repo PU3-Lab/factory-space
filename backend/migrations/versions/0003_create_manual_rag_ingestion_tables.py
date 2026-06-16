@@ -1,6 +1,6 @@
 """create manual RAG ingestion tracking tables
 
-Revision ID: 0003_create_manual_rag_ingestion_tables
+Revision ID: 0003_manual_rag_ingest
 Revises: 0002_create_material_tables
 Create Date: 2026-06-16
 """
@@ -12,7 +12,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0003_create_manual_rag_ingestion_tables"
+revision: str = "0003_manual_rag_ingest"
 down_revision: str | None = "0002_create_material_tables"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

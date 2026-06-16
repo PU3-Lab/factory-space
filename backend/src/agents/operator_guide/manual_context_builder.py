@@ -23,7 +23,12 @@ from agents.operator_guide.schemas import (
 
 @dataclass(frozen=True)
 class ManualQAPromptContext:
-    """CSV evidence and metadata used to prompt the LLM."""
+    """LLM 프롬프트를 구성하는 데 사용되는 CSV 매뉴얼 근거, RAG 검색 결과 및 게임 상태 정보 등을 담는 데이터 컨텍스트입니다.
+
+    초보자용 설명:
+        이 클래스는 에이전트의 여러 로직(CSV 검색, RAG 검색, 실시간 게임 상태 조회)을 거쳐 수집된
+        모든 텍스트 정보와 메타데이터를 통합하여 프롬프트 빌더(Prompt Builder)에 전달하기 위한 바구니 역할을 합니다.
+    """
 
     result: ManualQAResult
     evidence: dict[str, Any]
@@ -31,6 +36,11 @@ class ManualQAPromptContext:
     rag_metadata: dict[str, Any] | None = None
     recent_conversation: list[dict[str, str]] = field(default_factory=list)
     confirmed_facts: list[str] = field(default_factory=list)
+    current_game_state_text: str = ""
+    requires_current_game_state: bool = False
+    used_current_game_state: bool = False
+    required_state_scopes: list[str] = field(default_factory=list)
+    available_scopes: list[str] = field(default_factory=list)
 
 
 class ManualQAContextBuilder:

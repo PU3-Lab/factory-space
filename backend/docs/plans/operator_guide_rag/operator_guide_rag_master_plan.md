@@ -985,6 +985,30 @@ PR 10. evaluation + debug endpoint
 - 검색 로그
 - evaluation report
 - debug endpoint
+
+PR 11. current game state final integration
+- LLM-based Context Need Classifier 최종화
+- Current Game State Tool 인터페이스
+- selectedMachine / inputInventory / outputInventory / powerStatus / currentRecipe / connectedConveyors / recentErrorEvents
+- 필요한 scope만 조회
+- RAG 근거와 current game state를 함께 prompt context에 포함
+- usedCurrentGameState / requiredStateScopes / availableScopes metadata
+
+PR 11.1. current game state final integration 보완
+- Sprint 15 리뷰에서 확인된 누락 scope 보완
+- connectedConveyors / recentErrorEvents 구현 및 테스트 추가
+- Context Need Classifier를 LLM/mockable 구조로 정리
+- 외부 LLM 없이 테스트 가능한 fake/mock classifier 경로 마련
+- rule-based fallback 유지
+- 깨진 한글 docstring 정리
+
+PR 12. end-to-end Unreal contract + portfolio polish
+- Unreal input/output JSON 최종 계약
+- 질문 가이드 탭 UI 계약
+- agent-test / Postman 시연 시나리오
+- 대표 질문 세트
+- 성공 / fallback / out-of-scope / current state 사용 예시
+- 최종 아키텍처 및 포트폴리오 문서
 ```
 
 ## 현재 진행 상태
@@ -1010,6 +1034,9 @@ PR 10. evaluation + debug endpoint
 [ ] 평가 질문 세트
 [ ] debug endpoint
 [ ] README/아키텍처 문서
+[ ] current game state final integration
+[ ] current game state final integration 보완
+[ ] Unreal 계약/시연/포트폴리오 정리
 ```
 
 ## 포트폴리오 어필 포인트

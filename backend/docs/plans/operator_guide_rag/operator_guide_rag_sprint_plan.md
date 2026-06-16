@@ -735,6 +735,117 @@ RAG ingestion과 운영 디버깅을 실무형으로 강화한다.
 - CSV 변경 후 re-ingest를 수동/관리자/API/CI 중 선택한 방식으로 실행할 수 있다.
 - reranker와 multilingual normalization은 확장 지점만 먼저 둔다.
 
+## Sprint 15. Current Game State Tool Final Integration
+
+### 목표
+
+operator_guide가 질문 의미를 보고 현재 게임 상태가 필요한지 판단한 뒤, 필요한 state scope만 조회해서 RAG 근거와 함께 답변하도록 만든다.
+
+이 Sprint는 기능 구현 기준 마지막 큰 축이다. 단순 매뉴얼 Q&A를 넘어서, 실제 플레이어의 현재 상황을 보고 답하는 튜토리얼 NPC로 확장한다.
+
+### 포함 범위
+
+- LLM-based `Context Need Classifier` 최종화
+- `Current Game State Tool` 인터페이스 및 mock 구현
+- state scope schema 정의
+- `selectedMachine`
+- `inputInventory`
+- `outputInventory`
+- `powerStatus`
+- `currentRecipe`
+- `connectedConveyors`
+- `recentErrorEvents`
+- 필요한 scope만 조회하는 tool call 흐름
+- current game state를 prompt context에 연결
+- 최종 응답 metadata에 current state 사용 여부 기록
+- 테스트 및 agent-test 예시 추가
+
+### 제외 범위
+
+- Unreal 실제 상태 API 구현
+- 게임 오브젝트 전체 상태를 매 요청마다 모두 조회하는 구조
+- 자동 행동 실행 또는 게임 상태 변경
+- Human-in-the-loop 승인 플로우
+
+### 완료 기준
+
+- 현재 상태가 필요 없는 질문에서는 Current Game State Tool이 호출되지 않는다.
+- 현재 상태가 필요한 질문에서는 `requiredStateScopes`가 계산된다.
+- tool 결과가 prompt context에 포함된다.
+- 최종 응답 metadata에 `requiresCurrentGameState`, `usedCurrentGameState`, `requiredStateScopes`, `availableScopes`가 포함된다.
+- "기어는 어떻게 만들어?" 같은 일반 질문은 RAG만으로 답한다.
+- "철괴가 안 만들어져. 왜 그래?" 같은 문제 해결 질문은 RAG + 현재 상태를 함께 사용한다.
+
+## Sprint 15.1. Current Game State 보완
+
+### 목표
+
+Sprint 15에서 연결한 Current Game State Tool 흐름을 계획서 기준에 맞게 보완한다.
+
+이 Sprint는 새 기능을 크게 늘리는 단계가 아니라, Sprint 15 리뷰에서 확인된 누락 scope와 classifier 구조를 정리하는 안정화 단계다.
+
+### 포함 범위
+
+- 누락된 state scope 추가
+- `connectedConveyors`
+- `recentErrorEvents`
+- `Context Need Classifier`를 LLM/mockable 구조로 재정리
+- 테스트에서는 외부 LLM 호출 없이 mock 또는 fake provider로 판단 결과 검증
+- rule-based fallback 유지
+- 깨진 한글 docstring 정리
+- Sprint 15 리뷰 문서에 보완 결과 반영
+
+### 제외 범위
+
+- Unreal 실제 상태 API 연동
+- 게임 상태를 변경하는 action 실행
+- Human-in-the-loop 승인 플로우
+- 새로운 RAG 검색 기능 추가
+- 대규모 서비스 리팩터링
+
+### 완료 기준
+
+- 문제 해결 질문에서 `requiredStateScopes`에 `connectedConveyors`, `recentErrorEvents`가 포함된다.
+- context need 판단 로직이 LLM adapter 또는 mock provider로 교체 가능한 구조가 된다.
+- 테스트는 외부 API 없이 context need 판단 결과를 검증한다.
+- 일반 질문에서는 Current Game State Tool이 호출되지 않는다.
+- 문제 해결 질문에서는 필요한 scope만 prompt context와 metadata에 반영된다.
+- operator_guide 실행 코드의 한글 docstring이 깨지지 않는다.
+
+## Sprint 16. End-to-End Unreal Contract & Portfolio Polish
+
+### 목표
+
+operator_guide 최종 구조를 Unreal 팀과 연결하고, 발표/포트폴리오에서 설명 가능한 형태로 정리한다.
+
+이 Sprint는 기능 구현보다는 최종 계약, 시연, 문서, 검증을 마감하는 단계다.
+
+### 포함 범위
+
+- Unreal input/output JSON 최종 계약
+- 질문 가이드 탭 UI 계약 최종본
+- Current Game State Tool 입력 schema 공유
+- Postman 또는 agent-test 시나리오 정리
+- 대표 질문 세트 5~10개
+- 성공/부분 실패/fallback/out-of-scope 예시
+- 최종 아키텍처 요약
+- 포트폴리오용 설명 문서
+- PR/발표용 요약 문서
+
+### 제외 범위
+
+- Unreal UI 실제 구현
+- 새로운 RAG 기능 추가
+- 대규모 리팩터링
+- 운영 자동화 추가 확장
+
+### 완료 기준
+
+- Unreal 팀이 문서만 보고 WebSocket input/output을 이해할 수 있다.
+- 포트폴리오에서 `플레이어 질문 -> agent routing -> state 판단 -> RAG 검색 -> LLM 답변 -> JSON 응답` 흐름을 설명할 수 있다.
+- 대표 질문으로 시연 가능한 예시가 준비된다.
+- 최종 문서에 sources, confidence, memory, fallback, current game state 사용 여부가 모두 설명된다.
+
 ## 추천 우선순위
 
 가장 먼저 이어서 할 작업은 Sprint 5이다.

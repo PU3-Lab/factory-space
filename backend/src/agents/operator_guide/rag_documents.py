@@ -16,6 +16,7 @@ from agents.operator_guide.csv_repository import (
     RecipeRecord,
     ResourceRecord,
     TroubleshootingRuleRecord,
+    TutorialRecord,
 )
 
 
@@ -63,6 +64,9 @@ class ManualRagDocumentBuilder:
         documents.extend(
             self._action_document(record)
             for record in self._repository.list_action_policies()
+        )
+        documents.extend(
+            self._tutorial_document(record) for record in self._repository.list_tutorials()
         )
         return documents
 
@@ -178,6 +182,41 @@ class ManualRagDocumentBuilder:
             ),
             metadata={
                 "record_type": "action",
+            },
+        )
+
+    def _tutorial_document(self, record: TutorialRecord) -> ManualRagDocument:
+        """튜토리얼 row를 RAG 검색용 문서로 변환한다.
+
+        초보자용 설명:
+            튜토리얼 CSV는 "플레이어에게 어떤 안내를 보여줄지"를 담고 있다.
+            이 함수는 그 한 줄을 검색 가능한 텍스트로 풀어 써서,
+            LLM이 진행 방향 질문에 답할 때 근거로 사용할 수 있게 만든다.
+        """
+
+        return ManualRagDocument(
+            doc_id=f"tutorial:{record.tutorial_id}",
+            source_file="tutorial.csv",
+            source_row_id=record.tutorial_id,
+            title=record.title,
+            content="\n".join(
+                [
+                    f"튜토리얼: {record.title}",
+                    f"그룹: {record.group_name} ({record.group_id})",
+                    f"설명: {record.description}",
+                    f"시작 대사: {record.start_dialogue}",
+                    f"완료 대사: {record.complete_dialogue}",
+                    f"실패 대사: {record.failure_dialogue or '없음'}",
+                    f"다음 튜토리얼: {record.next_tutorial_id or '없음'}",
+                    f"관련 장비: {_join_values(record.related_equipment)}",
+                    f"관련 자원: {_join_values(record.related_resources)}",
+                    f"관련 레시피: {_join_values(record.related_recipes)}",
+                ],
+            ),
+            metadata={
+                "record_type": "tutorial",
+                "group_id": record.group_id,
+                "group_name": record.group_name,
             },
         )
 

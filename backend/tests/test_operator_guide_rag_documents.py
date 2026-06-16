@@ -16,6 +16,7 @@ def test_rag_documents_include_all_manual_csv_rows() -> None:
     assert "recipe:recipe_smelt_iron" in doc_ids
     assert "troubleshooting:issue_machine_stopped" in doc_ids
     assert "action:action_check_power" in doc_ids
+    assert "tutorial:TUT_BASIC_001" in doc_ids
 
 
 def test_equipment_rag_document_preserves_searchable_csv_context() -> None:
@@ -53,3 +54,19 @@ def test_troubleshooting_rag_document_preserves_actions_and_resolution() -> None
     assert "확인 순서:" in rule.content
     assert "추천 액션:" in rule.content
     assert "해결:" in rule.content
+
+
+def test_tutorial_rag_document_preserves_progress_context() -> None:
+    documents = ManualRagDocumentBuilder(CsvManualQARepository()).build_all()
+    tutorial = next(
+        document for document in documents if document.doc_id == "tutorial:TUT_BASIC_001"
+    )
+
+    assert tutorial.source_file == "tutorial.csv"
+    assert tutorial.source_row_id == "TUT_BASIC_001"
+    assert tutorial.title == "이동하기"
+    assert tutorial.metadata["record_type"] == "tutorial"
+    assert tutorial.metadata["group_id"] == "tutorial_basic"
+    assert "튜토리얼: 이동하기" in tutorial.content
+    assert "그룹: 기초 조작 (tutorial_basic)" in tutorial.content
+    assert "다음 튜토리얼: TUT_BASIC_002" in tutorial.content

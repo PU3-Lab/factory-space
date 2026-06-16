@@ -69,6 +69,29 @@ class ActionPolicyRecord:
     description: str
 
 
+@dataclass(frozen=True)
+class TutorialRecord:
+    """튜토리얼 CSV 한 줄을 코드에서 다루기 쉽게 담는 값 객체.
+
+    `tutorial.csv`는 플레이어에게 어떤 순서로 안내를 보여줄지와 NPC 대사를 담는다.
+    RAG에서는 이 정보를 검색 가능한 문서로 바꾸어, "다음에 뭘 해야 해?" 같은
+    진행 질문에 근거로 사용할 수 있다.
+    """
+
+    tutorial_id: str
+    next_tutorial_id: str
+    group_id: str
+    group_name: str
+    title: str
+    description: str
+    start_dialogue: str
+    complete_dialogue: str
+    failure_dialogue: str
+    related_equipment: list[str]
+    related_resources: list[str]
+    related_recipes: list[str]
+
+
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[4]
 
@@ -103,7 +126,13 @@ def _value(row: dict[str, str], *keys: str) -> str:
 
 
 class CsvManualQARepository:
-    """Read exactly the five proto CSV files under data/game."""
+    """operator_guide가 참고할 CSV 파일을 읽는 저장소.
+
+    초보자용 설명:
+        이 클래스는 `data/game` 폴더의 CSV를 Python 객체로 바꿔준다.
+        RAG ingestion은 여기서 읽은 장비, 자원, 레시피, 문제 해결, 액션 정책,
+        튜토리얼 데이터를 다시 검색 가능한 문서로 변환한다.
+    """
 
     def __init__(self, data_dir: Path | None = None) -> None:
         self._data_dir = data_dir or (_project_root() / "data" / "game")
@@ -216,6 +245,31 @@ class CsvManualQARepository:
             for row in rows
         }
 
+    @cached_property
+    def _tutorials(self) -> dict[str, TutorialRecord]:
+        rows = self._read_rows("tutorial.csv")
+        return {
+            _value(row, "tutorial_id", "튜토리얼ID"): TutorialRecord(
+                tutorial_id=_value(row, "tutorial_id", "튜토리얼ID"),
+                next_tutorial_id=_value(row, "next_tutorial_id", "다음튜토리얼ID"),
+                group_id=_value(row, "group_id", "그룹ID"),
+                group_name=_value(row, "group_name", "그룹명"),
+                title=_value(row, "title", "제목"),
+                description=_value(row, "description", "설명"),
+                start_dialogue=_value(row, "start_dialogue", "시작대사"),
+                complete_dialogue=_value(row, "complete_dialogue", "완료대사"),
+                failure_dialogue=_value(row, "failure_dialogue", "실패대사"),
+                related_equipment=_split_ids(
+                    _value(row, "related_equipment", "관련장비")
+                ),
+                related_resources=_split_ids(
+                    _value(row, "related_resources", "관련자원")
+                ),
+                related_recipes=_split_ids(_value(row, "related_recipes", "관련레시피")),
+            )
+            for row in rows
+        }
+
     def get_equipment(self, equipment_id: str) -> EquipmentRecord | None:
         return self._equipment.get(equipment_id)
 
@@ -295,6 +349,16 @@ class CsvManualQARepository:
             for action_id in action_ids
             if (policy := self.get_action_policy(action_id)) is not None
         ]
+
+    def get_tutorial(self, tutorial_id: str) -> TutorialRecord | None:
+        """튜토리얼 ID로 특정 튜토리얼 row를 찾는다."""
+
+        return self._tutorials.get(tutorial_id)
+
+    def list_tutorials(self) -> list[TutorialRecord]:
+        """RAG 문서로 변환할 모든 튜토리얼 row를 반환한다."""
+
+        return list(self._tutorials.values())
 
     def _read_rows(self, filename: str) -> list[dict[str, str]]:
         path = self._data_dir / filename

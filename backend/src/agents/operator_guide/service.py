@@ -16,9 +16,43 @@ from agents.operator_guide.manual_context_builder import (
     ManualQAPromptContext,
 )
 from agents.operator_guide.prompt_builder import ManualQAPromptBuilder
-from agents.operator_guide.question_classifier import ManualQAQuestionClassifier
+from agents.operator_guide.question_classifier import (
+    ContextNeedClassifier,
+    ManualQAQuestionClassifier,
+)
 from agents.operator_guide.schemas import ManualQAResult
 from agents.operator_guide.session_memory import OPERATOR_GUIDE_RECENT_CONVERSATION_KEY
+from llm.adapter import LLMAdapter
+
+
+class CurrentGameStateTool:
+    """플레이어가 제공한 실시간 게임 상태 컨텍스트에서 필요한 범위(Scope)의 정보를 필터링하고 문자열로 직렬화하는 도구입니다.
+
+    초보자용 설명:
+        LLM에게 공장의 실시간 정보를 그대로 부으면 토큰 낭비가 심하므로,
+        질문 분석을 통해 도출된 Scope(예: powerStatus, inputInventory)에 해당하는 데이터만
+        추출하고 사용하기 쉬운 텍스트(예: "Power Status: OFF")로 가공하여 돌려줍니다.
+    """
+
+    def extract_state(
+        self,
+        raw_state: dict[str, Any] | None,
+        scopes: list[str],
+    ) -> tuple[str, list[str]]:
+        """원시 게임 상태 딕셔너리에서 요청받은 scopes만 선별하여 프롬프트 삽입용 문자열과 실제 수집된 scopes 목록을 반환합니다."""
+
+        if not raw_state:
+            return "", []
+
+        lines: list[str] = []
+        available_scopes: list[str] = []
+        for scope in scopes:
+            if scope in raw_state:
+                val = raw_state[scope]
+                lines.append(f"{scope}: {val}")
+                available_scopes.append(scope)
+
+        return "\n".join(lines), available_scopes
 
 
 class ManualQARagRuntime(Protocol):
@@ -26,7 +60,7 @@ class ManualQARagRuntime(Protocol):
 
     초보자용 설명:
         service는 실제 DB나 embedding provider를 직접 알 필요가 없다.
-        대신 `retrieve(question)`을 호출하면 RAG 검색 결과를 돌려주는 객체만
+        대신 retrieve(question)을 호출하면 RAG 검색 결과를 돌려주는 객체만
         받는다. 이렇게 하면 테스트에서는 fake runtime을 넣고, 실제 실행에서는
         PostgreSQL/pgvector 기반 runtime을 넣을 수 있다.
     """
@@ -49,10 +83,13 @@ class ManualQAService:
         self,
         repository: CsvManualQARepository | None = None,
         rag_runtime: ManualQARagRuntime | None = None,
+        llm_adapter: LLMAdapter | None = None,
     ) -> None:
         self._repository = repository or CsvManualQARepository()
         self._rag_runtime = rag_runtime or self._global_rag_runtime
         self._question_classifier = ManualQAQuestionClassifier(self._repository)
+        self._need_classifier = ContextNeedClassifier(llm_adapter)
+        self._game_state_tool = CurrentGameStateTool()
         self._context_builder = ManualQAContextBuilder(self._repository)
         self._prompt_builder = ManualQAPromptBuilder()
 
@@ -77,12 +114,45 @@ class ManualQAService:
         recent_conversation = _recent_conversation(context)
         confirmed_facts = _confirmed_facts(context)
 
+        # Game State 관련 분석 및 추출
+        requires_state, required_scopes = self._need_classifier.classify_need(
+            question, intent.question_type
+        )
+        raw_state = None
+        if context is not None:
+            raw_state = context.get("current_game_state")
+            if not isinstance(raw_state, dict):
+                raw_state = None
+
+        state_text = ""
+        available_scopes = []
+        used_state = False
+
+        if requires_state and raw_state:
+            state_text, available_scopes = self._game_state_tool.extract_state(
+                raw_state, required_scopes
+            )
+            used_state = bool(state_text)
+
         if self._rag_runtime is None:
+            result = prompt_context.result.model_copy(
+                update={
+                    "requires_current_game_state": requires_state,
+                    "used_current_game_state": used_state,
+                    "required_state_scopes": required_scopes,
+                    "available_scopes": available_scopes,
+                }
+            )
             return ManualQAPromptContext(
-                result=prompt_context.result,
+                result=result,
                 evidence=prompt_context.evidence,
                 recent_conversation=recent_conversation,
                 confirmed_facts=confirmed_facts,
+                current_game_state_text=state_text,
+                requires_current_game_state=requires_state,
+                used_current_game_state=used_state,
+                required_state_scopes=required_scopes,
+                available_scopes=available_scopes,
             )
 
         # 이미 동일 요청 내에서 RAG 검색이 실행되었는지 캐시를 확인합니다.
@@ -103,7 +173,15 @@ class ManualQAService:
                 context["_cached_rag_result"] = rag_result
 
         rag_metadata = _rag_metadata(rag_result)
-        result = prompt_context.result.model_copy(update={"retrieval": rag_metadata})
+        result = prompt_context.result.model_copy(
+            update={
+                "retrieval": rag_metadata,
+                "requires_current_game_state": requires_state,
+                "used_current_game_state": used_state,
+                "required_state_scopes": required_scopes,
+                "available_scopes": available_scopes,
+            }
+        )
         return ManualQAPromptContext(
             result=result,
             evidence=prompt_context.evidence,
@@ -111,6 +189,11 @@ class ManualQAService:
             rag_metadata=rag_metadata,
             recent_conversation=recent_conversation,
             confirmed_facts=confirmed_facts,
+            current_game_state_text=state_text,
+            requires_current_game_state=requires_state,
+            used_current_game_state=used_state,
+            required_state_scopes=required_scopes,
+            available_scopes=available_scopes,
         )
 
     def build_prompt(
