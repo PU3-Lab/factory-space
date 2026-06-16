@@ -2666,6 +2666,38 @@ bool AOJJ_Grid::OJJ_TryPlacePipe(APipe* Pipe, const TArray<FIntPoint>& PathCells
 	// SetPath → 앵커 −half 보정 → Z 안착 — 컨베이어 안착과 동일 구조(파이프도 cell→local 수동식
 	// = parity 부채 #9 복제라 같은 앵커 보정 필요). centroid 수식은 Pipe.GetPathCentroidLocal과
 	// 동일하지만 비공개라 그리드측 산출 — Chan Z 채널 커밋(F4-2) 시 공개 전환 검토 태그.
+	// #257 탱크 진입 포트 방향(시각 전용) — 마지막 스텁을 포트 쪽으로 꺾어 "물려 들어가는" 연결을 만든다.
+	// 포트 축(OJJ_GetMachineBackStep)을 entry→tank 방향으로 부호 정렬해 주입(부호 모호성 제거). SetPath 전에 설정해야
+	// RebuildVisuals가 반영. 경로 판정/예약셀/OutPathSurfaceZ/액체 슬롯과 무관(이미 PASS — 시각만 변경). 펌프 시작은 무변경.
+	{
+		FIntPoint EndPortDir = FIntPoint::ZeroValue;
+		const TArray<FIntPoint>* TankCells = TargetMachine ? OJJ_ActorToCells.Find(TargetMachine) : nullptr;
+		if (TankCells && TankCells->Num() > 0 && PlacementCells.Num() > 0)
+		{
+			// entry = 탱크가 아닌 마지막 경로 셀(탱크에 닿기 직전 접근 셀).
+			FIntPoint EntryCell = PlacementCells.Last();
+			for (int32 i = PlacementCells.Num() - 1; i >= 0; --i)
+			{
+				if (OJJ_GetMachineAtCell(OccupiedCells, PlacementCells[i]) != TargetMachine)
+				{
+					EntryCell = PlacementCells[i];
+					break;
+				}
+			}
+			FVector2D TankCenter(0.0f, 0.0f);
+			for (const FIntPoint& C : *TankCells)
+			{
+				TankCenter += FVector2D(static_cast<float>(C.X), static_cast<float>(C.Y));
+			}
+			TankCenter /= static_cast<float>(TankCells->Num());
+			const FVector2D ToTank = TankCenter - FVector2D(static_cast<float>(EntryCell.X), static_cast<float>(EntryCell.Y));
+			const FIntPoint PortAxis = OJJ_GetMachineBackStep(TargetMachine); // 탱크 입력 포트 축(±1,0)/(0,±1)
+			const float Dot = ToTank.X * static_cast<float>(PortAxis.X) + ToTank.Y * static_cast<float>(PortAxis.Y);
+			EndPortDir = (Dot < 0.0f) ? FIntPoint(-PortAxis.X, -PortAxis.Y) : PortAxis;
+		}
+		Pipe->OJJ_SetEndPortFlowDir(EndPortDir);
+	}
+
 	Pipe->SetPath(PlacementCells, CellSize);
 
 	// F4-3 비주얼 — ㄷ자 다리 lift 프로파일 주입(파이프 GetPathCells와 1:1). 다리 셀 = 교차 셀 ∪ 양옆

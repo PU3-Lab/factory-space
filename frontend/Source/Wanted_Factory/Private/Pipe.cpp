@@ -301,8 +301,22 @@ void APipe::RebuildVisuals()
 		const float HalfCell = CellSize * 0.5f;
 		const FVector StartDir = (Nodes[1] - Nodes[0]).GetSafeNormal();
 		const FVector EndDir = (Nodes.Last() - Nodes[Nodes.Num() - 2]).GetSafeNormal();
+		// 펌프 시작 스텁 — 기존 직선 돌출 그대로(무변경).
 		Nodes[0] -= StartDir * HalfCell;
-		Nodes.Last() += EndDir * HalfCell;
+		// #257 탱크 진입: 포트 방향이 주입됐으면 마지막 셀 중심을 bend 조인트로 남기고(이동 X) 포트 방향으로 꺾인
+		// 스텁 노드를 추가 — 마지막 실린더가 포트 쪽으로 꺾이고 JoinInstances 구가 이음매를 덮어 "물려 들어가는"
+		// 연결이 된다. 스텁은 수평(Z=마지막 셀)이라 경사 탱크에서도 구 조인트가 받쳐 글리치 없음(#252 무관).
+		// 포트 방향 없으면(Zero) 기존 직선 돌출 유지(항등).
+		const FVector EndPortDirLocal =
+			FVector(static_cast<float>(OJJ_EndPortFlowDir.X), static_cast<float>(OJJ_EndPortFlowDir.Y), 0.0f).GetSafeNormal();
+		if (!EndPortDirLocal.IsNearlyZero())
+		{
+			Nodes.Add(Nodes.Last() + EndPortDirLocal * HalfCell);
+		}
+		else
+		{
+			Nodes.Last() += EndDir * HalfCell;
+		}
 	}
 
 	const FVector SphereMeshSize = JoinInstances ? OJJ_MeshBoxSize(JoinInstances) : FVector(100.0f);
