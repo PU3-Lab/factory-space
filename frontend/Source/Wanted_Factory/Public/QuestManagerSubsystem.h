@@ -128,6 +128,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSubQuestsGenerated, const FStrin
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSubQuestTitlesUpdated, const FString&, RequestId, const TArray<FString>&, Titles);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSubQuestsUpdated, const TArray<FQuestState>&, Quests);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSubQuestRequestFailed, const FString&, RequestId, const FString&, ErrorMessage);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTutorialStepChanged, const FTutorialQuestStep&, Step);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnTutorialDialogueLogged, const FString&, QuestId, const FString&, TriggerType, const TArray<FTutorialQuestDialogueLine>&, Lines);
 
 UCLASS()
 class WANTED_FACTORY_API UQuestManagerSubsystem : public UGameInstanceSubsystem
@@ -163,6 +165,12 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Quest|Sub")
 	FOnSubQuestRequestFailed OnSubQuestRequestFailed;
+
+	UPROPERTY(BlueprintAssignable, Category = "Quest|Tutorial")
+	FOnTutorialStepChanged OnTutorialStepChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Quest|Tutorial")
+	FOnTutorialDialogueLogged OnTutorialDialogueLogged;
 
 	UFUNCTION(BlueprintPure, Category = "Quest|Main")
 	bool GetCurrentMainQuest(FQuestState& OutQuest) const;
@@ -215,6 +223,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Quest|Tutorial")
 	void LogCurrentTutorialQuestTestState() const;
 
+	UFUNCTION(BlueprintPure, Category = "Quest|Tutorial")
+	bool GetCurrentTutorialQuestStep(FTutorialQuestStep& OutStep) const;
+
+	UFUNCTION(BlueprintPure, Category = "Quest|Tutorial")
+	void GetTutorialDialogueLines(const FString& QuestId, const FString& TriggerType, TArray<FTutorialQuestDialogueLine>& OutLines) const;
+
+	UFUNCTION(BlueprintPure, Category = "Quest|Tutorial")
+	void GetLastTutorialDialogueLog(FString& OutQuestId, FString& OutTriggerType, TArray<FTutorialQuestDialogueLine>& OutLines) const;
+
 	void NotifyTutorialEvent(FName EventId, FName TargetId = NAME_None, int32 DeltaCount = 1);
 
 private:
@@ -243,6 +260,11 @@ private:
 	TMap<FString, TArray<FTutorialQuestDialogueLine>> TutorialDialogueByQuestId;
 	FString CurrentTutorialQuestId;
 	bool bTutorialQuestTestActive = false;
+	FString LastTutorialDialogueQuestId;
+	FString LastTutorialDialogueTriggerType;
+
+	UPROPERTY()
+	TArray<FTutorialQuestDialogueLine> LastTutorialDialogueLines;
 
 	void ActivateCurrentMainQuest();
 	void BindAgentClient();
@@ -259,7 +281,8 @@ private:
 	void RefreshSubQuestCompletion();
 	bool IsQuestCompletedByWarehouse(const FQuestState& Quest) const;
 	bool AdvanceTutorialQuestStep(bool bFromManualTest);
-	void LogTutorialDialogue(const FString& QuestId, const FString& TriggerType) const;
+	void BroadcastCurrentTutorialQuestStep();
+	void LogTutorialDialogue(const FString& QuestId, const FString& TriggerType);
 	const FTutorialQuestStep* FindCurrentTutorialQuestStep() const;
 
 	UFUNCTION()

@@ -582,6 +582,7 @@ void UQuestManagerSubsystem::StartTutorialQuestTest()
 	CurrentTutorialQuestId = TutorialQuestSteps[0].QuestId;
 	LOG_LC(TEXT("Tutorial quest test started."));
 	LogCurrentTutorialQuestTestState();
+	BroadcastCurrentTutorialQuestStep();
 	LogTutorialDialogue(CurrentTutorialQuestId, TEXT("on_start"));
 }
 
@@ -614,6 +615,50 @@ void UQuestManagerSubsystem::LogCurrentTutorialQuestTestState() const
 		*Step->Description,
 		*Step->Reward,
 		*DescribeTutorialRequirement(Requirement));
+}
+
+bool UQuestManagerSubsystem::GetCurrentTutorialQuestStep(FTutorialQuestStep& OutStep) const
+{
+	const FTutorialQuestStep* Step = FindCurrentTutorialQuestStep();
+	if (!Step)
+	{
+		return false;
+	}
+
+	OutStep = *Step;
+	return true;
+}
+
+void UQuestManagerSubsystem::GetTutorialDialogueLines(
+	const FString& QuestId,
+	const FString& TriggerType,
+	TArray<FTutorialQuestDialogueLine>& OutLines) const
+{
+	OutLines.Reset();
+
+	const TArray<FTutorialQuestDialogueLine>* Lines = TutorialDialogueByQuestId.Find(QuestId);
+	if (!Lines)
+	{
+		return;
+	}
+
+	for (const FTutorialQuestDialogueLine& Line : *Lines)
+	{
+		if (Line.TriggerType == TriggerType)
+		{
+			OutLines.Add(Line);
+		}
+	}
+}
+
+void UQuestManagerSubsystem::GetLastTutorialDialogueLog(
+	FString& OutQuestId,
+	FString& OutTriggerType,
+	TArray<FTutorialQuestDialogueLine>& OutLines) const
+{
+	OutQuestId = LastTutorialDialogueQuestId;
+	OutTriggerType = LastTutorialDialogueTriggerType;
+	OutLines = LastTutorialDialogueLines;
 }
 
 void UQuestManagerSubsystem::NotifyTutorialEvent(FName EventId, FName TargetId, int32 DeltaCount)
@@ -707,6 +752,9 @@ void UQuestManagerSubsystem::LoadTutorialQuestTestData()
 	TutorialDialogueByQuestId.Empty();
 	CurrentTutorialQuestId.Empty();
 	bTutorialQuestTestActive = false;
+	LastTutorialDialogueQuestId.Empty();
+	LastTutorialDialogueTriggerType.Empty();
+	LastTutorialDialogueLines.Reset();
 
 	FString StepsCsvContent;
 	const FString StepsCsvPath = FPaths::Combine(FPaths::ProjectDir(), TutorialQuestStepsCsvRelativePath);
@@ -1069,25 +1117,41 @@ bool UQuestManagerSubsystem::AdvanceTutorialQuestStep(bool bFromManualTest)
 
 	CurrentTutorialQuestId = CurrentStep->NextQuestId;
 	LogCurrentTutorialQuestTestState();
+	BroadcastCurrentTutorialQuestStep();
 	LogTutorialDialogue(CurrentTutorialQuestId, TEXT("on_start"));
 	return true;
 }
 
-void UQuestManagerSubsystem::LogTutorialDialogue(const FString& QuestId, const FString& TriggerType) const
+void UQuestManagerSubsystem::BroadcastCurrentTutorialQuestStep()
 {
-	const TArray<FTutorialQuestDialogueLine>* Lines = TutorialDialogueByQuestId.Find(QuestId);
-	if (!Lines)
+	const FTutorialQuestStep* Step = FindCurrentTutorialQuestStep();
+	if (!Step)
 	{
 		return;
 	}
 
-	for (const FTutorialQuestDialogueLine& Line : *Lines)
-	{
-		if (Line.TriggerType != TriggerType)
-		{
-			continue;
-		}
+	OnTutorialStepChanged.Broadcast(*Step);
+}
 
+void UQuestManagerSubsystem::LogTutorialDialogue(const FString& QuestId, const FString& TriggerType)
+{
+	TArray<FTutorialQuestDialogueLine> MatchingLines;
+	GetTutorialDialogueLines(QuestId, TriggerType, MatchingLines);
+	if (MatchingLines.IsEmpty())
+	{
+		LastTutorialDialogueQuestId = QuestId;
+		LastTutorialDialogueTriggerType = TriggerType;
+		LastTutorialDialogueLines.Reset();
+		OnTutorialDialogueLogged.Broadcast(QuestId, TriggerType, LastTutorialDialogueLines);
+		return;
+	}
+
+	LastTutorialDialogueQuestId = QuestId;
+	LastTutorialDialogueTriggerType = TriggerType;
+	LastTutorialDialogueLines = MatchingLines;
+
+	for (const FTutorialQuestDialogueLine& Line : MatchingLines)
+	{
 		LOG_LC(
 			TEXT("Tutorial dialogue [%s][%s][%d] %s: %s"),
 			*QuestId,
@@ -1096,6 +1160,8 @@ void UQuestManagerSubsystem::LogTutorialDialogue(const FString& QuestId, const F
 			*Line.Speaker,
 			*Line.Dialogue);
 	}
+
+	OnTutorialDialogueLogged.Broadcast(QuestId, TriggerType, LastTutorialDialogueLines);
 }
 
 const FTutorialQuestStep* UQuestManagerSubsystem::FindCurrentTutorialQuestStep() const
