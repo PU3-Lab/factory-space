@@ -73,8 +73,19 @@ def test_agent_synthesize_new_material_fallback_path(db_session: Session) -> Non
         res = agent.synthesize(db_session, req)
         assert res.result_type == "new_material"
         assert res.material_id is not None
-        assert "Fallback" in (res.name or "")
+        assert res.name  # 비어있지 않음
+        assert res.rarity in {"common", "uncommon", "rare", "epic"}
+        assert res.state in {"solid", "liquid", "gas", "plasma"}
         assert res.visual_status == "pending"
+
+        # 저장된 물질의 결정론 값 검증 (iron_ore+iron_ingot @ Synthesizer)
+        stored = db_session.execute(
+            select(GeneratedMaterialModel).where(
+                GeneratedMaterialModel.id == res.material_id
+            )
+        ).scalar_one()
+        assert stored.state == "solid"
+        assert stored.rarity == "uncommon"
 
 
 def test_material_creation_api_persists_material_without_duplicates(
@@ -246,7 +257,7 @@ def test_agent_synthesize_new_material_visual_asset_false(db_session: Session) -
         res = agent.synthesize(db_session, req)
         assert res.result_type == "new_material"
         assert res.material_id is not None
-        assert "Fallback" in (res.name or "")
+        assert res.name
         assert res.visual_status == "skipped"
         assert res.message == "새로운 물질이 발견되었습니다."
 

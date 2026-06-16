@@ -27,7 +27,8 @@ protected:
 	// 드래그가 감지되었을 때 엔진이 호출해 주는 가상 함수 오버라이드
 	virtual void NativeOnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& InPointerEvent,
 									  UDragDropOperation*& OutOperation) override;
-
+	//마우스로 잡은 아이템을 이 가방 슬롯 칸에 떨어뜨렸을 때 발동하는 함수
+	virtual bool NativeOnDrop(const FGeometry& MyGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
 public:
 	// 서브시스템 데이터를 받아 슬롯의 시각적 정보 갱신
 	void UpdateSlot(FName ItemID, int32 Count);
