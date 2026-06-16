@@ -691,6 +691,11 @@ void AOJJ_BuildController::UpdateMouseHover()
 	const FIntPoint Origin = ComputeOriginFromCursorCell(CursorCell, DefaultMachine, HoverRotationSteps);
 
 	TargetGrid->UpdateHoverPreview(DefaultMachine, Origin, HoverRotationSteps);
+	if (PlacementMode == EOJJ_BuildPlacementMode::Miner
+		&& TargetGrid->CanPlaceMachine(DefaultMachine, Origin, HoverRotationSteps))
+	{
+		NotifyTutorialQuestEvent(this, TEXT("ValidMinerPlacement"));
+	}
 	CurrentHoverCell = CursorCell;
 }
 

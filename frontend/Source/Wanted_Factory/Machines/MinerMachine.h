@@ -17,6 +17,7 @@ class WANTED_FACTORY_API AMinerMachine : public AMachineBase
 public:
 	// Sets default values for this actor's properties
 	AMinerMachine();
+	virtual void Tick(float DeltaTime) override;
 
 protected:
 	virtual void BeginPlay() override;

@@ -437,7 +437,6 @@ void AOJJ_Player::ToggleBuild(const FInputActionValue& Value)
 			{
 				QuestManager->NotifyMainQuestBuildModeEntered();
 				QuestManager->NotifyTutorialEvent(TEXT("BuildMode"));
-				QuestManager->NotifyTutorialEvent(TEXT("BuildPreviewSeen"));
 			}
 		}
 	}
