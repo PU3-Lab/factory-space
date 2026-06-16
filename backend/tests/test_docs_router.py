@@ -49,6 +49,17 @@ def test_agent_test_response_log_has_independent_scroll_area() -> None:
     assert "word-break: break-word" in response.text
 
 
+def test_agent_test_progress_messages_do_not_update_quality_metrics() -> None:
+    with TestClient(create_app()) as client:
+        response = client.get("/agent-test")
+
+    assert response.status_code == 200
+    assert "function isProgressMessage(parsed)" in response.text
+    assert "if (isProgressMessage(parsed)) return;" in response.text
+    assert "t-progress" in response.text
+    assert "PROGRESS" in response.text
+
+
 def test_docs_router_does_not_change_health_endpoint() -> None:
     with TestClient(create_app()) as client:
         response = client.get("/health")
