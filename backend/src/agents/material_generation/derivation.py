@@ -1,0 +1,192 @@
+"""입력 재료로부터 물질 속성·category·state·rarity를 결정론적으로 산출합니다.
+
+이 모듈은 합성 장비로 유입된 정규화된 입력 재료와 공정 정보에 기반하여,
+재형성될 신물질의 최종 스펙트럼(강도, 전도도, 안정성, 반응성) 및 분류 정보를
+완벽히 수학적이고 일관되게 유도(derive)해냅니다.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from agents.material_generation.material_properties import (
+    METALS,
+    ORGANIC_GROUP,
+    base_key,
+    get_base_properties,
+)
+from agents.material_generation.schemas import (
+    MaterialProperties,
+    ProcessConditionsSchema,
+)
+
+
+@dataclass
+class DerivedAttributes:
+    """결정론적으로 산출된 물질의 구조화 속성 묶음입니다."""
+
+    properties: MaterialProperties
+    category: str
+    state: str
+    rarity: str
+
+
+def _clamp(value: float) -> float:
+    """속성 값이 0.0 ~ 10.0 범위를 벗어나지 않도록 강제합니다."""
+    return max(0.0, min(10.0, value))
+
+
+def combine_properties(
+    normalized_inputs: list[dict[str, Any]],
+) -> tuple[float, float, float, float]:
+    """입력 재료들의 기준 속성을 수량 가중 평균으로 합성합니다.
+
+    각 아이템의 수량(qty)을 가중치로 삼아, 강도, 전도도, 안정성, 반응성을
+    가중 평균 내어 결정론적인 합성 속성을 반환합니다.
+    """
+    total_qty = sum(item["qty"] for item in normalized_inputs)
+    if total_qty <= 0:
+        return (5.0, 5.0, 5.0, 5.0)
+
+    sums = [0.0, 0.0, 0.0, 0.0]
+    for item in normalized_inputs:
+        props = get_base_properties(item["item_id"])
+        for i in range(4):
+            sums[i] += props[i] * item["qty"]
+
+    return (
+        sums[0] / total_qty,
+        sums[1] / total_qty,
+        sums[2] / total_qty,
+        sums[3] / total_qty,
+    )
+
+
+def apply_process(
+    props: tuple[float, float, float, float],
+    conditions: ProcessConditionsSchema,
+) -> tuple[float, float, float, float]:
+    """공정 조건(온도/압력/촉매)에 따라 속성을 보정하고 0~10으로 클램핑합니다.
+
+    - 고온(temperature="high"): 반응성 +1.0, 안정성 -1.0
+    - 저온(temperature="low"): 반응성 -1.0, 안정성 +1.0
+    - 고압(pressure="high"): 강도 +1.0, 안정성 +1.0
+    - 촉매(catalyst): 반응성 +1.0
+    """
+    strength, conductivity, stability, reactivity = props
+
+    temp = (conditions.temperature or "").strip().lower()
+    pressure = (conditions.pressure or "").strip().lower()
+
+    if temp == "high":
+        reactivity += 1.0
+        stability -= 1.0
+    elif temp == "low":
+        reactivity -= 1.0
+        stability += 1.0
+
+    if pressure == "high":
+        strength += 1.0
+        stability += 1.0
+
+    if conditions.catalyst:
+        reactivity += 1.0
+
+    return (
+        _clamp(strength),
+        _clamp(conductivity),
+        _clamp(stability),
+        _clamp(reactivity),
+    )
+
+
+def derive_category(normalized_inputs: list[dict[str, Any]]) -> str:
+    """입력 재료 구성으로 category를 판정합니다 (alloy/organic/chemical/composite).
+
+    - 모든 입력이 금속(METALS)이면 "alloy"
+    - 금속이 전혀 없고, 모든 입력이 유기물(ORGANIC_GROUP)군이면 "organic"
+    - 금속이 전혀 없고, 유기물군에 속하지 않은 비금속이 섞여 있으면 "chemical"
+    - 금속과 비금속이 혼합되어 있으면 "composite"
+    """
+    keys = {base_key(item["item_id"]) for item in normalized_inputs}
+    metals = keys & METALS
+    nonmetals = keys - METALS
+
+    if not nonmetals:
+        return "alloy"
+    if not metals:
+        if keys <= ORGANIC_GROUP:
+            return "organic"
+        return "chemical"
+    return "composite"
+
+
+def derive_state(props: tuple[float, float, float, float]) -> str:
+    """최종 속성으로 물리적 상태(state)를 판정합니다. (plasma/gas/liquid/solid)
+
+    - 반응성(reactivity) >= 9.0 이고 안정성(stability) <= 2.0 이면 "plasma"
+    - 반응성 >= 7.0 이고 안정성 <= 3.0 이면 "gas"
+    - 반응성 >= 5.0 이고 안정성 <= 5.0 이면 "liquid"
+    - 그 외에는 모두 "solid" (고체)
+    """
+    _, _, stability, reactivity = props
+    if reactivity >= 9.0 and stability <= 2.0:
+        return "plasma"
+    if reactivity >= 7.0 and stability <= 3.0:
+        return "gas"
+    if reactivity >= 5.0 and stability <= 5.0:
+        return "liquid"
+    return "solid"
+
+
+def compute_rarity(props: tuple[float, float, float, float]) -> str:
+    """속성으로부터 희귀도(rarity)를 결정론적으로 계산합니다.
+
+    - 강도, 전도도, 안정성 3개 속성의 평균(avg)을 70% 비중으로,
+      전체 4대 속성의 최댓값(peak)을 30% 비중으로 계산하여 가중 점수(score)를 산출합니다:
+      score = 0.7 * avg + 0.3 * peak
+    - 점수 구간에 따른 등급 분류:
+      - score >= 8.5: "epic" (영웅)
+      - score >= 7.0: "rare" (희귀)
+      - score >= 5.0: "uncommon" (고급)
+      - 그 외: "common" (일반)
+    """
+    strength, conductivity, stability, reactivity = props
+    avg = (strength + conductivity + stability) / 3.0
+    peak = max(strength, conductivity, stability, reactivity)
+    score = 0.7 * avg + 0.3 * peak
+
+    if score >= 8.5:
+        return "epic"
+    if score >= 7.0:
+        return "rare"
+    if score >= 5.0:
+        return "uncommon"
+    return "common"
+
+
+def derive_material_attributes(
+    normalized_inputs: list[dict[str, Any]],
+    conditions: ProcessConditionsSchema,
+) -> DerivedAttributes:
+    """입력과 공정으로부터 속성·category·state·rarity를 한 번에 산출합니다.
+
+    1. 입력 재료들의 고유 속성을 수량 가중 평균으로 합성합니다.
+    2. 공정 조건(온도, 압력, 촉매 등)에 따라 속성을 가감 보정합니다.
+    3. 최종 보정된 속성과 입력 구성을 기반으로 카테고리(category), 물리적 상태(state), 희귀도(rarity)를 판정합니다.
+    """
+    combined = combine_properties(normalized_inputs)
+    adjusted = apply_process(combined, conditions)
+    properties = MaterialProperties(
+        strength=adjusted[0],
+        conductivity=adjusted[1],
+        stability=adjusted[2],
+        reactivity=adjusted[3],
+    )
+    return DerivedAttributes(
+        properties=properties,
+        category=derive_category(normalized_inputs),
+        state=derive_state(adjusted),
+        rarity=compute_rarity(adjusted),
+    )

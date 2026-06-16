@@ -6,6 +6,7 @@
 #include "Wanted_Factory.h"
 #include "MachineBase.h"
 #include "OJJ_Grid.h"
+#include "Components/StaticMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
 
 
@@ -63,13 +64,41 @@ void AResourceBase::RegisterToGrid()
 	SetActorLocation(FVector(CellCenter.X, CellCenter.Y, GetActorLocation().Z));
 
 	TArray<FIntPoint> Cells;
-	Cells.Add(Cell);
+	if (bUseMeshBoundsForGridRegistration && Mesh)
+	{
+		const FBoxSphereBounds Bounds = Mesh->CalcBounds(Mesh->GetComponentTransform());
+		const float CellSize = FMath::Abs((Grid->GridToWorld(FIntPoint(1, 0)) - Grid->GridToWorld(FIntPoint(0, 0))).X);
+		const float EdgeEpsilon = FMath::Min(1.0f, CellSize * 0.01f);
+		const FVector MinWorld(Bounds.Origin.X - Bounds.BoxExtent.X + EdgeEpsilon, Bounds.Origin.Y - Bounds.BoxExtent.Y + EdgeEpsilon, GetActorLocation().Z);
+		const FVector MaxWorld(Bounds.Origin.X + Bounds.BoxExtent.X - EdgeEpsilon, Bounds.Origin.Y + Bounds.BoxExtent.Y - EdgeEpsilon, GetActorLocation().Z);
+		const FIntPoint MinCell = Grid->WorldToGrid(MinWorld);
+		const FIntPoint MaxCell = Grid->WorldToGrid(MaxWorld);
+
+		const int32 MinX = FMath::Min(MinCell.X, MaxCell.X);
+		const int32 MaxX = FMath::Max(MinCell.X, MaxCell.X);
+		const int32 MinY = FMath::Min(MinCell.Y, MaxCell.Y);
+		const int32 MaxY = FMath::Max(MinCell.Y, MaxCell.Y);
+		Cells.Reserve((MaxX - MinX + 1) * (MaxY - MinY + 1));
+		for (int32 X = MinX; X <= MaxX; ++X)
+		{
+			for (int32 Y = MinY; Y <= MaxY; ++Y)
+			{
+				Cells.Add(FIntPoint(X, Y));
+			}
+		}
+	}
+
+	if (Cells.Num() == 0)
+	{
+		Cells.Add(Cell);
+	}
+
 	if (!Grid->OJJ_RegisterActorCells(this, Cells))
 	{
 		// 셀 충돌(다른 액터 점유) / off-grid — 등록 실패. 자원은 선점 대상에서 빠지므로 경고만.
 		LOG_SSR_W(
-			TEXT("RegisterToGrid failed (cell occupied or off-grid): Resource=%s Cell=(%d,%d)"),
-			*GetName(), Cell.X, Cell.Y);
+			TEXT("RegisterToGrid failed (cell occupied or off-grid): Resource=%s OriginCell=(%d,%d) CellCount=%d"),
+			*GetName(), Cell.X, Cell.Y, Cells.Num());
 	}
 }
 

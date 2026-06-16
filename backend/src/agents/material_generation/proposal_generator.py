@@ -7,7 +7,6 @@ import logging
 from typing import Any
 
 from agents.material_generation.schemas import (
-    MaterialProperties,
     MaterialProposal,
     MaterialProposalResult,
     ProcessConditionsSchema,
@@ -32,10 +31,21 @@ class MaterialProposalGenerator:
         normalized_inputs: list[dict[str, Any]],
         process_conditions: ProcessConditionsSchema,
         similar_experiments: list[dict[str, Any]],
+        derived_state: str = "solid",
+        derived_category: str = "alloy",
     ) -> str:
         """LLM을 위한 지시 프롬프트를 구성합니다."""
         inputs_str = ", ".join(
             f"{item['item_id']} (qty: {item['qty']})" for item in normalized_inputs
+        )
+
+        naming_guide = (
+            f"이 물질의 분류는 '{derived_category}', 물리적 상태는 '{derived_state}'입니다.\n"
+            "이름은 실제 화학 물질·신소재처럼, 해당 상태가 연상되는 한글 명칭으로 지으십시오.\n"
+            "- 고체(solid): '~정', '~합금', '~석'\n"
+            "- 액체(liquid): '~용액', '~유', '~액'\n"
+            "- 기체(gas): '~기체', '~가스', '~증기'\n"
+            "- 플라즈마(plasma): '~플라즈마', '~이온체', '~화염체'\n"
         )
 
         similar_context = ""
@@ -59,6 +69,7 @@ class MaterialProposalGenerator:
             f"- 입력 재료 조합: {inputs_str}\n"
             f"- 공정 조건: 온도={process_conditions.temperature}, 압력={process_conditions.pressure}, 촉매={process_conditions.catalyst or '없음'}\n\n"
             f"{similar_context}\n"
+            f"{naming_guide}\n"
             "이 조합의 과학적, 공학적 의미를 분석하여 적절한 신소재 초안을 제안해 주십시오.\n"
             "결과는 반드시 아래의 JSON 포맷 형식을 엄격하게 준수하여 하나의 JSON 객체로만 반환하십시오.\n"
             "마크다운 펜스(```json)나 부가 설명은 절대 쓰지 마십시오.\n\n"
@@ -69,22 +80,13 @@ class MaterialProposalGenerator:
             '  "result": {\n'
             '    "id_hint": "alloy_iron_copper",\n'
             '    "name": "제안된 신소재 한글 명칭",\n'
-            '    "category": "alloy 또는 chemical 또는 organic 또는 composite 등",\n'
-            '    "rarity": "common 또는 uncommon 또는 rare 또는 epic",\n'
             '    "description": "세계관에 부합하는 멋지고 상세한 설명",\n'
-            '    "properties": {\n'
-            '      "strength": 5.0,\n'
-            '      "conductivity": 5.0,\n'
-            '      "stability": 5.0,\n'
-            '      "reactivity": 5.0\n'
-            "    },\n"
             '    "risks": ["oxidation", "instability" 등 발생 가능한 리스크 리스트],\n'
             '    "usage": ["전선", "프레임" 등 주요 활용처 태그 리스트],\n'
             '    "next_recipe_candidates": ["다음 공정에 활용할 수 있는 가상의 아이템 ID 후보군"],\n'
             '    "visual_prompt": "아이콘 및 2D 텍스처 생성을 위한 영문 프롬프트 (예: \'reddish brown metal ingot, sci-fi style\')"\n'
             "  }\n"
             "}\n"
-            "주의: properties의 4가지 값(strength, conductivity, stability, reactivity)은 반드시 0.0 ~ 10.0 사이의 실수로 정의하십시오.\n"
         )
         return prompt
 
@@ -109,10 +111,17 @@ class MaterialProposalGenerator:
         normalized_inputs: list[dict[str, Any]],
         process_conditions: ProcessConditionsSchema,
         similar_experiments: list[dict[str, Any]],
+        derived_state: str = "solid",
+        derived_category: str = "alloy",
     ) -> MaterialProposal:
         """제안을 얻기 위해 LLM을 호출하며, 실패 시 강력한 폴백을 실행합니다."""
         prompt = self._build_prompt(
-            machine_type, normalized_inputs, process_conditions, similar_experiments
+            machine_type,
+            normalized_inputs,
+            process_conditions,
+            similar_experiments,
+            derived_state,
+            derived_category,
         )
 
         try:
@@ -145,16 +154,8 @@ class MaterialProposalGenerator:
             reason="LLM 생성 실패 또는 비가용 상태로 인한 기본 fallback 동작",
             result=MaterialProposalResult(
                 id_hint=f"mat_{id_hint}_alloy",
-                name=f"{compound_name} 합금 (Fallback)",
-                category="alloy",
-                rarity="common",
+                name=f"{compound_name} 합금",
                 description="기본 합성 공정으로 생성된 대체 합금 물질입니다.",
-                properties=MaterialProperties(
-                    strength=5.0,
-                    conductivity=5.0,
-                    stability=5.0,
-                    reactivity=2.0,
-                ),
                 risks=["none"],
                 usage=["basic_structure"],
                 next_recipe_candidates=[],

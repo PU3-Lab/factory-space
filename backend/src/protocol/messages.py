@@ -34,6 +34,22 @@ class AgentResponseEnvelope(BaseModel):
     streams: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class AgentProgressEnvelope(BaseModel):
+    """에이전트 파이프라인의 실행 과정 중 진행 정보를 알리기 위해 전송되는 메시지 봉투(Envelope) 모델.
+
+    초보자용 설명:
+        LLM이 답변을 마칠 때까지 수 초가 걸리기 때문에, 그 사이에 플레이어에게
+        현재 어떤 작업(예: 장비 확인, RAG 검색 등)이 진행 중인지 실시간으로 알려주기 위한 용도입니다.
+    """
+
+    type: Literal["agent.progress"] = "agent.progress"
+    request_id: str
+    session_id: str | None = None
+    client_id: str | None = None
+    agent: str = "operator_guide"
+    payload: dict[str, Any]
+
+
 class AgentErrorEnvelope(BaseModel):
     """Public error envelope returned by the agent pipeline."""
 

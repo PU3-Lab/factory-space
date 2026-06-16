@@ -846,6 +846,75 @@ operator_guide 최종 구조를 Unreal 팀과 연결하고, 발표/포트폴리�
 - 대표 질문으로 시연 가능한 예시가 준비된다.
 - 최종 문서에 sources, confidence, memory, fallback, current game state 사용 여부가 모두 설명된다.
 
+## Sprint 16.2. Progress Message Streaming
+
+### 목표
+
+operator_guide가 최종 답변을 생성하는 동안 Unreal UI에 짧은 진행 상태 메시지를 스트리밍한다.
+
+이 Sprint의 목적은 LLM의 내부 chain-of-thought를 노출하는 것이 아니다. 플레이어가 "답변을 생각중"이라는 정적인 문구 대신, NPC가 장비 매뉴얼을 확인하고 RAG 문서를 찾고 상태를 점검하는 것처럼 느끼게 만드는 UX 기능이다.
+
+### 포함 범위
+
+- WebSocket `agent.progress` 이벤트 계약 정의
+- leaf agent 또는 question type별 progress message catalog
+- pipeline stage별 progress event 발행 지점 설계
+- agent-test 화면에서 progress event를 확인할 수 있는 표시 방식
+- Unreal 팀 공유용 입력/출력 예시
+- 최종 `agent.response` 계약 유지
+
+### 제외 범위
+
+- LLM 내부 chain-of-thought 출력
+- 시스템 프롬프트, 숨겨진 정책, API 키 출력
+- Unreal UI 실제 말풍선 구현
+- LLM이 매번 동적으로 progress message를 생성하는 구조
+
+### 메시지 예시
+
+```text
+machine_help:
+- 장비 매뉴얼을 펼쳐보는 중입니다...
+- 입력과 출력 자원을 확인하는 중입니다...
+- 연결 가능한 장비를 살펴보는 중입니다...
+
+recipe_explainer:
+- 관련 레시피를 찾는 중입니다...
+- 필요한 입력 자원을 확인하는 중입니다...
+- 생산 흐름을 정리하는 중입니다...
+
+troubleshooter:
+- 공장의 전체 흐름을 읽는 중입니다...
+- 선택된 장비 상태를 확인하는 중입니다...
+- 전력과 입력 자원 상태를 대조하는 중입니다...
+- 관련 문제 해결 매뉴얼을 찾는 중입니다...
+- 점검 순서를 정리하는 중입니다...
+```
+
+### 이벤트 예시
+
+```json
+{
+  "type": "agent.progress",
+  "request_id": "operator-guide-trouble-001",
+  "session_id": "demo-session",
+  "client_id": "unreal-client",
+  "agent": "operator_guide",
+  "payload": {
+    "stage": "rag_search",
+    "message": "관련 문제 해결 매뉴얼을 찾는 중입니다..."
+  }
+}
+```
+
+### 완료 기준
+
+- operator_guide 요청 중 최종 응답 전에 `agent.progress` 이벤트를 보낼 수 있다.
+- 장비 설명, 레시피 설명, 트러블슈팅 질문별 progress message가 다르게 나온다.
+- agent-test 또는 WebSocket 테스트에서 progress event와 최종 response를 함께 확인할 수 있다.
+- 최종 `agent.response` JSON 구조는 기존 Unreal 계약을 깨지 않는다.
+- 문서에 "내부 추론 노출이 아니라 UX용 진행 상태 메시지"임이 명확히 적혀 있다.
+
 ## 추천 우선순위
 
 가장 먼저 이어서 할 작업은 Sprint 5이다.

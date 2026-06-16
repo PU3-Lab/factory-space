@@ -580,8 +580,7 @@ void UQuestManagerSubsystem::StartTutorialQuestTest()
 
 	bTutorialQuestTestActive = true;
 	CurrentTutorialQuestId = TutorialQuestSteps[0].QuestId;
-	LOG_LC(TEXT("Tutorial quest test started."));
-	LogCurrentTutorialQuestTestState();
+	bPendingTutorialStartDialogueReveal = false;
 	BroadcastCurrentTutorialQuestStep();
 	LogTutorialDialogue(CurrentTutorialQuestId, TEXT("on_start"));
 }
@@ -599,22 +598,6 @@ bool UQuestManagerSubsystem::CompleteCurrentTutorialQuestForTest()
 
 void UQuestManagerSubsystem::LogCurrentTutorialQuestTestState() const
 {
-	const FTutorialQuestStep* Step = FindCurrentTutorialQuestStep();
-	if (!Step)
-	{
-		LOG_LC_W(TEXT("Tutorial quest test state: no active step."));
-		return;
-	}
-
-	const FTutorialRequirement Requirement = GetTutorialRequirement(Step->QuestId);
-	LOG_LC(
-		TEXT("Tutorial step [%s] group=%s title=%s description=%s reward=%s requirement=%s"),
-		*Step->QuestId,
-		*Step->Group,
-		*Step->Title,
-		*Step->Description,
-		*Step->Reward,
-		*DescribeTutorialRequirement(Requirement));
 }
 
 bool UQuestManagerSubsystem::GetCurrentTutorialQuestStep(FTutorialQuestStep& OutStep) const
@@ -626,6 +609,18 @@ bool UQuestManagerSubsystem::GetCurrentTutorialQuestStep(FTutorialQuestStep& Out
 	}
 
 	OutStep = *Step;
+	return true;
+}
+
+bool UQuestManagerSubsystem::GetTutorialQuestStepById(const FString& QuestId, FTutorialQuestStep& OutStep) const
+{
+	const int32* StepIndex = TutorialQuestStepIndexById.Find(QuestId);
+	if (!StepIndex || !TutorialQuestSteps.IsValidIndex(*StepIndex))
+	{
+		return false;
+	}
+
+	OutStep = TutorialQuestSteps[*StepIndex];
 	return true;
 }
 
@@ -661,6 +656,22 @@ void UQuestManagerSubsystem::GetLastTutorialDialogueLog(
 	OutLines = LastTutorialDialogueLines;
 }
 
+bool UQuestManagerSubsystem::HasPendingTutorialStartDialogue() const
+{
+	return bPendingTutorialStartDialogueReveal;
+}
+
+void UQuestManagerSubsystem::RevealPendingTutorialStartDialogue()
+{
+	if (!bPendingTutorialStartDialogueReveal || CurrentTutorialQuestId.IsEmpty())
+	{
+		return;
+	}
+
+	bPendingTutorialStartDialogueReveal = false;
+	LogTutorialDialogue(CurrentTutorialQuestId, TEXT("on_start"));
+}
+
 void UQuestManagerSubsystem::NotifyTutorialEvent(FName EventId, FName TargetId, int32 DeltaCount)
 {
 	if (!bTutorialQuestTestActive || DeltaCount <= 0)
@@ -690,12 +701,6 @@ void UQuestManagerSubsystem::NotifyTutorialEvent(FName EventId, FName TargetId, 
 		return;
 	}
 
-	LOG_LC(
-		TEXT("Tutorial quest test event matched: quest=%s event=%s target=%s delta=%d"),
-		*Step->QuestId,
-		*EventId.ToString(),
-		*TargetId.ToString(),
-		DeltaCount);
 	AdvanceTutorialQuestStep(false);
 }
 
@@ -752,6 +757,7 @@ void UQuestManagerSubsystem::LoadTutorialQuestTestData()
 	TutorialDialogueByQuestId.Empty();
 	CurrentTutorialQuestId.Empty();
 	bTutorialQuestTestActive = false;
+	bPendingTutorialStartDialogueReveal = false;
 	LastTutorialDialogueQuestId.Empty();
 	LastTutorialDialogueTriggerType.Empty();
 	LastTutorialDialogueLines.Reset();
@@ -803,10 +809,6 @@ void UQuestManagerSubsystem::LoadTutorialQuestTestData()
 			});
 	}
 
-	LOG_LC(
-		TEXT("Tutorial quest test data loaded: steps=%d dialogue_lines=%d"),
-		TutorialQuestSteps.Num(),
-		TutorialDialogueLines.Num());
 }
 
 void UQuestManagerSubsystem::LoadMainQuestSequence()
@@ -1088,18 +1090,13 @@ bool UQuestManagerSubsystem::AdvanceTutorialQuestStep(bool bFromManualTest)
 		return false;
 	}
 
-	LOG_LC(
-		TEXT("Tutorial step completed [%s] title=%s via=%s"),
-		*CurrentStep->QuestId,
-		*CurrentStep->Title,
-		bFromManualTest ? TEXT("manual") : TEXT("gameplay"));
 	LogTutorialDialogue(CurrentStep->QuestId, TEXT("on_complete"));
 
 	if (CurrentStep->NextQuestId.IsEmpty())
 	{
-		LOG_LC(TEXT("Tutorial quest test finished at [%s]."), *CurrentStep->QuestId);
 		CurrentTutorialQuestId.Empty();
 		bTutorialQuestTestActive = false;
+		bPendingTutorialStartDialogueReveal = false;
 		return true;
 	}
 
@@ -1112,13 +1109,13 @@ bool UQuestManagerSubsystem::AdvanceTutorialQuestStep(bool bFromManualTest)
 			*CurrentStep->QuestId);
 		CurrentTutorialQuestId.Empty();
 		bTutorialQuestTestActive = false;
+		bPendingTutorialStartDialogueReveal = false;
 		return false;
 	}
 
 	CurrentTutorialQuestId = CurrentStep->NextQuestId;
-	LogCurrentTutorialQuestTestState();
+	bPendingTutorialStartDialogueReveal = true;
 	BroadcastCurrentTutorialQuestStep();
-	LogTutorialDialogue(CurrentTutorialQuestId, TEXT("on_start"));
 	return true;
 }
 
@@ -1150,17 +1147,6 @@ void UQuestManagerSubsystem::LogTutorialDialogue(const FString& QuestId, const F
 	LastTutorialDialogueTriggerType = TriggerType;
 	LastTutorialDialogueLines = MatchingLines;
 
-	for (const FTutorialQuestDialogueLine& Line : MatchingLines)
-	{
-		LOG_LC(
-			TEXT("Tutorial dialogue [%s][%s][%d] %s: %s"),
-			*QuestId,
-			*TriggerType,
-			Line.LineOrder,
-			*Line.Speaker,
-			*Line.Dialogue);
-	}
-
 	OnTutorialDialogueLogged.Broadcast(QuestId, TriggerType, LastTutorialDialogueLines);
 }
 
@@ -1189,11 +1175,6 @@ void UQuestManagerSubsystem::HandleWarehouseItemAdded(FName ItemID, int32 AddedC
 				&& Requirement.TargetId == ItemID
 				&& NewTotalCount >= Requirement.RequiredCount)
 			{
-				LOG_LC(
-					TEXT("Tutorial warehouse requirement matched: quest=%s item=%s total=%d"),
-					*Step->QuestId,
-					*ItemID.ToString(),
-					NewTotalCount);
 				AdvanceTutorialQuestStep(false);
 			}
 		}

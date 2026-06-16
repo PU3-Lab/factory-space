@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from agents.base import AgentContext, AgentRunResult
@@ -23,6 +24,30 @@ from agents.operator_guide.question_classifier import (
 from agents.operator_guide.schemas import ManualQAResult
 from agents.operator_guide.session_memory import OPERATOR_GUIDE_RECENT_CONVERSATION_KEY
 from llm.adapter import LLMAdapter
+
+# 진행 상태 메시지 카탈로그 (Progress Message Catalog)
+# 초보자용 설명:
+#     플레이어가 질문 유형에 따라 느끼는 경험(UX)을 극대화하기 위해,
+#     단계별로 에이전트가 어떤 작업을 하고 있는지 상태 메시지를 사전 정의한 테이블입니다.
+PROGRESS_CATALOG: dict[str, list[tuple[str, str]]] = {
+    "machine": [
+        ("rag_search", "장비 매뉴얼을 펼쳐보는 중입니다..."),
+        ("state_check", "입력과 출력 자원을 확인하는 중입니다..."),
+        ("logic_format", "연결 가능한 장비를 살펴보는 중입니다..."),
+    ],
+    "recipe": [
+        ("rag_search", "관련 레시피를 찾는 중입니다..."),
+        ("state_check", "필요한 입력 자원을 확인하는 중입니다..."),
+        ("logic_format", "생산 흐름을 정리하는 중입니다..."),
+    ],
+    "troubleshooting": [
+        ("rag_search", "공장의 전체 흐름을 읽는 중입니다..."),
+        ("state_check", "선택된 장비 상태를 확인하는 중입니다..."),
+        ("power_check", "전력과 입력 자원 상태를 대조하는 중입니다..."),
+        ("document_find", "관련 문제 해결 매뉴얼을 찾는 중입니다..."),
+        ("step_arrange", "점검 순서를 정리하는 중입니다..."),
+    ],
+}
 
 
 class CurrentGameStateTool:
@@ -97,22 +122,36 @@ class ManualQAService:
         self,
         question: str,
         context: dict[str, object] | None = None,
+        topic: str | None = None,
+        on_progress: Callable[[str, str], None] | None = None,
     ) -> ManualQAResult:
         """LLM 없이 CSV 기반 proto 답변 객체를 만든다."""
 
-        return self.build_prompt_context(question, context=context).result
+        return self.build_prompt_context(
+            question, context=context, topic=topic, on_progress=on_progress
+        ).result
 
     def build_prompt_context(
         self,
         question: str,
         context: dict[str, object] | None = None,
+        topic: str | None = None,
+        on_progress: Callable[[str, str], None] | None = None,
     ) -> ManualQAPromptContext:
         """질문을 분류하고, 그 질문에 맞는 CSV evidence를 모은다."""
+
+        # 1단계: RAG 검색 진행 중 메시지 전송
+        if on_progress and topic in PROGRESS_CATALOG:
+            on_progress(PROGRESS_CATALOG[topic][0][0], PROGRESS_CATALOG[topic][0][1])
 
         intent = self._question_classifier.classify(question)
         prompt_context = self._context_builder.build(question, intent)
         recent_conversation = _recent_conversation(context)
         confirmed_facts = _confirmed_facts(context)
+
+        # 2단계: 실시간 게임 상태 확인 진행 중 메시지 전송
+        if on_progress and topic in PROGRESS_CATALOG:
+            on_progress(PROGRESS_CATALOG[topic][1][0], PROGRESS_CATALOG[topic][1][1])
 
         # Game State 관련 분석 및 추출
         requires_state, required_scopes = self._need_classifier.classify_need(
@@ -134,6 +173,11 @@ class ManualQAService:
             )
             used_state = bool(state_text)
 
+        # 3단계: 문제해결(troubleshooting) 특화 진행 메시지 스트리밍
+        if topic == "troubleshooting" and on_progress:
+            on_progress("power_check", "전력과 입력 자원 상태를 대조하는 중입니다...")
+            on_progress("document_find", "관련 문제 해결 매뉴얼을 찾는 중입니다...")
+
         if self._rag_runtime is None:
             result = prompt_context.result.model_copy(
                 update={
@@ -143,6 +187,10 @@ class ManualQAService:
                     "available_scopes": available_scopes,
                 }
             )
+            # 최종 정돈 진행 메시지 전송
+            if on_progress and topic in PROGRESS_CATALOG:
+                on_progress(PROGRESS_CATALOG[topic][-1][0], PROGRESS_CATALOG[topic][-1][1])
+
             return ManualQAPromptContext(
                 result=result,
                 evidence=prompt_context.evidence,
@@ -182,6 +230,10 @@ class ManualQAService:
                 "available_scopes": available_scopes,
             }
         )
+        # 최종 정돈 진행 메시지 전송
+        if on_progress and topic in PROGRESS_CATALOG:
+            on_progress(PROGRESS_CATALOG[topic][-1][0], PROGRESS_CATALOG[topic][-1][1])
+
         return ManualQAPromptContext(
             result=result,
             evidence=prompt_context.evidence,
@@ -203,10 +255,13 @@ class ManualQAService:
         topic: str,
         sub_agent: str,
         context: dict[str, object] | None = None,
+        on_progress: Callable[[str, str], None] | None = None,
     ) -> str:
         """CSV evidence를 근거로 한 LLM용 단일 문자열 prompt를 만든다."""
 
-        prompt_context = self.build_prompt_context(question, context=context)
+        prompt_context = self.build_prompt_context(
+            question, context=context, topic=topic, on_progress=on_progress
+        )
         return self._prompt_builder.build(
             question=question,
             topic=topic,
@@ -221,10 +276,13 @@ class ManualQAService:
         topic: str,
         sub_agent: str,
         context: dict[str, object] | None = None,
+        on_progress: Callable[[str, str], None] | None = None,
     ) -> list[dict[str, str]]:
         """system prompt와 user prompt가 분리된 chat messages를 만든다."""
 
-        prompt_context = self.build_prompt_context(question, context=context)
+        prompt_context = self.build_prompt_context(
+            question, context=context, topic=topic, on_progress=on_progress
+        )
         return self._prompt_builder.build_messages(
             question=question,
             topic=topic,
@@ -243,7 +301,12 @@ def build_manual_qa_agent_result(
     """LLM 호출 실패 시 사용할 operator_guide fallback 응답을 만든다."""
 
     question = str(payload.get("question") or payload.get("message") or "")
-    result = ManualQAService().answer(question, context=context.metadata)
+    result = ManualQAService().answer(
+        question,
+        context=context.metadata,
+        topic=topic,
+        on_progress=getattr(context, "on_progress", None),
+    )
     return AgentRunResult(
         agent="operator_guide",
         payload={
@@ -266,6 +329,7 @@ def build_manual_qa_prompt(
     topic: str,
     sub_agent: str,
     context: dict[str, object] | None = None,
+    on_progress: Callable[[str, str], None] | None = None,
 ) -> str:
     """leaf agent가 사용할 CSV 근거 기반 LLM prompt를 만든다."""
 
@@ -274,6 +338,7 @@ def build_manual_qa_prompt(
         topic=topic,
         sub_agent=sub_agent,
         context=context,
+        on_progress=on_progress,
     )
 
 
@@ -283,6 +348,7 @@ def build_manual_qa_prompt_messages(
     topic: str,
     sub_agent: str,
     context: dict[str, object] | None = None,
+    on_progress: Callable[[str, str], None] | None = None,
 ) -> list[dict[str, str]]:
     """leaf agent가 사용할 system/user chat messages를 만든다."""
 
@@ -291,6 +357,7 @@ def build_manual_qa_prompt_messages(
         topic=topic,
         sub_agent=sub_agent,
         context=context,
+        on_progress=on_progress,
     )
 
 

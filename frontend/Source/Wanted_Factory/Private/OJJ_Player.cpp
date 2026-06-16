@@ -22,6 +22,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "OJJ_BuildController.h"
 #include "OJJ_BuildCamera.h"
+#include "OJJ_Ladder.h"
+#include "Components/CapsuleComponent.h"
 #include "OJJ_Grid.h"
 #include "Blueprint/UserWidget.h"
 #include "MachineBase.h"
@@ -31,10 +33,12 @@
 #include "Machines/LiquidTank.h"
 #include "Machines/WarehousePort.h"
 #include "PlayerWarehouseSubsystem.h"
+#include "UI/UI_WarehouseInteract.h"
 
 AOJJ_Player::AOJJ_Player()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// step-off 안착 보간(#184)을 위해 Tick 사용. 평상시 Tick 본문은 bSteppingOff 가드로 즉시 반환.
+	PrimaryActorTick.bCanEverTick = true;
 
 	// 빌드 카메라 기본 클래스 = C++ 기본. BP 파생을 BP_OJJ_Player에서 지정하면 그걸로 spawn.
 	BuildCameraClass = AOJJ_BuildCamera::StaticClass();
@@ -155,6 +159,9 @@ void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	//    CloseMachineInteractWidget의 PC null-가드가 입력모드 복원을 스킵하고 위젯 제거만 수행한다
 	//    (컨트롤러가 없으면 복원할 대상도 없으므로 안전).
 	CloseMachineInteractWidget(Cast<APlayerController>(GetController()));
+
+	// 등반/step-off 중 폰 파괴·언포제스 시 비행/중력0 상태가 남지 않도록 청산(폰 재사용 안전).
+	AbortClimb();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -332,6 +339,10 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
 	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
+	PlayerInputComponent->BindKey(EKeys::Enter, IE_Pressed, this, &AOJJ_Player::TriggerTutorialDialogueReveal);
+	PlayerInputComponent->BindKey(EKeys::O, IE_Pressed, this, &AOJJ_Player::SetMoldingMachineModeShortcut);
+	PlayerInputComponent->BindKey(EKeys::P, IE_Pressed, this, &AOJJ_Player::SetSynthesizerModeShortcut);
+	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &AOJJ_Player::SetTeleCommunicationTowerModeShortcut);
 	// Foundation G/H는 #196에서 Enhanced Input(IA_SetFoundationMode/IA_SetRampMode)로 전환 —
 	// 레거시 BindKey 제거(이중발화 차단). 바인딩은 위 BindAction 블록 + IMC_Build/BP 매핑(에디터).
 }
@@ -341,6 +352,31 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 	const FVector2D Axis = Value.Get<FVector2D>();
 	if (!Controller || Axis.IsNearlyZero())
 	{
+		return;
+	}
+
+	// step-off 안착 보간 중엔 이동 입력 잠금(보간이 위치를 전담 → 진동/끼임 방지).
+	if (bSteppingOff)
+	{
+		return;
+	}
+
+	// 등반 중(#184): 전후축(W/S)을 수직 이동으로 재해석, 좌우(D/A)는 무시(사다리 축 고정).
+	// 상/하단 도달 시 등반 종료 — 상단은 step-off, 하단은 지면 복귀.
+	if (CurrentLadder)
+	{
+		AddMovementInput(FVector::UpVector, Axis.Y);
+
+		// 발 밑 Z로 상/하단 도달 판정. ClimbReachMargin 여유로 경계 떨림 방지(도달은 살짝 일찍).
+		const float FeetZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		if (Axis.Y > 0.f && FeetZ >= CurrentLadder->GetClimbTopZ() - ClimbReachMargin)
+		{
+			EndClimb(/*bStepOffTop=*/true);
+		}
+		else if (Axis.Y < 0.f && FeetZ <= CurrentLadder->GetClimbBottomZ() + ClimbReachMargin)
+		{
+			EndClimb(/*bStepOffTop=*/false);
+		}
 		return;
 	}
 
@@ -360,6 +396,160 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 			QuestManager->NotifyTutorialEvent(TEXT("InputAction"), TEXT("Move"));
 		}
 	}
+}
+
+void AOJJ_Player::BeginClimb(AOJJ_Ladder* Ladder)
+{
+	if (!Ladder || CurrentLadder || bSteppingOff)
+	{
+		return; // 이미 등반 중·step-off 보간 중·잘못된 사다리 — 무시(단일 진실원).
+	}
+
+	// 재진입 쿨다운: step-off 직후 같은 트리거에 다시 잡혀 MOVE_Flying로 복귀하는 무한 토글(진동) 차단.
+	const UWorld* World = GetWorld();
+	if (World && World->GetTimeSeconds() < ClimbCooldownUntil)
+	{
+		return;
+	}
+
+	// 위치 기반 진입 가드(핵심): 발이 사다리 '밑동 근처'(하단 + 여유 이내)일 때만 등반 시작.
+	// 상면에서 걸어다니는 캐릭터(발 Z ≈ 상단)가 전체높이 트리거에 닿아 등반으로 오인되는 것을 차단.
+	const float FeetZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	if (FeetZ > Ladder->GetClimbBottomZ() + ClimbEntryZTolerance)
+	{
+		UE_LOG(LogTemp, Verbose, TEXT("[Climb] 진입 거부 — 상면 높이(FeetZ=%.1f > Bottom=%.1f+%.1f)"),
+			FeetZ, Ladder->GetClimbBottomZ(), ClimbEntryZTolerance);
+		return;
+	}
+
+	CurrentLadder = Ladder;
+	bClimbing = true;
+	UE_LOG(LogTemp, Verbose, TEXT("[Climb] BeginClimb Bottom=%.1f Top=%.1f"),
+		Ladder->GetClimbBottomZ(), Ladder->GetClimbTopZ());
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		// 중력 끄고 비행 모드로 수직 이동. 키를 떼면 빠르게 멈춰 사다리에서 호버하도록 제동 강하게.
+		Movement->SetMovementMode(MOVE_Flying);
+		Movement->GravityScale = 0.f;
+		Movement->MaxFlySpeed = ClimbSpeed;
+		Movement->BrakingDecelerationFlying = 2048.f;
+		Movement->StopMovementImmediately();
+	}
+}
+
+void AOJJ_Player::EndClimb(bool bStepOffTop)
+{
+	if (!CurrentLadder)
+	{
+		return;
+	}
+
+	AOJJ_Ladder* Ladder = CurrentLadder;
+	CurrentLadder = nullptr;
+	bClimbing = false;
+
+	// 진단(#184): 낙하 원인 추적 — 어느 경로로 등반이 끝났는지(상단 step-off / 하단·기타) + 당시 발 Z.
+	const float DbgFeetZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	UE_LOG(LogTemp, Verbose, TEXT("[Climb] EndClimb stepOff=%d FeetZ=%.1f Top=%.1f Bottom=%.1f"),
+		bStepOffTop ? 1 : 0, DbgFeetZ,
+		Ladder ? Ladder->GetClimbTopZ() : 0.f, Ladder ? Ladder->GetClimbBottomZ() : 0.f);
+
+	// 상단 도달: Foundation 상면으로 '부드럽게' 보간 안착(StepOffDuration). 즉시 텔레포트는 순간이동 느낌이라
+	// 짧은 lerp로 부드럽게 + 보간 중 입력 잠금(진동 방지). 완료 시 Walking 복귀 + 쿨다운(Tick에서).
+	if (bStepOffTop && Ladder && StepOffDuration > KINDA_SMALL_NUMBER)
+	{
+		const FVector LadderLoc = Ladder->GetActorLocation();
+		const FVector Dir = Ladder->GetStepOffDirection();
+		const float HalfHeight = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		StepOffTarget = FVector(
+			LadderLoc.X + Dir.X * StepOffForward,
+			LadderLoc.Y + Dir.Y * StepOffForward,
+			Ladder->GetClimbTopZ() + HalfHeight + StepOffZMargin);
+		StepOffStart = GetActorLocation();
+		StepOffElapsed = 0.f;
+		bSteppingOff = true;
+
+		// 보간 동안 낙하 방지(비행/중력0 유지). 위치는 Tick의 lerp가 전담.
+		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			Movement->SetMovementMode(MOVE_Flying);
+			Movement->GravityScale = 0.f;
+			Movement->StopMovementImmediately();
+		}
+		return; // Walking 복귀/쿨다운은 보간 완료 시(Tick)에서.
+	}
+
+	// 상단(보간 끔) 즉시 안착 또는 하단/기타 종료: 바로 걷기 복귀.
+	if (bStepOffTop && Ladder)
+	{
+		const FVector LadderLoc = Ladder->GetActorLocation();
+		const FVector Dir = Ladder->GetStepOffDirection();
+		const float HalfHeight = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		SetActorLocation(FVector(
+			LadderLoc.X + Dir.X * StepOffForward,
+			LadderLoc.Y + Dir.Y * StepOffForward,
+			Ladder->GetClimbTopZ() + HalfHeight + StepOffZMargin),
+			/*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
+	}
+	ResumeWalkingWithCooldown();
+}
+
+void AOJJ_Player::ResumeWalkingWithCooldown()
+{
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->GravityScale = 1.f;
+		Movement->StopMovementImmediately();
+		Movement->SetMovementMode(MOVE_Walking);
+	}
+
+	// 재진입 쿨다운 개시 — step-off로 상면에 올라간 직후 같은 트리거에 다시 잡히는 진동 차단.
+	if (const UWorld* World = GetWorld())
+	{
+		ClimbCooldownUntil = World->GetTimeSeconds() + ClimbReentryCooldown;
+	}
+}
+
+void AOJJ_Player::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	// 안전망: 등반 중 표시인데 사다리가 사라졌으면(파괴/GC로 CurrentLadder=null) 걷기 복귀 — 비행/중력0 고착 방지.
+	if (bClimbing && !CurrentLadder)
+	{
+		AbortClimb();
+	}
+
+	if (!bSteppingOff)
+	{
+		return; // 평상시 무비용.
+	}
+
+	StepOffElapsed += DeltaSeconds;
+	const float Alpha = FMath::Clamp(StepOffElapsed / FMath::Max(StepOffDuration, KINDA_SMALL_NUMBER), 0.f, 1.f);
+	const float Smooth = FMath::SmoothStep(0.f, 1.f, Alpha); // ease in-out으로 자연스러운 안착
+	SetActorLocation(FMath::Lerp(StepOffStart, StepOffTarget, Smooth),
+		/*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
+
+	if (Alpha >= 1.f)
+	{
+		bSteppingOff = false;
+		ResumeWalkingWithCooldown();
+	}
+}
+
+void AOJJ_Player::AbortClimb()
+{
+	// 등반/step-off를 즉시 청산하고 걷기로 수렴(중력 복원). 빌드모드 진입·EndPlay·사다리 소멸 등
+	// 비정상 종료 경로에서 MOVE_Flying/GravityScale=0 고착을 방지하는 단일 안전 청산점.
+	if (!bClimbing && !bSteppingOff && !CurrentLadder)
+	{
+		return;
+	}
+	CurrentLadder = nullptr;
+	bClimbing = false;
+	bSteppingOff = false;
+	ResumeWalkingWithCooldown();
 }
 
 void AOJJ_Player::Look(const FInputActionValue& Value)
@@ -401,6 +591,12 @@ void AOJJ_Player::Zoom(const FInputActionValue& Value)
 
 void AOJJ_Player::StartJumpAction(const FInputActionValue& Value)
 {
+	// 등반/step-off 중 점프 무시(상태 상호배제).
+	if (CurrentLadder || bSteppingOff)
+	{
+		return;
+	}
+
 	Jump();
 
 	if (UGameInstance* GameInstance = GetGameInstance())
@@ -419,6 +615,9 @@ void AOJJ_Player::ToggleBuild(const FInputActionValue& Value)
 	{
 		return;
 	}
+
+	// 등반/step-off 중 빌드모드 진입 시 MOVE_Flying/중력0이 잔존하지 않도록 먼저 청산(걷기 복귀).
+	AbortClimb();
 	// Enter/Exit 자체 가드(같은 상태면 no-op) 덕분에 토글 라우팅만 하면 됨
 	BuildController->ToggleBuildMode();
 
@@ -645,9 +844,13 @@ void AOJJ_Player::OJJ_SetBuildMode(const FString& ModeName)
 	{
 		BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::LiquidTank);
 	}
+	else if (Lower == TEXT("tower") || Lower == TEXT("telecommunicationtower"))
+	{
+		BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::TeleCommunicationTower);
+	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] OJJ_SetBuildMode: 알 수 없는 모드 '%s' (pipe|tank)"), *ModeName);
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] OJJ_SetBuildMode: unknown mode '%s' (pipe|tank|tower)"), *ModeName);
 	}
 }
 
@@ -764,7 +967,34 @@ void AOJJ_Player::SetSmelterMode(const FInputActionValue& Value)
 	}
 }
 
-// 창고 모드 진입(1키, generic Machine 진입 키 대체). generic SetMachineMode는 보존(미바인딩 시 dead) — 코드 삭제 없음.
+void AOJJ_Player::SetMoldingMachineModeShortcut()
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::MoldingMachine);
+}
+
+void AOJJ_Player::SetSynthesizerModeShortcut()
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Synthesizer);
+}
+
+// TeleCommunicationTower build mode shortcut.
+void AOJJ_Player::SetTeleCommunicationTowerModeShortcut()
+{
+	if (!BuildController)
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::TeleCommunicationTower);
+}
+
 void AOJJ_Player::SetWarehouseMode(const FInputActionValue& Value)
 {
 	if (!BuildController)
@@ -927,120 +1157,144 @@ void AOJJ_Player::SendOperatorGuideRequest()
 
 void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 {
-	// UI는 로컬 전용 — 멀티플레이에서 비로컬 폰의 입력으로 위젯을 띄우지 않도록 가드.
 	if (!IsLocallyControlled()) return;
 
 	APlayerController* PC = Cast<APlayerController>(GetController());
 	if (!PC) return;
 
 	if (BuildController && BuildController->IsInBuildMode()) return;
+	
+	FInputModeGameAndUI QuickFixMode;
+	QuickFixMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	// 현재 포커스를 강제로 게임 뷰포트로 지정하여 굳어버린 키보드 입력을 깨웁니다.
+	QuickFixMode.SetWidgetToFocus(nullptr); 
+	PC->SetInputMode(QuickFixMode);
 
-	if (bIsInventoryOpen || (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()))
-	{
-		if (MachineInteractWidgetInstance.IsValid())
-		{
-			MachineInteractWidgetInstance->RemoveFromParent();
-			MachineInteractWidgetInstance = nullptr;
-		}
+    // 일반 기계창, 창고창, 가방창 중 하나라도 열려 있으면 무조건 전부 다 닫습니다.
+    if (bIsInventoryOpen || 
+        (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()) ||
+        (WarehouseInteractWidgetInstance && WarehouseInteractWidgetInstance->IsInViewport())) // 창고 닫기 가드 추가
+    {
+       if (MachineInteractWidgetInstance.IsValid())
+       {
+          MachineInteractWidgetInstance->RemoveFromParent();
+          MachineInteractWidgetInstance = nullptr;
+       }
 
-		if (InventoryWidgetInstance)
-		{
-			InventoryWidgetInstance->RemoveFromParent();
-		}
-		bIsInventoryOpen = false; // 락 해제
-		GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle); // 타이머 확실히 소멸
+       // 띄워져 있던 창고 창을 부모로부터 제거하고 메모리 초기화
+       if (WarehouseInteractWidgetInstance)
+       {
+          WarehouseInteractWidgetInstance->RemoveFromParent();
+          WarehouseInteractWidgetInstance = nullptr;
+       }
 
-		PC->SetInputMode(FInputModeGameOnly());
-		PC->SetShowMouseCursor(false);
-		return;
-	}
+       if (InventoryWidgetInstance)
+       {
+          InventoryWidgetInstance->RemoveFromParent();
+       }
+       bIsInventoryOpen = false;
+       GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
 
-	UWorld* World = GetWorld();
-	if (!Camera || !World)
-	{
-		return;
-	}
+       PC->SetInputMode(FInputModeGameOnly());
+       PC->SetShowMouseCursor(false);
+       return;
+    }
 
-	// 카메라 전방 라인 트레이스 — 빌드모드 호버와 동일 채널(ECC_Visibility), 거리만 MaxInteractDistance.
-	const FVector TraceStart = Camera->GetComponentLocation();
-	const FVector TraceEnd = TraceStart + Camera->GetForwardVector() * MaxInteractDistance;
-	FHitResult Hit;
-	FCollisionQueryParams TraceParams(FName(TEXT("OJJMachineInteract")), /*bTraceComplex=*/ false, this);
-	const bool bHit = World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, TraceParams);
-	if (!bHit)
-	{
-		return;
-	}
+    UWorld* World = GetWorld();
+    if (!Camera || !World) return;
 
-	// 히트 액터가 머신(또는 파생)일 때만 상호작용.
-	AMachineBase* Machine = Cast<AMachineBase>(Hit.GetActor());
-	if (!Machine)
-	{
-		return;
-	}
+    const FVector TraceStart = Camera->GetComponentLocation();
+    const FVector TraceEnd = TraceStart + Camera->GetForwardVector() * MaxInteractDistance;
+    FHitResult Hit;
+    FCollisionQueryParams TraceParams(FName(TEXT("OJJMachineInteract")), false, this);
+    const bool bHit = World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, TraceParams);
+    if (!bHit) return;
 
-	if (!MachineInteractWidgetClass)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[OJJ_Player] MachineInteractWidgetClass 미할당 — 머신 상호작용(F) 비활성. ")
-			TEXT("BP_OJJ_Player에 WBP_MachineInteract 할당 필요."));
-		return;
-	}
+    AMachineBase* Machine = Cast<AMachineBase>(Hit.GetActor());
+    if (!Machine) return;
 
-	UUI_MachineInteract* Widget = CreateWidget<UUI_MachineInteract>(PC, MachineInteractWidgetClass);
-	if (!Widget)
-	{
-		return;
-	}
-	Widget->SetTargetMachine(Machine);
-	MachineInteractWidgetInstance = Widget;
-	Widget->AddToViewport(); //
-	Widget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
-	const bool bIsWarehousePort = Machine->IsA(AWarehousePort::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse"));
-	const bool bIsLiquidTank = Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("LiquidTank"));
-	if (bIsWarehousePort || bIsLiquidTank)
-	{
-		// 인벤토리 위젯이 아직 없다면 새로 생성
-		if (!InventoryWidgetInstance && InventoryWidgetClass)
-		{
-			InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
-		}
+    // 바라본 기계가 '창고' 계열인지 검사합니다
+    if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
+    {
+       if (!WarehouseInteractWidgetClass)
+       {
+          UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] WarehouseInteractWidgetClass 미할당! BP에서 할당하세요."));
+          return;
+       }
 
-		if (InventoryWidgetInstance)
-		{
-			InventoryWidgetInstance->SetItemFormFilter(bIsLiquidTank ? FName(TEXT("liquid")) : FName(TEXT("solid")));
-			InventoryWidgetInstance->AddToViewport();
-			InventoryWidgetInstance->RefreshInventoryWindow(); // 최초 1회 생성 레이아웃 틀 짜기
-			bIsInventoryOpen = true;
-			
-			GetWorldTimerManager().SetTimer(
-			   InventoryRefreshTimerHandle, 
-			   this, 
-			   &AOJJ_Player::UpdateInventoryRealtime, 
-			   0.1f, 
-			   true
-			);
+       // 창고 전용 UI 창
+       UUI_WarehouseInteract* WHWidget = CreateWidget<UUI_WarehouseInteract>(PC, WarehouseInteractWidgetClass);
+       if (WHWidget)
+       {
+          WHWidget->SetTargetMachine(Machine);
+          WarehouseInteractWidgetInstance = WHWidget;
+          WHWidget->AddToViewport();
+          WHWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
+       }
+    }
+    else
+    {
+       // 일반 기계(제련기, 분쇄기 등)라면 기존 일반 상호작용 UI 창
+       if (!MachineInteractWidgetClass) return;
+
+       UUI_MachineInteract* Widget = CreateWidget<UUI_MachineInteract>(PC, MachineInteractWidgetClass);
+       if (Widget)
+       {
+          Widget->SetTargetMachine(Machine);
+          MachineInteractWidgetInstance = Widget;
+          Widget->AddToViewport();
+          Widget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
+       }
+    }
+
+    // 창고 포트 계열일 때 우측에 유저 가방 창 세트로 동시 소환하는 로직 (기존 유지)
+    if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
+    {
+       if (!InventoryWidgetInstance && InventoryWidgetClass)
+       {
+          InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
+       }
+
+       if (InventoryWidgetInstance)
+       {
+          InventoryWidgetInstance->AddToViewport();
+          InventoryWidgetInstance->RefreshInventoryWindow();
+          bIsInventoryOpen = true;
+
+          GetWorldTimerManager().SetTimer(
+             InventoryRefreshTimerHandle, 
+             this, 
+             &AOJJ_Player::UpdateInventoryRealtime, 
+             0.1f, 
+             true
+          );
             
-			UE_LOG(LogTemp, Log, TEXT("[F키 성공] 창고와 가방 창을 동시에 성공적으로 활성화했습니다."));
-		}
-	}
+          UE_LOG(LogTemp, Log, TEXT("[창고 F키 성공] 창고 전용 창과 가방 창을 완벽하게 동시 활성화했습니다!"));
+       }
+    }
 
-	// 마우스 가로채기 억까(TakeWidget)가 완벽히 배제된 정석 프리 인풋 세팅
-	FInputModeGameAndUI InputModeData;
-	InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	PC->SetInputMode(InputModeData);
-	PC->SetShowMouseCursor(true);
+    FInputModeGameAndUI InputModeData;
+    InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+    PC->SetInputMode(InputModeData);
+    PC->SetShowMouseCursor(true);
 }
 
 void AOJJ_Player::CloseMachineInteractWidget(APlayerController* PC)
 {
+	// 1. 기존 일반 기계창 끄기
 	if (UUI_MachineInteract* Widget = MachineInteractWidgetInstance.Get())
 	{
 		Widget->RemoveFromParent();
 	}
 	MachineInteractWidgetInstance = nullptr;
 
-	// 닫을 때: 게임 전용 입력 복원 + 커서 숨김.
+	// 2. 창고 전용 UI 창이 켜져 있었다면 부모에게서 떼어내고 클리어
+	if (WarehouseInteractWidgetInstance)
+	{
+		WarehouseInteractWidgetInstance->RemoveFromParent();
+		WarehouseInteractWidgetInstance = nullptr;
+	}
+
 	if (PC)
 	{
 		PC->SetInputMode(FInputModeGameOnly());
@@ -1106,6 +1360,28 @@ void AOJJ_Player::TriggerHUDAIGuideToggle()
 	{
 		// HUD 토글 함수 원격 호출
 		MainHUD->ToggleAIGuideWindow();
+	}
+}
+
+void AOJJ_Player::TriggerTutorialDialogueReveal()
+{
+	if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
+	{
+		if (MainHUD->IsGuideWindowOpen())
+		{
+			return;
+		}
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			if (QuestManager->HasPendingTutorialStartDialogue())
+			{
+				QuestManager->RevealPendingTutorialStartDialogue();
+			}
+		}
 	}
 }
 

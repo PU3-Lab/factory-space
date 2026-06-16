@@ -25,6 +25,7 @@ class RecipeExplainerAgent:
             topic="recipe",
             sub_agent=self.agent_id,
             context=context.metadata,
+            on_progress=getattr(context, "on_progress", None),
         )
 
     def build_prompt_messages(
@@ -38,6 +39,7 @@ class RecipeExplainerAgent:
             topic="recipe",
             sub_agent=self.agent_id,
             context=context.metadata,
+            on_progress=getattr(context, "on_progress", None),
         )
 
     def fallback(

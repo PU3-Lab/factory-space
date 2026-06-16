@@ -5,7 +5,9 @@ import logging
 import pytest
 from fastapi.testclient import TestClient
 
+from agents.pipeline import AgentPipeline
 from app import create_app
+from tests.harness import StubLLM, top_agent_decision
 from websocket_gateway import gateway
 
 
@@ -138,3 +140,61 @@ def test_sanitize_for_log_masks_sensitive_values() -> None:
             "nested": [{"api_key": "[redacted]"}],
         },
     }
+
+
+def test_agent_websocket_streams_progress_for_operator_guide() -> None:
+    """operator_guide 요청에서 WebSocket progress가 중복 없이 순서대로 오는지 확인한다.
+
+    초보자용 설명:
+        실제 agent-test 화면은 `/ws/agent` WebSocket으로 진행 메시지를 받습니다.
+        이 테스트는 최종 답변 전 `agent.progress`가 정확히 한 번씩만 도착하는지
+        확인해 같은 말풍선이 반복되는 문제를 막습니다.
+    """
+    llm = StubLLM([top_agent_decision("operator_guide"), None])
+    pipeline = AgentPipeline(llm=llm)
+
+    with TestClient(create_app()) as client:
+        client.app.state.agent_pipeline = pipeline
+
+        with client.websocket_connect("/ws/agent") as websocket:
+            websocket.send_json(
+                {
+                    "type": "agent.request",
+                    "request_id": "request-ws-progress",
+                    "session_id": "test-ws-session",
+                    "client_id": "test-ws-client",
+                    "agent": "operator_guide",
+                    "payload": {
+                        "sub_agent": "operator_guide.recipe_explainer",
+                        "question": "구리선은 어떻게 만들어?",
+                    },
+                }
+            )
+
+            messages = []
+            for _ in range(10):
+                msg = websocket.receive_json()
+                messages.append(msg)
+                if msg["type"] in ("agent.response", "agent.error"):
+                    break
+
+    progress_messages = [m for m in messages if m["type"] == "agent.progress"]
+    assert [
+        (m["payload"]["stage"], m["payload"]["message"]) for m in progress_messages
+    ] == [
+        ("rag_search", "관련 레시피를 찾는 중입니다..."),
+        ("state_check", "필요한 입력 자원을 확인하는 중입니다..."),
+        ("logic_format", "생산 흐름을 정리하는 중입니다..."),
+    ]
+
+    for progress_message in progress_messages:
+        assert progress_message["request_id"] == "request-ws-progress"
+        assert progress_message["session_id"] == "test-ws-session"
+        assert progress_message["client_id"] == "test-ws-client"
+        assert progress_message["agent"] == "operator_guide"
+        assert "message" in progress_message["payload"]
+
+    final_response = messages[-1]
+    assert final_response["type"] == "agent.response"
+    assert final_response["request_id"] == "request-ws-progress"
+    assert "final_answer" in final_response["payload"]

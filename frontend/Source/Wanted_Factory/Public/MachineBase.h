@@ -300,6 +300,12 @@ public:
 	//    인스턴스 멤버 상태에 의존하지 말 것. (CDO는 월드/트랜스폼이 없다.)
 	virtual bool CanPlaceAdditional(const AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps) const { return true; }
 
+	// #182: 물(WaterArea∩분류 water) 셀 위 직접 배치 허용 여부. 기본 false(육상 전용) — 펌프만 override true.
+	// CanPlaceMachine의 게이트 A(분류 IsCellConstructible)·B(WaterArea 점유) 면제 스위치이자
+	// GetMachinePlacementLocation의 수면 Z 안착 스위치. 교집합(IsCellWater AND GetWaterSurfaceZAtCell)은
+	// 그리드 측이 셀별로 보장하므로, 머신은 "물 위에 설 수 있는가"만 선언한다(CDO-safe — 인스턴스 상태 미사용).
+	virtual bool CanStandOnWater() const { return false; }
+
 	// 그리드 등록 성공 직후(배치 확정) 호출 — 자원 선점 등. 실제 인스턴스에서만 호출(CDO 아님).
 	virtual void OnPlacedOnGrid(AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps) {}
 

@@ -22,13 +22,17 @@
 #include "Machines/Grinder.h"
 #include "Machines/MachineSubsystem.h"
 #include "Machines/MinerMachine.h"
+#include "Machines/MoldingMachine.h"
 #include "Machines/Pump.h"
 #include "Machines/LiquidTank.h"
 #include "Machines/Smelter.h"
+#include "Machines/Synthesizer.h"
+#include "Machines/TeleCommunicationTower.h"
 #include "Machines/WarehousePort.h"
 #include "OJJ_Foundation.h"
 #include "OJJ_ProtectionTower.h"
 #include "Pipe.h"
+#include "PlayerWarehouseSubsystem.h"
 #include "QuestManagerSubsystem.h"
 #include "Resource/ResourceBase.h"
 
@@ -80,6 +84,12 @@ namespace
 			return TEXT("Conveyor");
 		case EOJJ_BuildPlacementMode::LiquidTank:
 			return TEXT("LiquidTank"); // F4-1' — ALiquidTank ctor의 MachineType과 동일 표기.
+		case EOJJ_BuildPlacementMode::MoldingMachine:
+			return TEXT("MoldingMachine");
+		case EOJJ_BuildPlacementMode::Synthesizer:
+			return TEXT("Synthesizer");
+		case EOJJ_BuildPlacementMode::TeleCommunicationTower:
+			return TEXT("TeleCommunicationTower");
 		default:
 			return NAME_None;
 		}
@@ -105,6 +115,24 @@ namespace
 			QuestManager->NotifyMainQuestMachinePlaced(MachineType);
 			QuestManager->NotifyTutorialEvent(TEXT("PlaceMachine"), MachineType);
 		}
+	}
+
+	FName GetRequiredInventoryItemForPlacement(const AMachineBase* Machine)
+	{
+		if (Machine && Machine->GetMachineType() == TEXT("TeleCommunicationTower"))
+		{
+			return TEXT("TeleCommunicationTower");
+		}
+
+		return NAME_None;
+	}
+
+	UPlayerWarehouseSubsystem* GetWarehouseSubsystem(UObject* Context)
+	{
+		UGameInstance* GameInstance = Context && Context->GetWorld()
+			? Context->GetWorld()->GetGameInstance()
+			: nullptr;
+		return GameInstance ? GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>() : nullptr;
 	}
 
 	void NotifyTutorialQuestEvent(UObject* Context, FName EventId)
@@ -149,6 +177,9 @@ AOJJ_BuildController::AOJJ_BuildController()
 	PumpClass = APump::StaticClass();
 	SmelterClass = ASmelter::StaticClass();
 	WarehouseClass = AWarehousePort::StaticClass();
+	MoldingMachineClass = AMoldingMachine::StaticClass();
+	SynthesizerClass = ASynthesizer::StaticClass();
+	TeleCommunicationTowerClass = ATeleCommunicationTower::StaticClass();
 }
 
 void AOJJ_BuildController::Tick(float DeltaSeconds)
@@ -220,6 +251,21 @@ void AOJJ_BuildController::EnterBuildMode()
 	if (PlacementMode == EOJJ_BuildPlacementMode::LiquidTank && !LiquidTankClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] LiquidTankClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::MoldingMachine && !MoldingMachineClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] MoldingMachineClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::Synthesizer && !SynthesizerClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] SynthesizerClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::TeleCommunicationTower && !TeleCommunicationTowerClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] TeleCommunicationTowerClass missing. EnterBuildMode stopped."));
 		return;
 	}
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor && !ConveyorClass)
@@ -346,6 +392,8 @@ void AOJJ_BuildController::RotateHoverClockwise()
 			&& PlacementMode != EOJJ_BuildPlacementMode::Smelter
 			&& PlacementMode != EOJJ_BuildPlacementMode::Warehouse
 			&& PlacementMode != EOJJ_BuildPlacementMode::LiquidTank
+			&& PlacementMode != EOJJ_BuildPlacementMode::MoldingMachine
+			&& PlacementMode != EOJJ_BuildPlacementMode::Synthesizer
 			&& PlacementMode != EOJJ_BuildPlacementMode::Foundation))
 	{
 		return;
@@ -470,6 +518,21 @@ TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
 		return WarehouseClass;
 	}
 
+	if (PlacementMode == EOJJ_BuildPlacementMode::MoldingMachine)
+	{
+		return MoldingMachineClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::Synthesizer)
+	{
+		return SynthesizerClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::TeleCommunicationTower)
+	{
+		return TeleCommunicationTowerClass;
+	}
+
 	return MachineClass;
 }
 
@@ -512,7 +575,7 @@ void AOJJ_BuildController::UpdateMouseHover()
 		return;
 	}
 
-	const FIntPoint CursorCell = TargetGrid->WorldToGrid(Hit.Location);
+	const FIntPoint CursorCell = ResolveCursorCellOverWater(Hit.Location); // #182 물 위 패럴랙스 보정(호버=클릭 동일 셀)
 
 	// Conveyor/Pipe 모드: 드래그/단일 셀 미리보기로 분기 (머신 경로와 독립 — 파이프는 프리뷰만 분기).
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor
@@ -970,6 +1033,23 @@ void AOJJ_BuildController::OnLeftClickPressed()
 		FIntPoint CursorCell;
 		if (GetCursorCell(CursorCell))
 		{
+			// #182 파이프 시작 스냅(파이프 전용) — 펌프 본체/출력 포트 근방을 클릭하면 등록된 출력 포트 셀로
+			// 보정. 3×3 펌프 바깥 한 칸을 픽셀단위로 집는 비현실적 조준 제거. 컨베이어는 미적용(시작 판정 무변경).
+			if (PlacementMode == EOJJ_BuildPlacementMode::Pipe)
+			{
+				// ⭐ 1순위: 스크린 공간 출력 포트 스냅 — 화면에서 커서 근처 포트 박스로 스냅(월드 Z 패럴랙스 무관).
+				// 2순위(폴백): 그리드 셀 근방 2칸 스냅. 둘 다 실패면 원래 셀 유지.
+				APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+				FIntPoint SnapCell;
+				if (PC && TargetGrid->OJJ_FindLiquidOutputPortUnderCursorScreen(PC, /*MaxScreenDist=*/64.0f, SnapCell))
+				{
+					CursorCell = SnapCell;
+				}
+				else if (TargetGrid->OJJ_GetPipeOutputStartCell(CursorCell, /*MaxSnap=*/2, SnapCell))
+				{
+					CursorCell = SnapCell;
+				}
+			}
 			BeginConveyorDrag(CursorCell);
 		}
 		return;
@@ -1026,6 +1106,20 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	// 써야 점유·중심·메시가 일치(Codex 지적 핵심). 호버 미리보기(UpdateMouseHover)와도 동일 step이라
 	// "미리보기 = 실제 배치" 정합.
 	ApplyMachineDataToDefault(this, DefaultMachine);
+	const FName RequiredPlacementItem = GetRequiredInventoryItemForPlacement(DefaultMachine);
+	UPlayerWarehouseSubsystem* WarehouseSubsystem = nullptr;
+	if (!RequiredPlacementItem.IsNone())
+	{
+		WarehouseSubsystem = GetWarehouseSubsystem(this);
+		if (!WarehouseSubsystem || !WarehouseSubsystem->CanTakeItem(RequiredPlacementItem, 1))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[BuildController] %s item is required before placing this machine."),
+				*RequiredPlacementItem.ToString());
+			return;
+		}
+	}
+
 	const FIntPoint Origin = ComputeOriginFromCursorCell(CurrentHoverCell, DefaultMachine, HoverRotationSteps);
 
 	if (!TargetGrid->CanPlaceMachine(DefaultMachine, Origin, HoverRotationSteps))
@@ -1068,6 +1162,16 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	// 메시 yaw 회전 — TryPlaceMachine이 회전 footprint 중심(GetMachinePlacementLocation(.., step))에
 	// 액터를 놓았으므로, 그 중심을 기준으로 yaw만 돌리면 center-anchor 메시가 회전 footprint와 정렬.
 	// 시계방향 90°×step (R 방향). 부호가 R 의도와 반대면 -90.f로.
+	if (!RequiredPlacementItem.IsNone() && (!WarehouseSubsystem || !WarehouseSubsystem->TakeItem(RequiredPlacementItem, 1)))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[BuildController] Failed to consume %s item after placement. Reverting placement."),
+			*RequiredPlacementItem.ToString());
+		TargetGrid->RemoveMachine(NewMachine);
+		NewMachine->Destroy();
+		return;
+	}
+
 	NewMachine->SetActorRotation(FRotator(0.f, 90.f * HoverRotationSteps, 0.f));
 	NotifyMainQuestMachinePlaced(this, GetQuestPlacementTargetId(PlacementMode));
 
@@ -1427,6 +1531,9 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::Foundation: ModeName = TEXT("Foundation"); break;
 	case EOJJ_BuildPlacementMode::Pipe:      ModeName = TEXT("Pipe");       break;
 	case EOJJ_BuildPlacementMode::LiquidTank: ModeName = TEXT("LiquidTank"); break;
+	case EOJJ_BuildPlacementMode::MoldingMachine: ModeName = TEXT("MoldingMachine"); break;
+	case EOJJ_BuildPlacementMode::Synthesizer: ModeName = TEXT("Synthesizer"); break;
+	case EOJJ_BuildPlacementMode::TeleCommunicationTower: ModeName = TEXT("TeleCommunicationTower"); break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 
@@ -1458,8 +1565,32 @@ bool AOJJ_BuildController::GetCursorCell(FIntPoint& OutCell) const
 		return false;
 	}
 
-	OutCell = TargetGrid->WorldToGrid(Hit.Location);
+	OutCell = ResolveCursorCellOverWater(Hit.Location); // #182 물 위 패럴랙스 보정(호버=클릭 동일 셀)
 	return true;
+}
+
+FIntPoint AOJJ_BuildController::ResolveCursorCellOverWater(const FVector& TerrainHitLocation) const
+{
+	const FIntPoint TerrainCell = TargetGrid->WorldToGrid(TerrainHitLocation);
+
+	// #182 패럴랙스: WaterArea가 Visibility Ignore라 커서 레이가 물을 통과해 물 밑 지형을 맞는다. 깊은 물에선
+	// 그 지형 히트가 보이는 수면 셀에서 십수 칸까지 빗나가(물 밖 육지로) 호버/클릭 셀이 어긋난다. 마우스 레이를
+	// 직접 각 WaterArea 수면 평면과 교차시켜, 지형 히트보다 가까운(=보이는) 수면 셀이 있으면 그 셀을 쓴다.
+	// 물 위가 아니면(육지/머신) 수면 교차가 없어 기존 지형 히트 XY 그대로 — 회귀 0.
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	FVector RayOrigin = FVector::ZeroVector;
+	FVector RayDir = FVector::ZeroVector;
+	if (PC && PC->DeprojectMousePositionToWorld(RayOrigin, RayDir))
+	{
+		const float TerrainDist = FVector::Dist(RayOrigin, TerrainHitLocation);
+		FIntPoint WaterCell;
+		if (TargetGrid->OJJ_TraceCursorToWaterSurface(RayOrigin, RayDir, TerrainDist, WaterCell))
+		{
+			return WaterCell;
+		}
+	}
+
+	return TerrainCell;
 }
 
 void AOJJ_BuildController::UpdatePathDragHoverPreview(const TArray<FIntPoint>& Cells)

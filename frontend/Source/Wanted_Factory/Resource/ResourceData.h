@@ -20,7 +20,10 @@ enum class EResourceShape : uint8
 	None,
 	Ore,
 	Ingot,
-	Powder
+	Powder,
+	bar,
+	wire,
+	plate
 };
 
 USTRUCT(BlueprintType)

@@ -45,6 +45,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Resource")
 	bool bIsInfinite = false;
 
+	// true면 광물 메쉬 bounds가 덮는 그리드 셀 전체를 자원 점유 셀로 등록한다.
+	// 채굴기는 이 점유 영역의 바깥 4방향 인접 셀 어디에서나 설치 가능해진다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Resource|Grid")
+	bool bUseMeshBoundsForGridRegistration = true;
+
 	// 이 자원을 선점한 머신(채굴기/펌프). weak — 머신이 비정상 소멸해도 자동 무효화돼
 	// 선점이 자연 해제된다(IsClaimed가 IsValid로 판정). 명시 Release(머신 제거/EndPlay)도 병행.
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Resource|Claim")
