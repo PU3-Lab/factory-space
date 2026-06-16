@@ -127,6 +127,11 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Path")
 	TArray<float> PathCellZs;
 
+	// #257 탱크 진입 포트 방향(그리드가 OJJ_SetEndPortFlowDir로 주입, entry→tank로 부호 결정된 그리드 스텝).
+	// RebuildVisuals가 마지막 셀 중심을 bend 조인트로 두고 이 방향으로 half-cell 스텁을 꺾어 "물려 들어가는" 연결을 만든다.
+	// 시각 전용 — 경로 판정/예약셀/액체 슬롯과 무관. Zero면 기존 직선 돌출(항등).
+	FIntPoint OJJ_EndPortFlowDir = FIntPoint::ZeroValue;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Path")
 	TArray<FIntPoint> OccupiedGridCells;
 
@@ -152,6 +157,9 @@ public:
 	// 길이가 PathCells와 안 맞으면 무시(평면 fallback) — 빈 배열이면 기존 평면 동작 그대로(항등).
 	UFUNCTION(BlueprintCallable, Category = "Pipe|Path")
 	void OJJ_SetPathCellLocalZs(const TArray<float>& InCellLifts);
+
+	// #257 탱크 진입 포트 방향 주입(시각 전용). SetPath 전에 호출 — RebuildVisuals가 마지막 스텁을 이 방향으로 꺾는다.
+	void OJJ_SetEndPortFlowDir(FIntPoint InEndPortFlowDir) { OJJ_EndPortFlowDir = InEndPortFlowDir; }
 
 	UFUNCTION(BlueprintCallable, Category = "Pipe|Path")
 	void ConfigureTransport(
