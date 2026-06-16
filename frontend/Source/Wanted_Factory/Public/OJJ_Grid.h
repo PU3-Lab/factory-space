@@ -124,6 +124,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Grid|Conveyor", meta = (ClampMin = "1.0"))
 	float OJJ_PipeOverpassClearance = 100.0f;
 
+	// #182 ⭐ 공유 경사 주행 한계(uu) — 파이프·컨베이어 공용 경사 게이트 단일 상수(설계: 경사 한계는 두 시스템 동일).
+	// 경로 인접 셀 간 |ΔZ|가 이 값 이하면 통과(자연 경사: 물가 둑/언덕/완경사), 초과면 거부(진짜 수직 벽/절벽).
+	// 기본 300 = 물가 둑(펌프 수면 −980 → 물가 지형, 실측 ~208uu)은 통과시키고 수직 벽(500uu+)은 막는 값.
+	// 현재 파이프 게이트만 이 상수를 참조(셀별 지형추종 후 |ΔZ| 판정). 컨베이어는 별도 OJJ_MaxConveyorStepZ(100)
+	// 유지 → 이번 패스 회귀 0. 다음 컨베이어 지형추종 패스에서 컨베이어 게이트도 이 상수로 이관(공용화 완성).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Conveyor", meta = (ClampMin = "1.0"))
+	float OJJ_MaxSlopeStepZ = 300.0f;
+
 	// 실제 placement 가능 영역 (X 칸 × Y 칸).
 	// CanPlaceMachine / IsValidGridCell이 권위 있는 grid extent로 사용. 머신은 이 범위 내에서만 등록 가능.
 	// VisualizationRange (시각화 한 변당 셀 수) 와 독립 — 디자이너가 두 값을 분리 가능.
@@ -691,6 +699,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Water")
 	bool IsCellWater(FIntPoint Cell) const;
 
+	// 셀이 blocked(건설 불가 지형 — 굴곡/경사/절벽/장애물) 분류인지. void(바닥 없음)·water와 배타(베이크 단일 분류).
+	// #182 파이프 굴곡 통과 게이트(bAllowBlockedCells)가 사용 — blocked만 통과 허용하고 void는 계속 거부.
+	UFUNCTION(BlueprintPure, Category = "Grid|Terrain")
+	bool IsCellBlocked(FIntPoint Cell) const;
+
 	// 셀을 덮는 점유 액체 자원(WaterArea, form=liquid)의 수면 Z를 반환. 그런 액터가 없으면 false.
 	// #182 펌프 물위 배치·파이프 수면 Z의 공용 단일원 — per-puddle(WaterArea별 액터 Z) 자동(WA1/WA2 다른 수면).
 	// ⚠️ 수면 = WaterArea 액터 Z(GetActorLocation().Z). plane 메시 시각 오프셋과 별개 — 게이트/안착 기준은 액터 Z.
@@ -702,6 +715,10 @@ public:
 	// #182 펌프 발밑 수원 연결·수면 Z 공용 단일원 — OccupiedCells(머신 점유에 덮어쓰임)와 분리돼
 	// 펌프가 같은 셀을 점유해도 발밑 WaterArea를 찾는다. GetWaterSurfaceZAtCell도 이 함수로 위임.
 	AResourceBase* GetLiquidResourceAtCell(FIntPoint Cell) const;
+
+	// #182 파이프 셀별 안착 Z의 단일원 — 우선순위: 물(수면 Z) > Foundation(상면) > 지형(GroundZ 추종) > 평면.
+	// 물·땅·Foundation·굴곡(blocked) 어디든 지형을 따라가는 파이프 Z를 셀 단위로 산출(경사 게이트/등록/비주얼 공용).
+	float OJJ_GetPipeCellSurfaceZ(FIntPoint Cell) const;
 
 	// #182 커서 레이 ∩ 수면. 마우스 레이(RayOrigin/Dir)를 각 액체자원(WaterArea)의 수면 Z 평면과 교차시켜,
 	// 교차점이 그 WaterArea가 덮는 셀이면 그 셀을 OutCell로 반환(MaxDistance보다 가까운 가장 앞 수면). 깊은 물에서
@@ -1005,13 +1022,15 @@ public:
 	// 실패 시 OutReason에 사유. (포트 판정/연속성/충돌은 내부 OJJ_CollectConveyorReservedCells로 검증.) C++ 전용.
 	// bAllowConveyorOverpass: 파이프 정규화(OJJ_BuildPipePlacementPath)가 true 전달 — 내부 수집 검증이
 	// 컨베이어 점유 셀을 타넘기로 허용. 컨베이어 호출(기본 false)은 기존 동작 그대로.
+	// bAllowBlockedCells: 파이프가 blocked(굴곡) 셀을 통과 허용(절벽 거부는 경사 게이트가 별도). 컨베이어 false.
 bool OJJ_BuildConveyorPlacementPath(
 	const TArray<FIntPoint>& DragCells,
 	TArray<FIntPoint>& OutPathCells,
 	FString& OutReason,
 	bool bAllowConveyorOverpass = false,
 	bool bAllowLiquidMachines = false,
-	bool bAllowWaterCells = false) const;
+	bool bAllowWaterCells = false,
+	bool bAllowBlockedCells = false) const;
 
 	// 주어진 경로가 배치 가능한지만 판정(예약셀 산출 없이 OJJ_CollectConveyorReservedCells 래핑). C++ 전용.
 	bool OJJ_CanPlaceConveyorPath(const TArray<FIntPoint>& PathCells) const;
