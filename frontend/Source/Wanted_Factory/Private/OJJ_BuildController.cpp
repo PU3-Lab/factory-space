@@ -575,7 +575,7 @@ void AOJJ_BuildController::UpdateMouseHover()
 		return;
 	}
 
-	const FIntPoint CursorCell = TargetGrid->WorldToGrid(Hit.Location);
+	const FIntPoint CursorCell = ResolveCursorCellOverWater(Hit.Location); // #182 물 위 패럴랙스 보정(호버=클릭 동일 셀)
 
 	// Conveyor/Pipe 모드: 드래그/단일 셀 미리보기로 분기 (머신 경로와 독립 — 파이프는 프리뷰만 분기).
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor
@@ -1033,6 +1033,23 @@ void AOJJ_BuildController::OnLeftClickPressed()
 		FIntPoint CursorCell;
 		if (GetCursorCell(CursorCell))
 		{
+			// #182 파이프 시작 스냅(파이프 전용) — 펌프 본체/출력 포트 근방을 클릭하면 등록된 출력 포트 셀로
+			// 보정. 3×3 펌프 바깥 한 칸을 픽셀단위로 집는 비현실적 조준 제거. 컨베이어는 미적용(시작 판정 무변경).
+			if (PlacementMode == EOJJ_BuildPlacementMode::Pipe)
+			{
+				// ⭐ 1순위: 스크린 공간 출력 포트 스냅 — 화면에서 커서 근처 포트 박스로 스냅(월드 Z 패럴랙스 무관).
+				// 2순위(폴백): 그리드 셀 근방 2칸 스냅. 둘 다 실패면 원래 셀 유지.
+				APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+				FIntPoint SnapCell;
+				if (PC && TargetGrid->OJJ_FindLiquidOutputPortUnderCursorScreen(PC, /*MaxScreenDist=*/64.0f, SnapCell))
+				{
+					CursorCell = SnapCell;
+				}
+				else if (TargetGrid->OJJ_GetPipeOutputStartCell(CursorCell, /*MaxSnap=*/2, SnapCell))
+				{
+					CursorCell = SnapCell;
+				}
+			}
 			BeginConveyorDrag(CursorCell);
 		}
 		return;
@@ -1548,8 +1565,32 @@ bool AOJJ_BuildController::GetCursorCell(FIntPoint& OutCell) const
 		return false;
 	}
 
-	OutCell = TargetGrid->WorldToGrid(Hit.Location);
+	OutCell = ResolveCursorCellOverWater(Hit.Location); // #182 물 위 패럴랙스 보정(호버=클릭 동일 셀)
 	return true;
+}
+
+FIntPoint AOJJ_BuildController::ResolveCursorCellOverWater(const FVector& TerrainHitLocation) const
+{
+	const FIntPoint TerrainCell = TargetGrid->WorldToGrid(TerrainHitLocation);
+
+	// #182 패럴랙스: WaterArea가 Visibility Ignore라 커서 레이가 물을 통과해 물 밑 지형을 맞는다. 깊은 물에선
+	// 그 지형 히트가 보이는 수면 셀에서 십수 칸까지 빗나가(물 밖 육지로) 호버/클릭 셀이 어긋난다. 마우스 레이를
+	// 직접 각 WaterArea 수면 평면과 교차시켜, 지형 히트보다 가까운(=보이는) 수면 셀이 있으면 그 셀을 쓴다.
+	// 물 위가 아니면(육지/머신) 수면 교차가 없어 기존 지형 히트 XY 그대로 — 회귀 0.
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	FVector RayOrigin = FVector::ZeroVector;
+	FVector RayDir = FVector::ZeroVector;
+	if (PC && PC->DeprojectMousePositionToWorld(RayOrigin, RayDir))
+	{
+		const float TerrainDist = FVector::Dist(RayOrigin, TerrainHitLocation);
+		FIntPoint WaterCell;
+		if (TargetGrid->OJJ_TraceCursorToWaterSurface(RayOrigin, RayDir, TerrainDist, WaterCell))
+		{
+			return WaterCell;
+		}
+	}
+
+	return TerrainCell;
 }
 
 void AOJJ_BuildController::UpdatePathDragHoverPreview(const TArray<FIntPoint>& Cells)

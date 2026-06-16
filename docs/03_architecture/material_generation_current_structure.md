@@ -212,7 +212,8 @@ flowchart TD
     CL --> HR["handle_rule"]
     HR -->|"rule result"| E
     HR --> SC["similarity_context"]
-    SC --> LP["llm_propose"]
+    SC --> DR["derive"]
+    DR --> LP["llm_propose"]
     LP --> VR["validate_result"]
     VR -->|"retry, max 3"| LP
     VR -->|"failed"| E
@@ -229,9 +230,10 @@ flowchart TD
 | `prevalidate` | 알려진 아이템, 수량, 장비 입력 검증 | 유효하지 않은 입력 |
 | `classify` | 실험을 결정론적으로 분류 | 없음 |
 | `handle_rule` | 단순 변형, 중간재, 금지 장비 결과 처리 | 룰 기반 결과 확정 |
-| `similarity_context` | 같은 장비와 겹치는 입력의 과거 성공 실험 조회 | 없음 |
-| `llm_propose` | LLM 물질 제안 생성, 실패 시 fallback 사용 가능 | 없음 |
-| `validate_result` | 속성 범위와 정책 검증, 최대 3회 재시도 | 재시도 소진 후 실패 |
+| `similarity_context` | 컨텍스트 분석을 위해 유사한 실험 이력을 검색 | 없음 |
+| `derive` | 입력·공정으로부터 속성·category·state·rarity를 결정론적으로 산출 | 없음 |
+| `llm_propose` | LLM으로 이름·설명을 제안받음 | 없음 |
+| `validate_result` | 규칙 강제 적용, 새니타이징 및 재시도 상태 관리 | 재시도 소진 후 실패 |
 | `deduplicate_material` | `material_hash`로 기존 물질 재사용 여부 결정 | 없음 |
 | `register_material` | 물질, 실험, 플레이어 발견 이력 flush | 그래프 종료 |
 
@@ -242,7 +244,7 @@ flowchart TD
 | 값 | 입력 | 용도 |
 | --- | --- | --- |
 | `experiment_hash` | 장비, 정규화 입력, 공정 조건 | 동일한 실험 요청의 결과 캐시 |
-| `material_hash` | 검증된 물질 결과 속성 | 의미상 같은 생성 물질의 중복 등록 방지 |
+| `material_hash` | 장비, 정규화 입력, 공정 조건 | 의미상 같은 생성 물질의 중복 등록 방지 |
 
 같은 실험이면 `lookup_cache`에서 즉시 응답한다. 다른 실험이 같은 물질 결과를 만들면 `deduplicate_material`에서 기존 물질을 재사용하되 새 실험과 발견 이력은 기록한다.
 
@@ -296,7 +298,7 @@ app shutdown -> MaterialEventPublisher.shutdown_executor(wait=True)
 | --- | --- | --- |
 | `recipes` | CSV에서 적재한 일반 레시피 | 정수 `id`, 고유 `recipe_name` |
 | `generated_experiments` | 모든 합성 시도와 결과 | 문자열 `id`, 고유 `experiment_hash` |
-| `generated_materials` | 생성 물질 속성과 비주얼 상태 | 문자열 `id`, 고유 `material_hash` |
+| `generated_materials` | 생성 물질 속성, 물리적 상태(state), 비주얼 상태 | 문자열 `id`, 고유 `material_hash` |
 | `generated_material_discoveries` | 플레이어별 물질 발견 이력 | 문자열 `id`, `material_id`, `player_id` |
 
 현재 `recipes`는 입력 3개와 출력 2개의 고정 컬럼 구조다. `generated_materials.recipe_candidates_json`은 문자열 후보 목록을 보관하지만 실행 가능한 일반 레시피로 등록하지 않는다.

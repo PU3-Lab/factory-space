@@ -4,6 +4,9 @@
 #include "Engine/DataTable.h"
 #include "Resource/ResourceData.h"
 #include "ItemDragDropOperation.h"
+#include "OJJ_Player.h"
+#include "UI/UI_Inventory.h" 
+#include "PlayerWarehouseSubsystem.h"
 
 void UUI_InventorySlot::UpdateSlot(FName ItemID, int32 ItemCount)
 {
@@ -85,7 +88,6 @@ FReply UUI_InventorySlot::NativeOnMouseButtonDown(const FGeometry& InGeometry, c
    if (!CurrentSlotItemID.IsNone() && CurrentSlotItemCount > 0)
    {
       // 유저가 마우스 왼쪽 버튼을 누르는 '그 즉시' 엔진에게 드래그를 예약시킵니다.
-      // 이 조치가 들어가면 0.1초 타이머가 백그라운드에서 백번을 리프레시해도 내 마우스 신호가 씹히지 않습니다.
       if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
       {
          return Reply.DetectDrag(this->TakeWidget(), EKeys::LeftMouseButton);
@@ -93,4 +95,44 @@ FReply UUI_InventorySlot::NativeOnMouseButtonDown(const FGeometry& InGeometry, c
    }
 
    return Reply;
+}
+
+bool UUI_InventorySlot::NativeOnDrop(const FGeometry& MyGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+   UItemDragDropOperation* ItemDragOp = Cast<UItemDragDropOperation>(InOperation);
+   if (!ItemDragOp) return false;
+
+   FName DroppedItemID = ItemDragOp->DraggedItemID;
+   if (DroppedItemID.IsNone()) return false;
+
+   UGameInstance* GI = GetGameInstance();
+   if (GI)
+   {
+      UPlayerWarehouseSubsystem* WarehouseSubsystem = GI->GetSubsystem<UPlayerWarehouseSubsystem>();
+      if (WarehouseSubsystem)
+      {
+         // 1. 내 가방 장부에 아이템 +1개 스펙 추가
+         WarehouseSubsystem->AddItem(DroppedItemID, 1);
+            
+         // 2. 플레이어 본체가 들고 있는 인벤토리 공식 인스턴스를 소환합니다.
+         APlayerController* PC = GetOwningPlayer();
+         if (PC)
+         {
+            AOJJ_Player* OJJPlayer = Cast<AOJJ_Player>(PC->GetPawn());
+            if (OJJPlayer)
+            {
+               // 플레이어 헤더에 있는 GetInventoryWidgetInstance()를 통해 내부의 공식 새로고침 함수를 완벽하게 트리거
+               UUI_Inventory* TargetInventory = OJJPlayer->GetInventoryWidgetInstance();
+               if (TargetInventory)
+               {
+                  TargetInventory->RefreshInventoryWindow();
+               }
+            }
+         }
+
+         UE_LOG(LogTemp, Log, TEXT("[가방 드롭 마감 완료] '%s' 아이템을 성공적으로 내 인벤토리에 안전 바인딩했습니다!"), *DroppedItemID.ToString());
+         return true;
+      }
+   }
+   return false;
 }

@@ -7,6 +7,7 @@ from typing import Any, TypedDict
 from sqlalchemy.orm import Session
 
 from agents.base import AgentContext
+from agents.material_generation.derivation import DerivedAttributes
 from agents.material_generation.schemas import (
     MaterialCreationRequest,
     MaterialCreationResponse,
@@ -29,3 +30,4 @@ class MaterialGraphState(TypedDict):
     error: str | None
     similar_context: list[dict[str, Any]] | None
     is_new: bool | None
+    derived: DerivedAttributes | None

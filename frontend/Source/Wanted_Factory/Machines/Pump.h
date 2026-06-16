@@ -27,6 +27,9 @@ protected:
 	// CDO-safe — 인자 Grid/Origin/RotationSteps와 CDO-safe getter(GetMachineSize)만 사용.
 	virtual bool CanPlaceAdditional(const AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps) const override;
 
+	// #182: 펌프는 물 위(WaterArea∩분류 water) 직접 배치 허용 — 게이트 A/B 면제 + 수면 Z 안착(그리드 측).
+	virtual bool CanStandOnWater() const override { return true; }
+
 	// 배치 확정: 인접 수원(form=liquid)을 LinkedResource로 연결. Claim 호출 안 함(무제한 공유).
 	virtual void OnPlacedOnGrid(AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps) override;
 
