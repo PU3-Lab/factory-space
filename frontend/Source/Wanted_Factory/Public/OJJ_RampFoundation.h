@@ -83,6 +83,9 @@ protected:
 	// 길이 FoundationSize.X / 1단) — 에디터 프리뷰(OnConstruction)와 기존 고정 램프 경로 회귀 0.
 	int32 PlacedClimbLengthCells = 0;
 	int32 PlacedRiseSteps = 1;
+	// #261 한쪽-지면 하강 램프 표식(OJJ_NotifyFitResult가 Fit.bOneSideGroundRamp로 세팅) —
+	// OJJ_ComputeSnapLift 높은끝(Foundation쪽) 엣지 스냅 게이트. 양쪽/고정폴백은 false라 무진입(격리).
+	bool bPlacedOneSideGroundRamp = false;
 	// 배치 확정 회전 step(F3.8' — 쐐기가 등록 r-switch와 같은 월드 방향 규약으로 기하를 만들고
 	// 액터 yaw 역회전을 선적용하는 데 사용). 미확정(에디터 프리뷰) 0 = 역회전 항등.
 	int32 PlacedRotationSteps = 0;

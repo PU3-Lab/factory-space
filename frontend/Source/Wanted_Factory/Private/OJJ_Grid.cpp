@@ -1815,7 +1815,7 @@ bool AOJJ_Grid::TryPlaceFoundation(AActor* Foundation, FIntPoint Origin, FIntPoi
 }
 
 bool AOJJ_Grid::OJJ_TryPlaceFoundationPerCell(AActor* Foundation, FIntPoint Origin, FIntPoint Size,
-	const TArray<float>& CellSurfaceZs, FString& OutReason)
+	const TArray<float>& CellSurfaceZs, FString& OutReason, bool bClampLedgerBelowGroundToTerrain)
 {
 	// 배열 불변식(결정 ㉲ — 액터 신뢰 금지). 크기 비교는 int64(거대 Size 곱 오버플로 방어 — CanPlace 미러).
 	const int64 ExpectedNum = (int64)Size.X * (int64)Size.Y;
@@ -1851,11 +1851,24 @@ bool AOJJ_Grid::OJJ_TryPlaceFoundationPerCell(AActor* Foundation, FIntPoint Orig
 		return false;
 	}
 
+	// #261 한쪽 지면 램프 전용 장부 클램프: 불변식 ③(span 정합)은 위에서 원본 CellSurfaceZs로 이미 검증했으므로
+	// 여기 등록 람다에서만 지면 아래로 파고드는 셀(cellZ < GroundRaw)을 GroundRaw로 끌어올린다. max()라 높은 끝
+	// (FoundationZ ≥ 지면)은 무변경 → HIGH end 정합 보존. 게이트가 꺼져 있으면(일반/양쪽 램프) 원본 그대로 등록.
+	// 쐐기 메시는 액터 base+Thickness+PlacedRiseSteps로 별개 산출이라 −55까지 파고드는 시각은 유지된다.
 	return OJJ_TryPlaceFoundationInternal(
 		Foundation, Origin, Size,
-		[&CellSurfaceZs, Origin, Size](FIntPoint Cell)
+		[&CellSurfaceZs, Origin, Size, bClampLedgerBelowGroundToTerrain, this](FIntPoint Cell)
 		{
-			return CellSurfaceZs[(Cell.X - Origin.X) * Size.Y + (Cell.Y - Origin.Y)];
+			const float CellZ = CellSurfaceZs[(Cell.X - Origin.X) * Size.Y + (Cell.Y - Origin.Y)];
+			if (bClampLedgerBelowGroundToTerrain)
+			{
+				float GroundRawZ = 0.0f;
+				if (OJJ_GetRawTerrainSurfaceZ(Cell, GroundRawZ) && CellZ < GroundRawZ)
+				{
+					return GroundRawZ;
+				}
+			}
+			return CellZ;
 		},
 		OutReason);
 }

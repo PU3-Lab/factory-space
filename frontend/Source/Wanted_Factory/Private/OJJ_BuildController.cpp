@@ -1341,8 +1341,10 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 	// (그리드가 불변식 검증). 평탄은 기존 단일값 경로 그대로(배열 미생성).
 	FString OutReason;
 	TArray<float> CellZs;
+	// #261: 한쪽 지면 램프면 등록 장부의 지면-아래 셀을 지면으로 클램프(오버레이/클릭/컨베이어가 지면에서 만남).
+	// span 검증은 원본 CellZs로 그대로, 쐐기 메시는 별개 산출이라 무변경 — 일반/양쪽 램프엔 false라 영향 없음.
 	const bool bPlaced = NewFoundation->OJJ_BuildPerCellSurfaceZ(EffSize, Fit.EffectiveRotationSteps, BaseSurfaceZ, Fit.RiseSteps, CellZs)
-		? TargetGrid->OJJ_TryPlaceFoundationPerCell(NewFoundation, Origin, EffSize, CellZs, OutReason)
+		? TargetGrid->OJJ_TryPlaceFoundationPerCell(NewFoundation, Origin, EffSize, CellZs, OutReason, Fit.bOneSideGroundRamp)
 		: TargetGrid->TryPlaceFoundation(NewFoundation, Origin, EffSize, BaseSurfaceZ, OutReason);
 	if (!bPlaced)
 	{
@@ -1668,6 +1670,7 @@ void AOJJ_BuildController::CommitConveyorDrag()
 	const bool bPathBuilt = bPipeMode
 		? TargetGrid->OJJ_BuildPipePlacementPath(ConveyorDragCells, PlacementCells, OutReason)
 		: TargetGrid->OJJ_BuildConveyorPlacementPath(ConveyorDragCells, PlacementCells, OutReason);
+
 	if (!bPathBuilt)
 	{
 		UE_LOG(LogTemp, Log, TEXT("[BuildController] %s path cannot be placed: %s"),
