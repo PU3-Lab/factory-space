@@ -11,6 +11,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "FactoryManagerSubsystem.h"
+#include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "MachineBase.h"
 #include "Materials/MaterialInterface.h"
@@ -893,6 +894,139 @@ bool AOJJ_Grid::GetWaterSurfaceZAtCell(FIntPoint Cell, float& OutSurfaceZ) const
 		return true;
 	}
 	return false;
+}
+
+bool AOJJ_Grid::OJJ_TraceCursorToWaterSurface(const FVector& RayOrigin, const FVector& RayDir, float MaxDistance, FIntPoint& OutCell) const
+{
+	// 수평 레이(Dir.Z≈0)는 수면 평면과 교차 불가 → 실패(호출자 지형 히트 폴백).
+	if (FMath::IsNearlyZero(RayDir.Z))
+	{
+		return false;
+	}
+
+	// 고유 액체자원(WaterArea)만 1회씩 검사 — OJJ_ResourceCellToActor는 셀당 항목이라 Seen으로 중복 제거.
+	// WA1/WA2가 다른 수면 Z여도 각 평면과 교차해 "그 자원이 덮는 셀"인 것만 채택 → 올바른 웅덩이 자동 선택.
+	const FName LiquidForm(TEXT("liquid"));
+	bool bFound = false;
+	float BestDist = MaxDistance; // 지형 히트보다 가까운(=보이는) 수면만 채택 — 앞 육지/머신을 물로 오판 방지.
+	TSet<const AResourceBase*> Seen;
+	for (const TPair<FIntPoint, TWeakObjectPtr<AResourceBase>>& Pair : OJJ_ResourceCellToActor)
+	{
+		AResourceBase* Resource = Pair.Value.Get();
+		if (!Resource || Seen.Contains(Resource))
+		{
+			continue;
+		}
+		Seen.Add(Resource);
+		if (!Resource->HasForm(LiquidForm))
+		{
+			continue;
+		}
+
+		const float SurfaceZ = Resource->GetActorLocation().Z;
+		const float T = (SurfaceZ - RayOrigin.Z) / RayDir.Z; // Dir 단위벡터(Deproject) → T = 거리.
+		if (T <= 0.0f || T >= BestDist)
+		{
+			continue;
+		}
+
+		const FVector SurfacePoint = RayOrigin + RayDir * T;
+		const FIntPoint Cell = WorldToGrid(SurfacePoint);
+		// 교차 XY가 정말 이 WaterArea가 덮는 셀이어야 채택(수면 범위 밖 평면 교차 배제).
+		if (GetLiquidResourceAtCell(Cell) == Resource)
+		{
+			BestDist = T;
+			OutCell = Cell;
+			bFound = true;
+		}
+	}
+	return bFound;
+}
+
+bool AOJJ_Grid::OJJ_GetPipeOutputStartCell(FIntPoint ClickedCell, int32 MaxSnap, FIntPoint& OutStartCell) const
+{
+	// 1) 클릭이 액체 출력 머신(펌프/탱크) 풋프린트 위면 그 머신의 등록 출력 포트 셀로 스냅.
+	if (AMachineBase* OnMachine = GetMachineAtCell(ClickedCell))
+	{
+		if (OJJ_IsLiquidTransportMachine(OnMachine) && OnMachine->GetOutputPortCount() > 0)
+		{
+			const TArray<FIntPoint> OutCells = GetMachineOutputCells(OnMachine);
+			if (OutCells.Num() > 0)
+			{
+				OutStartCell = OutCells[0]; // 단일 출력 포트(펌프/탱크) — 다중이면 첫 셀.
+				return true;
+			}
+		}
+	}
+
+	// 2) 풋프린트 밖이면 근방 MaxSnap칸(맨해튼) 내 액체 출력 머신의 출력 포트 셀 중 가장 가까운 것으로 스냅.
+	// 펌프가 멀리 떨어져 있어 오스냅 위험 낮음(가까운 포트만). 방향/물류는 등록 포트 그대로 — 위치만 보정.
+	int32 BestDist = MaxSnap + 1;
+	bool bFound = false;
+	for (const TPair<TWeakObjectPtr<AActor>, TArray<FIntPoint>>& Pair : OJJ_ActorToCells)
+	{
+		AMachineBase* Machine = Cast<AMachineBase>(Pair.Key.Get());
+		if (!Machine || !OJJ_IsLiquidTransportMachine(Machine) || Machine->GetOutputPortCount() <= 0)
+		{
+			continue;
+		}
+		for (const FIntPoint& PortCell : GetMachineOutputCells(Machine))
+		{
+			const int32 Dist = FMath::Abs(PortCell.X - ClickedCell.X) + FMath::Abs(PortCell.Y - ClickedCell.Y);
+			if (Dist < BestDist)
+			{
+				BestDist = Dist;
+				OutStartCell = PortCell;
+				bFound = true;
+			}
+		}
+	}
+	return bFound;
+}
+
+bool AOJJ_Grid::OJJ_FindLiquidOutputPortUnderCursorScreen(APlayerController* PC, float MaxScreenDist, FIntPoint& OutPortCell) const
+{
+	if (!PC)
+	{
+		return false;
+	}
+	float MouseX = 0.0f;
+	float MouseY = 0.0f;
+	if (!PC->GetMousePosition(MouseX, MouseY))
+	{
+		return false;
+	}
+	const FVector2D Mouse(MouseX, MouseY);
+
+	float BestDist = MaxScreenDist;
+	bool bFound = false;
+	for (const TPair<TWeakObjectPtr<AActor>, TArray<FIntPoint>>& Pair : OJJ_ActorToCells)
+	{
+		AMachineBase* Machine = Cast<AMachineBase>(Pair.Key.Get());
+		if (!Machine || !OJJ_IsLiquidTransportMachine(Machine) || Machine->GetOutputPortCount() <= 0)
+		{
+			continue;
+		}
+		for (const FIntPoint& PortCell : GetMachineOutputCells(Machine))
+		{
+			// 포트 셀 월드 중심을 화살표/오버레이와 같은 비주얼 Z로 투영 → 화면상 박스 위치와 일치.
+			const FVector C = GridToWorld(PortCell);
+			const FVector World(C.X, C.Y, OJJ_GetCellVisualBaseZ(PortCell));
+			FVector2D Screen = FVector2D::ZeroVector;
+			if (!PC->ProjectWorldLocationToScreen(World, Screen))
+			{
+				continue; // 화면 밖/뒤 — 스킵.
+			}
+			const float Dist = FVector2D::Distance(Screen, Mouse);
+			if (Dist < BestDist)
+			{
+				BestDist = Dist;
+				OutPortCell = PortCell;
+				bFound = true;
+			}
+		}
+	}
+	return bFound;
 }
 
 void AOJJ_Grid::BakeBuildableCells(bool bVerbose, bool bWriteCache)

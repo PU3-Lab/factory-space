@@ -292,6 +292,11 @@ private:
 	// 마우스 커서 아래 그리드 셀 조회(라인 트레이스 → WorldToGrid). 실패 시 false.
 	bool GetCursorCell(FIntPoint& OutCell) const;
 
+	// #182 패럴랙스 보정 셀 변환 — 지형 히트 위치로 셀을 구하되, 그 셀이 물이면 커서 레이를 수면 Z 평면과
+	// 교차시킨 XY로 재계산한다(WaterArea가 Visibility Ignore라 레이가 물 밑 지형을 맞아 생기는 호버-그리드
+	// 어긋남 해소). 육지/Foundation은 기존 지형 히트 XY 그대로(회귀 0).
+	FIntPoint ResolveCursorCellOverWater(const FVector& TerrainHitLocation) const;
+
 	// 컨베이어 드래그 상태머신(Conveyor 모드 전용).
 	void BeginConveyorDrag(FIntPoint StartCell);
 	void UpdateConveyorDrag(FIntPoint CursorCell);

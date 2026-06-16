@@ -703,6 +703,21 @@ public:
 	// 펌프가 같은 셀을 점유해도 발밑 WaterArea를 찾는다. GetWaterSurfaceZAtCell도 이 함수로 위임.
 	AResourceBase* GetLiquidResourceAtCell(FIntPoint Cell) const;
 
+	// #182 커서 레이 ∩ 수면. 마우스 레이(RayOrigin/Dir)를 각 액체자원(WaterArea)의 수면 Z 평면과 교차시켜,
+	// 교차점이 그 WaterArea가 덮는 셀이면 그 셀을 OutCell로 반환(MaxDistance보다 가까운 가장 앞 수면). 깊은 물에서
+	// 커서 레이가 물을 통과해 물 밖 지형을 맞아 셀이 빗나가는 패럴랙스를 보이는 수면 기준으로 교정한다. C++ 전용.
+	bool OJJ_TraceCursorToWaterSurface(const FVector& RayOrigin, const FVector& RayDir, float MaxDistance, FIntPoint& OutCell) const;
+
+	// #182 파이프 시작 스냅 — 클릭 셀이 액체 출력 머신(펌프/탱크) 풋프린트 위거나 그 출력 포트 셀 MaxSnap칸
+	// 이내면 등록된 출력 포트 셀을 OutStartCell로 반환(없으면 false). 3×3 펌프 바깥 한 칸을 픽셀단위로 집는
+	// 비현실적 조준을 제거 — 위치만 보정하고 방향/물류는 등록 포트 그대로. 파이프 전용(컨베이어 미호출). C++ 전용.
+	bool OJJ_GetPipeOutputStartCell(FIntPoint ClickedCell, int32 MaxSnap, FIntPoint& OutStartCell) const;
+
+	// #182 ⭐ 스크린 공간 출력 포트 스냅 — 등록된 액체 출력 포트 셀을 화면에 투영해, 커서에서 MaxScreenDist
+	// 픽셀 이내 가장 가까운 포트 셀을 반환(없으면 false). 월드 Z 패럴랙스(물 통과 레이가 깊은 지형을 맞아
+	// 셀이 빗나감)와 완전 무관 — 화면에서 보이는 포트 박스 근처를 클릭하면 그 포트로 스냅. 펌프 큐브 위 클릭도 OK.
+	bool OJJ_FindLiquidOutputPortUnderCursorScreen(class APlayerController* PC, float MaxScreenDist, FIntPoint& OutPortCell) const;
+
 	// 지형 높이 베이크 — GridSize 전 셀 ↓트레이스로 buildable/blocked/void/water 재계산. BeginPlay 폴백 + 콘솔 재호출.
 	// bVerbose: 평탄(바닥)이 아닌 셀마다 (좌표/hit/Z/부호델타/분류)를 로그(캡 있음) — 큐브 등 베이크 진단용.
 	// bWriteCache: 분류 결과를 PackedCellClasses(+선택 GroundZ)로 패킹하고 시그니처 기록(에디터 RebakeAndCache 경로).
