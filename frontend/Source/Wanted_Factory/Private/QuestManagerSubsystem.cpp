@@ -25,7 +25,6 @@ constexpr TCHAR TutorialQuestDialogueCsvRelativePath[] = TEXT("Source/Wanted_Fac
 
 constexpr TCHAR TutorialEventInputAction[] = TEXT("InputAction");
 constexpr TCHAR TutorialEventBuildMode[] = TEXT("BuildMode");
-constexpr TCHAR TutorialEventBuildPreviewSeen[] = TEXT("BuildPreviewSeen");
 constexpr TCHAR TutorialEventInventoryOpen[] = TEXT("InventoryOpen");
 constexpr TCHAR TutorialEventInventoryClose[] = TEXT("InventoryClose");
 constexpr TCHAR TutorialEventRotateViewLeft[] = TEXT("RotateViewLeft");
@@ -34,6 +33,7 @@ constexpr TCHAR TutorialEventRotatePlacement[] = TEXT("RotatePlacement");
 constexpr TCHAR TutorialEventDemolishMode[] = TEXT("DemolishMode");
 constexpr TCHAR TutorialEventDemolishRemoved[] = TEXT("DemolishRemoved");
 constexpr TCHAR TutorialEventSelectMinerMode[] = TEXT("SelectMinerMode");
+constexpr TCHAR TutorialEventValidMinerPlacement[] = TEXT("ValidMinerPlacement");
 constexpr TCHAR TutorialEventSelectPowerPlantMode[] = TEXT("SelectPowerPlantMode");
 constexpr TCHAR TutorialEventSelectPowerNodeMode[] = TEXT("SelectPowerNodeMode");
 constexpr TCHAR TutorialEventSelectSmelterMode[] = TEXT("SelectSmelterMode");
@@ -41,6 +41,7 @@ constexpr TCHAR TutorialEventSelectWarehouseMode[] = TEXT("SelectWarehouseMode")
 constexpr TCHAR TutorialEventSelectConveyorMode[] = TEXT("SelectConveyorMode");
 constexpr TCHAR TutorialEventSelectPowerLineMode[] = TEXT("SelectPowerLineMode");
 constexpr TCHAR TutorialEventPowerLineConnected[] = TEXT("PowerLineConnected");
+constexpr TCHAR TutorialEventWarehouseOutputItemSet[] = TEXT("WarehouseOutputItemSet");
 
 enum class ETutorialRequirementType : uint8
 {
@@ -227,33 +228,33 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	}
 	else if (QuestId == TEXT("TUT_BUILD_002"))
 	{
-		SetEventRequirement(TutorialEventBuildPreviewSeen);
+		SetEventRequirement(TutorialEventRotateViewLeft);
 	}
 	else if (QuestId == TEXT("TUT_BUILD_003"))
 	{
-		SetEventRequirement(TutorialEventRotateViewLeft);
+		SetEventRequirement(TutorialEventRotateViewRight);
 	}
 	else if (QuestId == TEXT("TUT_BUILD_004"))
 	{
-		SetEventRequirement(TutorialEventRotateViewRight);
+		SetEventRequirement(TutorialEventRotatePlacement);
 	}
 	else if (QuestId == TEXT("TUT_BUILD_005"))
 	{
-		SetEventRequirement(TutorialEventRotatePlacement);
+		SetEventRequirement(TutorialEventDemolishMode);
 	}
 	else if (QuestId == TEXT("TUT_BUILD_006"))
 	{
-		SetEventRequirement(TutorialEventDemolishMode);
-	}
-	else if (QuestId == TEXT("TUT_BUILD_008"))
-	{
 		SetEventRequirement(TutorialEventDemolishRemoved);
 	}
-	else if (QuestId == TEXT("TUT_MINING_002"))
+	else if (QuestId == TEXT("TUT_MINING_001"))
 	{
 		SetEventRequirement(TutorialEventSelectMinerMode);
 	}
-	else if (QuestId == TEXT("TUT_MINING_004"))
+	else if (QuestId == TEXT("TUT_MINING_002"))
+	{
+		SetEventRequirement(TutorialEventValidMinerPlacement);
+	}
+	else if (QuestId == TEXT("TUT_MINING_003"))
 	{
 		SetEventRequirement(TEXT("PlaceMachine"), TEXT("MinerMachine"));
 	}
@@ -261,41 +262,25 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	{
 		SetEventRequirement(TutorialEventSelectPowerPlantMode);
 	}
-	else if (QuestId == TEXT("TUT_POWER_003"))
+	else if (QuestId == TEXT("TUT_POWER_002"))
 	{
 		SetEventRequirement(TEXT("PlaceMachine"), TEXT("PowerPlant"));
 	}
-	else if (QuestId == TEXT("TUT_POWER_004"))
+	else if (QuestId == TEXT("TUT_POWER_003"))
 	{
 		SetEventRequirement(TutorialEventSelectPowerNodeMode);
 	}
-	else if (QuestId == TEXT("TUT_POWER_006"))
+	else if (QuestId == TEXT("TUT_POWER_004"))
 	{
 		SetEventRequirement(TEXT("PlaceMachine"), TEXT("PowerGridNode"));
 	}
-	else if (QuestId == TEXT("TUT_POWER_007"))
+	else if (QuestId == TEXT("TUT_POWER_005"))
 	{
 		SetEventRequirement(TutorialEventSelectPowerLineMode);
 	}
-	else if (QuestId == TEXT("TUT_POWER_008") || QuestId == TEXT("TUT_POWER_009"))
+	else if (QuestId == TEXT("TUT_POWER_006"))
 	{
 		SetEventRequirement(TutorialEventPowerLineConnected);
-	}
-	else if (QuestId == TEXT("TUT_POWER_010"))
-	{
-		SetWarehouseRequirement(TEXT("iron_ore"), 1);
-	}
-	else if (QuestId == TEXT("TUT_SMELT_001"))
-	{
-		SetWarehouseRequirement(TEXT("iron_ore"), 10);
-	}
-	else if (QuestId == TEXT("TUT_SMELT_002"))
-	{
-		SetEventRequirement(TutorialEventSelectSmelterMode);
-	}
-	else if (QuestId == TEXT("TUT_SMELT_004"))
-	{
-		SetEventRequirement(TEXT("PlaceMachine"), TEXT("Smelter"));
 	}
 	else if (QuestId == TEXT("TUT_LOGI_001"))
 	{
@@ -305,31 +290,71 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	{
 		SetEventRequirement(TEXT("PlaceMachine"), TEXT("WarehousePort"));
 	}
-	else if (QuestId == TEXT("TUT_LOGI_004"))
-	{
-		SetWarehouseRequirement(TEXT("iron_ore"), 1);
-	}
-	else if (QuestId == TEXT("TUT_LOGI_005"))
+	else if (QuestId == TEXT("TUT_LOGI_003"))
 	{
 		SetEventRequirement(TutorialEventSelectConveyorMode);
 	}
-	else if (QuestId == TEXT("TUT_LOGI_007"))
+	else if (QuestId == TEXT("TUT_LOGI_004"))
 	{
 		SetEventRequirement(TEXT("PlaceMachine"), TEXT("Conveyor"));
 	}
-	else if (QuestId == TEXT("TUT_LOGI_009"))
+	else if (QuestId == TEXT("TUT_LOGI_005"))
+	{
+		SetWarehouseRequirement(TEXT("iron_ore"), 1);
+	}
+	else if (QuestId == TEXT("TUT_SMELT_001"))
+	{
+		SetWarehouseRequirement(TEXT("iron_ore"), 10);
+	}
+	else if (QuestId == TEXT("TUT_POWER_007"))
+	{
+		SetEventRequirement(TutorialEventSelectPowerPlantMode);
+	}
+	else if (QuestId == TEXT("TUT_POWER_008"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("PowerPlant"));
+	}
+	else if (QuestId == TEXT("TUT_SMELT_002"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("Smelter"));
+	}
+	else if (QuestId == TEXT("TUT_LOGI_006"))
 	{
 		SetEventRequirement(TutorialEventSelectWarehouseMode);
 	}
-	else if (QuestId == TEXT("TUT_LOGI_010"))
+	else if (QuestId == TEXT("TUT_LOGI_007"))
 	{
 		SetEventRequirement(TEXT("PlaceMachine"), TEXT("WarehousePort"));
 	}
+	else if (QuestId == TEXT("TUT_LOGI_008"))
+	{
+		SetEventRequirement(TutorialEventWarehouseOutputItemSet, TEXT("iron_ore"));
+	}
+	else if (QuestId == TEXT("TUT_LOGI_009"))
+	{
+		SetEventRequirement(TutorialEventSelectConveyorMode);
+	}
+	else if (QuestId == TEXT("TUT_LOGI_010"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("Conveyor"));
+	}
+	else if (QuestId == TEXT("TUT_LOGI_011"))
+	{
+		SetEventRequirement(TutorialEventSelectWarehouseMode);
+	}
 	else if (QuestId == TEXT("TUT_LOGI_012"))
 	{
-		SetWarehouseRequirement(TEXT("iron_ingot"), 1);
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("WarehousePort"));
+	}
+	else if (QuestId == TEXT("TUT_LOGI_013"))
+	{
+		SetEventRequirement(TutorialEventSelectConveyorMode);
 	}
 	else if (QuestId == TEXT("TUT_LOGI_014"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("Conveyor"));
+	}
+	else if (QuestId == TEXT("TUT_LOGI_015"))
 	{
 		SetWarehouseRequirement(TEXT("iron_ingot"), 1);
 	}

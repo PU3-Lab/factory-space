@@ -10,6 +10,7 @@
 #include "Machines/WarehousePort.h"
 #include "ItemDragDropOperation.h"
 #include "OJJ_Player.h"
+#include "QuestManagerSubsystem.h"
 #include "UI/UI_Inventory.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "Blueprint/SlateBlueprintLibrary.h"
@@ -370,6 +371,14 @@ bool UUI_MachineInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDragD
         }
 
         ManualDroppedOutputItemID = DroppedItemID;
+
+        if (UGameInstance* GI = GetGameInstance())
+        {
+            if (UQuestManagerSubsystem* QuestManager = GI->GetSubsystem<UQuestManagerSubsystem>())
+            {
+                QuestManager->NotifyTutorialEvent(TEXT("WarehouseOutputItemSet"), DroppedItemID);
+            }
+        }
 
         UE_LOG(LogTemp, Log, TEXT("[WarehousePort] Selected output item: %s"), *DroppedItemID.ToString());
         return true;

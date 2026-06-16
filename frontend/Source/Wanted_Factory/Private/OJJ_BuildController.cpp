@@ -628,6 +628,11 @@ void AOJJ_BuildController::UpdateMouseHover()
 	const FIntPoint Origin = ComputeOriginFromCursorCell(CursorCell, DefaultMachine, HoverRotationSteps);
 
 	TargetGrid->UpdateHoverPreview(DefaultMachine, Origin, HoverRotationSteps);
+	if (PlacementMode == EOJJ_BuildPlacementMode::Miner
+		&& TargetGrid->CanPlaceMachine(DefaultMachine, Origin, HoverRotationSteps))
+	{
+		NotifyTutorialQuestEvent(this, TEXT("ValidMinerPlacement"));
+	}
 	CurrentHoverCell = CursorCell;
 }
 
@@ -768,6 +773,16 @@ void AOJJ_BuildController::DemolishUnderCursor()
 
 		// F4-1: 파이프 캐스케이드 — 컨베이어와 동일 근거(끝점 머신 소실 = 라인 존재 조건 상실).
 		// 수집은 레이어 역방향 맵 + 끝점 대조(그리드 헬퍼) — 컨베이어판(둘레 스캔)보다 직접적.
+		for (APowerLine* PowerLine : CollectPowerLinesConnectedToMachine(Machine))
+		{
+			if (!PowerLine)
+			{
+				continue;
+			}
+
+			PowerLine->Destroy();
+		}
+
 		TArray<APipe*> ConnectedPipes;
 		TargetGrid->OJJ_GetPipesConnectedToMachine(Machine, ConnectedPipes);
 		for (APipe* Pipe : ConnectedPipes)
@@ -886,6 +901,45 @@ TArray<AConveyor*> AOJJ_BuildController::CollectConveyorsConnectedToMachine(AMac
 		UE_LOG(LogTemp, Warning,
 			TEXT("[BuildController] 철거 머신 인접 컨베이어 %d개 — Source/Target 연결 일치 0. 나란한 라인이면 정상, 아니면 연결 데이터 불일치 의심. Machine=%s"),
 			AdjacentConveyorCount, *Machine->GetName());
+	}
+
+	return Result;
+}
+
+TArray<APowerLine*> AOJJ_BuildController::CollectPowerLinesConnectedToMachine(AMachineBase* Machine) const
+{
+	TArray<APowerLine*> Result;
+	if (!Machine)
+	{
+		return Result;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!GameInstance)
+	{
+		return Result;
+	}
+
+	UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>();
+	if (!FactoryManager)
+	{
+		return Result;
+	}
+
+	TSet<APowerLine*> Seen;
+	for (const FPowerConnectionEdge& Connection : FactoryManager->GetPowerConnectionEdges())
+	{
+		APowerLine* PowerLine = Connection.PowerLineActor.Get();
+		if (!PowerLine || Seen.Contains(PowerLine))
+		{
+			continue;
+		}
+
+		if (PowerLine->GetSourceMachine() == Machine || PowerLine->GetTargetMachine() == Machine)
+		{
+			Seen.Add(PowerLine);
+			Result.Add(PowerLine);
+		}
 	}
 
 	return Result;
