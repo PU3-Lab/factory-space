@@ -55,3 +55,6 @@ oxygen,gas,oxygen,,,,/Game/Assets/UIImg/Resource/oxygen.oxygen
 hydrogen,gas,hydrogen,,,,/Game/Assets/UIImg/Resource/hydrogen.hydrogen
 nitrogen,gas,nitrogen,,,,/Game/Assets/UIImg/Resource/nitorgen.nitorgen
 helium,gas,helium,,,,/Game/Assets/UIImg/Resource/helium.helium
+rebar,solid,iron,metal,bar,,/Game/Assets/UIImg/Resource/rebar.rebar
+copperwire,solid,copper,metal,wire,,/Game/Assets/UIImg/Resource/copperwire.copperwire
+tinboard,solid,tin ,metal,board,,/Game/Assets/UIImg/Resource/tinboard.tinboard

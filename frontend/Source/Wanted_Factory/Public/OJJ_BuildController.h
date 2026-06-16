@@ -41,7 +41,8 @@ enum class EOJJ_BuildPlacementMode : uint8
 	// 물탱크 모드(F4-1') — 기존 머신 서브모드 패턴(발전소/펌프와 동일). 파이프 도착 끝점용.
 	LiquidTank,
 	MoldingMachine,
-	Synthesizer
+	Synthesizer,
+	TeleCommunicationTower
 };
 
 /**
@@ -144,6 +145,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
 	TSubclassOf<AMachineBase> SynthesizerClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AMachineBase> TeleCommunicationTowerClass;
 
 	// Foundation 모드에서 배치할 평판 클래스(AOJJ_Foundation 파생 BP 지정 가능). 머신이 아니므로
 	// GetActiveMachineClass/머신 배치 경로 비경유 — Conveyor/Demolish처럼 독립 분기(F1-b).

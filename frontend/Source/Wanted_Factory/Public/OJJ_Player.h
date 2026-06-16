@@ -322,6 +322,7 @@ protected:
 	void SetSmelterMode(const FInputActionValue& Value);
 	void SetMoldingMachineModeShortcut();
 	void SetSynthesizerModeShortcut();
+	void SetTeleCommunicationTowerModeShortcut();
 	void SetWarehouseMode(const FInputActionValue& Value);
 	void SetDemolishMode(const FInputActionValue& Value);
 

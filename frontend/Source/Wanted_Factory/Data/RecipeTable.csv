@@ -32,4 +32,4 @@ Make_Glass,Smelter,sand,1,,,,,glass,1,,,3
 Make_Rebar,MoldingMachine,iron_ingot,5,,,,,rebar,2,,,5
 Make_Copperwire,MoldingMachine,copper_ingot,5,,,,,copperwire,2,,,5
 Make_Tinboard,MoldingMachine,tin_ingot,5,,,,,tinboard,2,,,5
-Make_telecommunication_tower,Synthesizer,rebar,20,copperwire,20,tinboard,20,telecommunication_tower,1,,,30
+Make_telecommunication_tower,Synthesizer,rebar,20,copperwire,20,tinboard,20,TeleCommunicationTower,1,,,30
