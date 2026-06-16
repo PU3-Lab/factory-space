@@ -18,6 +18,8 @@ from db.models import (
     GeneratedMaterialModel,
     RecipeModel,
 )
+from visual.adapter import PlaceholderImageAdapter
+from visual.storage import NoopStorageAdapter
 
 
 @pytest.fixture
@@ -40,6 +42,8 @@ def db_session() -> Iterator[Session]:
     session_factory = sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
 
     VisualAssetPipeline.session_factory = session_factory
+    VisualAssetPipeline._image_adapter = PlaceholderImageAdapter()
+    VisualAssetPipeline._storage_adapter = NoopStorageAdapter()
 
     session = session_factory()
     # 실제 데이터와 일치하는 샘플 레시피 등록
@@ -76,5 +80,7 @@ def db_session() -> Iterator[Session]:
     # 테스트 세션 생명주기 내에서 백그라운드 작업이 완료될 때까지 대기
     MaterialEventPublisher.wait_for_jobs()
     VisualAssetPipeline.session_factory = None
+    VisualAssetPipeline._image_adapter = None
+    VisualAssetPipeline._storage_adapter = None
 
     engine.dispose()

@@ -213,3 +213,7 @@ backend/*.db
 backend/*.db-journal
 # Test DB (migrated schema, no data) committed for tests/first-run
 !backend/factory_space.test.db
+
+# Generated visual assets (icons/textures/thumbnails) — runtime data, not committed.
+# Default FACTORY_IMAGE_STORAGE_PATH=var/assets relative to backend/.
+backend/var/

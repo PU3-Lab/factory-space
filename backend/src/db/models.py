@@ -106,6 +106,9 @@ class GeneratedMaterialModel(Base):
     category: Mapped[str] = mapped_column(String(50), nullable=False)
     rarity: Mapped[str] = mapped_column(String(50), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    state: Mapped[str] = mapped_column(
+        String(20), default="solid", server_default="solid", nullable=False
+    )
 
     properties_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     risks_json: Mapped[list | None] = mapped_column(JSON, nullable=True)

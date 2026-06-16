@@ -2,7 +2,14 @@
 
 #include "Wanted_Factory.h"
 #include "Engine/DataTable.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+	constexpr TCHAR RecipeCsvRelativePath[] = TEXT("Source/Wanted_Factory/Data/RecipeTable.csv");
+}
 
 URecipeManagerSubsystem::URecipeManagerSubsystem()
 {
@@ -22,11 +29,36 @@ void URecipeManagerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	if (!RecipeTable)
 	{
+		RecipeTable = NewObject<UDataTable>(this, TEXT("RecipeTable"));
+		if (RecipeTable)
+		{
+			RecipeTable->RowStruct = FRecipeTable::StaticStruct();
+		}
+	}
+
+	if (!RecipeTable)
+	{
 		LOG_SSR_W(TEXT("RecipeTable Load Failed"));
 		return;
 	}
 
 	LOG_SSR_W(TEXT("RecipeTable Loaded"));
+
+	const FString CsvPath = FPaths::Combine(FPaths::ProjectDir(), RecipeCsvRelativePath);
+	FString CsvContent;
+	if (FFileHelper::LoadFileToString(CsvContent, *CsvPath))
+	{
+		RecipeTable->EmptyTable();
+		const TArray<FString> ImportProblems = RecipeTable->CreateTableFromCSVString(CsvContent);
+		for (const FString& Problem : ImportProblems)
+		{
+			LOG_SSR_W(TEXT("RecipeTable CSV import warning: %s"), *Problem);
+		}
+	}
+	else
+	{
+		LOG_SSR_W(TEXT("RecipeTable CSV Load Failed: %s"), *CsvPath);
+	}
 
 	BuildRecipeIndex();
 }
