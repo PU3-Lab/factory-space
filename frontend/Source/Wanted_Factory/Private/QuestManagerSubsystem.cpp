@@ -630,6 +630,18 @@ bool UQuestManagerSubsystem::GetCurrentTutorialQuestStep(FTutorialQuestStep& Out
 	return true;
 }
 
+bool UQuestManagerSubsystem::GetTutorialQuestStepById(const FString& QuestId, FTutorialQuestStep& OutStep) const
+{
+	const int32* StepIndex = TutorialQuestStepIndexById.Find(QuestId);
+	if (!StepIndex || !TutorialQuestSteps.IsValidIndex(*StepIndex))
+	{
+		return false;
+	}
+
+	OutStep = TutorialQuestSteps[*StepIndex];
+	return true;
+}
+
 void UQuestManagerSubsystem::GetTutorialDialogueLines(
 	const FString& QuestId,
 	const FString& TriggerType,

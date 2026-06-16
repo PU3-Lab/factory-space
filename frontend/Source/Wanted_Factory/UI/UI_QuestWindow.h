@@ -50,8 +50,13 @@ protected:
     TSubclassOf<class UUI_QuestNotify> QuestNotifyWidgetClass;
 
 private:
+    void DisplayTutorialStep(const FTutorialQuestStep& Step);
+
     UFUNCTION()
     void HandleOnTutorialStepChanged(const FTutorialQuestStep& NewStep);
+
+    UFUNCTION()
+    void HandleOnTutorialDialogueLogged(const FString& QuestId, const FString& TriggerType, const TArray<FTutorialQuestDialogueLine>& Lines);
 
     UFUNCTION() void HandleOnMainQuestChanged(const FQuestState& NewQuest);
     UFUNCTION() void HandleOnSubQuestsGenerated(const FString& RequestId, const TArray<FQuestState>& Quests);

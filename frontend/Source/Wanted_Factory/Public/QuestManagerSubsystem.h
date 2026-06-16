@@ -227,6 +227,9 @@ public:
 	bool GetCurrentTutorialQuestStep(FTutorialQuestStep& OutStep) const;
 
 	UFUNCTION(BlueprintPure, Category = "Quest|Tutorial")
+	bool GetTutorialQuestStepById(const FString& QuestId, FTutorialQuestStep& OutStep) const;
+
+	UFUNCTION(BlueprintPure, Category = "Quest|Tutorial")
 	void GetTutorialDialogueLines(const FString& QuestId, const FString& TriggerType, TArray<FTutorialQuestDialogueLine>& OutLines) const;
 
 	UFUNCTION(BlueprintPure, Category = "Quest|Tutorial")
