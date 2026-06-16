@@ -81,6 +81,11 @@ void UUI_MainHUD::ToggleAIGuideWindow()
     }
 }
 
+bool UUI_MainHUD::IsGuideWindowOpen() const
+{
+    return B_ChatBackground && B_ChatBackground->GetVisibility() != ESlateVisibility::Collapsed;
+}
+
 FReply UUI_MainHUD::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
     if (InKeyEvent.GetKey() == EKeys::Tab) { ToggleAIGuideWindow(); return FReply::Handled(); }
