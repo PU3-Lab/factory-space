@@ -184,6 +184,7 @@ void AMachineBase::ApplyMachineData(const FMachineTableRow& MachineData)
 		{
 			if (UStaticMesh* StaticMeshAsset = MachineData.StaticMeshAsset.LoadSynchronous())
 			{
+				MeshComponent->EmptyOverrideMaterials();
 				MeshComponent->SetStaticMesh(StaticMeshAsset);
 			}
 		}
@@ -192,7 +193,11 @@ void AMachineBase::ApplyMachineData(const FMachineTableRow& MachineData)
 		{
 			if (UMaterialInterface* MaterialAsset = MachineData.MaterialAsset.LoadSynchronous())
 			{
-				MeshComponent->SetMaterial(0, MaterialAsset);
+				const int32 MaterialCount = FMath::Max(1, MeshComponent->GetNumMaterials());
+				for (int32 MaterialIndex = 0; MaterialIndex < MaterialCount; ++MaterialIndex)
+				{
+					MeshComponent->SetMaterial(MaterialIndex, MaterialAsset);
+				}
 			}
 		}
 
