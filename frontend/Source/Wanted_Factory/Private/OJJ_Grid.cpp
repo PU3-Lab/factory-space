@@ -112,6 +112,20 @@ bool OJJ_IsLiquidTransportMachine(const AMachineBase* Machine)
 	return MachineType == TEXT("Pump") || MachineType == TEXT("LiquidTank");
 }
 
+// #182 셀 점유자가 액체 자원(WaterArea, form=liquid)인지. 파이프 점유 검사에서 물 셀 면제 판정에 사용 —
+// 물 위는 파이프가 깔리는 정상 케이스(펌프 출력셀/경로/탱크 진입이 WaterArea 점유와 겹침). 머신/컨베이어/
+// 파이프 점유자는 false → 계속 차단(무분별 통과 금지). occupant 직접 검사라 머신이 물 위 점유를 덮어쓴 셀은
+// 머신으로 잡혀 차단 유지(자원 레이어가 아닌 OccupiedCells 점유자 기준).
+bool OJJ_IsLiquidResourceOccupant(const TWeakObjectPtr<AActor>* Occupant)
+{
+	if (!Occupant || !Occupant->IsValid())
+	{
+		return false;
+	}
+	AResourceBase* Resource = Cast<AResourceBase>(Occupant->Get());
+	return Resource && Resource->HasForm(FName(TEXT("liquid")));
+}
+
 bool OJJ_IsMachineBackOutputPair(
 	const AOJJ_Grid* Grid,
 	const AMachineBase* Machine,
@@ -192,7 +206,8 @@ bool OJJ_FindInputMachineAtPathEnd(
 	AMachineBase* StartMachine,
 	AMachineBase*& OutEndMachine,
 	bool& bOutEndsOnMachine,
-	FString& OutReason)
+	FString& OutReason,
+	bool bExemptWaterOccupant = false)
 {
 	OutEndMachine = nullptr;
 	bOutEndsOnMachine = false;
@@ -206,8 +221,12 @@ bool OJJ_FindInputMachineAtPathEnd(
 	const FIntPoint EndCell = PathCells.Last();
 	const FIntPoint PreviousCell = PathCells[PathCells.Num() - 2];
 
+	// #182 물 위 파이프: 끝 셀이 액체 자원(WaterArea)이면 비점유로 간주 → 아래 인접-머신 분기로 넘겨, 물 위
+	// 탱크 입력면 앞 셀에서 끝나는 경로도 인접 탱크를 찾게 한다(지상 빈 셀과 동일 처리). 끝 셀이 머신(탱크)이면
+	// 그대로 머신 분기(머신은 OccupiedCells에서 물을 덮어쓰므로 탱크 셀은 탱크로 잡힘).
 	const TWeakObjectPtr<AActor>* EndOccupant = OccupiedCells.Find(EndCell);
-	if (EndOccupant && EndOccupant->IsValid())
+	if (EndOccupant && EndOccupant->IsValid()
+		&& !(bExemptWaterOccupant && OJJ_IsLiquidResourceOccupant(EndOccupant)))
 	{
 		AMachineBase* EndMachine = Cast<AMachineBase>(EndOccupant->Get());
 		const TArray<FIntPoint>* EndMachineCells = EndMachine ? ActorToCells.Find(EndMachine) : nullptr;
@@ -220,8 +239,11 @@ bool OJJ_FindInputMachineAtPathEnd(
 			return false;
 		}
 
+		// #182 물 위 파이프: 입력 포트 앞 셀이 액체 자원(WaterArea)이면 비어있는 것으로 간주(파이프가 물 위로
+		// 탱크에 진입). 머신/컨베이어/파이프 점유는 기존대로 거부(무분별 통과 금지).
 		const TWeakObjectPtr<AActor>* PreviousOccupant = OccupiedCells.Find(PreviousCell);
-		if (PreviousOccupant && PreviousOccupant->IsValid())
+		if (PreviousOccupant && PreviousOccupant->IsValid()
+			&& !(bExemptWaterOccupant && OJJ_IsLiquidResourceOccupant(PreviousOccupant)))
 		{
 			OutReason = TEXT("The cell before a machine input port must be empty.");
 			return false;
@@ -383,7 +405,8 @@ bool OJJ_CollectConveyorReservedCells(
 		StartMachine,
 		EndMachine,
 		bEndsOnMachine,
-		OutReason))
+		OutReason,
+		/*bExemptWaterOccupant=*/ bAllowWaterCells))
 	{
 		return false;
 	}
@@ -439,13 +462,17 @@ bool OJJ_CollectConveyorReservedCells(
 				&& Occupant->Get() == EndMachine;
 			// F4-3 오버패스: 파이프는 컨베이어 점유 셀을 타넘기 — 차단 대신 예약 유지(공중 셀로 등록).
 			const bool bConveyorOverpass = bAllowConveyorOverpass && Grid->OJJ_GetConveyorAtCell(Cell) != nullptr;
-			if (!bAllowedOutputCell && !bAllowedInputCell && !bConveyorOverpass)
+			// #182 물 위 파이프: 점유자가 액체 자원(WaterArea)이고 파이프 경로(bAllowWaterCells)면 차단 면제 —
+			// 펌프 출력셀/경로/탱크 진입이 WaterArea 점유와 겹치는 건 정상(물 위에 파이프가 깔린다). 머신/컨베이어/
+			// 파이프 점유자는 면제 안 됨(무분별 통과 금지). 파이프 레이어는 OccupiedCells와 독립이라 물자원과 공존.
+			const bool bWaterResourceOccupant = bAllowWaterCells && OJJ_IsLiquidResourceOccupant(Occupant);
+			if (!bAllowedOutputCell && !bAllowedInputCell && !bConveyorOverpass && !bWaterResourceOccupant)
 			{
 				OutReason = TEXT("Conveyor path is blocked by an occupied cell.");
 				return false;
 			}
-			// 머신 끝점 셀은 예약 제외(기존). 오버패스 셀은 fall-through → 아래 AddUnique로 공중 예약.
-			if (!bConveyorOverpass)
+			// 머신 끝점 셀은 예약 제외(기존). 오버패스/물자원 셀은 fall-through → AddUnique로 예약(파이프가 실제 점유).
+			if (!bConveyorOverpass && !bWaterResourceOccupant)
 			{
 				continue;
 			}
