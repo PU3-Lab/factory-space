@@ -38,3 +38,23 @@
   - `AMachineBase::GetMaxRepairCostQty()`
   - `UUI_MachineInteract::OnRepairClicked()`
   - `UUI_MachineInteract`에 `BTN_Repair`를 추가하면 C++에서 바인딩되도록 구현되어 있습니다.
+
+### 4. 튜토리얼 퀘스트/대사 UI 표시
+- 작성자: 이찬
+- 작성일: 2026-06-16
+- 요청 대상: 이동진
+- 요청 내용: 튜토리얼 퀘스트 step과 스카이 대사를 UI에 표시할 수 있도록 연결이 필요합니다. UI 쪽에서는 `QuestManagerSubsystem`이 열어둔 튜토리얼 전용 API를 사용해 주세요. 권장 방식은 `처음 한 번 현재 상태를 조회`하고, 이후에는 `이벤트 바인딩`으로 갱신하는 방식입니다.
+- 참고 사항:
+  - 현재 step 조회:
+    - `UQuestManagerSubsystem::GetCurrentTutorialQuestStep(FTutorialQuestStep& OutStep)`
+  - 특정 퀘스트의 대사 조회:
+    - `UQuestManagerSubsystem::GetTutorialDialogueLines(const FString& QuestId, const FString& TriggerType, TArray<FTutorialQuestDialogueLine>& OutLines)`
+  - 최근 로그된 대사 조회:
+    - `UQuestManagerSubsystem::GetLastTutorialDialogueLog(FString& OutQuestId, FString& OutTriggerType, TArray<FTutorialQuestDialogueLine>& OutLines)`
+  - 이벤트 바인딩:
+    - `UQuestManagerSubsystem::OnTutorialStepChanged`
+    - `UQuestManagerSubsystem::OnTutorialDialogueLogged`
+  - 권장 UI 흐름:
+    - 위젯 생성 시 `GetCurrentTutorialQuestStep`, `GetLastTutorialDialogueLog`로 초기값 반영
+    - 이후 `OnTutorialStepChanged`에서 제목/설명 갱신
+    - `OnTutorialDialogueLogged`에서 스카이 대사 영역 갱신
