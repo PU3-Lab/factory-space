@@ -333,6 +333,7 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
 	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
+	PlayerInputComponent->BindKey(EKeys::Enter, IE_Pressed, this, &AOJJ_Player::TriggerTutorialDialogueReveal);
 	// Foundation G/H는 #196에서 Enhanced Input(IA_SetFoundationMode/IA_SetRampMode)로 전환 —
 	// 레거시 BindKey 제거(이중발화 차단). 바인딩은 위 BindAction 블록 + IMC_Build/BP 매핑(에디터).
 }
@@ -1131,6 +1132,28 @@ void AOJJ_Player::TriggerHUDAIGuideToggle()
 	{
 		// HUD 토글 함수 원격 호출
 		MainHUD->ToggleAIGuideWindow();
+	}
+}
+
+void AOJJ_Player::TriggerTutorialDialogueReveal()
+{
+	if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
+	{
+		if (MainHUD->IsGuideWindowOpen())
+		{
+			return;
+		}
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			if (QuestManager->HasPendingTutorialStartDialogue())
+			{
+				QuestManager->RevealPendingTutorialStartDialogue();
+			}
+		}
 	}
 }
 

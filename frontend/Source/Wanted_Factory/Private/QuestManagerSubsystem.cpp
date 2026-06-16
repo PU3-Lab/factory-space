@@ -580,6 +580,7 @@ void UQuestManagerSubsystem::StartTutorialQuestTest()
 
 	bTutorialQuestTestActive = true;
 	CurrentTutorialQuestId = TutorialQuestSteps[0].QuestId;
+	bPendingTutorialStartDialogueReveal = false;
 	LOG_LC(TEXT("Tutorial quest test started."));
 	LogCurrentTutorialQuestTestState();
 	BroadcastCurrentTutorialQuestStep();
@@ -659,6 +660,22 @@ void UQuestManagerSubsystem::GetLastTutorialDialogueLog(
 	OutQuestId = LastTutorialDialogueQuestId;
 	OutTriggerType = LastTutorialDialogueTriggerType;
 	OutLines = LastTutorialDialogueLines;
+}
+
+bool UQuestManagerSubsystem::HasPendingTutorialStartDialogue() const
+{
+	return bPendingTutorialStartDialogueReveal;
+}
+
+void UQuestManagerSubsystem::RevealPendingTutorialStartDialogue()
+{
+	if (!bPendingTutorialStartDialogueReveal || CurrentTutorialQuestId.IsEmpty())
+	{
+		return;
+	}
+
+	bPendingTutorialStartDialogueReveal = false;
+	LogTutorialDialogue(CurrentTutorialQuestId, TEXT("on_start"));
 }
 
 void UQuestManagerSubsystem::NotifyTutorialEvent(FName EventId, FName TargetId, int32 DeltaCount)
@@ -752,6 +769,7 @@ void UQuestManagerSubsystem::LoadTutorialQuestTestData()
 	TutorialDialogueByQuestId.Empty();
 	CurrentTutorialQuestId.Empty();
 	bTutorialQuestTestActive = false;
+	bPendingTutorialStartDialogueReveal = false;
 	LastTutorialDialogueQuestId.Empty();
 	LastTutorialDialogueTriggerType.Empty();
 	LastTutorialDialogueLines.Reset();
@@ -1100,6 +1118,7 @@ bool UQuestManagerSubsystem::AdvanceTutorialQuestStep(bool bFromManualTest)
 		LOG_LC(TEXT("Tutorial quest test finished at [%s]."), *CurrentStep->QuestId);
 		CurrentTutorialQuestId.Empty();
 		bTutorialQuestTestActive = false;
+		bPendingTutorialStartDialogueReveal = false;
 		return true;
 	}
 
@@ -1112,13 +1131,14 @@ bool UQuestManagerSubsystem::AdvanceTutorialQuestStep(bool bFromManualTest)
 			*CurrentStep->QuestId);
 		CurrentTutorialQuestId.Empty();
 		bTutorialQuestTestActive = false;
+		bPendingTutorialStartDialogueReveal = false;
 		return false;
 	}
 
 	CurrentTutorialQuestId = CurrentStep->NextQuestId;
+	bPendingTutorialStartDialogueReveal = true;
 	LogCurrentTutorialQuestTestState();
 	BroadcastCurrentTutorialQuestStep();
-	LogTutorialDialogue(CurrentTutorialQuestId, TEXT("on_start"));
 	return true;
 }
 

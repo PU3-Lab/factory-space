@@ -232,6 +232,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Quest|Tutorial")
 	void GetLastTutorialDialogueLog(FString& OutQuestId, FString& OutTriggerType, TArray<FTutorialQuestDialogueLine>& OutLines) const;
 
+	UFUNCTION(BlueprintPure, Category = "Quest|Tutorial")
+	bool HasPendingTutorialStartDialogue() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Quest|Tutorial")
+	void RevealPendingTutorialStartDialogue();
+
 	void NotifyTutorialEvent(FName EventId, FName TargetId = NAME_None, int32 DeltaCount = 1);
 
 private:
@@ -260,6 +266,7 @@ private:
 	TMap<FString, TArray<FTutorialQuestDialogueLine>> TutorialDialogueByQuestId;
 	FString CurrentTutorialQuestId;
 	bool bTutorialQuestTestActive = false;
+	bool bPendingTutorialStartDialogueReveal = false;
 	FString LastTutorialDialogueQuestId;
 	FString LastTutorialDialogueTriggerType;
 

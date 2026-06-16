@@ -27,6 +27,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "HUD | Quest")
     void ToggleAIGuideWindow(); // 캐릭터가 Tab키를 눌렀을 때 호출해 줄 외부 함수
     
+    UFUNCTION(BlueprintPure, Category = "HUD")
+    bool IsGuideWindowOpen() const;
+
     void UpdateMainQuestUI(const FQuestState& MainQuest);
 
 protected:
