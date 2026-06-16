@@ -299,18 +299,48 @@ bool OJJ_ValidateConveyorSlopePath(
 	TArray<float>& OutCellZs,
 	FString& OutReason)
 {
-	// F3.7' 개정(㊆): 45 고정(보행 기준) → 그리드 프로퍼티(기본 100 — 램프 행간 한계 기본과 동기,
-	// 급경사 컨베이어 전용 램프 허용). 컨베이어는 비보행이라 보행 경고는 램프 배치 로그 소관.
-	const float MaxSlopeStepZ = FMath::Max(1.0f, Grid->OJJ_GetMaxConveyorStepZ());
+	// #249 경로 분류: all-Foundation(기존 F3.7~F3.10 램프 경로) vs all-raw(신규 지형추종). 혼합은 이번 패스 거부.
+	// (Foundation 셀 = GetFoundationSurfaceZ 성공. raw 셀 = 그 외 — water는 호출 게이트가 이미 걸러 도달 안 함.)
+	bool bAnyFoundation = false;
+	bool bAnyRaw = false;
+	for (const FIntPoint& Cell : PathCells)
+	{
+		float ProbeZ = 0.0f;
+		if (Grid->GetFoundationSurfaceZ(Cell, ProbeZ))
+		{
+			bAnyFoundation = true;
+		}
+		else
+		{
+			bAnyRaw = true;
+		}
+	}
+	if (bAnyFoundation && bAnyRaw)
+	{
+		OutReason = TEXT("Conveyor slope path cannot mix terrain and foundation cells (use an all-foundation or all-terrain path).");
+		return false;
+	}
+	const bool bRawTerrain = bAnyRaw; // 전 셀 비-Foundation = raw 지형추종 경로
+
+	// raw 경로는 파이프와 공유하는 경사 게이트(OJJ_MaxSlopeStepZ, 기본 300)로 자연 경사(둑/언덕)를 허용.
+	// Foundation/램프 경로는 기존 OJJ_MaxConveyorStepZ(100) 그대로 — 램프 MaxRampStepPerRow 가정 보존(회귀 0).
+	const float MaxSlopeStepZ = FMath::Max(1.0f,
+		bRawTerrain ? Grid->OJJ_GetMaxSlopeStepZ() : Grid->OJJ_GetMaxConveyorStepZ());
 
 	OutCellZs.Reset();
 	OutCellZs.Reserve(PathCells.Num());
 	for (const FIntPoint& Cell : PathCells)
 	{
 		float CellSurfaceZ = 0.0f;
-		if (!Grid->GetFoundationSurfaceZ(Cell, CellSurfaceZ))
+		// raw = 셀별 GroundZ 추종(평면 폴백 금지). foundation = 장부 SurfaceZ(기존). 둘 다 셀 단위 절대 Z.
+		const bool bHaveSurfaceZ = bRawTerrain
+			? Grid->OJJ_GetRawTerrainSurfaceZ(Cell, CellSurfaceZ)
+			: Grid->GetFoundationSurfaceZ(Cell, CellSurfaceZ);
+		if (!bHaveSurfaceZ)
 		{
-			OutReason = TEXT("Conveyor slope path must stay on foundations (mixed terrain/foundation path is not allowed).");
+			OutReason = bRawTerrain
+				? TEXT("Conveyor terrain-following path requires baked ground height on every cell (no plane fallback).")
+				: TEXT("Conveyor slope path must stay on foundations (mixed terrain/foundation path is not allowed).");
 			return false;
 		}
 		OutCellZs.Add(CellSurfaceZ);
@@ -327,16 +357,23 @@ bool OJJ_ValidateConveyorSlopePath(
 		}
 	}
 
-	for (int32 Index = 1; Index + 1 < PathCells.Num(); ++Index)
+	// #249(A) raw 지형추종 경로는 corner-flat 게이트 **면제** — 코너에서도 셀별 GroundZ를 따라 꺾인다.
+	// 코너 메시가 평탄 전제(Conveyor.cpp:445, pitch 미적용)라 경사 코너에서 평탄 메시 글리치(뜸/관통/seam)가
+	// 날 수 있으나 이는 알려진 시각 한계(#252 코너 메시 경사 대응에서 해소)지 배치 차단 사유가 아님. Foundation/
+	// 램프 경로(bRawTerrain=false)만 아래 corner-flat 규칙 적용 → F3.7~F3.10 동결(가드 유지).
+	if (!bRawTerrain)
 	{
-		const FIntPoint PrevDir = PathCells[Index] - PathCells[Index - 1];
-		const FIntPoint NextDir = PathCells[Index + 1] - PathCells[Index];
-		if (PrevDir != NextDir
-			&& (!FMath::IsNearlyEqual(OutCellZs[Index], OutCellZs[Index - 1])
-				|| !FMath::IsNearlyEqual(OutCellZs[Index + 1], OutCellZs[Index])))
+		for (int32 Index = 1; Index + 1 < PathCells.Num(); ++Index)
 		{
-			OutReason = TEXT("Conveyor cannot turn on a slope (corner cells must be on flat surface).");
-			return false;
+			const FIntPoint PrevDir = PathCells[Index] - PathCells[Index - 1];
+			const FIntPoint NextDir = PathCells[Index + 1] - PathCells[Index];
+			if (PrevDir != NextDir
+				&& (!FMath::IsNearlyEqual(OutCellZs[Index], OutCellZs[Index - 1])
+					|| !FMath::IsNearlyEqual(OutCellZs[Index + 1], OutCellZs[Index])))
+			{
+				OutReason = TEXT("Conveyor cannot turn on a slope (corner cells must be on flat surface).");
+				return false;
+			}
 		}
 	}
 
@@ -359,9 +396,11 @@ bool OJJ_CollectConveyorReservedCells(
 	bool bAllowLiquidMachines = false,
 	// F4(물 위 파이프): true면 게이트(:401)에서 water 셀 통과 허용(파이프 전용). 컨베이어는 기본 false → 무변경.
 	bool bAllowWaterCells = false,
-	// #182 파이프 굴곡 통과: true면 게이트에서 blocked(굴곡/경사/절벽) 셀도 통과 허용(파이프 전용). 절벽/벽
-	// 거부는 호출자(OJJ_ValidatePipePlacement)의 경사 게이트가 |ΔZ|로 별도 판정. void는 여기서 계속 거부.
-	bool bAllowBlockedCells = false)
+	// #182/#249 blocked 통과: true면 게이트에서 blocked(굴곡/경사/절벽) 셀도 통과 허용. 절벽/벽 거부는 호출자
+	// 경사 게이트(파이프=OJJ_ValidatePipePlacement, 컨베이어=OJJ_ValidateConveyorSlopePath)가 |ΔZ|로 별도 판정.
+	// void는 여기서 계속 거부. #249부터 컨베이어 기본값 true(raw-terrain 지형추종이 자연 둑을 타고 넘게) — water는
+	// bAllowWaterCells=false라 여전히 거부, blocked⊄water(배타 집합)라 blocked 개방이 water를 새게 하지 않음.
+	bool bAllowBlockedCells = true)
 {
 	OutReservedCells.Reset();
 	if (OutSourceMachine)
@@ -484,13 +523,22 @@ bool OJJ_CollectConveyorReservedCells(
 	// 단일 건설면 규칙(F1-c §7-3, 경로판): 전 경로 셀(머신 끝점 포함)이 같은 높이여야 함.
 	// F3.7-1(㊆): 균일 **실패 시에만** 경사 검사 — 기존 평면/지형 경로(균일 통과)는 이 분기에
 	// 진입조차 안 해 회귀 0(f3_7 계획 §3-1). 경사 통과 = 램프 경로 예외 허용("F3에서 해소" 태그 이행).
+	// #249 raw-terrain 지형추종: OJJ_GetUniformSurfaceZ는 raw 경로를 항상 max GroundZ "평면"으로 통과시키므로
+	// (경사 미검증·평면 안착), all-raw에 GroundZ 변화가 있으면 uniform과 무관하게 반드시 경사 검증(300 게이트·셀별
+	// GroundZ)으로 보낸다. 평탄 raw·Foundation·미베이크 경로는 기존 uniform 분기 그대로(회귀 0). 판정 소스는
+	// 배치(OJJ_TryPlaceConveyor)와 동일한 OJJ_IsRawTerrainFollowPath — 검증/배치 분기 일치 보장.
+	// ⚠ 컨베이어 전용: 파이프(bAllowWaterCells=true)는 자체 경사 게이트(OJJ_ValidatePipePlacement, 코너 회전·물 허용)를
+	// 쓰며 all-raw 경로가 기존엔 uniform=true로 이 분기를 건너뛰었다. raw-follow를 파이프까지 켜면 컨베이어의 코너-평탄
+	// 규칙이 파이프 경사 회전을 거부(회귀). bAllowWaterCells로 파이프를 식별해 컨베이어 경로만 raw-follow 적용.
+	const bool bConveyorPath = !bAllowWaterCells; // 파이프=물 위 허용(true), 컨베이어=false.
+	const bool bRawTerrainFollow = bConveyorPath && Grid->OJJ_IsRawTerrainFollowPath(PathCells);
 	float UnusedUniformZ = 0.0f;
-	if (!Grid->OJJ_GetUniformSurfaceZ(PathCells, UnusedUniformZ))
+	if (bRawTerrainFollow || !Grid->OJJ_GetUniformSurfaceZ(PathCells, UnusedUniformZ))
 	{
 		TArray<float> UnusedCellZs;
 		if (!OJJ_ValidateConveyorSlopePath(Grid, PathCells, UnusedCellZs, OutReason))
 		{
-			return false; // OutReason은 경사 검사가 구체 사유로 세팅(한계 초과/혼합/경사 코너).
+			return false; // OutReason은 경사 검사가 구체 사유로 세팅(한계 초과/혼합/경사 코너/지형높이 없음).
 		}
 	}
 
@@ -954,6 +1002,59 @@ float AOJJ_Grid::OJJ_GetPipeCellSurfaceZ(FIntPoint Cell) const
 		return GetActorLocation().Z + (float)CellGroundZQuant[OJJ_CellLinearIndex(Cell, GridSize)];
 	}
 	return GetActorLocation().Z;
+}
+
+bool AOJJ_Grid::OJJ_GetRawTerrainSurfaceZ(FIntPoint Cell, float& OutSurfaceZ) const
+{
+	// #249 raw 지형 컨베이어 셀별 안착 Z = 베이크 GroundZ(셀 대표높이, F2-1). 평면 폴백 금지: GroundZ 무효(미베이크/
+	// 시그니처 불일치)거나 off-grid면 false → 호출자(경사 검증)가 "지형 높이 없음"으로 거부. OJJ_GetPipeCellSurfaceZ의
+	// 지형 분기와 같은 수식이되 물/Foundation 우선순위·평면 폴백을 뺀 raw 전용(컨베이어는 물 거부·all-raw 경로만).
+	if (!OJJ_HasValidGroundZData() || !IsValidGridCell(Cell))
+	{
+		OutSurfaceZ = 0.0f;
+		return false;
+	}
+	OutSurfaceZ = GetActorLocation().Z + (float)CellGroundZQuant[OJJ_CellLinearIndex(Cell, GridSize)];
+	return true;
+}
+
+bool AOJJ_Grid::OJJ_IsRawTerrainFollowPath(const TArray<FIntPoint>& PathCells) const
+{
+	// #249 raw-terrain 지형추종 경로 판정 — 검증(OJJ_CollectConveyorReservedCells)과 배치(OJJ_TryPlaceConveyor)가
+	// 이 단일 소스를 공유해 "어떤 경로가 지형추종인가"를 일치시킨다(분기 divergence 0). 조건 전부 충족 시 true:
+	//   ① 베이크 GroundZ 유효(미베이크면 지형추종 불가 → 기존 평면 경로) ② 전 셀 valid grid
+	//   ③ Foundation 셀 0개(all-raw — 혼합/Foundation 경로는 기존 흐름) ④ 셀 간 GroundZ 변화 존재
+	// ④로 평탄 raw 경로는 기존 uniform 평면 안착을 그대로 유지(회귀 0) — 변화가 있을 때만 셀별 추종으로 분기.
+	if (PathCells.Num() < 2 || !OJJ_HasValidGroundZData())
+	{
+		return false;
+	}
+	bool bFirst = true;
+	bool bVaries = false;
+	int16 FirstQuant = 0;
+	for (const FIntPoint& Cell : PathCells)
+	{
+		if (!IsValidGridCell(Cell))
+		{
+			return false;
+		}
+		float UnusedZ = 0.0f;
+		if (GetFoundationSurfaceZ(Cell, UnusedZ))
+		{
+			return false; // Foundation 셀 포함 = all-raw 아님.
+		}
+		const int16 Quant = CellGroundZQuant[OJJ_CellLinearIndex(Cell, GridSize)];
+		if (bFirst)
+		{
+			bFirst = false;
+			FirstQuant = Quant;
+		}
+		else if (Quant != FirstQuant)
+		{
+			bVaries = true;
+		}
+	}
+	return bVaries;
 }
 
 bool AOJJ_Grid::OJJ_TraceCursorToWaterSurface(const FVector& RayOrigin, const FVector& RayDir, float MaxDistance, FIntPoint& OutCell) const
@@ -3448,8 +3549,11 @@ bool AOJJ_Grid::OJJ_TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint
 		GetActorLocation() + Conveyor->GetActorRotation().RotateVector(Conveyor->GetPathCentroidLocal()) - HalfExtent;
 	// F1-c: 경로의 단일 건설면 Z 적용(§7-3 2지점 중 ②) — Foundation 위 경로면 상면 높이로 들어올림.
 	// 균일/경사는 OJJ_CollectConveyorReservedCells가 이미 검증(실패 시 여기 도달 안 함).
+	// #249 raw-terrain 지형추종 경로는 uniform이 평면으로 통과시켜도 셀별 GroundZ 추종(경사 분기)으로 보낸다 —
+	// 검증(OJJ_CollectConveyorReservedCells)과 동일한 OJJ_IsRawTerrainFollowPath 소스라 판정/배치 분기 일치.
+	const bool bRawTerrainFollow = OJJ_IsRawTerrainFollowPath(PlacementCells);
 	float PathSurfaceZ = GetActorLocation().Z;
-	if (OJJ_GetUniformSurfaceZ(PlacementCells, PathSurfaceZ))
+	if (!bRawTerrainFollow && OJJ_GetUniformSurfaceZ(PlacementCells, PathSurfaceZ))
 	{
 		// 평면 경로(기존 전부) — 기존 코드 그대로(F3.7 회귀 0 §3-1). 지형 경로면 델타 0.
 		ConveyorLocation.Z += PathSurfaceZ - GetActorLocation().Z;
