@@ -8,6 +8,7 @@ from agents.material_generation.graph_state import MaterialGraphState
 from agents.material_generation.nodes import (
     classify_node,
     deduplicate_material_node,
+    derive_node,
     handle_rule_node,
     llm_propose_node,
     lookup_cache_node,
@@ -39,6 +40,7 @@ def build_material_subgraph() -> StateGraph:
     builder.add_node("classify", classify_node)
     builder.add_node("handle_rule", handle_rule_node)
     builder.add_node("similarity_context", similarity_context_node)
+    builder.add_node("derive", derive_node)
     builder.add_node("llm_propose", llm_propose_node)
     builder.add_node("validate_result", validate_result_node)
     builder.add_node("deduplicate_material", deduplicate_material_node)
@@ -88,7 +90,8 @@ def build_material_subgraph() -> StateGraph:
         },
     )
 
-    builder.add_edge("similarity_context", "llm_propose")
+    builder.add_edge("similarity_context", "derive")
+    builder.add_edge("derive", "llm_propose")
     builder.add_edge("llm_propose", "validate_result")
 
     builder.add_conditional_edges(
