@@ -75,14 +75,33 @@ class ManualQAService:
         intent = self._question_classifier.classify(question)
         prompt_context = self._context_builder.build(question, intent)
         recent_conversation = _recent_conversation(context)
+        confirmed_facts = _confirmed_facts(context)
+
         if self._rag_runtime is None:
             return ManualQAPromptContext(
                 result=prompt_context.result,
                 evidence=prompt_context.evidence,
                 recent_conversation=recent_conversation,
+                confirmed_facts=confirmed_facts,
             )
 
-        rag_result = self._rag_runtime.retrieve(question)
+        # 이미 동일 요청 내에서 RAG 검색이 실행되었는지 캐시를 확인합니다.
+        # 초보자용 설명:
+        #     동일 턴 내에서 prompt string 빌드와 prompt messages 빌드가 순차적으로 실행되는데,
+        #     매번 RAG 검색을 실행하면 중복 호출로 비용과 속도가 저하됩니다.
+        #     따라서 context 딕셔너리에 이전에 검색한 결과를 캐싱하여 한 번만 호출되도록 합니다.
+        if context is not None and "_cached_rag_result" in context:
+            rag_result = context["_cached_rag_result"]
+        else:
+            # confirmed facts를 RAG 검색 질문에 병합하여 검색 품질을 개선합니다.
+            search_query = question
+            if confirmed_facts:
+                search_query = f"{question} {' '.join(confirmed_facts)}"
+
+            rag_result = self._rag_runtime.retrieve(search_query)
+            if context is not None:
+                context["_cached_rag_result"] = rag_result
+
         rag_metadata = _rag_metadata(rag_result)
         result = prompt_context.result.model_copy(update={"retrieval": rag_metadata})
         return ManualQAPromptContext(
@@ -91,6 +110,7 @@ class ManualQAService:
             rag_context_text=str(getattr(rag_result, "context_text", "")),
             rag_metadata=rag_metadata,
             recent_conversation=recent_conversation,
+            confirmed_facts=confirmed_facts,
         )
 
     def build_prompt(
@@ -216,6 +236,25 @@ def _recent_conversation(context: dict[str, object] | None) -> list[dict[str, st
         if question and answer:
             turns.append({"question": question, "answer": answer})
     return turns
+
+
+def _confirmed_facts(context: dict[str, object] | None) -> list[str]:
+    """AgentContext metadata에서 플레이어가 확인해 준 사실 목록을 꺼냅니다.
+
+    초보자용 설명:
+        pipeline은 session memory에서 플레이어가 대화 중 직접 확인해 준 사실
+        목록을 context에 넣어 service로 보냅니다. 이 함수는 그 값이 list 형태인지
+        체크하고 안전하게 꺼내 줍니다.
+    """
+
+    if context is None:
+        return []
+
+    raw_facts = context.get("confirmed_facts")
+    if not isinstance(raw_facts, list):
+        return []
+
+    return [str(fact) for fact in raw_facts if fact]
 
 
 def _rag_metadata(rag_result: object) -> dict[str, object]:

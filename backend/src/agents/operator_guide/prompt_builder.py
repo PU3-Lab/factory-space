@@ -75,12 +75,15 @@ class ManualQAPromptBuilder:
             indent=2,
         )
         recent_conversation_section = self._recent_conversation_section(context)
+        confirmed_facts_section = self._confirmed_facts_section(context)
         rag_context_section = self._rag_context_section(context)
         return f"""Answer this {self._topic_label(topic)}.
 [PLAYER_QUESTION]
 {question}
 
 {recent_conversation_section}
+
+{confirmed_facts_section}
 
 [LEAF_AGENT]
 {sub_agent}
@@ -125,6 +128,23 @@ Use exactly these keys:
             lines.append(f"Turn {index}")
             lines.append(f"Player: {turn.get('question', '')}")
             lines.append(f"Operator: {turn.get('answer', '')}")
+        return "\n".join(lines)
+
+    def _confirmed_facts_section(self, context: ManualQAPromptContext) -> str:
+        """대화 중 플레이어가 직접 확인해 준 사실 목록을 LLM이 참고할 수 있는 prompt 섹션으로 만듭니다.
+
+        초보자용 설명:
+            "전력은 정상인데?" 같은 사실들이 세션 메모리에 누적되어 넘어옵니다.
+            LLM이 답변할 때 이 상태 사실들을 확인하여 추론할 수 있도록 프롬프트에 기재해 줍니다.
+        """
+
+        confirmed_facts = getattr(context, "confirmed_facts", [])
+        if not confirmed_facts:
+            return ""
+
+        lines = ["[CONFIRMED_FACTS]"]
+        for fact in confirmed_facts:
+            lines.append(f"- {fact}")
         return "\n".join(lines)
 
     def _rag_context_section(self, context: ManualQAPromptContext) -> str:

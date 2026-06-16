@@ -30,6 +30,7 @@ class ManualQAPromptContext:
     rag_context_text: str = ""
     rag_metadata: dict[str, Any] | None = None
     recent_conversation: list[dict[str, str]] = field(default_factory=list)
+    confirmed_facts: list[str] = field(default_factory=list)
 
 
 class ManualQAContextBuilder:

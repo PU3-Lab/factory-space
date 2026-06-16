@@ -81,3 +81,37 @@ manual_rag_documents = Table(
         postgresql_ops={"embedding": "vector_cosine_ops"},
     ),
 )
+
+
+# Ingestion이 실행될 때마다 전체 상태와 통계를 저장하는 실행 이력 테이블입니다.
+manual_rag_ingestion_runs = Table(
+    "manual_rag_ingestion_runs",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("run_id", String(255), nullable=False, unique=True),
+    Column("status", String(50), nullable=False),  # 'started', 'success', 'failed'
+    Column("inserted", Integer, nullable=True),
+    Column("updated", Integer, nullable=True),
+    Column("skipped", Integer, nullable=True),
+    Column("deactivated", Integer, nullable=True),
+    Column("failed", Integer, nullable=True),
+    Column("source_version", String(255), nullable=True),
+    Column("error_message", Text, nullable=True),
+    Column("started_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("completed_at", DateTime(timezone=True), nullable=True),
+    Index("ix_manual_rag_ingestion_runs_run_id", "run_id"),
+)
+
+# Ingestion 중 임베딩이나 변환에 실패한 개별 Row의 상세 에러 원인을 기록하는 테이블입니다.
+manual_rag_ingestion_failed_rows = Table(
+    "manual_rag_ingestion_failed_rows",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("run_id", String(255), nullable=False),
+    Column("source_file", String(255), nullable=False),
+    Column("source_row_id", String(255), nullable=False),
+    Column("title", String(255), nullable=False),
+    Column("error_message", Text, nullable=False),
+    Column("failed_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Index("ix_manual_rag_ingestion_failed_rows_run_id", "run_id"),
+)

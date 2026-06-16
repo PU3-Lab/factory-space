@@ -66,8 +66,9 @@ def test_pipeline_adds_recent_operator_guide_turns_to_followup_prompt() -> None:
     assert "[RECENT_CONVERSATION_CONTEXT]" in followup_user_prompt
     assert "What is a crusher?" in followup_user_prompt
     assert "A crusher breaks resources down." in followup_user_prompt
-    assert second_response["payload"]["metadata"]["memory"] == {
-        "used": True,
-        "turn_count": 1,
-        "max_turns": 4,
-    }
+    memory_metadata = second_response["payload"]["metadata"]["memory"]
+    assert memory_metadata["used"] is True
+    assert memory_metadata["turn_count"] == 1
+    assert memory_metadata["max_turns"] == 4
+    assert "confirmed_facts" in memory_metadata
+    assert "summary_version" in memory_metadata

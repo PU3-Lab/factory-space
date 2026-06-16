@@ -348,14 +348,26 @@ class AgentPipeline:
             if state.get("selectedAgent") != "operator_guide":
                 return context, {}
 
+            question = str(
+                state["typedPayload"].get("question")
+                or state["typedPayload"].get("message")
+                or ""
+            )
+            operator_guide_memory.update_facts_from_question(context.session_id, question)
+
             recent_turns = operator_guide_memory.recent_turns(context.session_id)
+            confirmed_facts = operator_guide_memory.confirmed_facts(context.session_id)
+            summary_version = operator_guide_memory.summary_version(context.session_id)
+
             memory_metadata = {
-                "used": bool(recent_turns),
+                "used": bool(recent_turns) or bool(confirmed_facts),
                 "turn_count": len(recent_turns),
                 "max_turns": operator_guide_memory.max_turns,
+                "confirmed_facts": confirmed_facts,
+                "confirmedFacts": confirmed_facts,
+                "summary_version": summary_version,
+                "summaryVersion": summary_version,
             }
-            if not recent_turns:
-                return context, memory_metadata
 
             return (
                 AgentContext(
@@ -367,6 +379,7 @@ class AgentPipeline:
                         OPERATOR_GUIDE_RECENT_CONVERSATION_KEY: [
                             turn.to_prompt_dict() for turn in recent_turns
                         ],
+                        "confirmed_facts": confirmed_facts,
                     },
                 ),
                 memory_metadata,
