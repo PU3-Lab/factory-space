@@ -56,9 +56,7 @@ def test_service_includes_rag_context_in_prompt_when_runtime_is_available() -> N
         sub_agent="operator_guide.machine_help",
     )
 
-    assert rag_runtime.calls == [
-        "What is a crusher? And how do I make iron ingot?"
-    ]
+    assert rag_runtime.calls == ["What is a crusher? And how do I make iron ingot?"]
     assert "[RAG_RETRIEVAL_CONTEXT]" in prompt
     assert "context for crusher" in prompt
     assert "[RAG_RETRIEVAL_METADATA]" in prompt

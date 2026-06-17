@@ -187,7 +187,10 @@ class LocalEmbeddingProvider:
 
         if normalized_url.endswith("/v1"):
             # OpenAI 호환 모드
-            logger.info("Calling local OpenAI-compatible embeddings (model: %s)", self.settings.model)
+            logger.info(
+                "Calling local OpenAI-compatible embeddings (model: %s)",
+                self.settings.model,
+            )
             try:
                 client = self.client or _create_openai_client(
                     api_key=self.settings.api_key or "noop",
@@ -206,7 +209,10 @@ class LocalEmbeddingProvider:
 
         else:
             # Ollama 네이티브 모드
-            logger.info("Calling local Ollama native embeddings (model: %s)", self.settings.model)
+            logger.info(
+                "Calling local Ollama native embeddings (model: %s)",
+                self.settings.model,
+            )
             embeddings = []
             url = f"{normalized_url}/api/embeddings"
             for text in texts:
@@ -221,7 +227,9 @@ class LocalEmbeddingProvider:
                         data=data,
                         headers={"Content-Type": "application/json"},
                     )
-                    with urllib.request.urlopen(req, timeout=self.timeout_ms / 1000) as response:
+                    with urllib.request.urlopen(
+                        req, timeout=self.timeout_ms / 1000
+                    ) as response:
                         res_data = json.loads(response.read().decode("utf-8"))
                         embeddings.append(res_data["embedding"])
                 except Exception as exc:

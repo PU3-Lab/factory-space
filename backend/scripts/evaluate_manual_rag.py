@@ -180,7 +180,9 @@ def evaluate_questions(
         is_hit5 = False
         if expected_doc_id:
             expected_doc_count += 1
-            is_hit1 = bool(all_docs_sorted and all_docs_sorted[0].doc_id == expected_doc_id)
+            is_hit1 = bool(
+                all_docs_sorted and all_docs_sorted[0].doc_id == expected_doc_id
+            )
             top5_doc_ids = [str(doc.doc_id) for doc in all_docs_sorted[:5]]
             is_hit5 = expected_doc_id in top5_doc_ids
             hit1_count += int(is_hit1)
@@ -228,7 +230,9 @@ def evaluate_questions(
         total_passed=total_passed,
         hit1_rate=(hit1_count / expected_doc_count) if expected_doc_count else 1.0,
         hit5_rate=(hit5_count / expected_doc_count) if expected_doc_count else 1.0,
-        confidence_match_rate=(confidence_match_count / total_cases) if total_cases else 1.0,
+        confidence_match_rate=(confidence_match_count / total_cases)
+        if total_cases
+        else 1.0,
         avg_top_score=(total_top_score / score_count) if score_count else 0.0,
         pass_rate=(total_passed / total_cases) if total_cases else 1.0,
     )
@@ -295,7 +299,9 @@ def build_rag_runtime() -> RagRuntime:
         넣어서 외부 API 없이 채점 규칙만 검증한다.
     """
 
-    from agents.operator_guide.multi_question_rag_retriever import MultiQuestionRagRetriever  # noqa: I001
+    from agents.operator_guide.multi_question_rag_retriever import (
+        MultiQuestionRagRetriever,
+    )  # noqa: I001
     from agents.operator_guide.rag_embedding import create_embedding_provider
     from agents.operator_guide.rag_retriever import ManualRagRetriever
     from agents.operator_guide.rag_store import SqlAlchemyManualRagStore
@@ -330,7 +336,9 @@ def run() -> int:
 
     questions_path = backend_root / "data" / "rag_eval_questions.json"
     if not questions_path.exists():
-        print(f"[RAG Evaluator] 에러: 평가 데이터셋 파일이 존재하지 않습니다: {questions_path}")
+        print(
+            f"[RAG Evaluator] 에러: 평가 데이터셋 파일이 존재하지 않습니다: {questions_path}"
+        )
         return 1
 
     questions = load_eval_questions(questions_path)
@@ -400,7 +408,9 @@ def _print_summary(report: EvaluationReport, report_path: Path) -> None:
     print("=" * 60)
     print(f"평가 일시: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"총 케이스: {report.total_cases} 개")
-    print(f"최종 통과율: {report.pass_rate:.1%} ({report.total_passed}/{report.total_cases})")
+    print(
+        f"최종 통과율: {report.pass_rate:.1%} ({report.total_passed}/{report.total_cases})"
+    )
     print(f"Hit@1 적중률: {report.hit1_rate:.1%}")
     print(f"Hit@5 적중률: {report.hit5_rate:.1%}")
     print(f"신뢰도 일치율: {report.confidence_match_rate:.1%}")

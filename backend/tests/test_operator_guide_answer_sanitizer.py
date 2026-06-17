@@ -63,9 +63,14 @@ def test_pipeline_sanitizes_cached_operator_guide_response() -> None:
             "topic": "machine",
         },
     )
-    pipeline = AgentPipeline(cache=cache, llm=StubLLM([
-        top_agent_decision("operator_guide"),
-    ]))
+    pipeline = AgentPipeline(
+        cache=cache,
+        llm=StubLLM(
+            [
+                top_agent_decision("operator_guide"),
+            ]
+        ),
+    )
 
     response = pipeline.run(
         {
@@ -78,7 +83,5 @@ def test_pipeline_sanitizes_cached_operator_guide_response() -> None:
         }
     )
 
-    assert response["payload"]["final_answer"] == (
-        "분쇄기는 분말이나 톱밥을 만들어요."
-    )
+    assert response["payload"]["final_answer"] == ("분쇄기는 분말이나 톱밥을 만들어요.")
     assert response["payload"]["metadata"]["cache"] == "hit"

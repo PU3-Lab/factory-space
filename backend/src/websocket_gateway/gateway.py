@@ -101,7 +101,7 @@ async def agent_websocket(websocket: WebSocket) -> None:
                     "request_id": message.get("request_id") or str(uuid4()),
                     "session_id": message.get("session_id"),
                     "client_id": message.get("client_id"),
-                    "agent": "operator_guide",
+                    "agent": message.get("agent") or "operator_guide",
                     "payload": {
                         "stage": stage,
                         "message": message_text,
@@ -119,4 +119,3 @@ async def agent_websocket(websocket: WebSocket) -> None:
             await send_agent_json(websocket, response)
     except WebSocketDisconnect:
         return
-

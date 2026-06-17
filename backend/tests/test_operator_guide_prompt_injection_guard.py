@@ -65,11 +65,15 @@ def test_system_prompt_keeps_raw_ids_out_of_player_answer() -> None:
 
 
 def test_user_prompt_contract_prefers_friendly_short_multi_question_answer() -> None:
-    prompt = ManualQAService().build_prompt(
-        "분쇄기가 뭐야? 그리고 철괴는 어떻게 만들어?",
-        topic="machine",
-        sub_agent="operator_guide.machine_help",
-    ).lower()
+    prompt = (
+        ManualQAService()
+        .build_prompt(
+            "분쇄기가 뭐야? 그리고 철괴는 어떻게 만들어?",
+            topic="machine",
+            sub_agent="operator_guide.machine_help",
+        )
+        .lower()
+    )
 
     assert "shown directly to the player" in prompt
     assert "answer as one natural paragraph instead of numbered labels" in prompt

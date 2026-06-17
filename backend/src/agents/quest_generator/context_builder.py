@@ -44,7 +44,9 @@ class QuestContextBuilder:
 
         # Normalize recent production keys
         raw_production = payload.get("recent_production", {})
-        recent_production = {cls.normalize_item_id(k): v for k, v in raw_production.items()}
+        recent_production = {
+            cls.normalize_item_id(k): v for k, v in raw_production.items()
+        }
 
         # Normalize lists
         unlocked_machines = payload.get("unlocked_machines", [])

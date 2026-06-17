@@ -1,4 +1,4 @@
-﻿"""CSV 근거를 LLM 프롬프트로 조립하는 operator_guide prompt builder.
+"""CSV 근거를 LLM 프롬프트로 조립하는 operator_guide prompt builder.
 
 초보자용 설명:
     LLM은 아무 근거 없이 답하면 지어낼 수 있다.

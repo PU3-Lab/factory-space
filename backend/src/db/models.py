@@ -222,6 +222,7 @@ class QuestInstanceModel(Base):
             QuestObjective,
             QuestReward,
         )
+
         return QuestInstance(
             id=self.id,
             factory_id=self.factory_id,
@@ -231,7 +232,9 @@ class QuestInstanceModel(Base):
             title=self.title,
             description=self.description,
             status=self.status,
-            objectives=[QuestObjective.model_validate(obj) for obj in self.objective_json],
+            objectives=[
+                QuestObjective.model_validate(obj) for obj in self.objective_json
+            ],
             rewards=[QuestReward.model_validate(r) for r in self.reward_json],
             created_by=self.created_by,
             level_reward_applied=self.level_reward_applied,
@@ -279,6 +282,7 @@ class QuestProgressModel(Base):
     def to_pydantic(self) -> QuestProgress:
         """Converts the DB model to its corresponding Pydantic QuestProgress schema."""
         from agents.quest_generator.models import QuestProgress
+
         return QuestProgress(
             id=self.id,
             quest_instance_id=self.quest_instance_id,

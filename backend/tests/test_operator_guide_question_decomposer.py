@@ -19,9 +19,7 @@ def test_decomposer_keeps_single_question_as_one_sub_question() -> None:
 
 
 def test_decomposer_splits_question_mark_and_korean_connector() -> None:
-    result = decompose_question(
-        "분쇄기가 뭐야? 그리고 철괴를 만들려면 어떻게 해야 돼?"
-    )
+    result = decompose_question("분쇄기가 뭐야? 그리고 철괴를 만들려면 어떻게 해야 돼?")
 
     assert result.is_multi_question is True
     assert [item.question for item in result.sub_questions] == [

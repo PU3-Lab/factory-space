@@ -75,7 +75,9 @@ def test_sprint_15_success_criteria_gear() -> None:
         }
     }
 
-    prompt_context = service.build_prompt_context("기어는 어떻게 만들어?", context=context)
+    prompt_context = service.build_prompt_context(
+        "기어는 어떻게 만들어?", context=context
+    )
     result = prompt_context.result
 
     # RAG만 사용되고 게임 상태는 연동되지 않아야 함
@@ -109,7 +111,9 @@ def test_sprint_15_success_criteria_iron_ingot_stopped() -> None:
         }
     }
 
-    prompt_context = service.build_prompt_context("철괴가 안 만들어져. 왜 그래?", context=context)
+    prompt_context = service.build_prompt_context(
+        "철괴가 안 만들어져. 왜 그래?", context=context
+    )
     result = prompt_context.result
 
     # 게임 상태 연동 정보가 설정되어 있어야 함

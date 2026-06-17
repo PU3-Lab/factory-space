@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -198,3 +200,57 @@ def test_agent_websocket_streams_progress_for_operator_guide() -> None:
     assert final_response["type"] == "agent.response"
     assert final_response["request_id"] == "request-ws-progress"
     assert "final_answer" in final_response["payload"]
+
+
+def test_agent_websocket_progress_reflects_requested_agent() -> None:
+    """progress 이벤트의 agent 라벨이 요청한 agent와 일치하는지 확인한다.
+
+    초보자용 설명:
+        `/agent-test` 콘솔에서 quest 프리셋을 보내면 진행 메시지도 quest 에이전트로
+        표기돼야 합니다. 과거에는 항상 `operator_guide`로 고정 표기돼 quest 실행 중에도
+        operator_guide처럼 보이는 혼동이 있었습니다.
+    """
+
+    class _ProgressPipeline:
+        def run(
+            self,
+            message: dict[str, Any],
+            on_progress: Callable[[str, str], None] | None = None,
+        ) -> dict[str, Any]:
+            if on_progress is not None:
+                on_progress("build_prompt", "퀘스트를 생성하는 중입니다...")
+            return {
+                "type": "agent.response",
+                "request_id": message.get("request_id"),
+                "session_id": message.get("session_id"),
+                "client_id": message.get("client_id"),
+                "agent": "quest_generator",
+                "payload": {"quests": []},
+            }
+
+    with TestClient(create_app()) as client:
+        client.app.state.agent_pipeline = _ProgressPipeline()
+
+        with client.websocket_connect("/ws/agent") as websocket:
+            websocket.send_json(
+                {
+                    "type": "agent.request",
+                    "request_id": "request-ws-quest",
+                    "session_id": "test-ws-session",
+                    "client_id": "test-ws-client",
+                    "agent": "quest_generator",
+                    "payload": {"sub_agent": "quest_generator.production_quest"},
+                }
+            )
+
+            messages = []
+            for _ in range(10):
+                msg = websocket.receive_json()
+                messages.append(msg)
+                if msg["type"] in ("agent.response", "agent.error"):
+                    break
+
+    progress_messages = [m for m in messages if m["type"] == "agent.progress"]
+    assert progress_messages
+    for progress_message in progress_messages:
+        assert progress_message["agent"] == "quest_generator"
