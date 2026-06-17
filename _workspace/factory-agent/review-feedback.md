@@ -786,3 +786,57 @@ Reviewer: `Darwin` sub-agent
 - 확인: cache hit/context cache 성공 응답 테스트가 `selectedLeafAgent`와 `selectedSubAgent` 부재를 검증한다.
 - 확인: cache key/cache hit metadata 문서가 실제 코드와 일치한다.
 - 확인: 코드 active path에 `parse_sub_agent*`, `selectedSubAgent`, `route_sub_agent_result`, `[ALLOWED_SUB_AGENT_IDS]`가 남아 있지 않다.
+
+## 2026-06-17 Quest MVP Phase 5 Review
+
+Status: resolved
+
+Reviewer: `reviewer` sub-agent (ID: `70fc8586-63f6-4d77-9fb4-faf2582b85a9`)
+
+### 1. 상태 머신 전이 및 멱등성 검증 누락
+
+- severity: major
+- file: `backend/src/agents/quest_generator/manager.py`
+
+문제:
+
+- `complete_quest` 및 `claim_reward` 호출 시 대상 퀘스트의 현재 상태를 검증하지 않고 덮어썼다.
+- 플레이어가 퀘스트를 완료하지 않은 상태에서 `claim_reward`를 바로 호출하여 치팅이 가능했고, 중복 완료 시 `completed_at`이 새로 갱신되는 멱등성 위반 문제가 존재했다.
+
+수정:
+
+- `complete_quest` 메서드 내에 멱등성 가드를 추가해 상태가 `in_progress`가 아닌 경우 데이터 변경 없이 기존 모델의 Pydantic 뷰를 즉시 조기 반환하도록 수정했다.
+- `claim_reward` 메서드 내에 상태 제약을 추가해 상태가 `completed`가 아닌 경우 상태 전이를 차단하고 `None`을 반환하게 처리했다.
+
+### 2. 부정 상태 전이 테스트 누락
+
+- severity: minor
+- file: `backend/tests/test_quest_manager.py`
+
+문제:
+
+- 정상 완료 및 보상 획득 시나리오만 검증되고 있고, 비정상적 상태 전이 시도 및 멱등성(중복 호출 시 시간 고정) 검증이 누락되어 있었다.
+
+수정:
+
+- `test_invalid_state_transitions` 부정 테스트 케이스를 신규 추가하여 `in_progress -> reward_claimed` 차단 확인, 중복 `complete_quest` 호출 시 `completed_at` 시간 고정(멱등성) 등을 검증했다.
+
+### 3. QuestRewardResolver 방어 코드 누락
+
+- severity: minor
+- file: `backend/src/agents/quest_generator/reward_resolver.py`
+
+문제:
+
+- `target_item_id`가 빈 문자열(`""`)로 올 경우 불필요한 레시피 맵 DFS 탐색이 발생한다.
+
+수정:
+
+- `resolve_rewards` 최상단에 `if not target_item_id: return rewards` 가드를 추가하고, `test_reward_resolver_empty_target`을 추가해 검증했다.
+
+### 4. 최종 재리뷰
+
+- reviewer: `reviewer` sub-agent
+- result: no findings
+- 확인: `test_invalid_state_transitions` 부정 테스트가 멱등성과 비정상 전이 차단을 철저하게 검증한다.
+- 확인: `resolve_rewards`에 빈 타겟 방어 코드가 올바르게 작동한다.

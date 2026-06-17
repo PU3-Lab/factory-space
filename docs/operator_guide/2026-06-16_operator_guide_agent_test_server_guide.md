@@ -46,6 +46,16 @@ WebSocket 경로는 아래와 같다.
 ws://127.0.0.1:18000/ws/agent
 ```
 
+터미널에서 WebSocket smoke test를 바로 실행할 수도 있다.
+
+```powershell
+cd C:\factory-space\backend
+uv run python scripts/ws_test_operator_guide.py
+```
+
+이 스크립트는 `agent.progress`를 여러 번 받은 뒤 최종 `agent.response`까지 기다린다.
+따라서 “장비 매뉴얼을 펼쳐보는 중입니다...” 같은 진행 메시지와 최종 답변이 모두 나오는지 확인할 수 있다.
+
 ## 3. 포트가 이미 사용 중일 때
 
 `18000` 포트가 이미 사용 중이면 다른 포트로 실행한다.
@@ -291,33 +301,35 @@ uv run --env-file .env.prod python scripts/run_prod_server.py
     "language": "ko",
     "mode": "portfolio_demo",
     "current_game_state": {
-      "selected_machine": {
+      "selectedMachine": {
         "id": "smelter_01",
         "name": "제련기",
-        "status": "stopped",
+        "status": "stopped"
+      },
+      "inputInventory": [
+        {
+          "item_id": "iron_ore",
+          "name": "철광석",
+          "qty": 0
+        }
+      ],
+      "outputInventory": [],
+      "powerStatus": {
+        "available": true,
+        "connected": true
+      },
+      "currentRecipe": {
         "recipe_id": "recipe_iron_ingot",
-        "power_connected": true
+        "name": "철괴 제작"
       },
-      "inventory": {
-        "input": [
-          {
-            "item_id": "iron_ore",
-            "qty": 0
-          }
-        ],
-        "output": []
-      },
-      "power": {
-        "available": true
-      },
-      "connected_conveyors": [
+      "connectedConveyors": [
         {
           "id": "conv_01",
           "status": "empty",
           "direction": "input"
         }
       ],
-      "recent_error_events": [
+      "recentErrorEvents": [
         {
           "code": "INPUT_EMPTY",
           "message": "입력 자원이 부족합니다."
@@ -341,13 +353,24 @@ uv run --env-file .env.prod python scripts/run_prod_server.py
 
 ```text
 - payload.final_answer
-- payload.metadata.context.requiresCurrentGameState
-- payload.metadata.context.usedCurrentGameState
-- payload.metadata.context.requiredStateScopes
-- payload.metadata.context.availableScopes
+- payload.metadata.requiresCurrentGameState
+- payload.metadata.usedCurrentGameState
+- payload.metadata.requiredStateScopes
+- payload.metadata.availableScopes
 - payload.metadata.recommended_actions
 - payload.metadata.sources
 - payload.metadata.confidence
+```
+
+Unreal 쪽 계약 확인 기준:
+
+```text
+- current_game_state는 snake_case가 아니라 selectedMachine, inputInventory 같은 scope 이름으로 보낸다.
+- 문제 해결 질문에서 requiresCurrentGameState가 true인지 확인한다.
+- current_game_state를 보냈을 때 usedCurrentGameState가 true인지 확인한다.
+- availableScopes에 Unreal이 보낸 scope가 들어오는지 확인한다.
+- final_answer는 플레이어 말풍선에 그대로 보여줄 텍스트다.
+- agent.progress 메시지는 최종 답변 전 NPC 상태 말풍선 또는 로딩 문구로 보여준다.
 ```
 
 ### 9.3. 시연 3: 프롬프트 인젝션 방어

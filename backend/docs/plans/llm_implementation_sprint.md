@@ -111,7 +111,7 @@ Acceptance:
 
 ## Sprint 4: Adapter 구현
 
-Status: in progress
+Status: completed
 
 ### Task 4.1 Noop adapter와 slot factory
 
@@ -204,6 +204,8 @@ Acceptance:
 
 ## Sprint 5: LangGraph fallback wiring
 
+Status: completed
+
 ### Task 5.1 LLM fallback node/edge 연결
 
 Files:
@@ -248,6 +250,8 @@ Steps:
 
 ## Sprint 6: Prompt routing 경로 보강
 
+Status: completed
+
 ### Task 6.1 LLM decision 기반 routing 테스트
 
 Files:
@@ -269,6 +273,8 @@ Acceptance:
 - routing prompt output은 JSON이 아니라 허용 id 문자열 하나로 고정된다.
 
 ## Sprint 7: Smoke test
+
+Status: completed
 
 ### Task 7.1 Agent pipeline smoke runner
 
@@ -299,6 +305,8 @@ Acceptance:
 
 ## Sprint 8: 문서 정리
 
+Status: completed
+
 ### Task 8.1 운영 문서와 결정 로그 갱신
 
 Files:
@@ -324,8 +332,8 @@ Steps:
 - [x] `uv run --extra dev pytest`
 - [x] `uv run --extra dev ruff check .`
 - [x] `FACTORY_LLM_DEFAULT_PROVIDER=none FACTORY_LLM_FALLBACK1_PROVIDER=none FACTORY_LLM_FALLBACK2_PROVIDER=none uv run --extra dev pytest tests/test_pipeline_edges.py -q`
-- [ ] `git status --short`
-- [ ] `git push -u origin feature/issue-19-agent-routing-terms`
+- [x] `git status --short`
+- [x] `git push -u origin docs/llm-ops-docs-sprint8-1`
 
 완료 기준:
 

@@ -105,9 +105,20 @@ class ManualQAPromptBuilder:
 [OUTPUT_CONTRACT]
 Return only one JSON object.
 Do not wrap it in markdown.
+The final_answer field is shown directly to the player.
+Write final_answer in Korean as a friendly player-facing response.
+For two short related questions, answer as one natural paragraph instead of numbered labels.
+Use numbered sections only for three or more questions or complex checklists.
+Do not use markdown emphasis such as **bold**, bullet-heavy formatting, or English labels in parentheses.
+Avoid slash-separated lists and repeated examples. Prefer one natural example only.
+Use at most one concrete example unless the player asks for examples.
+For simple equipment/resource/recipe questions, keep final_answer to 2~3 short Korean sentences.
+For equipment "what/where used" questions, do not enumerate input materials or recipe names. Explain only the role and how the output is used next.
+Do not expose raw IDs such as equipment_*, resource_*, recipe_*, issue_*, or action_* in final_answer unless the player explicitly asks for IDs.
+Do not add troubleshooting checks unless the player asked about a failure or stoppage.
 Use exactly these keys:
 {{
-  "final_answer": "4~6 Korean sentences in friendly tutorial NPC tone",
+  "final_answer": "Korean player-facing answer with concise line breaks",
   "actions": [],
   "question": "{question}",
   "topic": "{topic}"
