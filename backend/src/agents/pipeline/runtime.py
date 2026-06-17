@@ -19,6 +19,9 @@ from agents.operator_guide.agent import (
     OPERATOR_GUIDE_LEAF_AGENT_IDS,
     OperatorGuideAgent,
 )
+from agents.operator_guide.answer_sanitizer import (
+    sanitize_operator_guide_response_payload,
+)
 from agents.operator_guide.session_memory import (
     OPERATOR_GUIDE_RECENT_CONVERSATION_KEY,
     OperatorGuideSessionMemory,
@@ -358,8 +361,12 @@ class AgentPipeline:
             return output
 
         def build_cached_response(state: AgentGraphState) -> AgentGraphState:
+            cached_payload = state["cachedPayload"]
+            if state.get("selectedAgent") == "operator_guide":
+                cached_payload = sanitize_operator_guide_response_payload(cached_payload)
+
             return {
-                "responsePayload": state["cachedPayload"],
+                "responsePayload": cached_payload,
                 "responseMetadata": {
                     **state.get("cachedMetadata", {}),
                     "cache": "hit",
@@ -533,6 +540,8 @@ class AgentPipeline:
                 **metadata,
                 **append_tool_metadata(state),
             }
+            if state.get("selectedAgent") == "operator_guide":
+                payload = sanitize_operator_guide_response_payload(payload)
             return {"responsePayload": payload, "responseMetadata": metadata}
 
         def build_fallback(state: AgentGraphState) -> AgentGraphState:
