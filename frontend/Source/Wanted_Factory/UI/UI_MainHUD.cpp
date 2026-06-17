@@ -7,7 +7,8 @@
 #include "FactoryAgentClientSubsystem.h" 
 #include "FactoryAgentJsonUtils.h"       
 #include "Dom/JsonObject.h"
-#include "UI/UI_QuestWindow.h" // 🌟 자식 호출용 추가
+#include "UI_QuestWindow.h" 
+#include "UI_QuestNotify.h"
 
 void UUI_MainHUD::NativeConstruct()
 {
@@ -89,6 +90,27 @@ bool UUI_MainHUD::IsGuideWindowOpen() const
 FReply UUI_MainHUD::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
     if (InKeyEvent.GetKey() == EKeys::Tab) { ToggleAIGuideWindow(); return FReply::Handled(); }
+    if (InKeyEvent.GetKey() == EKeys::U)
+    {
+        if (WBP_QuestWindow && WBP_QuestWindow->QuestNotifyWidgetClass && GetOwningPlayer())
+        {
+            // 정석대로 자식의 변수를 사용해 생성합니다.
+            UUI_QuestNotify* SubNotify = CreateWidget<UUI_QuestNotify>(GetOwningPlayer(), WBP_QuestWindow->QuestNotifyWidgetClass);
+            if (SubNotify)
+            {
+                SubNotify->AddToViewport(100);
+                
+                SubNotify->PlayNotify(
+                    TEXT("[서브] 철 주괴 10개 가공 및 제련"), 
+                    TEXT("철 주괴 x5, 구리 광석 x20, 신뢰도 +15")
+                );
+                
+                UE_LOG(LogTemp, Log, TEXT("[치트키] 서브 퀘스트 완료 팝업 강제 구동 성공"));
+            }
+        }
+        return FReply::Handled();
+    }
+
     return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
 }
 

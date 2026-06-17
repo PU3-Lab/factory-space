@@ -20,6 +20,9 @@ public:
     
     UFUNCTION() 
     void OnRequestQuestsClicked();
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest")
+    TSubclassOf<class UUI_QuestNotify> QuestNotifyWidgetClass;
 
 protected:
     // --- 퀘스트 레이아웃 컴포넌트 바인딩 ---
@@ -45,10 +48,6 @@ protected:
     // 블루프린트에서 연출할 애니메이션 이벤트 인터페이스
     UFUNCTION(BlueprintImplementableEvent, Category = "Quest | Anim")
     void K2_PlayQuestAnimation(bool bOpen);
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest")
-    TSubclassOf<class UUI_QuestNotify> QuestNotifyWidgetClass;
-
 private:
     void DisplayTutorialStep(const FTutorialQuestStep& Step);
 
