@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
+
 from agents.quest_generator import game_data
 from agents.quest_generator.context_builder import QuestContextBuilder
 
 
+@pytest.mark.integration
 def test_game_data_loader() -> None:
     # 1. Test resources loading
     valid_ids = game_data.get_valid_item_ids()

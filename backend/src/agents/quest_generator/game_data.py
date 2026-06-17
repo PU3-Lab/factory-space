@@ -75,6 +75,8 @@ def _init_game_data() -> None:
                 output_ids = re.findall(r"resource_[a-zA-Z0-9_]+", output_col)
 
                 if output_ids:
+                    # NOTE: 현재 MVP 범위에서는 단일 산출물만 지원하므로 첫 번째 산출물(output_ids[0])만 사용함.
+                    # 향후 다중 산출물이 필요한 구조로 확장되는 경우, output_ids 전체를 보존하도록 자료구조 수정 권장.
                     _recipe_map[recipe_id] = (output_ids[0], input_ids)
 
         _initialized = True

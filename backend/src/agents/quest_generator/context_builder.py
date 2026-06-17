@@ -71,22 +71,18 @@ class QuestContextBuilder:
                 obj_id = obj.get("main_objective_id", "")
                 obj_type = obj.get("objective_type", "")
                 item_id = cls.normalize_item_id(obj.get("item_id", ""))
-                required = obj.get("required", 0)
-                current = obj.get("current", 0)
-
-                objectives.append(
-                    MainQuestObjective(
-                        main_objective_id=obj_id,
-                        objective_type=obj_type,
-                        item_id=item_id,
-                        required=required,
-                        current=current,
-                    )
+                objective_model = MainQuestObjective(
+                    main_objective_id=obj_id,
+                    objective_type=obj_type,
+                    item_id=item_id,
+                    required=obj.get("required", 0),
+                    current=obj.get("current", 0),
                 )
+                objectives.append(objective_model)
 
                 # Generate KnownIssue if the main quest objective is not fully met
-                if required > current:
-                    shortage_amount = required - current
+                if objective_model.required > objective_model.current:
+                    shortage_amount = objective_model.required - objective_model.current
 
                     # Check if the shortage item is producible (unlocked recipe outputs it)
                     producible = False
