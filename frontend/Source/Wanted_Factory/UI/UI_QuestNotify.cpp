@@ -9,7 +9,7 @@ void UUI_QuestNotify::PlayNotify(FString QuestName, FString RewardText)
 	TXT_NotifyQuestName->SetText(FText::FromString(FString::Printf(TEXT("퀘스트 완료: %s "), *QuestName)));
 	TXT_NotifyReward->SetText(FText::FromString(FString::Printf(TEXT("보상: %s"), *RewardText)));
 
-	// 2. 블루프린트 애니메이션 실행
+	// 2. 애니메이션 실행
 	K2_PlayNotifyAnimation();
 
 	// 2초 뒤에 화면에서 사라지도록 타이머 설정

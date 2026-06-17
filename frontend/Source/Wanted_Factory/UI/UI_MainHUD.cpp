@@ -31,7 +31,6 @@ void UUI_MainHUD::NativeConstruct()
 
 void UUI_MainHUD::ToggleQuestWindow()
 {
-    // 🌟 [전달자 역할만 수행] 내부에 안착된 퀘스트 전용 모듈 창의 셔터를 대신 노크해 줍니다.
     if (WBP_QuestWindow)
     {
         WBP_QuestWindow->ToggleQuestWindow();
@@ -70,14 +69,14 @@ void UUI_MainHUD::ToggleAIGuideWindow()
     if (B_ChatBackground->GetVisibility() == ESlateVisibility::Collapsed)
     {
         B_ChatBackground->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-        if (TXT_ToggleText) TXT_ToggleText->SetText(FText::FromString(TEXT("▲ Tab")));
+        if (TXT_ToggleText) TXT_ToggleText->SetText(FText::FromString(TEXT("▲ Tab 열기")));
         if (PC) { PC->SetInputMode(FInputModeGameAndUI()); PC->SetShowMouseCursor(true); }
         if (ET_OperatorInput) ET_OperatorInput->SetFocus();
     }
     else
     {
         B_ChatBackground->SetVisibility(ESlateVisibility::Collapsed);
-        if (TXT_ToggleText) TXT_ToggleText->SetText(FText::FromString(TEXT("▼ Tab 열기")));
+        if (TXT_ToggleText) TXT_ToggleText->SetText(FText::FromString(TEXT("▼ Tab 닫기")));
         if (PC) { PC->SetInputMode(FInputModeGameOnly()); PC->SetShowMouseCursor(false); }
     }
 }
@@ -162,7 +161,7 @@ void UUI_MainHUD::HandleOnOperatorGuideError(const FString& RequestId, const FSt
 
 void UUI_MainHUD::OnRequestQuestsClicked()
 {
-    // 🌟 [징검다리 통로] 플레이어가 나를 때리면, 나는 내부에 심어진 진짜 퀘스트 창의 함수를 대신 실행합니다.
+    // 내부에 심어진 진짜 퀘스트 창의 함수를 대신 실행합니다.
     if (WBP_QuestWindow)
     {
         WBP_QuestWindow->OnRequestQuestsClicked();
