@@ -29,6 +29,7 @@
 #include "Machines/Synthesizer.h"
 #include "Machines/TeleCommunicationTower.h"
 #include "Machines/WarehousePort.h"
+#include "Machines/EscapePod.h"
 #include "OJJ_Foundation.h"
 #include "OJJ_ProtectionTower.h"
 #include "Pipe.h"
@@ -811,9 +812,12 @@ void AOJJ_BuildController::DemolishUnderCursor()
 	}
 
 	bool bRemoved = false;
+	bool bRemovedEscapePod = false;
 
 	if (AMachineBase* Machine = Cast<AMachineBase>(Target))
 	{
+		bRemovedEscapePod = Machine->IsA<AEscapePod>();
+
 		// 1) 이 머신을 끝점(Source/Target)으로 갖는 컨베이어 라인을 먼저 삭제(고아 방지). 두-머신 전제상 한쪽이
 		//    사라지면 라인은 존재 조건을 잃는다. 컨베이어는 라인 단위(1액터=다중셀)라 점유 셀 하나로
 		//    OJJ_RemoveActorAt 호출 시 라인 전체가 정리되고, 내부 UnregisterConveyor(그래프 엣지 제거) +
@@ -904,6 +908,10 @@ void AOJJ_BuildController::DemolishUnderCursor()
 	if (bRemoved)
 	{
 		NotifyTutorialQuestEvent(this, TEXT("DemolishRemoved"));
+		if (bRemovedEscapePod)
+		{
+			NotifyTutorialQuestEvent(this, TEXT("EscapePodDemolished"));
+		}
 		// 연속 철거: 셀이 비었으니 호버 즉시 갱신(sentinel 리셋 → 다음 UpdateMouseHover에서 빈 셀로 리빌드).
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 		UpdateMouseHover();
