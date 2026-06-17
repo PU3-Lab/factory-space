@@ -49,6 +49,19 @@ class QuestRepository:
         return list(result.scalars())
 
     @classmethod
+    def get_all_instances(
+        cls, session: Session, factory_id: str
+    ) -> list[QuestInstanceModel]:
+        """해당 공장의 모든 퀘스트 인스턴스 목록을 조회합니다."""
+        stmt = (
+            select(QuestInstanceModel)
+            .where(QuestInstanceModel.factory_id == factory_id)
+            .order_by(QuestInstanceModel.created_at)
+        )
+        result = session.execute(stmt)
+        return list(result.scalars())
+
+    @classmethod
     def get_progress_by_instance(
         cls, session: Session, instance_id: str
     ) -> list[QuestProgressModel]:
