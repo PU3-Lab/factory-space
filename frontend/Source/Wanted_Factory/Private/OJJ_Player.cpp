@@ -30,6 +30,7 @@
 #include "UI/UI_MachineInteract.h"
 #include "UI/UI_MainHUD.h"
 #include "UI/UI_Inventory.h"
+#include "Machines/MachineSubsystem.h"
 #include "Machines/LiquidTank.h"
 #include "Machines/WarehousePort.h"
 #include "PlayerWarehouseSubsystem.h"
@@ -1522,6 +1523,98 @@ void AOJJ_Player::OJJ_TutorialLog()
 			QuestManager->LogCurrentTutorialQuestTestState();
 		}
 	}
+}
+
+void AOJJ_Player::OJJ_SetMachineLevel(const FString& MachineTypeName, int32 NewLevel)
+{
+	if (MachineTypeName.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_SetMachineLevel] MachineTypeName is empty."));
+		return;
+	}
+
+	if (NewLevel <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_SetMachineLevel] NewLevel must be greater than 0."));
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	UMachineSubsystem* MachineSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UMachineSubsystem>()
+		: nullptr;
+	if (!MachineSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_SetMachineLevel] MachineSubsystem not found."));
+		return;
+	}
+
+	const FName MachineType(*MachineTypeName);
+	if (!MachineSubsystem->SetMachineLevel(MachineType, NewLevel))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_SetMachineLevel] Failed to set %s to level %d."),
+			*MachineTypeName,
+			NewLevel);
+		return;
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[OJJ_SetMachineLevel] %s level set to %d."),
+		*MachineTypeName,
+		NewLevel);
+}
+
+void AOJJ_Player::OJJ_UpgradeMachineLevel(const FString& MachineTypeName, int32 UpgradeCount)
+{
+	if (MachineTypeName.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_UpgradeMachineLevel] MachineTypeName is empty."));
+		return;
+	}
+
+	if (UpgradeCount <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_UpgradeMachineLevel] UpgradeCount must be greater than 0."));
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	UMachineSubsystem* MachineSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UMachineSubsystem>()
+		: nullptr;
+	if (!MachineSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_UpgradeMachineLevel] MachineSubsystem not found."));
+		return;
+	}
+
+	const FName MachineType(*MachineTypeName);
+	int32 SuccessCount = 0;
+	for (int32 Index = 0; Index < UpgradeCount; ++Index)
+	{
+		if (!MachineSubsystem->SetMachineLevel(MachineType, MachineSubsystem->GetMachineLevel(MachineType) + 1))
+		{
+			break;
+		}
+
+		++SuccessCount;
+	}
+
+	if (SuccessCount == 0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_UpgradeMachineLevel] Failed to upgrade %s. Current level=%d."),
+			*MachineTypeName,
+			MachineSubsystem->GetMachineLevel(MachineType));
+		return;
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[OJJ_UpgradeMachineLevel] %s upgraded by %d. Current level=%d."),
+		*MachineTypeName,
+		SuccessCount,
+		MachineSubsystem->GetMachineLevel(MachineType));
 }
 
 void AOJJ_Player::UpdateInventoryRealtime()
