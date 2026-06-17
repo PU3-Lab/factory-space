@@ -12,6 +12,12 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class EquipmentRecord:
+    """장비 CSV 파일에서 읽어온 단일 장비 명세 정보를 담는 데이터 객체입니다.
+
+    초보자용 설명:
+        장비의 ID, 이름, 입출력 자원, 소모 전력, 연결 가능 장비 및 자주 발생하는 문제 등을 기록합니다.
+    """
+
     equipment_id: str
     name: str
     category: str
@@ -26,6 +32,12 @@ class EquipmentRecord:
 
 @dataclass(frozen=True)
 class ResourceRecord:
+    """자원 CSV 파일에서 읽어온 단일 아이템/자원 명세 정보를 담는 데이터 객체입니다.
+
+    초보자용 설명:
+        자원의 이름, 획득 방법, 생산 장비, 사용처 등을 보관합니다.
+    """
+
     resource_id: str
     name: str
     kind: str
@@ -38,6 +50,12 @@ class ResourceRecord:
 
 @dataclass(frozen=True)
 class RecipeRecord:
+    """레시피 CSV 파일에서 읽어온 단일 아이템 제작법 명세를 담는 데이터 객체입니다.
+
+    초보자용 설명:
+        레시피의 이름, 필요한 재료와 결과 자원, 필요 장비, 생산 절차 등을 정의합니다.
+    """
+
     recipe_id: str
     name: str
     input_resources: list[str]
@@ -51,6 +69,12 @@ class RecipeRecord:
 
 @dataclass(frozen=True)
 class TroubleshootingRuleRecord:
+    """트러블슈팅 CSV 파일에서 읽어온 단일 문제 해결 점검 규칙을 담는 데이터 객체입니다.
+
+    초보자용 설명:
+        문제 명칭, 대표 증상, 가능 원인, 확인 순서, 해결책 및 추천 액션 ID 리스트를 갖습니다.
+    """
+
     issue_id: str
     name: str
     symptom: list[str]
@@ -64,6 +88,12 @@ class TroubleshootingRuleRecord:
 
 @dataclass(frozen=True)
 class ActionPolicyRecord:
+    """행동 정책 CSV 파일에서 읽어온 단일 추천 액션 상세 데이터를 담는 데이터 객체입니다.
+
+    초보자용 설명:
+        버튼에 표시할 액션명(label)과 그에 대한 설명(description)을 보관합니다.
+    """
+
     action_id: str
     label: str
     description: str
@@ -271,30 +301,93 @@ class CsvManualQARepository:
         }
 
     def get_equipment(self, equipment_id: str) -> EquipmentRecord | None:
+        """장비 ID로 특정 장비 상세 정보를 가져옵니다.
+
+        입력값:
+            - equipment_id (str): 장비 ID
+
+        반환값:
+            - EquipmentRecord | None: 검색된 장비 객체 (없을 경우 None)
+        """
         return self._equipment.get(equipment_id)
 
     def list_equipment(self) -> list[EquipmentRecord]:
+        """모든 장비 레코드의 목록을 반환합니다.
+
+        반환값:
+            - list[EquipmentRecord]: 전체 장비 객체 리스트
+        """
         return list(self._equipment.values())
 
     def find_equipment_by_question(self, question: str) -> EquipmentRecord | None:
+        """질문 텍스트 내에 언급된 장비 이름이 있는지 확인하여 매칭되는 첫 장비를 찾습니다.
+
+        입력값:
+            - question (str): 플레이어 질문 문장
+
+        반환값:
+            - EquipmentRecord | None: 매칭된 장비 객체 (없을 경우 None)
+        """
         return self._find_by_name(question, self._equipment.values())
 
     def get_resource(self, resource_id: str) -> ResourceRecord | None:
+        """자원 ID로 특정 자원의 상세 정보를 가져옵니다.
+
+        입력값:
+            - resource_id (str): 자원 ID
+
+        반환값:
+            - ResourceRecord | None: 검색된 자원 객체 (없을 경우 None)
+        """
         return self._resources.get(resource_id)
 
     def list_resources(self) -> list[ResourceRecord]:
+        """모든 자원 레코드의 목록을 반환합니다.
+
+        반환값:
+            - list[ResourceRecord]: 전체 자원 객체 리스트
+        """
         return list(self._resources.values())
 
     def find_resource_by_question(self, question: str) -> ResourceRecord | None:
+        """질문 텍스트 내에 언급된 자원 이름이 있는지 확인하여 매칭되는 첫 자원을 찾습니다.
+
+        입력값:
+            - question (str): 플레이어 질문 문장
+
+        반환값:
+            - ResourceRecord | None: 매칭된 자원 객체 (없을 경우 None)
+        """
         return self._find_by_name(question, self._resources.values())
 
     def get_recipe(self, recipe_id: str) -> RecipeRecord | None:
+        """레시피 ID로 특정 레시피의 상세 정보를 가져옵니다.
+
+        입력값:
+            - recipe_id (str): 레시피 ID
+
+        반환값:
+            - RecipeRecord | None: 검색된 레시피 객체 (없을 경우 None)
+        """
         return self._recipes.get(recipe_id)
 
     def list_recipes(self) -> list[RecipeRecord]:
+        """모든 레시피 레코드의 목록을 반환합니다.
+
+        반환값:
+            - list[RecipeRecord]: 전체 레시피 객체 리스트
+        """
         return list(self._recipes.values())
 
     def find_recipe_by_question(self, question: str) -> RecipeRecord | None:
+        """질문에서 자원이나 레시피 이름을 식별하여 알맞은 제작법 레코드를 검색합니다.
+
+        입력값:
+            - question (str): 플레이어 질문 문장
+
+        반환값:
+            - RecipeRecord | None: 매칭된 레시피 객체 (없을 경우 None)
+        """
         resource = self.find_resource_by_question(question)
         if resource is not None:
             recipe = self.find_recipe_by_output_resource(resource.resource_id)
@@ -303,6 +396,14 @@ class CsvManualQARepository:
         return self._find_by_name(question, self._recipes.values())
 
     def find_recipe_by_output_resource(self, resource_id: str) -> RecipeRecord | None:
+        """특정 자원을 결과물로 만드는 레시피를 찾습니다.
+
+        입력값:
+            - resource_id (str): 결과 자원의 ID
+
+        반환값:
+            - RecipeRecord | None: 자원을 생산하는 레시피 객체 (없을 경우 None)
+        """
         for recipe in self._recipes.values():
             if recipe.output_resource == resource_id:
                 return recipe
@@ -312,9 +413,22 @@ class CsvManualQARepository:
         self,
         issue_id: str,
     ) -> TroubleshootingRuleRecord | None:
+        """문제 ID로 특정 트러블슈팅 규칙을 가져옵니다.
+
+        입력값:
+            - issue_id (str): 문제 ID
+
+        반환값:
+            - TroubleshootingRuleRecord | None: 검색된 점검 규칙 객체 (없을 경우 None)
+        """
         return self._troubleshooting_rules.get(issue_id)
 
     def list_troubleshooting_rules(self) -> list[TroubleshootingRuleRecord]:
+        """모든 트러블슈팅 점검 규칙 목록을 반환합니다.
+
+        반환값:
+            - list[TroubleshootingRuleRecord]: 전체 점검 규칙 객체 리스트
+        """
         return list(self._troubleshooting_rules.values())
 
     def find_troubleshooting_rule(
@@ -322,6 +436,15 @@ class CsvManualQARepository:
         question: str,
         equipment_id: str | None = None,
     ) -> TroubleshootingRuleRecord | None:
+        """플레이어 질문이나 장비 ID를 기반으로 매칭되는 트러블슈팅 규칙을 탐색합니다.
+
+        입력값:
+            - question (str): 플레이어 질문 문장
+            - equipment_id (str | None): 질문한 대상 장비의 ID (선택 사항)
+
+        반환값:
+            - TroubleshootingRuleRecord | None: 매칭된 트러블슈팅 점검 규칙 객체 (없을 경우 None)
+        """
         if equipment_id is not None:
             machine_stopped = self.get_troubleshooting_rule("issue_machine_stopped")
             if (
@@ -338,12 +461,33 @@ class CsvManualQARepository:
         return None
 
     def get_action_policy(self, action_id: str) -> ActionPolicyRecord | None:
+        """행동 ID로 특정 추천 액션 정책 상세를 가져옵니다.
+
+        입력값:
+            - action_id (str): 행동 ID
+
+        반환값:
+            - ActionPolicyRecord | None: 추천 행동 객체 (없을 경우 None)
+        """
         return self._action_policies.get(action_id)
 
     def list_action_policies(self) -> list[ActionPolicyRecord]:
+        """모든 추천 액션 정책 목록을 반환합니다.
+
+        반환값:
+            - list[ActionPolicyRecord]: 전체 추천 행동 객체 리스트
+        """
         return list(self._action_policies.values())
 
     def get_action_policies(self, action_ids: list[str]) -> list[ActionPolicyRecord]:
+        """요청된 여러 행동 ID에 매칭되는 액션 정책 목록을 필터링하여 일괄 가져옵니다.
+
+        입력값:
+            - action_ids (list[str]): 행동 ID 리스트
+
+        반환값:
+            - list[ActionPolicyRecord]: 매칭되는 추천 행동 객체들의 리스트
+        """
         return [
             policy
             for action_id in action_ids
@@ -351,13 +495,22 @@ class CsvManualQARepository:
         ]
 
     def get_tutorial(self, tutorial_id: str) -> TutorialRecord | None:
-        """튜토리얼 ID로 특정 튜토리얼 row를 찾는다."""
+        """튜토리얼 ID로 특정 튜토리얼 레코드를 찾습니다.
 
+        입력값:
+            - tutorial_id (str): 튜토리얼 ID
+
+        반환값:
+            - TutorialRecord | None: 튜토리얼 레코드 객체 (없을 경우 None)
+        """
         return self._tutorials.get(tutorial_id)
 
     def list_tutorials(self) -> list[TutorialRecord]:
-        """RAG 문서로 변환할 모든 튜토리얼 row를 반환한다."""
+        """모든 튜토리얼 레코드 목록을 반환합니다.
 
+        반환값:
+            - list[TutorialRecord]: RAG 문서 등으로 변환 가능한 전체 튜토리얼 레코드 리스트
+        """
         return list(self._tutorials.values())
 
     def _read_rows(self, filename: str) -> list[dict[str, str]]:

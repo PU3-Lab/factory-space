@@ -22,7 +22,7 @@
 
 ## 수정 범위
 
-- `docs/operator_guide_agent_test_server_guide.md`
+- `docs/operator_guide/2026-06-16_operator_guide_agent_test_server_guide.md`
   - 서버 실행 후 바로 테스트할 수 있는 시연 JSON 3종을 추가한다.
   - 응답 화면에서 확인할 metadata 항목을 정리한다.
 

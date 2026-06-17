@@ -2,11 +2,11 @@
 
 ## 목적
 
-기존 `docs/manual_qa_operator_guide_system_guide.md`는 초기 Manual Q&A 프로토 기준으로 작성되어 있다. 현재 구현은 LLM, RAG, PostgreSQL + pgvector, 현재 게임 상태 판단, memory, middleware, fallback까지 포함하므로 문서를 최신 구조로 교체한다.
+기존 `docs/operator_guide/2026-06-16_operator_guide_system_guide.md`는 초기 Manual Q&A 프로토 기준으로 작성되어 있다. 현재 구현은 LLM, RAG, PostgreSQL + pgvector, 현재 게임 상태 판단, memory, middleware, fallback까지 포함하므로 문서를 최신 구조로 교체한다.
 
 ## 수정 범위
 
-- `docs/manual_qa_operator_guide_system_guide.md`
+- `docs/operator_guide/2026-06-16_operator_guide_system_guide.md`
   - 전체 실행 흐름
   - LLM 사용 지점
   - RAG/embedding/pgvector 흐름

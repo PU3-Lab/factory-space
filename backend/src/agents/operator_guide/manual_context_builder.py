@@ -44,12 +44,25 @@ class ManualQAPromptContext:
 
 
 class ManualQAContextBuilder:
-    """Convert classified manual intent into compact CSV evidence."""
+    """분류된 질문 의도(Intent) 데이터를 바탕으로 이에 대응하는 CSV 매뉴얼 상세 레코드를 조회하여 컨텍스트로 변환하는 클래스입니다.
+
+    초보자용 설명:
+        플레이어의 질문 분류(예: recipe_question) 결과에 매칭되는 장비, 자원, 레시피 등의 상세 지식을 데이터베이스에서 찾아 담아줍니다.
+    """
 
     def __init__(self, repository: CsvManualQARepository) -> None:
         self._repository = repository
 
     def build(self, question: str, intent: ManualQAIntent) -> ManualQAPromptContext:
+        """질문 텍스트와 분류 인텐트를 입력받아 매칭되는 매뉴얼 원본 데이터 및 추천 동작들을 묶은 컨텍스트 객체를 생성합니다.
+
+        입력값:
+            - question (str): 플레이어 질문 원문
+            - intent (ManualQAIntent): 분류된 질문의 의도 및 타겟 ID가 담긴 인텐트 객체
+
+        반환값:
+            - ManualQAPromptContext: 매뉴얼 지식 및 추천 동작이 조립된 LLM 입력용 데이터 컨텍스트
+        """
         sources: list[ManualQASource] = []
         recommended_action_ids: list[str] = []
         evidence: dict[str, Any] = {
