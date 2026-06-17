@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agents.quest_generator.models import QuestInstance, QuestProgress
 
 from sqlalchemy import (
     JSON,
@@ -211,9 +215,13 @@ class QuestInstanceModel(Base):
         DateTime(timezone=True), nullable=True
     )
 
-    def to_pydantic(self):
+    def to_pydantic(self) -> QuestInstance:
         """Converts the DB model to its corresponding Pydantic QuestInstance schema."""
-        from agents.quest_generator.models import QuestInstance, QuestObjective, QuestReward
+        from agents.quest_generator.models import (
+            QuestInstance,
+            QuestObjective,
+            QuestReward,
+        )
         return QuestInstance(
             id=self.id,
             factory_id=self.factory_id,
@@ -268,7 +276,7 @@ class QuestProgressModel(Base):
         String(100), nullable=True, index=True
     )
 
-    def to_pydantic(self):
+    def to_pydantic(self) -> QuestProgress:
         """Converts the DB model to its corresponding Pydantic QuestProgress schema."""
         from agents.quest_generator.models import QuestProgress
         return QuestProgress(

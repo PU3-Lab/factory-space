@@ -217,3 +217,7 @@ backend/*.db-journal
 # Generated visual assets (icons/textures/thumbnails) — runtime data, not committed.
 # Default FACTORY_IMAGE_STORAGE_PATH=var/assets relative to backend/.
 backend/var/
+
+# Local Codex and Claude agent settings
+.codex/
+.claude/

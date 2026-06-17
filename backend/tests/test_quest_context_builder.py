@@ -147,8 +147,9 @@ def test_quest_context_builder_build_context_not_producible() -> None:
 
 
 def test_db_model_to_pydantic_conversion() -> None:
+    from datetime import UTC, datetime
+
     from db.models import QuestInstanceModel, QuestProgressModel
-    from datetime import datetime, timezone
 
     # 1. Test QuestInstanceModel.to_pydantic
     db_instance = QuestInstanceModel(
@@ -175,7 +176,7 @@ def test_db_model_to_pydantic_conversion() -> None:
         }],
         created_by="rule",
         level_reward_applied=False,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         completed_at=None,
     )
     pydantic_instance = db_instance.to_pydantic()
