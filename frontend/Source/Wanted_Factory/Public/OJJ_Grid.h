@@ -859,6 +859,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
 	float OJJ_GetMaxConveyorStepZ() const { return OJJ_MaxConveyorStepZ; }
 
+	// #268 코너 게이트 완화 — 코너 3셀 클램프Z span 허용 한계(uu). 단 간격 한계(OJJ_MaxConveyorStepZ)의
+	// 절반 = "반 단" 정책: 빗변연장으로 단차가 준 램프 코너(자연 굴곡 ≪50)는 허용, 진짜 단차(~100=한 단
+	// 절벽/경사)는 거부. 정책을 한 곳에 모아 step 재튜닝 시 코너 허용폭이 함께 따라가게 한다(암묵 결합 명시화).
+	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
+	float OJJ_GetConveyorCornerZTolerance() const { return OJJ_MaxConveyorStepZ * 0.5f; }
+
 	// #249 컨베이어 raw-terrain 경사 게이트 한계(uu) 접근자 — **컨베이어 raw 경로 전용**(파이프는 경사 제한 제거됨).
 	// raw 경로 인접 셀 |ΔZ| 판정에 쓰여 자연 경사(물가 둑 등)는 통과·수직 벽은 거부. Foundation/램프 컨베이어
 	// 경로는 OJJ_GetMaxConveyorStepZ(100) 별도(램프 MaxRampStepPerRow 가정 보존).

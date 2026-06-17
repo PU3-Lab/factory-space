@@ -367,22 +367,34 @@ bool OJJ_ValidateConveyorSlopePath(
 			{
 				continue; // 직선 — 코너 아님
 			}
-			// 경계 코너 = 코너 3셀(prev/cur/next) 표면 타입이 섞임 → 금지(일단 보수적).
+			// 코너 게이트(#268 후속, 가설 A): 표면타입 금지(경계)·엄격 동일(IsNearlyEqual, corner-flat) 대신
+			// 코너 3셀 클램프Z 연속성(span ≤ tol)으로 통합 완화. 빗변연장으로 낮은끝 단차가 줄어든 램프 위
+			// 코너는 시각상 평평하므로 허용하되(자연 굴곡 ±수십uu 수용), 진짜 단차(~100 절벽/경사)는 거부.
+			const float CornerZSpan =
+				FMath::Max3(OutCellZs[Index - 1], OutCellZs[Index], OutCellZs[Index + 1])
+				- FMath::Min3(OutCellZs[Index - 1], OutCellZs[Index], OutCellZs[Index + 1]);
+			const float CornerZTolerance = Grid->OJJ_GetConveyorCornerZTolerance(); // 반 단(~50uu)
 			const bool bCornerHomogeneous = bCellIsFoundation[Index - 1] == bCellIsFoundation[Index]
 				&& bCellIsFoundation[Index] == bCellIsFoundation[Index + 1];
 			if (!bCornerHomogeneous)
 			{
-				OutReason = TEXT("Conveyor cannot turn at a terrain/foundation boundary (corner must stay on one surface).");
-				return false;
+				// 타입 섞임(경계) — clampZ 연속이면 시각상 경계 아님 → 허용, 단차면 거부.
+				if (CornerZSpan > CornerZTolerance + KINDA_SMALL_NUMBER)
+				{
+					OutReason = TEXT("Conveyor cannot turn at a steep terrain/foundation boundary (corner cells must be near-level).");
+					return false;
+				}
 			}
-			// 동질: raw 내부 코너는 허용(#249), Foundation 내부 코너는 평탄 요구(기존 corner-flat).
-			if (bCellIsFoundation[Index]
-				&& (!FMath::IsNearlyEqual(OutCellZs[Index], OutCellZs[Index - 1])
-					|| !FMath::IsNearlyEqual(OutCellZs[Index + 1], OutCellZs[Index])))
+			else if (bCellIsFoundation[Index])
 			{
-				OutReason = TEXT("Conveyor cannot turn on a slope (corner cells must be on flat surface).");
-				return false;
+				// Foundation 동질 — 기존 corner-flat(IsNearlyEqual 엄격)을 clampZ span tolerance로 완화.
+				if (CornerZSpan > CornerZTolerance + KINDA_SMALL_NUMBER)
+				{
+					OutReason = TEXT("Conveyor cannot turn on a slope (corner cells must be near-level).");
+					return false;
+				}
 			}
+			// raw 동질 코너(bCellIsFoundation[Index]==false)는 #249로 무조건 허용 — span 게이트 미적용.
 		}
 
 		OutReason.Reset();
@@ -432,15 +444,27 @@ bool OJJ_ValidateConveyorSlopePath(
 	// 램프 경로(bRawTerrain=false)만 아래 corner-flat 규칙 적용 → F3.7~F3.10 동결(가드 유지).
 	if (!bRawTerrain)
 	{
-		for (int32 Index = 1; Index + 1 < PathCells.Num(); ++Index)
+		// #268 후속(가설 A): all-Foundation/램프 경로의 corner-flat 게이트도 게이트1(혼합)과 동일하게
+		// 클램프Z span 연속성(≤tol)으로 완화. 램프 위 컨베이어 코너는 전셀 Foundation이라 이 경로를 타므로
+		// (혼합이 아닌 한) on-a-slope 완화의 실제 적용 지점. 빗변연장으로 단차가 준 램프 코너는 허용,
+		// 진짜 경사/단차(~100)는 거부. raw 경로(#249)는 위에서 면제되어 도달 안 함.
+		const float CornerZTolerance = Grid->OJJ_GetConveyorCornerZTolerance(); // 반 단(~50uu)
+		// 루프 bound는 인덱싱 대상(OutCellZs)과 동일 소스로 — PathCells와 1:1이나 desync footgun 방지.
+		const int32 N = OutCellZs.Num();
+		for (int32 Index = 1; Index + 1 < N; ++Index)
 		{
 			const FIntPoint PrevDir = PathCells[Index] - PathCells[Index - 1];
 			const FIntPoint NextDir = PathCells[Index + 1] - PathCells[Index];
-			if (PrevDir != NextDir
-				&& (!FMath::IsNearlyEqual(OutCellZs[Index], OutCellZs[Index - 1])
-					|| !FMath::IsNearlyEqual(OutCellZs[Index + 1], OutCellZs[Index])))
+			if (PrevDir == NextDir)
 			{
-				OutReason = TEXT("Conveyor cannot turn on a slope (corner cells must be on flat surface).");
+				continue; // 직선 — 코너 아님
+			}
+			const float CornerZSpan =
+				FMath::Max3(OutCellZs[Index - 1], OutCellZs[Index], OutCellZs[Index + 1])
+				- FMath::Min3(OutCellZs[Index - 1], OutCellZs[Index], OutCellZs[Index + 1]);
+			if (CornerZSpan > CornerZTolerance + KINDA_SMALL_NUMBER)
+			{
+				OutReason = TEXT("Conveyor cannot turn on a slope (corner cells must be near-level).");
 				return false;
 			}
 		}
