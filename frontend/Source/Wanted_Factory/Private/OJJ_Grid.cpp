@@ -291,15 +291,15 @@ bool OJJ_FindInputMachineAtPathEnd(
 // 직결도 의도된 기능** — 벨트 시각/흐름 정상 실측. 단차 물류 수단: gap 0 = 직결, gap 1 = 1칸
 // 램프(45° 쐐기), gap 2+ = 자동 맞춤 램프. (구 서술 "평판 간 ΔZ는 항상 45 초과라 걸러짐"은
 // 한계 45 시절 — 100 완화로 폐기.)
-// 끝점 머신 셀 포함 순회도 의도 — 기존 균일 검사와 동일 범위("전 경로 셀, 머신 끝점 포함"),
-// 지형 직배치 머신과의 혼합 경로는 기존 정책대로 거부.
+// 끝점 머신 셀 포함 순회도 의도 — 기존 균일 검사와 동일 범위("전 경로 셀, 머신 끝점 포함").
+// #263: 지형 직배치 머신 ↔ Foundation 머신 혼합 경로는 전용 분기로 수용(경계 STEP=100·경계 코너 금지).
 bool OJJ_ValidateConveyorSlopePath(
 	const AOJJ_Grid* Grid,
 	const TArray<FIntPoint>& PathCells,
 	TArray<float>& OutCellZs,
 	FString& OutReason)
 {
-	// #249 경로 분류: all-Foundation(기존 F3.7~F3.10 램프 경로) vs all-raw(신규 지형추종). 혼합은 이번 패스 거부.
+	// #249 경로 분류: all-Foundation(기존 F3.7~F3.10 램프 경로) vs all-raw(신규 지형추종). 혼합(#263)은 아래 전용 분기.
 	// (Foundation 셀 = GetFoundationSurfaceZ 성공. raw 셀 = 그 외 — water는 호출 게이트가 이미 걸러 도달 안 함.)
 	bool bAnyFoundation = false;
 	bool bAnyRaw = false;
@@ -315,11 +315,80 @@ bool OJJ_ValidateConveyorSlopePath(
 			bAnyRaw = true;
 		}
 	}
+
+	// #263 혼합 경로(raw 지면 ↔ Foundation/램프): 맨땅 머신 ↔ Foundation 머신을 잇는다. 셀별 Z 소스로 검증하는
+	// **전용 분기** — all-Foundation/all-raw(아래 기존 코드)는 손대지 않아 byte-identical(Codex ① 격리). 결정:
+	//   · STEP: raw 내부 인접 = OJJ_MaxSlopeStepZ(300), 그 외(Foundation 내부 + 경계 raw↔Foundation) = 100.
+	//     경계가 100을 넘으면 거부 → #261 램프를 거쳐 올라가라(완만화). 경계 판정 = bIsFoundation[A] != bIsFoundation[B].
+	//   · 코너: 경계 셀(코너 3셀 중 표면 타입 섞임)에서 꺾기 금지. raw 내부 코너 허용(#249), Foundation 내부는
+	//     기존 corner-flat(평탄 요구). PIE 실측 후 경계 코너 완화 판단.
+	//   · 배치는 무변경 — 혼합은 uniform=false라 OJJ_TryPlaceConveyor가 경사/노드-Z 분기로 자동 진입(Codex ②).
 	if (bAnyFoundation && bAnyRaw)
 	{
-		OutReason = TEXT("Conveyor slope path cannot mix terrain and foundation cells (use an all-foundation or all-terrain path).");
-		return false;
+		const int32 N = PathCells.Num();
+		TArray<bool> bCellIsFoundation;
+		bCellIsFoundation.Reserve(N);
+		OutCellZs.Reset();
+		OutCellZs.Reserve(N);
+		for (const FIntPoint& Cell : PathCells)
+		{
+			float CellSurfaceZ = 0.0f;
+			// Foundation 셀 → 장부 SurfaceZ, raw 셀 → GroundZ(평면 폴백 금지 — 미베이크 raw는 거부).
+			const bool bFnd = Grid->GetFoundationSurfaceZ(Cell, CellSurfaceZ);
+			if (!bFnd && !Grid->OJJ_GetRawTerrainSurfaceZ(Cell, CellSurfaceZ))
+			{
+				OutReason = TEXT("Conveyor mixed path requires baked ground height on every terrain cell (no plane fallback).");
+				return false;
+			}
+			bCellIsFoundation.Add(bFnd);
+			OutCellZs.Add(CellSurfaceZ);
+		}
+
+		// STEP(인접쌍): 둘 다 raw = 300, 그 외(둘 다 Foundation OR 경계) = 100.
+		for (int32 Index = 1; Index < N; ++Index)
+		{
+			const bool bBothRaw = !bCellIsFoundation[Index] && !bCellIsFoundation[Index - 1];
+			const float PairLimit = FMath::Max(1.0f,
+				bBothRaw ? Grid->OJJ_GetMaxSlopeStepZ() : Grid->OJJ_GetMaxConveyorStepZ());
+			if (FMath::Abs(OutCellZs[Index] - OutCellZs[Index - 1]) > PairLimit + KINDA_SMALL_NUMBER)
+			{
+				OutReason = FString::Printf(
+					TEXT("Conveyor slope between adjacent cells exceeds %.0fuu (use a ramp path)."), PairLimit);
+				return false;
+			}
+		}
+
+		// 코너: 경계 셀 꺾기 금지 → 우선 판정. 동질 코너는 raw 허용 / Foundation 평탄.
+		for (int32 Index = 1; Index + 1 < N; ++Index)
+		{
+			const FIntPoint PrevDir = PathCells[Index] - PathCells[Index - 1];
+			const FIntPoint NextDir = PathCells[Index + 1] - PathCells[Index];
+			if (PrevDir == NextDir)
+			{
+				continue; // 직선 — 코너 아님
+			}
+			// 경계 코너 = 코너 3셀(prev/cur/next) 표면 타입이 섞임 → 금지(일단 보수적).
+			const bool bCornerHomogeneous = bCellIsFoundation[Index - 1] == bCellIsFoundation[Index]
+				&& bCellIsFoundation[Index] == bCellIsFoundation[Index + 1];
+			if (!bCornerHomogeneous)
+			{
+				OutReason = TEXT("Conveyor cannot turn at a terrain/foundation boundary (corner must stay on one surface).");
+				return false;
+			}
+			// 동질: raw 내부 코너는 허용(#249), Foundation 내부 코너는 평탄 요구(기존 corner-flat).
+			if (bCellIsFoundation[Index]
+				&& (!FMath::IsNearlyEqual(OutCellZs[Index], OutCellZs[Index - 1])
+					|| !FMath::IsNearlyEqual(OutCellZs[Index + 1], OutCellZs[Index])))
+			{
+				OutReason = TEXT("Conveyor cannot turn on a slope (corner cells must be on flat surface).");
+				return false;
+			}
+		}
+
+		OutReason.Reset();
+		return true;
 	}
+
 	const bool bRawTerrain = bAnyRaw; // 전 셀 비-Foundation = raw 지형추종 경로
 
 	// raw 경로는 파이프와 공유하는 경사 게이트(OJJ_MaxSlopeStepZ, 기본 300)로 자연 경사(둑/언덕)를 허용.
