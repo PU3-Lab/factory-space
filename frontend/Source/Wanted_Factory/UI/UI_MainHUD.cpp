@@ -7,7 +7,8 @@
 #include "FactoryAgentClientSubsystem.h" 
 #include "FactoryAgentJsonUtils.h"       
 #include "Dom/JsonObject.h"
-#include "UI/UI_QuestWindow.h" // 🌟 자식 호출용 추가
+#include "UI_QuestWindow.h" 
+#include "UI_QuestNotify.h"
 
 void UUI_MainHUD::NativeConstruct()
 {
@@ -30,7 +31,6 @@ void UUI_MainHUD::NativeConstruct()
 
 void UUI_MainHUD::ToggleQuestWindow()
 {
-    // 🌟 [전달자 역할만 수행] 내부에 안착된 퀘스트 전용 모듈 창의 셔터를 대신 노크해 줍니다.
     if (WBP_QuestWindow)
     {
         WBP_QuestWindow->ToggleQuestWindow();
@@ -69,14 +69,14 @@ void UUI_MainHUD::ToggleAIGuideWindow()
     if (B_ChatBackground->GetVisibility() == ESlateVisibility::Collapsed)
     {
         B_ChatBackground->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-        if (TXT_ToggleText) TXT_ToggleText->SetText(FText::FromString(TEXT("▲ Tab")));
+        if (TXT_ToggleText) TXT_ToggleText->SetText(FText::FromString(TEXT("▲ Tab 열기")));
         if (PC) { PC->SetInputMode(FInputModeGameAndUI()); PC->SetShowMouseCursor(true); }
         if (ET_OperatorInput) ET_OperatorInput->SetFocus();
     }
     else
     {
         B_ChatBackground->SetVisibility(ESlateVisibility::Collapsed);
-        if (TXT_ToggleText) TXT_ToggleText->SetText(FText::FromString(TEXT("▼ Tab 열기")));
+        if (TXT_ToggleText) TXT_ToggleText->SetText(FText::FromString(TEXT("▼ Tab 닫기")));
         if (PC) { PC->SetInputMode(FInputModeGameOnly()); PC->SetShowMouseCursor(false); }
     }
 }
@@ -89,6 +89,27 @@ bool UUI_MainHUD::IsGuideWindowOpen() const
 FReply UUI_MainHUD::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
     if (InKeyEvent.GetKey() == EKeys::Tab) { ToggleAIGuideWindow(); return FReply::Handled(); }
+    if (InKeyEvent.GetKey() == EKeys::U)
+    {
+        if (WBP_QuestWindow && WBP_QuestWindow->QuestNotifyWidgetClass && GetOwningPlayer())
+        {
+            // 정석대로 자식의 변수를 사용해 생성합니다.
+            UUI_QuestNotify* SubNotify = CreateWidget<UUI_QuestNotify>(GetOwningPlayer(), WBP_QuestWindow->QuestNotifyWidgetClass);
+            if (SubNotify)
+            {
+                SubNotify->AddToViewport(100);
+                
+                SubNotify->PlayNotify(
+                    TEXT("[서브] 철 주괴 10개 가공 및 제련"), 
+                    TEXT("철 주괴 x5, 구리 광석 x20, 신뢰도 +15")
+                );
+                
+                UE_LOG(LogTemp, Log, TEXT("[치트키] 서브 퀘스트 완료 팝업 강제 구동 성공"));
+            }
+        }
+        return FReply::Handled();
+    }
+
     return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
 }
 
@@ -140,7 +161,7 @@ void UUI_MainHUD::HandleOnOperatorGuideError(const FString& RequestId, const FSt
 
 void UUI_MainHUD::OnRequestQuestsClicked()
 {
-    // 🌟 [징검다리 통로] 플레이어가 나를 때리면, 나는 내부에 심어진 진짜 퀘스트 창의 함수를 대신 실행합니다.
+    // 내부에 심어진 진짜 퀘스트 창의 함수를 대신 실행합니다.
     if (WBP_QuestWindow)
     {
         WBP_QuestWindow->OnRequestQuestsClicked();
