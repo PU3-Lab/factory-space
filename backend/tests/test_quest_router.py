@@ -11,6 +11,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from agents.quest_generator.models import (
+    QuestContext,
+    SupportQuestDraft,
+    ValidationResult,
+)
 from app import create_app
 from db.models import Base
 
@@ -278,3 +283,255 @@ def test_quest_router_duplicate_target_blocked(mock_db_ctx: None) -> None:
     assert resp2.status_code == 400
     assert "already active" in resp2.json()["detail"].lower()
 
+
+def test_compose_support_uses_refined_phrasing(mock_db_ctx: None) -> None:
+    """QuestPhraseRefiner가 다듬은 문구로 퀘스트가 정상 생성되는지 검증합니다."""
+    app = create_app()
+    client = TestClient(app)
+
+    # get_phrase_refiner 모킹을 위해 mock 설정
+    from agents.quest_generator.phrase_refiner import QuestPhraseRefiner
+    from agents.quest_generator.quest_router import get_phrase_refiner
+
+    mock_refiner = unittest.mock.Mock(spec=QuestPhraseRefiner)
+
+    def mock_refine(
+        draft: SupportQuestDraft, context: QuestContext
+    ) -> SupportQuestDraft:
+        return draft.model_copy(
+            update={
+                "title": "다듬어진 구리괴 수집",
+                "description": "다듬어진 설명 문구입니다.",
+            }
+        )
+
+    mock_refiner.refine.side_effect = mock_refine
+    app.dependency_overrides[get_phrase_refiner] = lambda: mock_refiner
+
+    context_payload = {
+        "factory_id": "factory_001",
+        "factory_level": 1,
+        "current_main_quest": {
+            "quest_id": "main_001",
+            "title": "구리괴 10개 확보",
+            "objectives": [
+                {
+                    "main_objective_id": "mobj_001",
+                    "objective_type": "collect_item",
+                    "item_id": "resource_copper_ingot",
+                    "required": 10,
+                    "current": 2,
+                }
+            ],
+        },
+        "inventory": {"resource_copper_ingot": 2},
+        "unlocked_recipes": ["recipe_copper_ingot"],
+    }
+
+    resp = client.post(
+        "/api/v1/factories/factory_001/quests/compose-support", json=context_payload
+    )
+    assert resp.status_code in (200, 201)
+    data = resp.json()
+    assert data["title"] == "다듬어진 구리괴 수집"
+    assert data["description"] == "다듬어진 설명 문구입니다."
+    # 수량 등 중요 정보는 유지
+    assert data["objectives"][0]["target_id"] == "resource_copper_ingot"
+    assert data["objectives"][0]["target_amount"] == 10
+
+
+def test_compose_support_keeps_rule_decided_values(mock_db_ctx: None) -> None:
+    """LLM이 objectives나 rewards를 임의로 변조하려 하더라도, 강제로 원본 규칙의 값으로 유지되는지 검증합니다."""
+    app = create_app()
+    client = TestClient(app)
+
+    from agents.quest_generator.models import QuestObjective, QuestReward
+    from agents.quest_generator.phrase_refiner import QuestPhraseRefiner
+    from agents.quest_generator.quest_router import get_phrase_refiner
+
+    mock_refiner = unittest.mock.Mock(spec=QuestPhraseRefiner)
+
+    # LLM이 수량을 999로, 보상을 9999로 바꾼 draft를 반환하도록 refiner가 위조함
+    def mock_refine(
+        draft: SupportQuestDraft, context: QuestContext
+    ) -> SupportQuestDraft:
+        modified_objectives = [
+            QuestObjective(
+                id=draft.objectives[0].id,
+                type=draft.objectives[0].type,
+                target_id="resource_gold_ore",  # 아이템 ID 변조
+                target_amount=999,  # 수량 변조
+                current_amount=0,
+                status="in_progress",
+            )
+        ]
+        modified_rewards = [
+            QuestReward(
+                type="currency",
+                target_id="gold",
+                amount=9999,  # 보상 변조
+            )
+        ]
+        return draft.model_copy(
+            update={
+                "title": "변조된 퀘스트",
+                "description": "설명",
+                "objectives": modified_objectives,
+                "rewards": modified_rewards,
+            }
+        )
+
+    mock_refiner.refine.side_effect = mock_refine
+    app.dependency_overrides[get_phrase_refiner] = lambda: mock_refiner
+
+    context_payload = {
+        "factory_id": "factory_001",
+        "factory_level": 1,
+        "current_main_quest": {
+            "quest_id": "main_001",
+            "title": "구리괴 10개 확보",
+            "objectives": [
+                {
+                    "main_objective_id": "mobj_001",
+                    "objective_type": "collect_item",
+                    "item_id": "resource_copper_ingot",
+                    "required": 10,
+                    "current": 2,
+                }
+            ],
+        },
+        "inventory": {"resource_copper_ingot": 2},
+        "unlocked_recipes": ["recipe_copper_ingot"],
+    }
+
+    resp = client.post(
+        "/api/v1/factories/factory_001/quests/compose-support", json=context_payload
+    )
+    assert resp.status_code in (200, 201)
+    data = resp.json()
+    assert data["title"] == "변조된 퀘스트"  # 문구는 변경 허용
+
+    # 핵심 가드: objectives, rewards 등 수치 정보는 원본 draft의 규칙 값으로 강제 복원되었는지 검증
+    assert data["objectives"][0]["target_id"] == "resource_copper_ingot"
+    assert data["objectives"][0]["target_amount"] == 10
+    assert data["rewards"][0]["amount"] == 100  # 원본 보상값(100) 유지
+
+
+def test_compose_support_falls_back_when_llm_unavailable(mock_db_ctx: None) -> None:
+    """LLM refiner가 예외를 던지며 실패하더라도, 원본 draft 그대로 정상 생성(201)되는지 검증합니다."""
+    app = create_app()
+    client = TestClient(app)
+
+    from agents.quest_generator.phrase_refiner import QuestPhraseRefiner
+    from agents.quest_generator.quest_router import get_phrase_refiner
+
+    mock_refiner = unittest.mock.Mock(spec=QuestPhraseRefiner)
+    mock_refiner.refine.side_effect = RuntimeError("LLM Service Outage")
+    app.dependency_overrides[get_phrase_refiner] = lambda: mock_refiner
+
+    context_payload = {
+        "factory_id": "factory_001",
+        "factory_level": 1,
+        "current_main_quest": {
+            "quest_id": "main_001",
+            "title": "구리괴 10개 확보",
+            "objectives": [
+                {
+                    "main_objective_id": "mobj_001",
+                    "objective_type": "collect_item",
+                    "item_id": "resource_copper_ingot",
+                    "required": 10,
+                    "current": 2,
+                }
+            ],
+        },
+        "inventory": {"resource_copper_ingot": 2},
+        "unlocked_recipes": ["recipe_copper_ingot"],
+    }
+
+    resp = client.post(
+        "/api/v1/factories/factory_001/quests/compose-support", json=context_payload
+    )
+    assert resp.status_code in (200, 201)
+    data = resp.json()
+    # 원본 문구가 그대로 사용됨
+    assert "구리괴" in data["title"]
+    assert data["objectives"][0]["target_id"] == "resource_copper_ingot"
+
+
+def test_revalidation_failure_falls_back_to_original_draft(mock_db_ctx: None) -> None:
+    """윤색된 퀘스트 draft가 재검증(QuestValidator.validate)에 실패하더라도, 원본 draft로 정상 생성(201)되는지 검증합니다."""
+    app = create_app()
+    client = TestClient(app)
+
+    from agents.quest_generator.models import ValidationResult
+    from agents.quest_generator.phrase_refiner import QuestPhraseRefiner
+    from agents.quest_generator.quest_router import get_phrase_refiner
+    from agents.quest_generator.validator import QuestValidator
+
+    mock_refiner = unittest.mock.Mock(spec=QuestPhraseRefiner)
+
+    def mock_refine(
+        draft: SupportQuestDraft, context: QuestContext
+    ) -> SupportQuestDraft:
+        return draft.model_copy(
+            update={"title": "윤색되었으나 검증실패할 제목", "description": "설명"}
+        )
+
+    mock_refiner.refine.side_effect = mock_refine
+    app.dependency_overrides[get_phrase_refiner] = lambda: mock_refiner
+
+    # 첫 번째 검증(selected_draft)은 통과하지만, 두 번째 검증(refined_draft)에서 실패하도록 Validator.validate를 모킹
+    original_validate = QuestValidator.validate
+    call_count = 0
+
+    def mock_validate(
+        draft: SupportQuestDraft, context: QuestContext, active_target_ids: set[str]
+    ) -> ValidationResult:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # 1. selected_draft 찾기 단계: 정상 통과
+            return original_validate(draft, context, active_target_ids)
+        else:
+            # 2. refined_draft 재검증 단계: 실패 시뮬레이션
+            return ValidationResult(
+                valid=False,
+                reason="invalid_refined_content",
+                message="LLM output failed validation",
+            )
+
+    with unittest.mock.patch(
+        "agents.quest_generator.quest_router.QuestValidator.validate",
+        side_effect=mock_validate,
+    ):
+        context_payload = {
+            "factory_id": "factory_001",
+            "factory_level": 1,
+            "current_main_quest": {
+                "quest_id": "main_001",
+                "title": "구리괴 10개 확보",
+                "objectives": [
+                    {
+                        "main_objective_id": "mobj_001",
+                        "objective_type": "collect_item",
+                        "item_id": "resource_copper_ingot",
+                        "required": 10,
+                        "current": 2,
+                    }
+                ],
+            },
+            "inventory": {"resource_copper_ingot": 2},
+            "unlocked_recipes": ["recipe_copper_ingot"],
+        }
+
+        resp = client.post(
+            "/api/v1/factories/factory_001/quests/compose-support", json=context_payload
+        )
+        assert resp.status_code in (200, 201)
+        data = resp.json()
+
+        # 중요: 재검증 실패로 인해 윤색된 제목이 아니라 원본 제목이 되어야 함
+        assert data["title"] != "윤색되었으나 검증실패할 제목"
+        assert "구리괴" in data["title"]
+        assert data["objectives"][0]["target_id"] == "resource_copper_ingot"
