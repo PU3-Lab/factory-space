@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import uuid
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
@@ -13,7 +14,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from agents.operator_guide.csv_repository import CsvManualQARepository
 from agents.operator_guide.rag_documents import ManualRagDocumentBuilder
 from agents.operator_guide.rag_embedding import create_embedding_provider
-from agents.operator_guide.rag_ingestion import ManualRagIngestionService
+from agents.operator_guide.rag_ingestion import (
+    ManualRagIngestionService,
+    calculate_source_version,
+)
 from agents.operator_guide.rag_store import create_manual_rag_store
 from agents.operator_guide.rag_upsert import (
     ManualRagUpsertService,
@@ -28,7 +32,8 @@ def main(argv: Sequence[str] | None = None, output: TextIO | None = None) -> int
     if database_url is None:
         raise RuntimeError("DATABASE_URL or FACTORY_DATABASE_URL is required.")
 
-    repository = CsvManualQARepository(_data_dir(args.data_dir))
+    data_directory = _data_dir(args.data_dir)
+    repository = CsvManualQARepository(data_directory)
     documents = ManualRagDocumentBuilder(repository).build_all()
     store = create_manual_rag_store(database_url)
     try:
@@ -36,6 +41,11 @@ def main(argv: Sequence[str] | None = None, output: TextIO | None = None) -> int
     except SQLAlchemyError:
         print(format_database_error(), file=out)
         return 2
+
+    run_id = str(uuid.uuid4())
+    actual_data_dir = repository._data_dir
+    source_version = calculate_source_version(actual_data_dir)
+
     embedding_provider = create_embedding_provider()
     batch = ManualRagIngestionService(embedding_provider).build_batch(
         documents,
@@ -45,6 +55,8 @@ def main(argv: Sequence[str] | None = None, output: TextIO | None = None) -> int
     )
     summary = ManualRagUpsertService(store).upsert_batch(
         batch,
+        run_id=run_id,
+        source_version=source_version,
         dry_run=args.dry_run,
         force=args.force,
     )

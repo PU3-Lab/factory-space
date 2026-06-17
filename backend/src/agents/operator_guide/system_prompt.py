@@ -1,4 +1,8 @@
-"""System prompt for the operator guide Manual Q&A agent."""
+"""오퍼레이터 가이드(Operator Guide) 에이전트가 사용하는 시스템 프롬프트(System Prompt) 보관 모듈입니다.
+
+초보자용 설명:
+    이 파일은 LLM이 플레이어 답변을 생성할 때 기준 정보로 사용할 지침문(프롬프트 규칙)을 보관합니다.
+"""
 
 from __future__ import annotations
 

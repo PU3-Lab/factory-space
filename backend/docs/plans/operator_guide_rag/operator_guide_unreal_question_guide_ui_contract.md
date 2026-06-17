@@ -313,7 +313,7 @@ show_source_detail
 
 - 2026-06-11: Unreal UI 협의를 위해 질문 가이드 탭 구조와 백엔드 응답 계약 초안을 작성했다.
 - 2026-06-11: 질문 가이드 탭을 눌렀을 때 실제 플레이어에게 보이는 화면과 예시 질문 버튼 동작을 추가했다.
-- 2026-06-11: 팀 공유용 일반 docs 문서 `docs/operator_guide_unreal_question_guide_ui_contract.md`를 추가했다.
+- 2026-06-11: 팀 공유용 일반 docs 문서 `docs/operator_guide/2026-06-11_operator_guide_unreal_question_guide_ui_contract.md`를 추가했다.
 - 2026-06-11: 질문 가이드 UI 톤을 튜토리얼 퀘스트 안내판 70% + NPC 수첩 30%로 확정했다.
 - 2026-06-11: 질문하기 탭 안에도 "질문 예시 보기" 진입점을 두는 UX 방향을 추가했다.
 

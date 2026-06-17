@@ -10,9 +10,16 @@ from __future__ import annotations
 from sqlalchemy import Engine, Select, create_engine, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 
-from agents.operator_guide.rag_ingestion import ManualRagIngestionRecord
+from agents.operator_guide.rag_ingestion import (
+    FailedIngestionRow,
+    ManualRagIngestionRecord,
+)
 from agents.operator_guide.rag_retriever import ManualRagSearchResult
-from agents.operator_guide.rag_schema import manual_rag_documents
+from agents.operator_guide.rag_schema import (
+    manual_rag_documents,
+    manual_rag_ingestion_failed_rows,
+    manual_rag_ingestion_runs,
+)
 
 
 class SqlAlchemyManualRagStore:
@@ -66,6 +73,77 @@ class SqlAlchemyManualRagStore:
             .where(manual_rag_documents.c.doc_id.in_(doc_ids))
             .values(is_active=False, updated_at=func.now())
         )
+        with self._engine.begin() as connection:
+            connection.execute(statement)
+
+    def start_ingestion_run(self, run_id: str, source_version: str | None) -> None:
+        """Ingestion 실행 시작 정보를 DB에 생성합니다.
+
+        초보자용 설명:
+            Ingestion이 구동되기 시작할 때 상태를 'started'로 하여 신규 이력 레코드를 남깁니다.
+        """
+        statement = insert(manual_rag_ingestion_runs).values(
+            run_id=run_id,
+            status="started",
+            source_version=source_version,
+            started_at=func.now(),
+        )
+        with self._engine.begin() as connection:
+            connection.execute(statement)
+
+    def complete_ingestion_run(
+        self,
+        run_id: str,
+        status: str,
+        inserted: int,
+        updated: int,
+        skipped: int,
+        deactivated: int,
+        failed: int,
+        error_message: str | None = None,
+    ) -> None:
+        """Ingestion 실행 완료 정보와 요약 통계를 업데이트합니다.
+
+        초보자용 설명:
+            Ingestion 완료 시(성공 또는 전체 실패), 통계 데이터 및 완료 시각을 기록합니다.
+        """
+        statement = (
+            update(manual_rag_ingestion_runs)
+            .where(manual_rag_ingestion_runs.c.run_id == run_id)
+            .values(
+                status=status,
+                inserted=inserted,
+                updated=updated,
+                skipped=skipped,
+                deactivated=deactivated,
+                failed=failed,
+                error_message=error_message,
+                completed_at=func.now(),
+            )
+        )
+        with self._engine.begin() as connection:
+            connection.execute(statement)
+
+    def record_failed_rows(self, run_id: str, failed_rows: list[FailedIngestionRow]) -> None:
+        """실패한 개별 Row들의 세부 원인을 DB에 적재합니다.
+
+        초보자용 설명:
+            부분 실패한 Row들의 정보(파일 정보, 에러 메시지 등)를 일괄로 데이터베이스에 저장합니다.
+        """
+        if not failed_rows:
+            return
+        values = [
+            {
+                "run_id": run_id,
+                "source_file": row.source_file,
+                "source_row_id": row.source_row_id,
+                "title": row.title,
+                "error_message": row.error_message,
+                "failed_at": func.now(),
+            }
+            for row in failed_rows
+        ]
+        statement = insert(manual_rag_ingestion_failed_rows).values(values)
         with self._engine.begin() as connection:
             connection.execute(statement)
 

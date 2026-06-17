@@ -901,6 +901,7 @@ _TEST_PAGE_TEMPLATE = """<!doctype html>
            padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
     .t-sent { background: #e0f2fe; color: #0369a1; }
     .t-resp { background: var(--accent-soft); color: var(--accent); }
+    .t-progress { background: #fef9c3; color: #854d0e; }
     .t-err  { background: #fee2e2; color: #b91c1c; }
     .card pre { margin: 0; padding: 12px; max-height: min(45vh, 420px);
                 overflow: auto; background: #fff; white-space: pre-wrap; word-break: break-word;
@@ -1158,13 +1159,23 @@ function toggleConn() {
   ws.onclose = function() { setStatus('', '연결 안됨'); ws = null; };
   ws.onerror = function() { setStatus('error', '오류'); };
   ws.onmessage = function(e) {
-    if (!firstMsgTs) firstMsgTs = Date.now();
     document.getElementById('stream-out').value = e.data;
+    var parsed = parseJsonMessage(e.data);
     addCard(e.data, false);
+    if (isProgressMessage(parsed)) return;
+    if (!firstMsgTs) firstMsgTs = Date.now();
     updateMetrics(e.data);
     updateAnalysis(e.data);
     renderMaterialResult(e.data);
   };
+}
+
+function parseJsonMessage(rawJson) {
+  try { return JSON.parse(rawJson); } catch(_) { return null; }
+}
+
+function isProgressMessage(parsed) {
+  return !!(parsed && parsed.type === 'agent.progress');
 }
 
 function getReqSettings() {
@@ -1461,12 +1472,16 @@ function addCard(rawJson, isSent) {
   var log = document.getElementById('log');
   if (log.querySelector('.empty')) log.innerHTML = '';
   var ts = new Date().toLocaleTimeString('ko-KR');
-  var parsed, isError = false;
-  try { parsed = JSON.parse(rawJson); isError = !!(parsed && parsed.type === 'agent.error'); }
+  var parsed, isError = false, isProgress = false;
+  try {
+    parsed = JSON.parse(rawJson);
+    isError = !!(parsed && parsed.type === 'agent.error');
+    isProgress = isProgressMessage(parsed);
+  }
   catch(_) { parsed = rawJson; }
   var rid = (parsed && typeof parsed === 'object' && parsed.request_id) ? parsed.request_id : '';
-  var cls = isSent ? 't-sent' : (isError ? 't-err' : 't-resp');
-  var lbl = isSent ? '&#x2192; SENT' : (isError ? '&#x2190; ERROR' : '&#x2190; RESPONSE');
+  var cls = isSent ? 't-sent' : (isError ? 't-err' : (isProgress ? 't-progress' : 't-resp'));
+  var lbl = isSent ? '&#x2192; SENT' : (isError ? '&#x2190; ERROR' : (isProgress ? '&#x2194; PROGRESS' : '&#x2190; RESPONSE'));
   var card = document.createElement('div');
   card.className = 'card';
   card.innerHTML =

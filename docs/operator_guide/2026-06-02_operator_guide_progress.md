@@ -6,7 +6,7 @@
 
 Manual Q&A Agent 프로토는 기존 `operator_guide` agent 내부에 구현되어 있다.
 
-현재는 프로토 완료 전 정리 단계로, 구현 구조와 실제 처리 흐름을 초보자도 이해할 수 있도록 문서화하고 있다. 처리 흐름 설명은 `docs/manual_qa_runtime_flow.md`에 따로 정리했으며, PostgreSQL과 pgvector를 사용하는 최종 아키텍처도 함께 추가했다.
+현재는 프로토 완료 전 정리 단계로, 구현 구조와 실제 처리 흐름을 초보자도 이해할 수 있도록 문서화하고 있다. 처리 흐름 설명은 `docs/operator_guide/2026-06-02_operator_guide_runtime_flow.md`에 따로 정리했으며, PostgreSQL과 pgvector를 사용하는 최종 아키텍처도 함께 추가했다.
 
 외부 호출 구조는 그대로 유지한다.
 
@@ -112,8 +112,8 @@ Manual Q&A runtime:
 
 문서와 lock file:
 
-- `docs/manual_qa_progress.md`
-- `docs/manual_qa_runtime_flow.md`
+- `docs/operator_guide/2026-06-02_operator_guide_progress.md`
+- `docs/operator_guide/2026-06-02_operator_guide_runtime_flow.md`
 - `uv.lock`
 - `docs/knowledge/` 아래 issue ID 정합성 관련 문서
 - `docs/knowledge/rag/evaluation_questions.json`

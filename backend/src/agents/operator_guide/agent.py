@@ -1,4 +1,8 @@
-"""Operator guide orchestrating agent."""
+"""오퍼레이터 가이드(Operator Guide) 도메인의 상위 오케스트레이터 에이전트 모듈입니다.
+
+초보자용 설명:
+    사용자의 질문을 분석하여 하위 에이전트(기계 설명, 레시피 설명, 문제 해결) 중 하나로 연결(라우팅)하는 역할을 합니다.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +18,11 @@ OPERATOR_GUIDE_LEAF_AGENT_IDS = (
 
 
 class OperatorGuideAgent:
-    """Select the operator guide leaf agent for a user question."""
+    """플레이어의 질문을 담당할 적절한 하위 에이전트를 결정하는 오케스트레이터 클래스입니다.
+
+    초보자용 설명:
+        플레이어가 던진 질문에 알맞은 에이전트(예: machine_help 등)를 결정합니다.
+    """
 
     agent_id = "operator_guide"
     tools = ()
@@ -24,7 +32,18 @@ class OperatorGuideAgent:
         payload: dict[str, Any],
         context: AgentContext,
     ) -> str:
-        """Build the prompt used to select an operator guide leaf agent."""
+        """하위 에이전트를 선택하기 위해 LLM에 보낼 프롬프트(Prompt) 지시문을 생성합니다.
+
+        초보자용 설명:
+            전달받은 질문 페이로드와 에이전트 목록을 종합하여 라우팅 지시용 텍스트를 만듭니다.
+
+        입력값:
+            - payload (dict): 질문 데이터가 담긴 딕셔너리
+            - context (AgentContext): 에이전트 컨텍스트 객체
+
+        반환값:
+            - str: LLM에 전달할 프롬프트 문자열
+        """
 
         allowed_leaf_agent_ids = "\n".join(
             f"- {sub_agent_id}" for sub_agent_id in OPERATOR_GUIDE_LEAF_AGENT_IDS
