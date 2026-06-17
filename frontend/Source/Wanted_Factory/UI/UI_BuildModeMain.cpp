@@ -1,8 +1,73 @@
 #include "UI_BuildModeMain.h"
 #include "Components/Button.h"
+#include "Components/ContentWidget.h"
+#include "Components/Image.h"
+#include "Components/PanelWidget.h"
 #include "OJJ_BuildController.h"
+#include "Machines/MachineSubsystem.h"
 #include "QuestManagerSubsystem.h"
 #include "Kismet/GameplayStatics.h"
+
+namespace
+{
+	UImage* FindImageWidgetRecursive(UWidget* Widget)
+	{
+		if (!Widget)
+		{
+			return nullptr;
+		}
+
+		if (UImage* Image = Cast<UImage>(Widget))
+		{
+			return Image;
+		}
+
+		if (UPanelWidget* Panel = Cast<UPanelWidget>(Widget))
+		{
+			for (int32 ChildIndex = 0; ChildIndex < Panel->GetChildrenCount(); ++ChildIndex)
+			{
+				if (UImage* Image = FindImageWidgetRecursive(Panel->GetChildAt(ChildIndex)))
+				{
+					return Image;
+				}
+			}
+
+			return nullptr;
+		}
+
+		if (UContentWidget* Content = Cast<UContentWidget>(Widget))
+		{
+			return FindImageWidgetRecursive(Content->GetContent());
+		}
+
+		return nullptr;
+	}
+
+	void ApplyMachineIconToButton(UButton* Button, const FMachineTableRow& MachineData)
+	{
+		if (!Button)
+		{
+			return;
+		}
+
+		UImage* Image = FindImageWidgetRecursive(Button->GetContent());
+		if (!Image)
+		{
+			return;
+		}
+
+		if (MachineData.ImgAsset.IsValid())
+		{
+			Image->SetBrushFromTexture(MachineData.ImgAsset.Get());
+			return;
+		}
+
+		if (UTexture2D* LoadedTexture = MachineData.ImgAsset.LoadSynchronous())
+		{
+			Image->SetBrushFromTexture(LoadedTexture);
+		}
+	}
+}
 
 void UUI_BuildModeMain::NativeConstruct()
 {
@@ -19,6 +84,14 @@ void UUI_BuildModeMain::NativeConstruct()
     if (BTN_Slot_8_PowerGridNode)  BTN_Slot_8_PowerGridNode->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnPowerGridNodeClicked);
     if (BTN_Slot_9_PowerLine)      BTN_Slot_9_PowerLine->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnPowerLineClicked);
     if (BTN_Slot_0_MagneticShield) BTN_Slot_0_MagneticShield->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnMagneticShieldClicked);
+
+    RefreshSlotIcons();
+}
+
+void UUI_BuildModeMain::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+    Super::NativeTick(MyGeometry, InDeltaTime);
+    RefreshSlotIcons();
 }
 
 void UUI_BuildModeMain::OnStorageClicked()        { ExecutePlacementMode(1); } // 1번: 창고
@@ -33,6 +106,63 @@ void UUI_BuildModeMain::OnPowerLineClicked()      { ExecutePlacementMode(9); } /
 void UUI_BuildModeMain::OnMagneticShieldClicked() { ExecutePlacementMode(0); } // 0번: 차폐막
 
 // 3. 집중 제어 switch-case 함수
+void UUI_BuildModeMain::RefreshSlotIcons()
+{
+    UGameInstance* GameInstance = GetGameInstance();
+    UMachineSubsystem* MachineSubsystem = GameInstance
+        ? GameInstance->GetSubsystem<UMachineSubsystem>()
+        : nullptr;
+    if (!MachineSubsystem)
+    {
+        return;
+    }
+
+    const int32 ConveyorLevel = MachineSubsystem->GetMachineLevel(TEXT("Conveyor"));
+    const int32 SmelterLevel = MachineSubsystem->GetMachineLevel(TEXT("Smelter"));
+    const int32 GrinderLevel = MachineSubsystem->GetMachineLevel(TEXT("Grinder"));
+    const int32 MinerLevel = MachineSubsystem->GetMachineLevel(TEXT("MinerMachine"));
+
+    if (ConveyorLevel != CachedConveyorLevel)
+    {
+        FMachineTableRow MachineData;
+        if (MachineSubsystem->FindMachineData(TEXT("Conveyor"), MachineData))
+        {
+            ApplyMachineIconToButton(BTN_Slot_2_Conveyor, MachineData);
+            CachedConveyorLevel = ConveyorLevel;
+        }
+    }
+
+    if (SmelterLevel != CachedSmelterLevel)
+    {
+        FMachineTableRow MachineData;
+        if (MachineSubsystem->FindMachineData(TEXT("Smelter"), MachineData))
+        {
+            ApplyMachineIconToButton(BTN_Slot_3_Smelter, MachineData);
+            CachedSmelterLevel = SmelterLevel;
+        }
+    }
+
+    if (GrinderLevel != CachedGrinderLevel)
+    {
+        FMachineTableRow MachineData;
+        if (MachineSubsystem->FindMachineData(TEXT("Grinder"), MachineData))
+        {
+            ApplyMachineIconToButton(BTN_Slot_4_Grinder, MachineData);
+            CachedGrinderLevel = GrinderLevel;
+        }
+    }
+
+    if (MinerLevel != CachedMinerLevel)
+    {
+        FMachineTableRow MachineData;
+        if (MachineSubsystem->FindMachineData(TEXT("MinerMachine"), MachineData))
+        {
+            ApplyMachineIconToButton(BTN_Slot_5_Miner, MachineData);
+            CachedMinerLevel = MinerLevel;
+        }
+    }
+}
+
 void UUI_BuildModeMain::ExecutePlacementMode(int32 SlotIndex)
 {
     AOJJ_BuildController* BuildController = Cast<AOJJ_BuildController>(
