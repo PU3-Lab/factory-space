@@ -319,6 +319,37 @@ FOJJFoundationFitResult AOJJ_RampFoundation::OJJ_ComputeHoverFootprint(const AOJ
 	if (bResultOneSideGroundRamp)
 	{
 		Result.bOneSideGroundRamp = true;
+
+		// 빗변 연장 기준: 낮은끝(r=0) 폭선 각 칸 GroundRaw 중 **최저** 월드 Z. 칼끝을 거기까지 연장하면
+		// 폭 전체가 지면 이하(최저 칸은 정확히 닿고 높은 칸은 묻힘) — 어디서도 안 뜸. 낮은끝 행 매핑은
+		// BuildPerCellSurfaceZ r-switch와 동일(step 0:LX=0 / 1:LY=0 / 2:LX=max / 3:LY=max). 한 칸이라도
+		// GroundZ 유효면 채움(전 칸 무효 = 미베이크 → 미설정 → 소비자가 기존 단일평면 폴백, 회귀 0).
+		const int32 ResStep = ((Result.EffectiveRotationSteps % 4) + 4) % 4;
+		const int32 WidthCount = (ResStep % 2 == 0) ? Result.EffSize.Y : Result.EffSize.X;
+		float LowestRaw = 0.0f; // 첫 유효 칸으로 시드(bAnyValid) — TNumericLimits 의존 회피.
+		bool bAnyValid = false;
+		for (int32 Col = 0; Col < WidthCount; ++Col)
+		{
+			FIntPoint LoCell = Result.Origin;
+			switch (ResStep)
+			{
+			case 0: LoCell = FIntPoint(Result.Origin.X, Result.Origin.Y + Col); break;                       // 오르막 +X, 낮은끝 LX=0
+			case 1: LoCell = FIntPoint(Result.Origin.X + Col, Result.Origin.Y); break;                       // 오르막 +Y, 낮은끝 LY=0
+			case 2: LoCell = FIntPoint(Result.Origin.X + Result.EffSize.X - 1, Result.Origin.Y + Col); break; // 오르막 −X, 낮은끝 LX=max
+			case 3: LoCell = FIntPoint(Result.Origin.X + Col, Result.Origin.Y + Result.EffSize.Y - 1); break; // 오르막 −Y, 낮은끝 LY=max
+			}
+			float CellRaw = 0.0f;
+			if (Grid.OJJ_GetRawTerrainSurfaceZ(LoCell, CellRaw))
+			{
+				LowestRaw = bAnyValid ? FMath::Min(LowestRaw, CellRaw) : CellRaw;
+				bAnyValid = true;
+			}
+		}
+		if (bAnyValid)
+		{
+			Result.LoEndLowestGroundRaw = LowestRaw;
+			Result.bLoEndLowestValid = true;
+		}
 	}
 	return Result;
 }
@@ -332,6 +363,9 @@ void AOJJ_RampFoundation::OJJ_NotifyFitResult(const FOJJFoundationFitResult& Fit
 	PlacedRiseSteps = FMath::Max(0, Fit.RiseSteps);
 	PlacedRotationSteps = Step; // F3.8' — 쐐기 월드 방향 규약 + 액터 yaw 역회전용.
 	bPlacedOneSideGroundRamp = Fit.bOneSideGroundRamp; // #261 — OJJ_ComputeSnapLift 높은끝 스냅 게이트.
+	// 빗변 연장: 낮은끝 폭선 최저 지형 Z 캐시(한쪽-지면 + 유효일 때만 — 비면 BuildWedge가 기존 단일평면).
+	PlacedLoEndLowestGroundZ = Fit.LoEndLowestGroundRaw;
+	bPlacedLoEndLowestValid = Fit.bOneSideGroundRamp && Fit.bLoEndLowestValid;
 }
 
 bool AOJJ_RampFoundation::OJJ_BuildPerCellSurfaceZ(FIntPoint EffSize, int32 RotationSteps, float BaseSurfaceZ,
@@ -542,6 +576,10 @@ bool AOJJ_RampFoundation::OJJ_GetVisualSurfaceZAtWorld(const FVector& WorldPos, 
 	const FVector ToPos = WorldPos - GetActorLocation(); // 액터 = 풋프린트 중심(쐐기와 동일 기준)
 	const float Alpha = FMath::Clamp(
 		(ClimbDir.X * ToPos.X + ClimbDir.Y * ToPos.Y + L * 0.5f) / L, 0.0f, 1.0f);
+	// 빗변 연장(한쪽-지면 램프) 무영향 — 연장은 같은 슬로프 직선을 칼끝 너머로 늘릴 뿐 footprint 구간
+	// [−L/2,+L/2]의 표면 Z는 불변(칼끝 d=0 → T, 높은끝 d=L → T+Rise 그대로). 컨베이어는 등록 footprint
+	// 셀 위에만 앉으므로(연장 돌출부는 footprint 밖) 이 수식이 연장 후에도 빗변 위 정확 — 가라앉음 없음.
+	// L/기준 동기화 불필요(연장량을 여기 안 더하는 게 정답 — 더하면 벨트가 기존 빗변에서 어긋남).
 	OutZ = GetActorLocation().Z + FMath::Max(1.0f, Thickness)
 		+ Alpha * Rise * AOJJ_Grid::OJJ_FoundationSnapStep;
 	return true;
@@ -579,9 +617,27 @@ bool AOJJ_RampFoundation::OJJ_BuildWedgeVisual(int32 ClimbCells, int32 WidthCell
 	// 액터 yaw의 정확한 역회전 — 정점/노멀에 선적용(위 규약 주석).
 	const FQuat InvActorYaw(FRotator(0.0f, -90.0f * Step, 0.0f));
 	const FVector Up(0.0f, 0.0f, 1.0f);
-	const FVector KnifeCenter = -ClimbDir * (L * 0.5f) + Up * T;        // 낮은 끝 경계(아랫단 상면)
+	FVector KnifeCenter = -ClimbDir * (L * 0.5f) + Up * T;              // 낮은 끝 경계(아랫단 상면)
 	const FVector HighCenter = ClimbDir * (L * 0.5f) + Up * T;          // 높은 끝 경계(바닥 높이)
 	const FVector Side = SideDir * (W * 0.5f);
+
+	// 빗변 연장(한쪽-지면 램프만): 칼끝이 낮은끝 폭선 최저 지형 위에 떠 있으면(DownZ>0), 빗변 기울기
+	// (Rise/L)를 그대로 유지한 채 칼끝을 −ClimbDir로 ExtL 더 빼고 Z를 DownZ만큼 낮춘다. 이러면 칼끝이
+	// 최저 지형에 정확히 닿고(폭 전체 지면 이하 — 안 뜸), 빗변 평면이 지형을 가로질러 높은 칸은 묻힌다.
+	// 핵심: 슬로프 선 자체는 불변(같은 직선을 연장만) → footprint 구간[−L/2,+L/2]의 표면 Z는 그대로라
+	// 벨트(OJJ_GetVisualSurfaceZAtWorld)·등록 장부 무영향(컨베이어 안 가라앉음). 캐시 무효(양쪽/고정/
+	// 미베이크)면 KnifeCenter 그대로 = 기존 단일평면(회귀 0). DownZ≤0(이미 묻힘/닿음)도 연장 0.
+	if (bPlacedOneSideGroundRamp && bPlacedLoEndLowestValid && Rise > KINDA_SMALL_NUMBER)
+	{
+		const float ActorZ = GetActorLocation().Z;
+		const float KnifeWorldZ = ActorZ + T;                  // 현 칼끝 월드 Z(슬로프 낮은끝)
+		const float DownZ = KnifeWorldZ - PlacedLoEndLowestGroundZ; // >0 = 칼끝이 최저 지형 위로 뜸 → 연장
+		if (DownZ > KINDA_SMALL_NUMBER)
+		{
+			const float ExtL = DownZ * (L / Rise);             // 기울기 Rise/L 유지 — 수평 연장량
+			KnifeCenter = -ClimbDir * (L * 0.5f + ExtL) + Up * (T - DownZ);
+		}
+	}
 
 	// 기하 꼭짓점 6(월드 프레임 → 역회전) — K=칼끝(낮은 끝), B=높은 끝 바닥, U=높은 끝 상단
 	// (0=−Side, 1=+Side — 좌/우 역할은 면 와인딩 순서로만 쓰여 회전해도 보존).
