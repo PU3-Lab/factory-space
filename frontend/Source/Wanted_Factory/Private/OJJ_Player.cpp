@@ -1256,22 +1256,26 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
           InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
        }
 
-       if (InventoryWidgetInstance)
-       {
-          InventoryWidgetInstance->AddToViewport();
-          InventoryWidgetInstance->RefreshInventoryWindow();
-          bIsInventoryOpen = true;
+    	if (InventoryWidgetInstance)
+    	{
+    		// 🌟 [여기에 한 줄 추가!] F키로 창고와 연동되어 켤 때는 무조건 
+    		// bIsWarehouseOpen 인자에 true를 전달해 에디터의 원래 고정 위치(우측 상태)로 강제 귀환시킵니다.
+    		InventoryWidgetInstance->AdjustInventoryLayout(true); 
 
-          GetWorldTimerManager().SetTimer(
-             InventoryRefreshTimerHandle, 
-             this, 
-             &AOJJ_Player::UpdateInventoryRealtime, 
-             0.1f, 
-             true
-          );
+    		InventoryWidgetInstance->AddToViewport();
+    		InventoryWidgetInstance->RefreshInventoryWindow();
+    		bIsInventoryOpen = true;
+
+    		GetWorldTimerManager().SetTimer(
+			   InventoryRefreshTimerHandle, 
+			   this, 
+			   &AOJJ_Player::UpdateInventoryRealtime, 
+			   0.1f, 
+			   true
+			);
             
-          UE_LOG(LogTemp, Log, TEXT("[창고 F키 성공] 창고 전용 창과 가방 창을 완벽하게 동시 활성화했습니다!"));
-       }
+    		UE_LOG(LogTemp, Log, TEXT("[창고 F키 성공] 창고 전용 창과 가방 창을 완벽하게 동시 활성화했습니다!"));
+    	}
     }
 
     FInputModeGameAndUI InputModeData;
@@ -1462,24 +1466,23 @@ void AOJJ_Player::TriggerInventoryToggle()
        InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
     }
 
-    if (InventoryWidgetInstance)
-    {
-       InventoryWidgetInstance->SetItemFormFilter(InventoryFormFilter);
-       InventoryWidgetInstance->AddToViewport();
-       InventoryWidgetInstance->RefreshInventoryWindow();
-       bIsInventoryOpen = true;
-       
-       // UI 포커스 및 인풋 모드 설정
-       FInputModeGameAndUI InputModeData;
-       InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-       PC->SetInputMode(InputModeData);
-       PC->SetShowMouseCursor(true);
-
 	if (InventoryWidgetInstance)
 	{
-		InventoryWidgetInstance->RefreshInventoryWindow();
+		// 화면에 뷰포트 업로드하기 직전에 연산 가동!
+		// 바라보는 시선 끝에 창고가 없으면(bIsValidWarehouse = false) 왼쪽(중앙 방향)으로 이동합니다.
+		InventoryWidgetInstance->AdjustInventoryLayout(bIsValidWarehouse);
+
+		// 중복되던 슬롯 필터 및 뷰포트 추가 로직 하나로 깔끔하게 압축
+		InventoryWidgetInstance->SetItemFormFilter(InventoryFormFilter);
 		InventoryWidgetInstance->AddToViewport();
+		InventoryWidgetInstance->RefreshInventoryWindow();
 		bIsInventoryOpen = true;
+       
+		// UI 포커스 및 인풋 모드 설정
+		FInputModeGameAndUI InputModeData;
+		InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PC->SetInputMode(InputModeData);
+		PC->SetShowMouseCursor(true);
 
 		if (UGameInstance* GameInstance = GetGameInstance())
 		{
@@ -1488,19 +1491,18 @@ void AOJJ_Player::TriggerInventoryToggle()
 				QuestManager->NotifyTutorialEvent(TEXT("InventoryOpen"));
 			}
 		}
-		
+       
 		// 위젯 자체에 강제로 마우스 포커스를 심어 드래그 스타트 신호 보호
 		InventoryWidgetInstance->SetKeyboardFocus();
 
 		GetWorldTimerManager().SetTimer(
-			InventoryRefreshTimerHandle, 
-			this, 
-			&AOJJ_Player::UpdateInventoryRealtime, 
-			0.1f, 
-			true
+		   InventoryRefreshTimerHandle, 
+		   this, 
+		   &AOJJ_Player::UpdateInventoryRealtime, 
+		   0.1f, 
+		   true
 		);
 	}
-}
 }
 
 void AOJJ_Player::OJJ_TutorialAdvance()

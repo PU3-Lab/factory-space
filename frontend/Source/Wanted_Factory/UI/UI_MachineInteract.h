@@ -9,8 +9,7 @@ class UTextBlock;
 class UProgressBar;
 class UButton;
 
-// 위젯이 닫힐 때 1회 통지(파라미터 없음). 구독자(예: OJJ_Player)가 입력모드/커서를 즉시 복원하는 용도.
-// LDJ 협의 완료 — 추가만(기존 닫기 로직 OnCloseClicked/RemoveFromParent 무수정).
+// 위젯이 닫힐 때 1회 통지(파라미터 없음). OJJ_Player가 입력모드/커서를 즉시 복원하는 용도.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInteractClosed);
 
 UCLASS()

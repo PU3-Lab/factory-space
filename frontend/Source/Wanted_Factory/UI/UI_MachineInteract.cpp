@@ -196,7 +196,7 @@ void UUI_MachineInteract::UpdateInputUI(FName ItemName, int32 CurrentAmount, int
         return;
     }
 
-    // 왜 이미지가 안 바뀌는지 원격 추적
+    // 왜 이미지가 안 바뀌는지 추적
     if (!ResourceDataTable)
     {
         UE_LOG(LogTemp, Error, TEXT("[UI 에러] ResourceDataTable 변수가 Null입니다! WBP_MachineInteract 블루프린트 디테일 창에서 아이템 데이터 테이블을 할당했는지 확인하세요."));

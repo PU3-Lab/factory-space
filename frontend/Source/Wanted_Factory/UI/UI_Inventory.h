@@ -16,6 +16,9 @@ public:
 	void SetItemFormFilter(FName FormFilter);
 
 protected:
+	virtual void NativeConstruct() override;
+	FVector2D DefaultPosition = FVector2D::ZeroVector;
+	
 	// 그리드 패널
 	UPROPERTY(meta = (BindWidget))
 	class UUniformGridPanel* GDP_ItemGrid;
@@ -35,4 +38,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	void RefreshInventoryWindow();
 	void UpdateSlotQuantitiesOnly();
+	
+	UFUNCTION(BlueprintCallable, Category = "Inventory | Layout")
+	void AdjustInventoryLayout(bool bIsWarehouseOpen);
 };

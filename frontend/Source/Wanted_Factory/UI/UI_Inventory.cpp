@@ -7,6 +7,7 @@
 #include "Resource/ResourceData.h"
 #include "UI/UI_InventorySlot.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Components/CanvasPanelSlot.h"
 
 UUI_Inventory::UUI_Inventory(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -130,4 +131,35 @@ void UUI_Inventory::UpdateSlotQuantitiesOnly()
 			}
 		}
 	}
+}
+void UUI_Inventory::NativeConstruct()
+{
+	Super::NativeConstruct();
+	
+	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Slot))
+	{
+		DefaultPosition = CanvasSlot->GetPosition();
+	}
+}
+
+void UUI_Inventory::AdjustInventoryLayout(bool bIsWarehouseOpen)
+{
+	if (bIsWarehouseOpen) return;
+	
+	APlayerController* PC = GetOwningPlayer();
+	if (!PC) return;
+
+	// 현재 플레이어 모니터의 실시간 해상도 크기 수집
+	int32 ScreenWidth, ScreenHeight;
+	PC->GetViewportSize(ScreenWidth, ScreenHeight);
+
+	// 화면 완벽한 데드 센터(Dead Center) 정중앙 배치 좌표 계산
+	float CenteredX = ScreenWidth * 0.5f; 
+	float CenteredY = ScreenHeight * 0.5f;
+
+	// 뷰포트 위치 및 피벗 정중앙 고정
+	SetPositionInViewport(FVector2D(CenteredX, CenteredY), true);
+	SetAlignmentInViewport(FVector2D(0.5f, 0.5f)); 
+    
+	UE_LOG(LogTemp, Log, TEXT("인벤토리 정중앙 배치 "));
 }
