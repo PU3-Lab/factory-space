@@ -9,6 +9,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
+    ForeignKey,
     Integer,
     String,
     Text,
@@ -162,3 +163,70 @@ class GeneratedMaterialDiscoveryModel(Base):
         DateTime(timezone=True),
         server_default=func.now(),
     )
+
+
+class QuestInstanceModel(Base):
+    """Model representing a quest instance assigned to a factory."""
+
+    __tablename__ = "quest_instances"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    factory_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    quest_type: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # e.g., "support"
+    support_type: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # e.g., "collect_item"
+    related_main_quest_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(50),
+        default="in_progress",
+        server_default="in_progress",
+        nullable=False,
+    )
+    objective_json: Mapped[list] = mapped_column(JSON, nullable=False)
+    reward_json: Mapped[list] = mapped_column(JSON, nullable=False)
+    created_by: Mapped[str] = mapped_column(
+        String(50), default="rule", server_default="rule", nullable=False
+    )
+    level_reward_applied: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class QuestProgressModel(Base):
+    """Model representing progress of a specific quest objective."""
+
+    __tablename__ = "quest_progress"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    quest_instance_id: Mapped[str] = mapped_column(
+        String(100), ForeignKey("quest_instances.id"), nullable=False
+    )
+    objective_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    objective_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    current_amount: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    target_amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(50),
+        default="in_progress",
+        server_default="in_progress",
+        nullable=False,
+    )
+    last_event_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
