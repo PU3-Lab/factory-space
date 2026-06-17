@@ -69,6 +69,15 @@ uv run --env-file .env.prod python scripts/run_prod_server.py
 http://127.0.0.1:18000/agent-test
 ```
 
+터미널에서 operator_guide WebSocket smoke test를 실행할 수도 있다.
+
+```powershell
+cd C:\factory-space\backend
+uv run python scripts/ws_test_operator_guide.py
+```
+
+이 smoke test는 `agent.progress`를 건너뛰지 않고 출력한 뒤, 최종 `agent.response`까지 수신되는지 확인한다.
+
 서버 로그에 `0.0.0.0:18000`이 보여도 정상이다.
 
 ```text
@@ -278,12 +287,115 @@ RAG 문서와 플레이어 입력은 모두 신뢰할 수 없는 데이터로 �
 
 ---
 
-## 7. PR 준비 문구
+## 7. Unreal JSON contract 확인법
+
+Unreal과 맞출 때는 “질문 입력”, “현재 상태 입력”, “진행 메시지”, “최종 응답” 네 가지를 나누어 확인한다.
+
+### 7.1. Unreal이 보내는 기본 입력
+
+```text
+필수:
+- type: "agent.request"
+- request_id: 요청마다 고유한 ID
+- session_id: 같은 대화를 이어갈 때만 같은 값 사용
+- client_id: Unreal 클라이언트 식별자
+- agent: "operator_guide"
+- payload.question: 플레이어 질문
+
+선택:
+- context.language
+- context.mode
+- context.current_game_state
+- context.temperature
+```
+
+단순 설명 질문은 `current_game_state` 없이 보낸다.
+
+```json
+{
+  "type": "agent.request",
+  "request_id": "operator-guide-demo-multi-001",
+  "session_id": "operator-guide-demo-session",
+  "client_id": "unreal-client",
+  "agent": "operator_guide",
+  "payload": {
+    "question": "분쇄기가 뭐야? 그리고 철괴는 어떻게 만들어?"
+  },
+  "context": {
+    "language": "ko",
+    "mode": "gameplay"
+  }
+}
+```
+
+문제 해결 질문은 Unreal이 알고 있는 현재 상태를 `context.current_game_state`에 넣어 보낸다.
+
+```text
+current_game_state scope 이름:
+- selectedMachine
+- inputInventory
+- outputInventory
+- powerStatus
+- currentRecipe
+- connectedConveyors
+- recentErrorEvents
+```
+
+### 7.2. Backend가 보내는 진행 메시지
+
+답변 생성 중에는 `agent.progress`가 먼저 올 수 있다. 이것은 LLM의 숨은 추론이 아니라, 플레이어에게 보여줘도 되는 안전한 pipeline 상태 메시지다.
+
+```json
+{
+  "type": "agent.progress",
+  "request_id": "operator-guide-demo-state-001",
+  "session_id": "operator-guide-demo-session",
+  "client_id": "unreal-client",
+  "agent": "operator_guide",
+  "payload": {
+    "stage": "state_check",
+    "message": "선택된 장비 상태를 확인하는 중입니다..."
+  }
+}
+```
+
+Unreal UI에서는 이 메시지를 NPC 말풍선, 작은 상태 문구, 또는 로딩 로그로 표시하면 된다.
+
+### 7.3. Backend가 보내는 최종 응답
+
+최종 응답은 `agent.response`이며, 플레이어에게 직접 보여줄 값은 `payload.final_answer`다.
+
+```text
+Unreal 표시 기준:
+- payload.final_answer: NPC 최종 답변
+- payload.actions: 즉시 실행 가능한 액션 후보
+- payload.metadata.sources: 근거 보기 UI
+- payload.metadata.confidence: 디버그/품질 표시
+- payload.metadata.retrieval: RAG 검색 상태 확인
+- payload.metadata.requiresCurrentGameState: 현재 상태가 필요했는지
+- payload.metadata.usedCurrentGameState: 실제 현재 상태를 사용했는지
+- payload.metadata.selectedAgent / selectedLeafAgent: 라우팅 확인
+```
+
+### 7.4. Contract 통과 기준
+
+```text
+[ ] 단순 질문은 current_game_state 없이도 agent.response가 온다.
+[ ] 문제 해결 질문은 current_game_state를 넣으면 usedCurrentGameState가 true가 된다.
+[ ] agent.progress가 와도 최종 agent.response를 기다린다.
+[ ] final_answer는 raw ID 없이 플레이어가 읽기 쉬운 한국어 문장이다.
+[ ] prompt injection 질문은 시스템 프롬프트를 노출하지 않는다.
+[ ] session_id를 새로 바꾸면 이전 대화 memory가 섞이지 않는다.
+```
+
+---
+
+## 8. PR 준비 문구
 
 ### 추천 PR 제목
 
 ```text
-feat: operator_guide RAG 진행 메시지 스트리밍 보정
+feat: operator_guide 최종 시연 안정화
 ```
 
 ### PR 본문 초안
@@ -291,7 +403,7 @@ feat: operator_guide RAG 진행 메시지 스트리밍 보정
 ```markdown
 ## 요약
 
-operator_guide가 RAG 기반 답변을 생성하는 동안 Unreal/UI에 진행 상태를 보여줄 수 있도록 `agent.progress` 스트리밍 흐름을 보정했습니다.
+operator_guide 최종 시연을 위해 RAG 응답 흐름, progress message, 플레이어 답변 가독성, Unreal JSON contract 문서를 정리했습니다.
 
 이번 PR은 포트폴리오/시연 완성 기준으로 다음 흐름을 안정화합니다.
 
@@ -299,7 +411,8 @@ operator_guide가 RAG 기반 답변을 생성하는 동안 Unreal/UI에 진행 �
 - 현재 상태 기반 troubleshooting 응답 구조
 - prompt injection guardrail 시연
 - 최종 답변 전 progress message streaming
-- progress message 중복 emit 방지
+- 플레이어 말풍선에 바로 표시할 수 있는 final_answer 스타일
+- Unreal 연동용 JSON contract 확인 기준
 
 ## 변경 사항
 
@@ -308,12 +421,14 @@ operator_guide가 RAG 기반 답변을 생성하는 동안 Unreal/UI에 진행 �
 - deterministic fallback 단계의 progress 반복 방지
 - progress 단위 테스트 exact sequence 검증으로 강화
 - WebSocket progress 통합 테스트 강화
+- operator_guide 최종 답변 prompt 가독성 규칙 보정
+- Unreal 입력/출력 JSON contract 확인법 문서화
 - 최종 시연/포트폴리오 가이드 추가
 
 ## 검증
 
 ```powershell
-uv run pytest tests/test_operator_guide_progress_streaming.py tests/test_websocket_endpoint.py -q
+uv run pytest tests/test_operator_guide_prompt_injection_guard.py tests/test_operator_guide_progress_streaming.py tests/test_websocket_endpoint.py tests/test_operator_guide_rag_runtime_integration.py tests/test_operator_guide_multi_question_rag_retriever.py tests/test_operator_guide_rag_sprint15.py tests/test_operator_guide_rag_sprint15_1.py -q
 uv run ruff check .
 ```
 
@@ -328,7 +443,7 @@ uv run ruff check .
 
 ---
 
-## 8. 포트폴리오 설명 문장
+## 9. 포트폴리오 설명 문장
 
 ### 한 문장 요약
 

@@ -53,3 +53,31 @@ def test_prompt_wraps_retrieved_context_as_untrusted_data() -> None:
     assert end_marker in prompt
     assert prompt.index(begin_marker) < prompt.index(injected_text)
     assert prompt.index(injected_text) < prompt.index(end_marker)
+
+
+def test_system_prompt_keeps_raw_ids_out_of_player_answer() -> None:
+    prompt = OPERATOR_GUIDE_SYSTEM_PROMPT.lower()
+
+    assert "do not expose raw internal ids" in prompt
+    assert "equipment_*" in prompt
+    assert "final_answer" in prompt
+    assert "player-facing readability" in prompt
+
+
+def test_user_prompt_contract_prefers_friendly_short_multi_question_answer() -> None:
+    prompt = ManualQAService().build_prompt(
+        "분쇄기가 뭐야? 그리고 철괴는 어떻게 만들어?",
+        topic="machine",
+        sub_agent="operator_guide.machine_help",
+    ).lower()
+
+    assert "shown directly to the player" in prompt
+    assert "answer as one natural paragraph instead of numbered labels" in prompt
+    assert "use numbered sections only for three or more questions" in prompt
+    assert "do not use markdown emphasis" in prompt
+    assert "avoid slash-separated lists and repeated examples" in prompt
+    assert "use at most one concrete example" in prompt
+    assert "keep final_answer to 2~3 short korean sentences" in prompt
+    assert "do not enumerate input materials or recipe names" in prompt
+    assert "do not expose raw ids" in prompt
+    assert "do not add troubleshooting checks unless" in prompt
