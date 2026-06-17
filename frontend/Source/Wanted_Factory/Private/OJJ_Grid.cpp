@@ -4001,6 +4001,59 @@ bool AOJJ_Grid::RegisterExistingMachine(AMachineBase* Machine, FIntPoint Origin,
 	return true;
 }
 
+bool AOJJ_Grid::RegisterExistingMachineOccupancyOnly(AMachineBase* Machine, FIntPoint Origin, FString& OutReason)
+{
+	if (!HasAuthority())
+	{
+		ensureMsgf(false, TEXT("Grid placement called on non-authority"));
+		OutReason = TEXT("Not authority");
+		return false;
+	}
+
+	SweepStaleEntries();
+
+	if (!Machine)
+	{
+		OutReason = TEXT("Invalid machine");
+		return false;
+	}
+
+	if (OJJ_ActorToCells.Contains(Machine))
+	{
+		OutReason = TEXT("Machine already placed. Use TryMoveMachine for repositioning.");
+		return false;
+	}
+
+	TArray<FIntPoint> Footprint = CalculateFootprint(Machine, Origin, 0);
+	for (const FIntPoint& Cell : Footprint)
+	{
+		if (!IsValidGridCell(Cell))
+		{
+			OutReason = TEXT("Pre-placed machine footprint is out of grid bounds");
+			return false;
+		}
+
+		const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell);
+		if (Found && Found->IsValid() && Found->Get() != Machine)
+		{
+			OutReason = TEXT("Cell already occupied");
+			return false;
+		}
+	}
+
+	for (const FIntPoint& Cell : Footprint)
+	{
+		OccupiedCells.Add(Cell, Machine);
+	}
+
+	OJJ_ActorToCells.Add(Machine, MoveTemp(Footprint));
+	OJJ_ActorToOrigin.Add(Machine, Origin);
+
+	Machine->OnPlacedOnGrid(this, Origin, 0);
+	OutReason.Reset();
+	return true;
+}
+
 void AOJJ_Grid::SetVisualizationVisible(bool bVisible)
 {
 	if (!GridFloorMesh)

@@ -344,6 +344,7 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::O, IE_Pressed, this, &AOJJ_Player::SetMoldingMachineModeShortcut);
 	PlayerInputComponent->BindKey(EKeys::P, IE_Pressed, this, &AOJJ_Player::SetSynthesizerModeShortcut);
 	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &AOJJ_Player::SetTeleCommunicationTowerModeShortcut);
+	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AOJJ_Player::SetDemolishModeShortcut);
 	// Foundation G/H는 #196에서 Enhanced Input(IA_SetFoundationMode/IA_SetRampMode)로 전환 —
 	// 레거시 BindKey 제거(이중발화 차단). 바인딩은 위 BindAction 블록 + IMC_Build/BP 매핑(에디터).
 }
@@ -994,6 +995,16 @@ void AOJJ_Player::SetTeleCommunicationTowerModeShortcut()
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::TeleCommunicationTower);
+}
+
+void AOJJ_Player::SetDemolishModeShortcut()
+{
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Demolish);
 }
 
 void AOJJ_Player::SetWarehouseMode(const FInputActionValue& Value)

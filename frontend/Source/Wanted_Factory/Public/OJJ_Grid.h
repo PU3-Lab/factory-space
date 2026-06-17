@@ -1096,6 +1096,10 @@ bool OJJ_BuildConveyorPlacementPath(
 	UFUNCTION(BlueprintCallable, Category = "Grid|Placement")
 	bool RegisterExistingMachine(AMachineBase* Machine, FIntPoint Origin, FString& OutReason);
 
+	// Registers a pre-placed world machine only into occupancy maps.
+	// Use for authored story objects that must be demolishable but may sit on non-buildable terrain.
+	bool RegisterExistingMachineOccupancyOnly(AMachineBase* Machine, FIntPoint Origin, FString& OutReason);
+
 	// 그리드 시각화 평면 표시/숨김 (건설 모드 토글 등에 사용)
 	UFUNCTION(BlueprintCallable, Category = "Grid|Visualization")
 	void SetVisualizationVisible(bool bVisible);
