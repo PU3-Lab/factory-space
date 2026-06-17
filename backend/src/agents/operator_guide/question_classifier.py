@@ -207,7 +207,9 @@ Example Output:
         except Exception:
             return None
 
-    def _rule_based_classify(self, question: str, intent_type: QuestionType) -> tuple[bool, list[str]]:
+    def _rule_based_classify(
+        self, question: str, intent_type: QuestionType
+    ) -> tuple[bool, list[str]]:
         if intent_type == "troubleshooting_question":
             return True, list(self._all_scopes)
         return False, []

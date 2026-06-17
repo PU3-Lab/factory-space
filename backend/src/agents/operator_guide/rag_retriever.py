@@ -200,13 +200,7 @@ def _has_direct_match(query: str, results: list[ManualRagSearchResult]) -> bool:
 
 
 def _normalize_match_text(value: str) -> str:
-    return (
-        value.lower()
-        .replace("_", " ")
-        .replace("-", " ")
-        .replace(":", " ")
-        .strip()
-    )
+    return value.lower().replace("_", " ").replace("-", " ").replace(":", " ").strip()
 
 
 def _build_context_text(
@@ -214,7 +208,9 @@ def _build_context_text(
     *,
     max_chars: int,
 ) -> str:
-    parts = [_format_source(index, result) for index, result in enumerate(results, start=1)]
+    parts = [
+        _format_source(index, result) for index, result in enumerate(results, start=1)
+    ]
     context = "\n\n".join(parts)
     if len(context) <= max_chars:
         return context

@@ -75,7 +75,11 @@ def _split_question_candidates(question: str) -> list[str]:
         "<SPLIT>",
         marked_question,
     )
-    return [_ensure_question_mark(part.strip()) for part in marked_question.split("<SPLIT>") if part.strip()]
+    return [
+        _ensure_question_mark(part.strip())
+        for part in marked_question.split("<SPLIT>")
+        if part.strip()
+    ]
 
 
 def _ensure_question_mark(question: str) -> str:

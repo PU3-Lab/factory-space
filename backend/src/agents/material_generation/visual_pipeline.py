@@ -89,7 +89,9 @@ class VisualAssetPipeline:
                         "OK" if texture_master else "FAILED",
                     )
                     material.visual_status = "failed"
-                    material.visual_error = "Image generation returned no data for one or more assets."
+                    material.visual_error = (
+                        "Image generation returned no data for one or more assets."
+                    )
                     material.fallback_icon = f"materials/default/{category}.png"
                 else:
                     icon_key = f"materials/{material_id}/icon.png"

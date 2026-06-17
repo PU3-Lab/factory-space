@@ -124,7 +124,9 @@ class SqlAlchemyManualRagStore:
         with self._engine.begin() as connection:
             connection.execute(statement)
 
-    def record_failed_rows(self, run_id: str, failed_rows: list[FailedIngestionRow]) -> None:
+    def record_failed_rows(
+        self, run_id: str, failed_rows: list[FailedIngestionRow]
+    ) -> None:
         """실패한 개별 Row들의 세부 원인을 DB에 적재합니다.
 
         초보자용 설명:

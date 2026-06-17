@@ -187,7 +187,10 @@ def test_local_embedding_provider_ollama_native_mode() -> None:
         assert mock_urlopen.call_count == 2
         req1 = mock_urlopen.call_args_list[0][0][0]
         assert req1.full_url == "http://localhost:11434/api/embeddings"
-        assert json.loads(req1.data.decode("utf-8")) == {"model": "nomic-embed-text", "prompt": "제련기"}
+        assert json.loads(req1.data.decode("utf-8")) == {
+            "model": "nomic-embed-text",
+            "prompt": "제련기",
+        }
 
 
 def test_local_embedding_provider_ollama_native_failure() -> None:
@@ -201,7 +204,10 @@ def test_local_embedding_provider_ollama_native_failure() -> None:
         ),
     )
 
-    with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("Connection refused")):
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=urllib.error.URLError("Connection refused"),
+    ):
         embeddings = provider.embed_texts(["제련기"])
         assert embeddings == []
 

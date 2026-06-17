@@ -97,7 +97,9 @@ manual_rag_ingestion_runs = Table(
     Column("failed", Integer, nullable=True),
     Column("source_version", String(255), nullable=True),
     Column("error_message", Text, nullable=True),
-    Column("started_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column(
+        "started_at", DateTime(timezone=True), nullable=False, server_default=func.now()
+    ),
     Column("completed_at", DateTime(timezone=True), nullable=True),
     Index("ix_manual_rag_ingestion_runs_run_id", "run_id"),
 )
@@ -112,6 +114,8 @@ manual_rag_ingestion_failed_rows = Table(
     Column("source_row_id", String(255), nullable=False),
     Column("title", String(255), nullable=False),
     Column("error_message", Text, nullable=False),
-    Column("failed_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column(
+        "failed_at", DateTime(timezone=True), nullable=False, server_default=func.now()
+    ),
     Index("ix_manual_rag_ingestion_failed_rows_run_id", "run_id"),
 )

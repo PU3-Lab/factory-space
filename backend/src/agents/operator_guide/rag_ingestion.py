@@ -104,9 +104,10 @@ class ManualRagIngestionService:
             document
             for document in documents
             if force
-            or existing_content_hashes.get(document.doc_id) != content_hashes[document.doc_id]
+            or existing_content_hashes.get(document.doc_id)
+            != content_hashes[document.doc_id]
         ]
-        
+
         if dry_run:
             return ManualRagIngestionBatch(
                 records=[],
@@ -220,7 +221,9 @@ def calculate_source_version(data_dir: Path) -> str:
         except Exception:
             pass
 
-    combined_csv_hash = hashlib.sha256("".join(manifest_hashes).encode("utf-8")).hexdigest()[:12]
+    combined_csv_hash = hashlib.sha256(
+        "".join(manifest_hashes).encode("utf-8")
+    ).hexdigest()[:12]
 
     git_commit = "unknown"
     try:

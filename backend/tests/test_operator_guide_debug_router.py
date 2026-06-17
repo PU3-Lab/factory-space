@@ -70,7 +70,10 @@ class MockRagRuntime:
 
 
 def test_debug_search_forbidden_when_debug_flag_disabled() -> None:
-    with patch.dict(os.environ, {"FACTORY_RAG_DEBUG_ENABLED": "false", "FACTORY_RAG_RUNTIME_MOCK": "true"}):
+    with patch.dict(
+        os.environ,
+        {"FACTORY_RAG_DEBUG_ENABLED": "false", "FACTORY_RAG_RUNTIME_MOCK": "true"},
+    ):
         with TestClient(create_app()) as client:
             response = client.post(
                 "/api/v1/debug/manual-rag/search",
@@ -81,7 +84,10 @@ def test_debug_search_forbidden_when_debug_flag_disabled() -> None:
 
 
 def test_debug_search_not_found_when_rag_runtime_missing() -> None:
-    with patch.dict(os.environ, {"FACTORY_RAG_DEBUG_ENABLED": "true", "FACTORY_RAG_RUNTIME_MOCK": "true"}):
+    with patch.dict(
+        os.environ,
+        {"FACTORY_RAG_DEBUG_ENABLED": "true", "FACTORY_RAG_RUNTIME_MOCK": "true"},
+    ):
         ManualQAService.set_global_rag_runtime(None)
         with TestClient(create_app()) as client:
             response = client.post(
@@ -93,7 +99,10 @@ def test_debug_search_not_found_when_rag_runtime_missing() -> None:
 
 
 def test_debug_search_returns_similar_documents_when_runtime_active() -> None:
-    with patch.dict(os.environ, {"FACTORY_RAG_DEBUG_ENABLED": "true", "FACTORY_RAG_RUNTIME_MOCK": "true"}):
+    with patch.dict(
+        os.environ,
+        {"FACTORY_RAG_DEBUG_ENABLED": "true", "FACTORY_RAG_RUNTIME_MOCK": "true"},
+    ):
         mock_runtime = MockRagRuntime()
         ManualQAService.set_global_rag_runtime(mock_runtime)
         try:
@@ -110,6 +119,9 @@ def test_debug_search_returns_similar_documents_when_runtime_active() -> None:
                 assert len(body["sub_questions"]) == 1
                 assert body["sub_questions"][0]["question"] == "What is a crusher?"
                 assert len(body["sub_questions"][0]["results"]) == 1
-                assert body["sub_questions"][0]["results"][0]["doc_id"] == "equipment.grinder"
+                assert (
+                    body["sub_questions"][0]["results"][0]["doc_id"]
+                    == "equipment.grinder"
+                )
         finally:
             ManualQAService.set_global_rag_runtime(None)

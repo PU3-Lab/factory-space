@@ -43,7 +43,9 @@ def _init_game_data() -> None:
                     data_dir = candidate
 
         if not data_dir:
-            raise FileNotFoundError("Could not find data/game directory in any parent paths.")
+            raise FileNotFoundError(
+                "Could not find data/game directory in any parent paths."
+            )
 
         resources_path = data_dir / "resources.csv"
         recipes_path = data_dir / "recipes.csv"

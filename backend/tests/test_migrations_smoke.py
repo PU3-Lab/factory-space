@@ -109,7 +109,7 @@ def test_alembic_migrations_sqlite_smoke() -> None:
         else:
             os.environ.pop("DATABASE_URL", None)
 
-        if 'engine' in locals():
+        if "engine" in locals():
             try:
                 engine.dispose()
             except Exception:

@@ -329,7 +329,7 @@ flowchart TD
         "summary": "채굴·제작·생산량 증가처럼 공장 성장에 직결되는 목표를 퀘스트 JSON으로 만듭니다.",
         "parent": "quest_generator",
         "example": {
-            "input": "철광석을 모아 첫 생산 라인을 가동하게 하는 퀘스트를 만들어줘.",
+            "input": '게임 상태 기반 자동 생성 요청. 예: {"game_state": {}} (상태가 없으면 대표 퀘스트 자동 생성)',
             "routing": "orchestrator → quest_generator → quest_generator.production_quest",
             "tools": "build_prompt, ProductionQuestSelectionTool, LLM tool_call 흐름, fallback",
             "response": "LLM이 tool_call로 퀘스트 id 5개를 선택하고 ProductionQuestSelectionTool이 JSON을 만듭니다. 실패 시 예시 퀘스트 풀에서 5개를 반환합니다.",
@@ -1612,16 +1612,16 @@ def _render_test_page() -> str:
             "type": "agent.request",
             "agent": "quest_generator",
             "payload": {
-                "request": "철광석을 모아 첫 생산 라인을 가동하게 하는 퀘스트를 만들어줘.",
                 "sub_agent": "quest_generator.production_quest",
+                "game_state": {},
             },
         },
         "quest_generator.economy_quest": {
             "type": "agent.request",
             "agent": "quest_generator",
             "payload": {
-                "request": "창고에 쌓인 자원을 줄이는 퀘스트가 필요해.",
                 "sub_agent": "quest_generator.economy_quest",
+                "game_state": {},
             },
         },
         "material_generation.recipe_match": {
