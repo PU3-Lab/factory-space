@@ -10,9 +10,11 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -169,9 +171,12 @@ class QuestInstanceModel(Base):
     """Model representing a quest instance assigned to a factory."""
 
     __tablename__ = "quest_instances"
+    __table_args__ = (
+        Index("ix_quest_instances_factory_status", "factory_id", "status"),
+    )
 
     id: Mapped[str] = mapped_column(String(100), primary_key=True)
-    factory_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    factory_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     quest_type: Mapped[str] = mapped_column(
         String(50), nullable=False
     )  # e.g., "support"
@@ -206,15 +211,45 @@ class QuestInstanceModel(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    def to_pydantic(self):
+        """Converts the DB model to its corresponding Pydantic QuestInstance schema."""
+        from agents.quest_generator.models import QuestInstance, QuestObjective, QuestReward
+        return QuestInstance(
+            id=self.id,
+            factory_id=self.factory_id,
+            quest_type=self.quest_type,
+            support_type=self.support_type,
+            related_main_quest_id=self.related_main_quest_id,
+            title=self.title,
+            description=self.description,
+            status=self.status,
+            objectives=[QuestObjective.model_validate(obj) for obj in self.objective_json],
+            rewards=[QuestReward.model_validate(r) for r in self.reward_json],
+            created_by=self.created_by,
+            level_reward_applied=self.level_reward_applied,
+            created_at=self.created_at,
+            completed_at=self.completed_at,
+        )
+
 
 class QuestProgressModel(Base):
     """Model representing progress of a specific quest objective."""
 
     __tablename__ = "quest_progress"
+    __table_args__ = (
+        UniqueConstraint(
+            "quest_instance_id",
+            "objective_id",
+            name="uq_quest_progress_instance_objective",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(100), primary_key=True)
     quest_instance_id: Mapped[str] = mapped_column(
-        String(100), ForeignKey("quest_instances.id"), nullable=False
+        String(100),
+        ForeignKey("quest_instances.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     objective_id: Mapped[str] = mapped_column(String(100), nullable=False)
     objective_type: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -229,4 +264,21 @@ class QuestProgressModel(Base):
         server_default="in_progress",
         nullable=False,
     )
-    last_event_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_event_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, index=True
+    )
+
+    def to_pydantic(self):
+        """Converts the DB model to its corresponding Pydantic QuestProgress schema."""
+        from agents.quest_generator.models import QuestProgress
+        return QuestProgress(
+            id=self.id,
+            quest_instance_id=self.quest_instance_id,
+            objective_id=self.objective_id,
+            objective_type=self.objective_type,
+            target_id=self.target_id,
+            current_amount=self.current_amount,
+            target_amount=self.target_amount,
+            status=self.status,
+            last_event_id=self.last_event_id,
+        )

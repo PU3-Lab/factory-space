@@ -144,3 +144,60 @@ def test_quest_context_builder_build_context_not_producible() -> None:
     assert copper_issue.shortage_amount == 8
     # producible should be False since smelt_copper is not in unlocked_recipes
     assert copper_issue.producible is False
+
+
+def test_db_model_to_pydantic_conversion() -> None:
+    from db.models import QuestInstanceModel, QuestProgressModel
+    from datetime import datetime, timezone
+
+    # 1. Test QuestInstanceModel.to_pydantic
+    db_instance = QuestInstanceModel(
+        id="qinst_001",
+        factory_id="factory_001",
+        quest_type="support",
+        support_type="collect_item",
+        related_main_quest_id="main_001",
+        title="철괴 확보",
+        description="철괴를 확보하세요.",
+        status="in_progress",
+        objective_json=[{
+            "id": "obj_001",
+            "type": "collect_item",
+            "target_id": "resource_iron_ingot",
+            "target_amount": 10,
+            "current_amount": 2,
+            "status": "in_progress",
+        }],
+        reward_json=[{
+            "type": "currency",
+            "target_id": "gold",
+            "amount": 100,
+        }],
+        created_by="rule",
+        level_reward_applied=False,
+        created_at=datetime.now(timezone.utc),
+        completed_at=None,
+    )
+    pydantic_instance = db_instance.to_pydantic()
+    assert pydantic_instance.id == "qinst_001"
+    assert len(pydantic_instance.objectives) == 1
+    assert pydantic_instance.objectives[0].target_id == "resource_iron_ingot"
+    assert len(pydantic_instance.rewards) == 1
+    assert pydantic_instance.rewards[0].amount == 100
+
+    # 2. Test QuestProgressModel.to_pydantic
+    db_progress = QuestProgressModel(
+        id="qprog_001",
+        quest_instance_id="qinst_001",
+        objective_id="obj_001",
+        objective_type="collect_item",
+        target_id="resource_iron_ingot",
+        current_amount=2,
+        target_amount=10,
+        status="in_progress",
+        last_event_id="evt_001",
+    )
+    pydantic_progress = db_progress.to_pydantic()
+    assert pydantic_progress.id == "qprog_001"
+    assert pydantic_progress.target_amount == 10
+    assert pydantic_progress.last_event_id == "evt_001"

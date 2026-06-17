@@ -163,8 +163,8 @@ class QuestProgress(BaseModel):
     objective_id: str = Field(description="목표 식별자")
     objective_type: str = Field(description="목표 유형")
     target_id: str = Field(description="목표 대상 ID")
-    current_amount: int = Field(description="현재 누적량")
-    target_amount: int = Field(description="목표 요구량")
+    current_amount: int = Field(ge=0, description="현재 누적량")
+    target_amount: int = Field(gt=0, description="목표 요구량")
     status: Literal["in_progress", "completed"] = Field(description="목표 진행 상태")
     last_event_id: str | None = Field(
         default=None, description="멱등성 처리를 위한 마지막 처리 이벤트 ID"
