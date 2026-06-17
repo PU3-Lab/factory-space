@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import ValidationError
@@ -82,6 +84,34 @@ def _clean_routing_decision(raw: str | None) -> str:
         cleaned = cleaned[1:-1]
     return cleaned.strip()
 
+def build_context(
+    state: AgentGraphState,
+    config: RunnableConfig,
+) -> AgentGraphState:
+    """파이프라인 시작 시 실행 요청 봉투(Envelope)로부터 에이전트 실행 컨텍스트를 구성하는 함수.
+
+    초보자용 설명:
+        클라이언트(Unreal 등)가 보낸 요청 정보를 기반으로 가공하기 적절한
+        공통 AgentContext 객체를 만들고, 진행 상태 메시지 전송용 콜백(on_progress)을 바인딩합니다.
+    """
+
+    envelope = state["envelope"]
+    on_progress = None
+    if config and isinstance(config, dict) and "configurable" in config:
+        on_progress = config["configurable"].get("on_progress")
+
+    return {
+        "context": AgentContext(
+            request_id=envelope.request_id,
+            session_id=envelope.session_id,
+            client_id=envelope.client_id,
+            metadata=envelope.context,
+            on_progress=on_progress,
+        ),
+        "typedPayload": envelope.payload,
+        "streams": [],
+    }
+
 
 class AgentPipeline:
     """LangGraph-backed execution pipeline for agent requests."""
@@ -102,7 +132,11 @@ class AgentPipeline:
         self.llm_adapter_factory = llm_adapter_factory
         self.graph = self._build_graph()
 
-    def run(self, message: AgentRequestEnvelope | dict[str, Any]) -> dict[str, Any]:
+    def run(
+        self,
+        message: AgentRequestEnvelope | dict[str, Any],
+        on_progress: Callable[[str, str], None] | None = None,
+    ) -> dict[str, Any]:
         """Run one request through the compiled graph."""
 
         try:
@@ -114,7 +148,10 @@ class AgentPipeline:
         except ValidationError as exc:
             return build_validation_error(exc, message)
 
-        state = self.graph.invoke({"envelope": envelope})
+        state = self.graph.invoke(
+            {"envelope": envelope},
+            config={"configurable": {"on_progress": on_progress}},
+        )
         return state["responseEnvelope"]
 
     def _build_graph(self) -> CompiledStateGraph:
@@ -134,18 +171,6 @@ class AgentPipeline:
         operator_guide_memory = OperatorGuideSessionMemory()
         quest_generator = QuestGeneratorAgent()
 
-        def build_context(state: AgentGraphState) -> AgentGraphState:
-            envelope = state["envelope"]
-            return {
-                "context": AgentContext(
-                    request_id=envelope.request_id,
-                    session_id=envelope.session_id,
-                    client_id=envelope.client_id,
-                    metadata=envelope.context,
-                ),
-                "typedPayload": envelope.payload,
-                "streams": [],
-            }
 
         def log_agent_started(state: AgentGraphState) -> AgentGraphState:
             return append_middleware_log(
@@ -348,14 +373,26 @@ class AgentPipeline:
             if state.get("selectedAgent") != "operator_guide":
                 return context, {}
 
+            question = str(
+                state["typedPayload"].get("question")
+                or state["typedPayload"].get("message")
+                or ""
+            )
+            operator_guide_memory.update_facts_from_question(context.session_id, question)
+
             recent_turns = operator_guide_memory.recent_turns(context.session_id)
+            confirmed_facts = operator_guide_memory.confirmed_facts(context.session_id)
+            summary_version = operator_guide_memory.summary_version(context.session_id)
+
             memory_metadata = {
-                "used": bool(recent_turns),
+                "used": bool(recent_turns) or bool(confirmed_facts),
                 "turn_count": len(recent_turns),
                 "max_turns": operator_guide_memory.max_turns,
+                "confirmed_facts": confirmed_facts,
+                "confirmedFacts": confirmed_facts,
+                "summary_version": summary_version,
+                "summaryVersion": summary_version,
             }
-            if not recent_turns:
-                return context, memory_metadata
 
             return (
                 AgentContext(
@@ -367,7 +404,9 @@ class AgentPipeline:
                         OPERATOR_GUIDE_RECENT_CONVERSATION_KEY: [
                             turn.to_prompt_dict() for turn in recent_turns
                         ],
+                        "confirmed_facts": confirmed_facts,
                     },
+                    on_progress=context.on_progress,
                 ),
                 memory_metadata,
             )
@@ -390,9 +429,11 @@ class AgentPipeline:
                 output["operatorGuideMemory"] = memory_metadata
             build_prompt_messages = getattr(agent, "build_prompt_messages", None)
             if callable(build_prompt_messages):
+                # build_prompt에서 이미 progress를 보냈으므로 messages 생성 시에는 중복 전송을 막는다.
+                prompt_messages_context = replace(runtime_context, on_progress=None)
                 output["promptMessages"] = build_prompt_messages(
                     state["typedPayload"],
-                    runtime_context,
+                    prompt_messages_context,
                 )
             return output
 
@@ -495,7 +536,14 @@ class AgentPipeline:
             return {"responsePayload": payload, "responseMetadata": metadata}
 
         def build_fallback(state: AgentGraphState) -> AgentGraphState:
-            result = run_fallback(agent_router, state)
+            fallback_context = replace(state["context"], on_progress=None)
+            result = run_fallback(
+                agent_router,
+                {
+                    **state,
+                    "context": fallback_context,
+                },
+            )
             metadata = dict(result.metadata)
             current_model = build_current_model_metadata(state)
             if current_model is not None:

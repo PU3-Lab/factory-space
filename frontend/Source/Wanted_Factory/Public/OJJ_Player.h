@@ -382,6 +382,12 @@ public:
 	UFUNCTION(Exec)
 	void OJJ_TutorialLog();
 
+	UFUNCTION(Exec)
+	void OJJ_SetMachineLevel(const FString& MachineTypeName, int32 NewLevel);
+
+	UFUNCTION(Exec)
+	void OJJ_UpgradeMachineLevel(const FString& MachineTypeName, int32 UpgradeCount = 1);
+
 protected:
 	void SetPowerNodeMode(const FInputActionValue& Value);
 	void SetShieldMode(const FInputActionValue& Value);

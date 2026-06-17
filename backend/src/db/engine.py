@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 def get_database_url() -> str:
     """Return the configured sync database URL, substituting psycopg driver for Postgres if needed."""
-    url = os.environ.get("DATABASE_URL")
+    url = os.environ.get("DATABASE_URL") or os.environ.get("FACTORY_DATABASE_URL")
     if not url:
         return "sqlite:///./factory_space.db"
 

@@ -674,7 +674,7 @@ void UQuestManagerSubsystem::RevealPendingTutorialStartDialogue()
 
 void UQuestManagerSubsystem::NotifyTutorialEvent(FName EventId, FName TargetId, int32 DeltaCount)
 {
-	if (!bTutorialQuestTestActive || DeltaCount <= 0)
+	if (!bTutorialQuestTestActive || bPendingTutorialStartDialogueReveal || DeltaCount <= 0)
 	{
 		return;
 	}
@@ -1165,7 +1165,7 @@ const FTutorialQuestStep* UQuestManagerSubsystem::FindCurrentTutorialQuestStep()
 
 void UQuestManagerSubsystem::HandleWarehouseItemAdded(FName ItemID, int32 AddedCount, int32 NewTotalCount)
 {
-	if (bTutorialQuestTestActive)
+	if (bTutorialQuestTestActive && !bPendingTutorialStartDialogueReveal)
 	{
 		const FTutorialQuestStep* Step = FindCurrentTutorialQuestStep();
 		if (Step)

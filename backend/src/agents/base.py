@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -14,6 +15,7 @@ class AgentContext:
     session_id: str | None = None
     client_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    on_progress: Callable[[str, str], None] | None = None
 
 
 @dataclass(frozen=True)

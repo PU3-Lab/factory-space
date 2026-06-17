@@ -1,0 +1,38 @@
+[
+  {
+    "question": "제련기는 뭐야?",
+    "expected_doc_id": "equipment:equipment_smelter",
+    "expected_confidence": "low",
+    "expected_behavior": "document_match"
+  },
+  {
+    "question": "철괴는 어떻게 만들어?",
+    "expected_doc_id": "resource:resource_iron_ingot",
+    "expected_confidence": "low",
+    "expected_behavior": "document_match"
+  },
+  {
+    "question": "컨베이어가 멈췄는데 뭘 확인해야 해?",
+    "expected_doc_id": "action:action_check_conveyor",
+    "expected_confidence": "low",
+    "expected_behavior": "document_match"
+  },
+  {
+    "question": "생산이 느린데 왜 그래?",
+    "expected_doc_id": "troubleshooting:issue_production_bottleneck",
+    "expected_confidence": "low",
+    "expected_behavior": "document_match"
+  },
+  {
+    "question": "라인이 이상해",
+    "expected_doc_id": null,
+    "expected_confidence": "low",
+    "expected_behavior": "ambiguous_low_confidence"
+  },
+  {
+    "question": "우주 엘리베이터 업그레이드는 어떻게 해?",
+    "expected_doc_id": null,
+    "expected_confidence": "low",
+    "expected_behavior": "out_of_scope_low_confidence"
+  }
+]

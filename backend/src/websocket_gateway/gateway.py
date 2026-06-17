@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import cast
+from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -60,7 +62,16 @@ async def send_agent_json(websocket: WebSocket, message: dict[str, object]) -> N
 
 @router.websocket("/ws/agent")
 async def agent_websocket(websocket: WebSocket) -> None:
-    """Accept the agent WebSocket connection."""
+    """WebSocket 연결을 수락하고 에이전트 요청을 처리합니다.
+
+    초보자용 설명:
+        클라이언트와 WebSocket 연결을 수립한 뒤, 들어오는 요청(agent.request)을
+        LangGraph 파이프라인으로 라우팅하여 실행합니다.
+        진행 상황을 실시간으로 스트리밍하기 위해, 동기식인 파이프라인 실행을
+        `asyncio.to_thread`를 사용하여 별도 스레드에서 백그라운드로 실행합니다.
+        이를 통해 파이프라인 실행 중에도 메인 이벤트 루프가 차단(blocking)되지 않고,
+        `agent.progress` 메시지가 스레드 안전하게 실시간으로 클라이언트에게 전송됩니다.
+    """
 
     await websocket.accept()
     pipeline = get_agent_pipeline(websocket)
@@ -82,6 +93,30 @@ async def agent_websocket(websocket: WebSocket) -> None:
                 )
                 continue
 
-            await send_agent_json(websocket, pipeline.run(message))
+            loop = asyncio.get_running_loop()
+
+            def handle_progress(stage: str, message_text: str) -> None:
+                event = {
+                    "type": "agent.progress",
+                    "request_id": message.get("request_id") or str(uuid4()),
+                    "session_id": message.get("session_id"),
+                    "client_id": message.get("client_id"),
+                    "agent": "operator_guide",
+                    "payload": {
+                        "stage": stage,
+                        "message": message_text,
+                    },
+                }
+                loop.call_soon_threadsafe(
+                    lambda: asyncio.create_task(send_agent_json(websocket, event))
+                )
+
+            response = await asyncio.to_thread(
+                pipeline.run,
+                message,
+                on_progress=handle_progress,
+            )
+            await send_agent_json(websocket, response)
     except WebSocketDisconnect:
         return
+

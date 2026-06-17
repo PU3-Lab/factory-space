@@ -52,3 +52,8 @@ exclude = [
 [tool.ruff.lint]
 select = ["E", "F", "I", "ANN", "UP", "N"]
 ignore = ["E501"]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: Integration tests that depend on external resources or static files",
+]

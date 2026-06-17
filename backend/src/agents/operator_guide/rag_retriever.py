@@ -8,8 +8,11 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Literal, Protocol
+
+logger = logging.getLogger(__name__)
 
 RetrievalConfidence = Literal["high", "medium", "low"]
 
@@ -86,8 +89,10 @@ class ManualRagRetriever:
     def retrieve(self, query: str) -> ManualRagRetrievalResult:
         """플레이어 질문과 관련된 RAG 문서를 검색한다."""
 
+        logger.info("Executing RAG retrieval for query: %s", query)
         query_embedding = self._embed_query(query)
         if query_embedding is None:
+            logger.warning("Failed to generate embedding for query: %s", query)
             return _empty_result(query)
 
         results = self._search_store.search_similar(
@@ -95,6 +100,12 @@ class ManualRagRetriever:
             top_k=self._settings.top_k,
         )
         confidence_result = _calculate_confidence(query, results)
+        logger.info(
+            "RAG retrieval complete. Matched documents: %d, Top score: %s, Confidence: %s",
+            len(results),
+            f"{results[0].score:.4f}" if results else "N/A",
+            confidence_result.confidence,
+        )
         return ManualRagRetrievalResult(
             query=query,
             results=results,

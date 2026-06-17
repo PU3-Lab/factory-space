@@ -23,22 +23,46 @@ from agents.operator_guide.schemas import (
 
 @dataclass(frozen=True)
 class ManualQAPromptContext:
-    """CSV evidence and metadata used to prompt the LLM."""
+    """LLM 프롬프트를 구성하는 데 사용되는 CSV 매뉴얼 근거, RAG 검색 결과 및 게임 상태 정보 등을 담는 데이터 컨텍스트입니다.
+
+    초보자용 설명:
+        이 클래스는 에이전트의 여러 로직(CSV 검색, RAG 검색, 실시간 게임 상태 조회)을 거쳐 수집된
+        모든 텍스트 정보와 메타데이터를 통합하여 프롬프트 빌더(Prompt Builder)에 전달하기 위한 바구니 역할을 합니다.
+    """
 
     result: ManualQAResult
     evidence: dict[str, Any]
     rag_context_text: str = ""
     rag_metadata: dict[str, Any] | None = None
     recent_conversation: list[dict[str, str]] = field(default_factory=list)
+    confirmed_facts: list[str] = field(default_factory=list)
+    current_game_state_text: str = ""
+    requires_current_game_state: bool = False
+    used_current_game_state: bool = False
+    required_state_scopes: list[str] = field(default_factory=list)
+    available_scopes: list[str] = field(default_factory=list)
 
 
 class ManualQAContextBuilder:
-    """Convert classified manual intent into compact CSV evidence."""
+    """분류된 질문 의도(Intent) 데이터를 바탕으로 이에 대응하는 CSV 매뉴얼 상세 레코드를 조회하여 컨텍스트로 변환하는 클래스입니다.
+
+    초보자용 설명:
+        플레이어의 질문 분류(예: recipe_question) 결과에 매칭되는 장비, 자원, 레시피 등의 상세 지식을 데이터베이스에서 찾아 담아줍니다.
+    """
 
     def __init__(self, repository: CsvManualQARepository) -> None:
         self._repository = repository
 
     def build(self, question: str, intent: ManualQAIntent) -> ManualQAPromptContext:
+        """질문 텍스트와 분류 인텐트를 입력받아 매칭되는 매뉴얼 원본 데이터 및 추천 동작들을 묶은 컨텍스트 객체를 생성합니다.
+
+        입력값:
+            - question (str): 플레이어 질문 원문
+            - intent (ManualQAIntent): 분류된 질문의 의도 및 타겟 ID가 담긴 인텐트 객체
+
+        반환값:
+            - ManualQAPromptContext: 매뉴얼 지식 및 추천 동작이 조립된 LLM 입력용 데이터 컨텍스트
+        """
         sources: list[ManualQASource] = []
         recommended_action_ids: list[str] = []
         evidence: dict[str, Any] = {

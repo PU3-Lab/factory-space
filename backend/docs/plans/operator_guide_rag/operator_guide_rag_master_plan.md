@@ -18,6 +18,7 @@ operator_guide가 CSV 기반 게임 매뉴얼을 PostgreSQL + pgvector RAG 저�
 → RAG Retriever Tool
 → PostgreSQL + pgvector에서 관련 매뉴얼 검색
 → Source Formatter Tool
+→ 필요 시 agent.progress 메시지 스트리밍
 → 검색 근거 + system prompt로 LLM 답변 생성
 → source / confidence / fallback / memory metadata 포함 응답
 ```
@@ -57,6 +58,7 @@ Player Question
 → PostgreSQL/pgvector
 → Retrieved Context Guard
 → Source Formatter Tool
+→ Progress Message Stream
 → LLM
 → Response Validation Middleware
 → Final Answer
@@ -202,6 +204,66 @@ Source Formatter Tool
 ```
 
 Legacy CSV fallback tool은 초기 구현 범위에 넣지 않고, 필요하면 후속 확장 항목으로 둔다.
+
+### Progress Message Streaming
+
+operator_guide는 최종 답변이 생성되기 전까지 Unreal UI에 짧은 진행 상태 메시지를 보낼 수 있다.
+
+이 기능은 LLM의 내부 chain-of-thought를 노출하는 기능이 아니다. 플레이어에게 "답변을 생각중"이라는 정적인 상태 대신, agent pipeline의 실제 단계에 맞춘 안전한 UX 메시지를 보여주는 기능이다.
+
+```text
+질문 수신
+→ agent.progress: "장비 매뉴얼을 펼쳐보는 중입니다..."
+→ agent.progress: "관련 매뉴얼을 찾는 중입니다..."
+→ agent.progress: "검색한 근거를 정리하는 중입니다..."
+→ agent.response: 최종 답변
+```
+
+질문 유형별 예시:
+
+```text
+machine_help:
+- 장비 매뉴얼을 펼쳐보는 중입니다...
+- 입력과 출력 자원을 확인하는 중입니다...
+- 연결 가능한 장비를 살펴보는 중입니다...
+
+recipe_explainer:
+- 관련 레시피를 찾는 중입니다...
+- 필요한 입력 자원을 확인하는 중입니다...
+- 생산 흐름을 정리하는 중입니다...
+
+troubleshooter:
+- 공장의 전체 흐름을 읽는 중입니다...
+- 선택된 장비 상태를 확인하는 중입니다...
+- 전력과 입력 자원 상태를 대조하는 중입니다...
+- 관련 문제 해결 매뉴얼을 찾는 중입니다...
+- 점검 순서를 정리하는 중입니다...
+```
+
+WebSocket event 계약:
+
+```json
+{
+  "type": "agent.progress",
+  "request_id": "operator-guide-trouble-001",
+  "session_id": "demo-session",
+  "client_id": "unreal-client",
+  "agent": "operator_guide",
+  "payload": {
+    "stage": "rag_search",
+    "message": "관련 문제 해결 매뉴얼을 찾는 중입니다..."
+  }
+}
+```
+
+제약:
+
+```text
+- 시스템 프롬프트, 숨겨진 정책, API 키, 내부 chain-of-thought는 포함하지 않는다.
+- progress message는 leaf agent, question type, pipeline stage 기준의 안전한 문구로 만든다.
+- 최종 agent.response 계약은 깨지 않는다.
+- Unreal UI는 agent.progress를 NPC 말풍선 또는 상태 라벨로 표시한다.
+```
 
 ### Context Need Classifier
 
@@ -985,6 +1047,37 @@ PR 10. evaluation + debug endpoint
 - 검색 로그
 - evaluation report
 - debug endpoint
+
+PR 11. current game state final integration
+- LLM-based Context Need Classifier 최종화
+- Current Game State Tool 인터페이스
+- selectedMachine / inputInventory / outputInventory / powerStatus / currentRecipe / connectedConveyors / recentErrorEvents
+- 필요한 scope만 조회
+- RAG 근거와 current game state를 함께 prompt context에 포함
+- usedCurrentGameState / requiredStateScopes / availableScopes metadata
+
+PR 11.1. current game state final integration 보완
+- Sprint 15 리뷰에서 확인된 누락 scope 보완
+- connectedConveyors / recentErrorEvents 구현 및 테스트 추가
+- Context Need Classifier를 LLM/mockable 구조로 정리
+- 외부 LLM 없이 테스트 가능한 fake/mock classifier 경로 마련
+- rule-based fallback 유지
+- 깨진 한글 docstring 정리
+
+PR 12. end-to-end Unreal contract + portfolio polish
+- Unreal input/output JSON 최종 계약
+- 질문 가이드 탭 UI 계약
+- agent-test / Postman 시연 시나리오
+- 대표 질문 세트
+- 성공 / fallback / out-of-scope / current state 사용 예시
+- 최종 아키텍처 및 포트폴리오 문서
+
+PR 12.2. progress message streaming
+- 최종 답변 전 `agent.progress` WebSocket 이벤트
+- leaf agent / question type별 안전한 진행 상태 메시지
+- "장비 매뉴얼을 펼쳐보는 중입니다..." 같은 NPC 말풍선 UX
+- 내부 chain-of-thought가 아니라 pipeline stage 기반 UX 메시지임을 명확히 구분
+- agent-test와 Unreal 계약에 progress event 예시 추가
 ```
 
 ## 현재 진행 상태
@@ -1010,6 +1103,10 @@ PR 10. evaluation + debug endpoint
 [ ] 평가 질문 세트
 [ ] debug endpoint
 [ ] README/아키텍처 문서
+[ ] current game state final integration
+[ ] current game state final integration 보완
+[ ] Unreal 계약/시연/포트폴리오 정리
+[ ] progress message streaming
 ```
 
 ## 포트폴리오 어필 포인트
@@ -1019,7 +1116,7 @@ CSV 기반 게임 매뉴얼을 RAG 문서로 정규화하고,
 OpenAI/local embedding provider를 교체 가능한 구조로 설계했습니다.
 PostgreSQL + pgvector 기반 semantic search와 content_hash 기반 재색인 방지,
 backend confidence 계산, source citation, middleware metadata, tool 분리, conversation memory,
-fallback 전략을 포함한 실무형 RAG agent runtime을 구현했습니다.
+fallback 전략, progress message streaming을 포함한 실무형 RAG agent runtime을 구현했습니다.
 ```
 
 핵심 메시지:
@@ -1030,4 +1127,5 @@ provider 추상화로 local embedding 확장성을 확보한다.
 CSV는 원본으로 유지하고 PostgreSQL + pgvector는 검색 인덱스로 사용한다.
 대화 기억은 최근 3턴 원문과 confirmed facts summary로 제한한다.
 fallback은 retrieval 실패와 model 실패를 분리한다.
+progress message는 chain-of-thought가 아니라 플레이어 UX용 pipeline 상태 메시지로 제공한다.
 ```
