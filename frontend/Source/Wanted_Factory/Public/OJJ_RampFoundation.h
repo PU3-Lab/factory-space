@@ -86,6 +86,11 @@ protected:
 	// #261 한쪽-지면 하강 램프 표식(OJJ_NotifyFitResult가 Fit.bOneSideGroundRamp로 세팅) —
 	// OJJ_ComputeSnapLift 높은끝(Foundation쪽) 엣지 스냅 게이트. 양쪽/고정폴백은 false라 무진입(격리).
 	bool bPlacedOneSideGroundRamp = false;
+	// 빗변 연장: 낮은끝 폭선의 최저 지형 월드 Z(OJJ_NotifyFitResult가 Fit.LoEndLowestGroundRaw로 캐시).
+	// OJJ_BuildWedgeVisual이 칼끝을 이 Z까지 −ClimbDir로 연장(기울기 유지)해 평면이 지형에 닿게 한다.
+	// bPlacedOneSideGroundRamp(한쪽-지면)이고 유효일 때만 — 양쪽/고정 램프는 미진입(회귀 0).
+	float PlacedLoEndLowestGroundZ = 0.0f;
+	bool bPlacedLoEndLowestValid = false;
 	// 배치 확정 회전 step(F3.8' — 쐐기가 등록 r-switch와 같은 월드 방향 규약으로 기하를 만들고
 	// 액터 yaw 역회전을 선적용하는 데 사용). 미확정(에디터 프리뷰) 0 = 역회전 항등.
 	int32 PlacedRotationSteps = 0;
