@@ -38,6 +38,9 @@ struct FOJJFoundationFitResult
 	// 호버 프리뷰 빨강 강제는 F3.6-1에서 연결. 베이스/고정 램프는 항상 true(회귀 0).
 	bool bValid = true;
 	FString FailReason;
+
+	// #261 한쪽-지면 하강 램프 표식 — OJJ_ComputeSnapLift 높은끝 스냅 게이트.
+	bool bOneSideGroundRamp = false;
 };
 
 /**
