@@ -21,6 +21,7 @@ from agents.operator_guide.rag_retriever import ManualRagRetriever
 from agents.operator_guide.rag_store import SqlAlchemyManualRagStore
 from agents.operator_guide.service import ManualQAService
 from agents.pipeline import AgentPipeline
+from agents.quest_generator.quest_router import router as quest_router
 from db.engine import engine
 from docs_router import router as docs_router
 from manual_qa_docs.router import router as manual_qa_docs_router
@@ -71,6 +72,7 @@ def create_app() -> FastAPI:
 
     app.include_router(agent_connection_router)
     app.include_router(material_generation_router, prefix="/api/v1")
+    app.include_router(quest_router, prefix="/api/v1")
     app.include_router(debug_router, prefix="/api/v1")
     app.include_router(docs_router)
     app.include_router(manual_qa_docs_router)
