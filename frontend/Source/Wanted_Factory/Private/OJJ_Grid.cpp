@@ -3710,10 +3710,35 @@ bool AOJJ_Grid::OJJ_TryPlaceConveyor(AConveyor* Conveyor, const TArray<FIntPoint
 				// 단의 끝 행이 맞닿음 = 턱이 실존)은 어느 쪽을 채택해도 한쪽 면과는 불일치 —
 				// 세그먼트가 그 턱을 현으로 가로지르는 기존 거동 유지(수용, Codex F3.8''' ⑤).
 				float FaceZ = 0.0f;
-				if (!QueryFaceZ(FinalPathCells[Node - 1], BoundaryPos, FaceZ)
-					&& !QueryFaceZ(FinalPathCells[Node], BoundaryPos, FaceZ))
+				const bool bFaceHook = QueryFaceZ(FinalPathCells[Node - 1], BoundaryPos, FaceZ)
+					|| QueryFaceZ(FinalPathCells[Node], BoundaryPos, FaceZ);
+				if (!bFaceHook)
 				{
 					FaceZ = ChordZ; // 양쪽 다 평판/브리지 — 면=장부.
+				}
+				else
+				{
+					// #261 면훅(쐐기 빗변, OJJ_GetVisualSurfaceZAtWorld)은 지면 클램프 미반영 — 장부/오버레이는
+					// max(cellZ, GroundRaw)로 지면 정착(OJJ_TryPlaceFoundationPerCell 등록 람다)하지만 면훅은
+					// 액터Z+Thickness 기준 파고든 빗변을 그대로 반환해 한쪽-지면 램프 낮은끝~지면 전환부에서 벨트
+					// 노드가 지면 아래로 박힌다. 면훅 채택 노드에도 동일 지면 클램프 적용: 경계 지면(양 셀
+					// GroundRaw 평균 = BoundaryPos 근사, ChordZ와 대칭)으로 끌어올림. 파고들지 않은 정상 램프
+					// (faceZ ≥ 지면)은 max가 faceZ 그대로라 무변경(격리). 미주입 노드(usedFace=0)는 손대지 않음.
+					float Ground0 = 0.0f, Ground1 = 0.0f;
+					const bool bG0 = OJJ_GetRawTerrainSurfaceZ(FinalPathCells[Node - 1], Ground0);
+					const bool bG1 = OJJ_GetRawTerrainSurfaceZ(FinalPathCells[Node], Ground1);
+					if (bG0 && bG1)
+					{
+						FaceZ = FMath::Max(FaceZ, 0.5f * (Ground0 + Ground1));
+					}
+					else if (bG0)
+					{
+						FaceZ = FMath::Max(FaceZ, Ground0);
+					}
+					else if (bG1)
+					{
+						FaceZ = FMath::Max(FaceZ, Ground1);
+					}
 				}
 				NodeZs[Node] = FaceZ;
 			}
