@@ -442,14 +442,21 @@ void AConveyor::RebuildVisuals()
 		// [OJJ F3.9] 포트 꺾임 보충: 끝 셀의 경로 밖(머신 안) 방향을 포트 흐름 방향으로 채워 코너
 		// 판정에 참여 — 옆 접근 시 끝 세그먼트가 직선 대신 코너(좌/우는 기존 CornerToYaw90 단일
 		// 규칙). 정면 접근(포트 방향 = 진행 방향)은 직각이 아니라 직선 그대로, 미주입(Zero — 기존
-		// 전 경로 포함)은 보충 자체가 없어 완전 기존 동작. 경사 끝 셀(노드 델타 ≠ 0)은 코너 메시가
-		// 평면 전제(㊅)라 보충 생략 — 직선 유지(known limitation).
+		// 전 경로 포함)은 보충 자체가 없어 완전 기존 동작.
+		// [OJJ F3.9-fix] EffNext 보충을 bCellFlat 게이트에서 분리 — 경사 끝 셀(노드 델타 ≠ 0)도
+		// 포트 방향으로 보충해 코너 메시를 띄운다. 코너 자리에 직선 메시는 시각상 명백한 오류(꺾이는
+		// 지점에 직선 벨트)다 — 제품 이동(ConfigureTransport/ItemSlots는 메시와 분리, SourceMachine/
+		// TargetMachine만 참조)에는 영향 없는 순수 시각 교정. 유효성(≠Zero) 체크로 포트 미주입(일반
+		// 끝/정면 접근) 시 NextDirection 폴백 유지(직선). 경사 코너 메시 글리치(코너 세그먼트가 평면
+		// 전제 ㊅라 pitch 미적용 — 100uu 노드 델타에서 셀 가장자리 ~50uu 뜸/박힘)는 #252(코너 pitch
+		// 대응)에서 해소 — STEP 100 완만 구간이라 일단 감수. EffPrev는 미분리: 시작셀은 항상 머신
+		// 셀로 시작(BuildConveyorPlacementPath 선두 삽입)→StartPort=Zero라 보충 발동 불가.
 		const bool bCellFlat =
 			FMath::Abs(OJJ_GetPathNodeLocalZ(Index + 1) - OJJ_GetPathNodeLocalZ(Index)) <= KINDA_SMALL_NUMBER;
 		const FIntPoint EffPrevDirection =
 			(!bHasPrevious && bCellFlat) ? OJJ_StartPortFlowDir : PreviousDirection;
 		const FIntPoint EffNextDirection =
-			(!bHasNext && bCellFlat) ? OJJ_EndPortFlowDir : NextDirection;
+			(!bHasNext && OJJ_EndPortFlowDir != FIntPoint::ZeroValue) ? OJJ_EndPortFlowDir : NextDirection;
 		// 직각만 코너로 인정: prev==next는 직선, prev+next==0은 U턴(반대방향) → 코너 아님(직선 흐름 처리).
 		const bool bIsRightAngle = EffPrevDirection != EffNextDirection
 			&& (EffPrevDirection + EffNextDirection) != FIntPoint::ZeroValue;
