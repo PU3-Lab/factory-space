@@ -37,7 +37,8 @@ TUT_LOGI_011,TUT_LOGI_012,tutorial_logistics,창고 포트 선택,"하단 UI 또
 TUT_LOGI_012,TUT_LOGI_013,tutorial_logistics,창고 포트 설치,"제련기 출력 포트 근처에 창고 포트를 설치하세요.",iron ingot 10
 TUT_LOGI_013,TUT_LOGI_014,tutorial_logistics,컨베이어 선택,"하단 UI 또는 단축키로 컨베이어를 선택하세요.",,
 TUT_LOGI_014,TUT_LOGI_015,tutorial_logistics,컨베이어 설치 완료,"제련기와 창고 포트를 컨베이어로 연결하세요.",iron ingot 10
-TUT_LOGI_015,TUT_EXPAND_001,tutorial_logistics,철 주괴 창고 저장 확인,"생산된 철 주괴가 창고에 저장되는지 확인하세요.",iron ingot 10
+TUT_LOGI_015,TUT_BASE_001,tutorial_logistics,철 주괴 창고 저장 확인,"생산된 철 주괴가 창고에 저장되는지 확인하세요.",iron ingot 10
+TUT_BASE_001,TUT_EXPAND_001,tutorial_base,중앙 거점 설치,"중앙 거점을 설치해 다음 개척 단계를 준비하세요.",
 TUT_EXPAND_001,TUT_EXPAND_002,tutorial_expand,철 주괴 10개 생산,"제련기로 철 주괴 10개를 생산하세요.",iron ingot 10
 TUT_EXPAND_002,TUT_EXPAND_003,tutorial_expand,추가 발전소 설치,"발전소 1기를 추가로 설치하세요.",,
 TUT_EXPAND_003,TUT_EXPAND_004,tutorial_expand,추가 송전탑 설치,"송전탑 1기를 추가로 설치하세요.",,

@@ -7,6 +7,7 @@
 #include "Engine/DataTable.h"
 #include "Resource/ResourceData.h"
 #include "Machines/MachineTable.h"
+#include "Machines/MachineSubsystem.h"
 #include "Machines/WarehousePort.h"
 #include "MachineBase.h"
 #include "ItemDragDropOperation.h"
@@ -39,17 +40,17 @@ void UUI_WarehouseInteract::SetTargetMachine(AMachineBase* InMachine)
         
         if (MachineDataTable && IMG_MachinePreview)
         {
-            FMachineTableRow* RowData = MachineDataTable->FindRow<FMachineTableRow>(MachineTypeName, TEXT("FindFallbackContext"));
-            int32 MachineLevel = (RowData) ? RowData->Level : 1;
+            FMachineTableRow MachineData;
+            UMachineSubsystem* MachineSubsystem = GetGameInstance()
+                ? GetGameInstance()->GetSubsystem<UMachineSubsystem>()
+                : nullptr;
+            const bool bFoundMachineData = MachineSubsystem &&
+                MachineSubsystem->FindMachineData(MachineTypeName, MachineData);
 
-            FString LevelRowString = FString::Printf(TEXT("%s_LV%d"), *MachineTypeName.ToString(), MachineLevel);
-            FMachineTableRow* FinalRowData = MachineDataTable->FindRow<FMachineTableRow>(FName(*LevelRowString), TEXT("FindWarehousePreviewContext"));
-            if (!FinalRowData) FinalRowData = RowData;
-
-            if (FinalRowData)
+            if (bFoundMachineData)
             {
                 IMG_MachinePreview->SetVisibility(ESlateVisibility::Visible);
-                UTexture2D* LoadedTexture = FinalRowData->ImgAsset.LoadSynchronous();
+                UTexture2D* LoadedTexture = MachineData.ImgAsset.LoadSynchronous();
                 if (LoadedTexture) IMG_MachinePreview->SetBrushFromTexture(LoadedTexture);
             }
         }

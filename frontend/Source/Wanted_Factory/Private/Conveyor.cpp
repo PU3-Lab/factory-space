@@ -306,6 +306,7 @@ void AConveyor::ClearPath()
 	ItemVisualIds.Reset();
 	PreviousItemVisualIds.Reset();
 	NextItemVisualId = 1;
+	DepartingVisuals.Reset();
 	StopItemMoveTimer();
 	RebuildVisuals();
 	RefreshItemVisualInstances();
@@ -531,6 +532,7 @@ void AConveyor::ResetItemSlots()
 	PreviousItemVisualIds = ItemVisualIds;
 	LastItemMoveWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
 	NextItemVisualId = 1;
+	DepartingVisuals.Reset();
 }
 
 void AConveyor::RestartItemMoveTimer()
@@ -589,6 +591,7 @@ void AConveyor::MoveItemsOneGrid()
 		{
 			if (TargetMachine->ReceiveConveyorItem(LastItem, 1))
 			{
+				StartDepartingVisual(ItemVisualIds[LastIndex], LastIndex);
 				ItemSlots[LastIndex] = NAME_None;
 				ItemVisualIds[LastIndex] = INDEX_NONE;
 			}
@@ -641,8 +644,9 @@ void AConveyor::RefreshItemVisualInstances()
 		return;
 	}
 
+	PruneDepartingVisuals();
 	ItemVisualInstances->ClearInstances();
-	if (!HasVisibleItems())
+	if (!HasVisibleItems() && DepartingVisuals.Num() == 0)
 	{
 		return;
 	}
@@ -663,6 +667,54 @@ void AConveyor::RefreshItemVisualInstances()
 		const FVector ItemLocation = FMath::Lerp(StartLocation, EndLocation, MoveAlpha);
 		ItemVisualInstances->AddInstance(FTransform(FRotator::ZeroRotator, ItemLocation, ItemVisualScale));
 	}
+
+	const UWorld* World = GetWorld();
+	const float CurrentTime = World ? World->GetTimeSeconds() : 0.0f;
+	for (const FConveyorDepartingVisual& DepartingVisual : DepartingVisuals)
+	{
+		const float RawAlpha = DepartingVisual.Duration <= KINDA_SMALL_NUMBER
+			? 1.0f
+			: FMath::Clamp((CurrentTime - DepartingVisual.StartWorldTime) / DepartingVisual.Duration, 0.0f, 1.0f);
+		const float VisualAlpha = ItemVisualLerpExponent <= KINDA_SMALL_NUMBER
+			? RawAlpha
+			: FMath::Pow(RawAlpha, ItemVisualLerpExponent);
+		const FVector ItemLocation = FMath::Lerp(DepartingVisual.StartLocation, DepartingVisual.EndLocation, VisualAlpha);
+		ItemVisualInstances->AddInstance(FTransform(FRotator::ZeroRotator, ItemLocation, ItemVisualScale));
+	}
+}
+
+void AConveyor::PruneDepartingVisuals()
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		DepartingVisuals.Reset();
+		return;
+	}
+
+	const float CurrentTime = World->GetTimeSeconds();
+	DepartingVisuals.RemoveAll([CurrentTime](const FConveyorDepartingVisual& DepartingVisual)
+	{
+		return CurrentTime - DepartingVisual.StartWorldTime >= FMath::Max(0.01f, DepartingVisual.Duration);
+	});
+}
+
+void AConveyor::StartDepartingVisual(int32 VisualId, int32 SlotIndex)
+{
+	if (VisualId == INDEX_NONE || !GetWorld())
+	{
+		return;
+	}
+
+	FConveyorDepartingVisual DepartingVisual;
+	DepartingVisual.VisualId = VisualId;
+	DepartingVisual.StartLocation = GetSlotLocalCenter(SlotIndex);
+	DepartingVisual.EndLocation = GetOutgoingItemLocalCenter();
+	DepartingVisual.StartWorldTime = GetWorld()->GetTimeSeconds();
+	const float TravelDistance = FVector::Distance(DepartingVisual.StartLocation, DepartingVisual.EndLocation);
+	const float CellsToTravel = CellSize <= KINDA_SMALL_NUMBER ? 1.0f : TravelDistance / CellSize;
+	DepartingVisual.Duration = FMath::Max(0.01f, SecondsPerGrid * CellsToTravel);
+	DepartingVisuals.Add(DepartingVisual);
 }
 
 float AConveyor::GetCurrentMoveAlpha() const
@@ -723,6 +775,31 @@ FVector AConveyor::GetIncomingItemLocalCenter() const
 	const FVector FirstCenter = GetSlotLocalCenter(0);
 	const FVector SecondCenter = GetSlotLocalCenter(1);
 	return FirstCenter - (SecondCenter - FirstCenter);
+}
+
+FVector AConveyor::GetOutgoingItemLocalCenter() const
+{
+	if (OccupiedGridCells.Num() == 0)
+	{
+		return FVector(0.0f, 0.0f, ZOffset + ItemVisualZOffset);
+	}
+
+	if (TargetMachine.IsValid())
+	{
+		const FVector TargetWorldLocation = TargetMachine->GetActorLocation();
+		FVector TargetLocalLocation = GetActorTransform().InverseTransformPosition(TargetWorldLocation);
+		TargetLocalLocation.Z = GetSlotLocalCenter(OccupiedGridCells.Num() - 1).Z;
+		return TargetLocalLocation;
+	}
+
+	if (OccupiedGridCells.Num() == 1)
+	{
+		return GetSlotLocalCenter(0);
+	}
+
+	const FVector LastCenter = GetSlotLocalCenter(OccupiedGridCells.Num() - 1);
+	const FVector PreviousCenter = GetSlotLocalCenter(OccupiedGridCells.Num() - 2);
+	return LastCenter + (LastCenter - PreviousCenter);
 }
 
 FVector AConveyor::ResolveItemVisualStartLocation(int32 SlotIndex) const

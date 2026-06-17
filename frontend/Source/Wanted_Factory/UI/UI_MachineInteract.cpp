@@ -6,6 +6,7 @@
 #include "Engine/DataTable.h"
 #include "Resource/ResourceData.h"
 #include "Machines/MachineTable.h"
+#include "Machines/MachineSubsystem.h"
 #include "Machines/LiquidTank.h"
 #include "Machines/WarehousePort.h"
 #include "ItemDragDropOperation.h"
@@ -37,19 +38,24 @@ void UUI_MachineInteract::SetTargetMachine(AMachineBase* InMachine)
         
         if (MachineDataTable && IMG_MachinePreview)
         {
-            FMachineTableRow* RowData = MachineDataTable->FindRow<FMachineTableRow>(MachineTypeName, TEXT("FindMachinePreviewContext"));
+            FMachineTableRow MachineData;
+            UMachineSubsystem* MachineSubsystem = GetGameInstance()
+                ? GetGameInstance()->GetSubsystem<UMachineSubsystem>()
+                : nullptr;
+            const bool bFoundMachineData = MachineSubsystem &&
+                MachineSubsystem->FindMachineData(MachineTypeName, MachineData);
 
-            if (RowData)
+            if (bFoundMachineData)
             {
                 IMG_MachinePreview->SetVisibility(ESlateVisibility::Visible);
                 
-                if (RowData->ImgAsset.IsValid())
+                if (MachineData.ImgAsset.IsValid())
                 {
-                    IMG_MachinePreview->SetBrushFromTexture(RowData->ImgAsset.Get());
+                    IMG_MachinePreview->SetBrushFromTexture(MachineData.ImgAsset.Get());
                 }
                 else
                 {
-                    UTexture2D* LoadedTexture = RowData->ImgAsset.LoadSynchronous();
+                    UTexture2D* LoadedTexture = MachineData.ImgAsset.LoadSynchronous();
                     if (LoadedTexture)
                     {
                         IMG_MachinePreview->SetBrushFromTexture(LoadedTexture);

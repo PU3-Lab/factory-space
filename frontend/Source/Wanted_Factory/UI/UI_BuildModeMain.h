@@ -11,6 +11,7 @@ class WANTED_FACTORY_API UUI_BuildModeMain : public UUserWidget
 
 public:
 	virtual void NativeConstruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 protected:
 	// 6번 제외
@@ -40,4 +41,10 @@ private:
 
 	// 단축키 번호(SlotIndex)를 넘겨받아 처리할 공통 함수
 	void ExecutePlacementMode(int32 SlotIndex);
+	void RefreshSlotIcons();
+
+	int32 CachedConveyorLevel = INDEX_NONE;
+	int32 CachedSmelterLevel = INDEX_NONE;
+	int32 CachedGrinderLevel = INDEX_NONE;
+	int32 CachedMinerLevel = INDEX_NONE;
 };

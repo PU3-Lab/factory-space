@@ -12,6 +12,15 @@ class UInstancedStaticMeshComponent;
 class USceneComponent;
 class UTextRenderComponent;
 
+struct FConveyorDepartingVisual
+{
+	int32 VisualId = INDEX_NONE;
+	FVector StartLocation = FVector::ZeroVector;
+	FVector EndLocation = FVector::ZeroVector;
+	float StartWorldTime = 0.0f;
+	float Duration = 0.0f;
+};
+
 UCLASS()
 class WANTED_FACTORY_API AConveyor : public AActor
 {
@@ -147,6 +156,7 @@ protected:
 	FTimerHandle ItemMoveTimerHandle;
 	float LastItemMoveWorldTime = 0.0f;
 	int32 NextItemVisualId = 1;
+	TArray<FConveyorDepartingVisual> DepartingVisuals;
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
@@ -212,6 +222,8 @@ private:
 	void MoveItemsOneGrid();
 	bool IsSolidItem(FName ItemID) const;
 	void RefreshItemVisualInstances();
+	void PruneDepartingVisuals();
+	void StartDepartingVisual(int32 VisualId, int32 SlotIndex);
 	float GetCurrentMoveAlpha() const;
 	FVector GetCellLocalCenter(FIntPoint Cell) const;
 	// [OJJ F3.7-0, F3.8''' 노드화] 노드(셀 경계)/셀 중심 로컬 Z 조회 — 빈 배열/무효 인덱스는 0
@@ -222,6 +234,7 @@ private:
 	float OJJ_GetPathCellLocalZByCell(FIntPoint Cell) const;
 	FVector GetSlotLocalCenter(int32 SlotIndex) const;
 	FVector GetIncomingItemLocalCenter() const;
+	FVector GetOutgoingItemLocalCenter() const;
 	FVector ResolveItemVisualStartLocation(int32 SlotIndex) const;
 	int32 FindPreviousVisualSlotIndex(int32 VisualId) const;
 	bool HasVisibleItems() const;
