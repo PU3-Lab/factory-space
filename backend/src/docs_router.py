@@ -1020,8 +1020,7 @@ _TEST_PAGE_TEMPLATE = """<!doctype html>
             <option value="operator_guide.troubleshooter">트러블슈팅</option>
           </optgroup>
           <optgroup label="quest_generator">
-            <option value="quest_generator.production_quest">생산 퀘스트</option>
-            <option value="quest_generator.economy_quest">경제 퀘스트</option>
+            <option value="quest_generator">퀘스트 생성</option>
           </optgroup>
           <optgroup label="material_generation">
             <option value="material_generation.recipe_match">레시피 매칭 (기존 레시피)</option>
@@ -1608,19 +1607,10 @@ def _render_test_page() -> str:
                 "sub_agent": "operator_guide.troubleshooter",
             },
         },
-        "quest_generator.production_quest": {
+        "quest_generator": {
             "type": "agent.request",
             "agent": "quest_generator",
             "payload": {
-                "sub_agent": "quest_generator.production_quest",
-                "game_state": {},
-            },
-        },
-        "quest_generator.economy_quest": {
-            "type": "agent.request",
-            "agent": "quest_generator",
-            "payload": {
-                "sub_agent": "quest_generator.economy_quest",
                 "game_state": {},
             },
         },
