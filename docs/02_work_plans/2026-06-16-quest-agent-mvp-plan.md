@@ -27,7 +27,7 @@
 
 | # | 기획 이슈 | 심각도 | MVP 반영 결정 |
 |---|---|:---:|---|
-| 1 | `produce_item`(생산 흐름) 완료가 메인 목표(재고)를 진행시킨다는 보장 없음 | 🔴 | **MVP 1차 지원 타입을 `collect_item`(보유량 달성)으로 채택.** 보유 총량(current_total) 스냅샷 대입 트래커 구현. R-1 부작용(T-1) 해결을 위해 **(a) 복제본 수용 방식 채택**: `target_amount`를 메인의 `required` 수량으로 정렬해 정합성을 보장하고 복제본을 허용. `shortage_amount`는 정보용으로만 유지. (Phase 3·6) |
+| 1 | `produce_item`(생산 흐름) 완료가 메인 목표(재고)를 진행시킨다는 보장 없음 | 🔴 | **MVP 1차 지원 타입을 `collect_item`(보유량 달성)으로 채택.** 보유 총량(current_total) 스냅샷 대입 트래커 구현. R-1 부작용(T-1) 해결을 위해 **(a) 복제본 수용 방식 채택**: `target_amount`를 메인의 `required` 수량으로 정렬해 정합성을 보장하고 복제본을 허용. `shortage_amount`는 지원 퀘스트 설명(description) 생성에 소비. (Phase 3·6) |
 | 2 | 생산/달성 *가능성* 미검증 → 달성 불가능 퀘스트 생성 | 🔴 | Validator에 **선행조건 체크** 추가: 부족 아이템이 (원재료/보유중)이거나, 해금 레시피의 입력 재료를 확보 가능한지 확인. 불충족이면 해당 후보를 폐기(skip). (Phase 4) |
 | 3 | 이벤트→목표 매칭 규칙·멱등성 미정의 → 오매칭/이중 카운트 | 🔴 | **objective_id 생성 규칙 고정(UUID 스킴)** + 이벤트 스냅샷 대입 기반 매칭 규칙 명시 (이중 카운트가 발생하지 않는 대입 방식). (Phase 4·6) |
 | 4 | 보상이 같은 생산 체인 입력으로 순환 → 파밍 악용 | 🟠 | RewardResolver는 **해당 퀘스트 대상 아이템과 그 레시피 입력·중간재를 보상에서 제외.** MVP는 소량 재화(`currency`)만 지급. (Phase 5) |
@@ -120,7 +120,7 @@ backend/src/agents/quest_generator/
 
 ### Phase 2 — game_data 로더 + QuestContextBuilder
 - `game_data.py`:
-  - `data/game/resources.csv`에서 item id 집합 로드(모듈 캐시). **id는 `resource_*` 네임스페이스를 단일 진실로 사용**(0.1-#7). 기획서 예시의 `iron_ingot`류는 `resource_iron_ingot`로 매핑.
+  - `data/game/resources.csv`에서 item id 집합 및 자원명 매핑(`item_id -> 자원명`) 로드(모듈 캐시). **id는 `resource_*` 네임스페이스를 단일 진실로 사용**(0.1-#7). 기획서 예시의 `iron_ingot`류는 `resource_iron_ingot`로 매핑.
   - `recipes.csv`에서 `recipe_id → (출력 item_id, 입력 item_id 목록)` 매핑 로드. #2 선행조건·#4 보상 제외 판정에 사용.
 - `context_builder.py`: payload(현재 메인퀘스트 objectives + inventory + unlocked_recipes + active_support_quest_ids) → `QuestContext`
   - `known_issues`를 **구조화**(0.1-#8): 메인 퀘스트 objective 중 `required > current`인 항목마다
@@ -130,8 +130,11 @@ backend/src/agents/quest_generator/
 ### Phase 3 — RuleGenerator (collect_item)
 - 0.1-#1에 따라 **`collect_item`** 초안 생성(메인 목표가 재고 기반이므로 직접 정렬).
 - 부족 아이템(`known_issues`) 중 동일 지원퀘스트가 active가 아닌 것 1개 선택.
-- `target_amount = 메인의 required 수량` (0.1-#1/R-1/T-1). **(a) 복제본 수용 결정**에 따라 메인 목표의 required 수량과 일치시켜 정합성을 최우선 확보하며, `shortage_amount`는 target 산정에서 제외(정보용으로만 context에 유지). `objective_id`는 instance 비의존 스킴(`obj_{uuid}`)으로 생성(0.1-#3).
-- `SupportQuestDraft` 반환 (기획서 10.2 collect_item 예시 형태).
+- `target_amount = 메인의 required 수량` (0.1-#1/R-1/T-1). **(a) 복제본 수용 결정**에 따라 메인 목표의 required 수량과 일치시켜 정합성을 최우선 확보하며, `shortage_amount`는 target 산정에서 제외(지원 퀘스트 설명 생성 시 소비). `objective_id`는 instance 비의존 스킴(`obj_{uuid}`)으로 생성(0.1-#3).
+- `SupportQuestDraft` 생성 및 반환:
+  * `title`: `f"{item_name} 확보 지원"` (`item_name`은 `game_data` 로더를 통해 `item_id`에 해당하는 한국어 자원명 조회)
+  * `description`: `f"메인 퀘스트 진행을 위해 {item_name} {shortage_amount}개가 더 필요합니다. 총 {target_amount}개를 모으세요."` (U-1의 `shortage_amount`를 설명 소비처로 삼아 dead field 해소 및 U-2 템플릿 정의)
+  * `objectives` / `rewards` 정의 (기획서 10.2 collect_item 예시 형태).
 - 검증: 부족/중복 분기 + objective_id 독립성 및 생성 단위 테스트.
 
 ### Phase 4 — QuestValidator
