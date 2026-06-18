@@ -65,6 +65,13 @@ void AOJJ_Ladder::ApplyDimensions()
 	}
 }
 
+void AOJJ_Ladder::OJJ_SetClimbHeight(float NewClimbHeight)
+{
+	// ClampMin=1.0과 동일 하한. 값 반영 후 즉시 ApplyDimensions로 메시/트리거 재사이징(스폰·런타임 공용).
+	ClimbHeight = FMath::Max(NewClimbHeight, 1.f);
+	ApplyDimensions();
+}
+
 void AOJJ_Ladder::BeginPlay()
 {
 	Super::BeginPlay();

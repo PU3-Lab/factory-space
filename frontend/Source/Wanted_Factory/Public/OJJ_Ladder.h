@@ -46,6 +46,14 @@ public:
 	// 상단 도달 시 Foundation 위로 내딛는 수평 방향(정규화). 액터 전방(+X).
 	FVector GetStepOffDirection() const { return GetActorForwardVector().GetSafeNormal2D(); }
 
+	// [#184 배치] 고스트 프리뷰용 메시 컴포넌트(에셋은 LadderMesh의 StaticMesh). AOJJ_Foundation::GetSlabMesh 미러 —
+	// 빌드 고스트가 실제 사다리와 같은 메시를 쓰게 해 "미리보기=배치" 비주얼 정합(후속 Meshy 교체도 자동 추종).
+	UStaticMeshComponent* GetLadderMesh() const { return LadderMesh; }
+
+	// [#184 배치] 스폰 시 ClimbHeight 주입 — SpawnActorDeferred → FinishSpawning 전에 호출하면 OnConstruction이
+	// 이 값으로 ApplyDimensions(메시/트리거 사이징). 런타임 변경도 즉시 반영되도록 여기서도 ApplyDimensions 호출.
+	void OJJ_SetClimbHeight(float NewClimbHeight);
+
 protected:
 	virtual void BeginPlay() override;
 

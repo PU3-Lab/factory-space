@@ -4438,6 +4438,40 @@ void AOJJ_Grid::OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntP
 	GhostMeshComp->SetVisibility(true);
 }
 
+void AOJJ_Grid::OJJ_ShowGhostForLadder(UStaticMesh* Mesh, const FVector& BottomLocation, float ClimbHeight, const FRotator& Rotation, bool bValid)
+{
+	if (!GhostMeshComp || !Mesh || ClimbHeight < 1.0f)
+	{
+		OJJ_HideGhost();
+		return;
+	}
+
+	OJJ_EnsureGhostMIDs();
+	UMaterialInstanceDynamic* GhostMID = bValid ? GhostValidMID.Get() : GhostInvalidMID.Get();
+	if (!GhostMID)
+	{
+		OJJ_HideGhost();
+		return;
+	}
+
+	// AOJJ_Ladder::ApplyDimensions 산식 재현(미리보기 = 실제 사다리 비주얼 정합):
+	//   엔진 Cube(100uu) → 가로/세로 0.2(20uu) 얇게, 높이 = ClimbHeight, 중심 = 바닥 + ClimbHeight/2.
+	// ⚠️ 0.2 얇기 계수는 AOJJ_Ladder::ApplyDimensions와 동일해야 함(단일원 아님 — 한쪽 변경 시 양쪽 동기 필수).
+	const float ZScale = FMath::Max(ClimbHeight, 1.0f) / 100.0f;
+	const FVector Scale(0.2f, 0.2f, ZScale);
+	const FVector CenterLocation(BottomLocation.X, BottomLocation.Y, BottomLocation.Z + ClimbHeight * 0.5f);
+
+	GhostMeshComp->SetStaticMesh(Mesh);
+	GhostMeshComp->SetWorldScale3D(Scale);
+	GhostMeshComp->SetWorldLocationAndRotation(CenterLocation, Rotation);
+
+	// 틴트는 Overlay Material 패스(#187 B안) — 머신/Foundation 고스트와 동일. Nanite 메시는 오버레이 미렌더라 방어.
+	GhostMeshComp->SetForceDisableNanite(true);
+	GhostMeshComp->EmptyOverrideMaterials();
+	GhostMeshComp->SetOverlayMaterial(GhostMID);
+	GhostMeshComp->SetVisibility(true);
+}
+
 void AOJJ_Grid::OJJ_HideGhost()
 {
 	if (GhostMeshComp)

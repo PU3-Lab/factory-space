@@ -8,6 +8,7 @@
 
 class AOJJ_Grid;
 class AOJJ_Foundation;
+class AOJJ_Ladder;
 class AMachineBase;
 class AConveyor;
 class APipe;
@@ -42,7 +43,10 @@ enum class EOJJ_BuildPlacementMode : uint8
 	LiquidTank,
 	MoldingMachine,
 	Synthesizer,
-	TeleCommunicationTower
+	TeleCommunicationTower,
+	// [#184] 사다리 모드 — C키. 커서로 Foundation 변 조준 → 그 변 바깥 지면에 사다리 배치(자유 배치, 그리드
+	// 장부 미등록). ⚠️ 맨 끝 append 유지(BP enum 값 직렬화 — 중간 삽입 금지).
+	Ladder
 };
 
 /**
@@ -160,6 +164,11 @@ protected:
 	// 미지정이면 램프 선택(OJJ_SelectFoundationKind)이 거부되고 평판만 사용 가능.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
 	TSubclassOf<AOJJ_Foundation> RampFoundationClass;
+
+	// [#184] 사다리 모드에서 스폰할 클래스(AOJJ_Ladder 파생 BP 지정 가능). 머신/그리드 장부 미경유 —
+	// Foundation처럼 독립 분기(자유 배치). 기본값 = C++ AOJJ_Ladder(생성자에서 — BP 없이도 동작).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AOJJ_Ladder> LadderClass;
 
 	// 현재 배치 모드. Machine(기본)/Conveyor. 플레이어가 SetPlacementMode로 전환.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
@@ -288,6 +297,13 @@ private:
 	// 판정은 그리드 CanPlaceFoundation 단일 진실원, spawn-validate-destroy 패턴(머신 배치 미러).
 	void UpdateFoundationHover(FIntPoint CursorCell, const FHitResult& Hit);
 	void PlaceFoundationAtCursor();
+
+	// [#184] 사다리 모드 호버/배치 — Foundation 경로 미러(머신/그리드 장부 미경유, 자유 배치).
+	// 커서 셀을 덮는 Foundation의 가장 가까운 변을 찾아 그 바깥 지면에 사다리 고스트/스폰. 높이 = 상면 − 지면.
+	void UpdateLadderHover(FIntPoint CursorCell, const FHitResult& Hit);
+	void PlaceLadderAtCursor();
+	// 변 산출(호버=클릭 공용, 셀 단위 결정적). 유효 변이면 true + 바닥 월드위치/등반높이/내향 자세(Yaw) 산출.
+	bool ComputeLadderPlacement(FIntPoint CursorCell, FVector& OutBottomLocation, float& OutClimbHeight, FRotator& OutRotation) const;
 
 	// [F2-4 후속 ①] 배치 성공 직후 풋프린트 XY + 슬래브 높이 구간의 Pawn을 상면 위로 올림("깔면 올라탐").
 	// 서버 권위 전용(배치와 같은 흐름), 모든 Pawn 대상(멀티 대비). 위 공간 막힘 감지는 백로그 — 일단 올리고 로그.

@@ -345,6 +345,8 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::P, IE_Pressed, this, &AOJJ_Player::SetSynthesizerModeShortcut);
 	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &AOJJ_Player::SetTeleCommunicationTowerModeShortcut);
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AOJJ_Player::SetDemolishModeShortcut);
+	// [#184] C — 사다리 빌드 서브모드(레거시 BindKey, 핸들러에서 IsInBuildMode 가드. IMC 정석 전환은 후속 IMC 정리 때).
+	PlayerInputComponent->BindKey(EKeys::C, IE_Pressed, this, &AOJJ_Player::SetLadderModeShortcut);
 	// Foundation G/H는 #196에서 Enhanced Input(IA_SetFoundationMode/IA_SetRampMode)로 전환 —
 	// 레거시 BindKey 제거(이중발화 차단). 바인딩은 위 BindAction 블록 + IMC_Build/BP 매핑(에디터).
 }
@@ -1005,6 +1007,17 @@ void AOJJ_Player::SetDemolishModeShortcut()
 	}
 
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Demolish);
+}
+
+// [#184] C키 — 사다리 빌드 서브모드 진입. 레거시 BindKey라 IMC 게이팅이 없으므로 빌드모드 가드 필수(Demolish 패턴).
+void AOJJ_Player::SetLadderModeShortcut()
+{
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Ladder);
 }
 
 void AOJJ_Player::SetWarehouseMode(const FInputActionValue& Value)

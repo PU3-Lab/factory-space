@@ -1136,6 +1136,10 @@ bool OJJ_BuildConveyorPlacementPath(
 	// 평판 전용(램프는 호출하지 않음). MID 미비 시 안전하게 고스트 숨김.
 	void OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize, bool bValid);
 
+	// [#184] 사다리 고스트 — 자유 배치(그리드 셀 스냅 아님). 바닥 월드위치 + ClimbHeight로 세로 박스 고스트를
+	// 그린다(AOJJ_Ladder::ApplyDimensions 산식 재현). bValid → 초록/빨강 오버레이. Mesh는 사다리 CDO 메시.
+	void OJJ_ShowGhostForLadder(UStaticMesh* Mesh, const FVector& BottomLocation, float ClimbHeight, const FRotator& Rotation, bool bValid);
+
 	// 고스트 숨김(ClearHoverPreview / 램프 선택 / 미지정 머티리얼 등).
 	void OJJ_HideGhost();
 
