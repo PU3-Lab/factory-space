@@ -9,9 +9,12 @@
 class AMachineBase;
 class UDataTable;
 class UInstancedStaticMeshComponent;
+class UMaterialInterface;
+class UStaticMesh;
 class UStaticMeshComponent;
 class USceneComponent;
 class UTextRenderComponent;
+struct FResourceData;
 
 struct FConveyorDepartingVisual
 {
@@ -85,6 +88,15 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual", meta = (ClampMin = "0.0"))
 	float ItemVisualLerpExponent = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual", meta = (ClampMin = "0.01"))
+	float PowderVisualWidthMultiplier = 1.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual", meta = (ClampMin = "0.01"))
+	float PowderVisualHeightMultiplier = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual")
+	float PowderVisualZOffsetAdjustment = -10.0f;
 
 	// 코너 ㄱ메시 캐논 방향 정렬 오프셋(0/90/180/270 중 PIE/BP에서 튜닝). ㄱ메시 기준 자세가 180° 돌아가 있어 기본 180.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Corner")
@@ -168,6 +180,12 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UDataTable> ResourceTable;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMesh> PowderVisualMesh;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> PowderVisualMaterialBase;
+
 	FTimerHandle ItemMoveTimerHandle;
 	float LastItemMoveWorldTime = 0.0f;
 	int32 NextItemVisualId = 1;
@@ -244,7 +262,10 @@ private:
 	void PruneDepartingVisuals();
 	void StartDepartingVisual(int32 VisualId, FName ItemId, int32 SlotIndex);
 	UStaticMeshComponent* CreateVisualComponentForItem(int32 VisualId, FName ItemId);
+	const FResourceData* FindResourceData(FName ItemId) const;
+	bool IsPowderItem(FName ItemId) const;
 	UStaticMesh* ResolveItemStaticMesh(FName ItemId) const;
+	FTransform BuildItemVisualTransform(FName ItemId, const FVector& ItemLocation, float BaseItemScale) const;
 	float GetCurrentMoveAlpha() const;
 	FVector GetCellLocalCenter(FIntPoint Cell) const;
 	// [OJJ F3.7-0, F3.8''' 노드화] 노드(셀 경계)/셀 중심 로컬 Z 조회 — 빈 배열/무효 인덱스는 0

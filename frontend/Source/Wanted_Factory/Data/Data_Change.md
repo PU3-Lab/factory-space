@@ -25,8 +25,8 @@
 ## 2026-06-14
 
 ### `Source/Wanted_Factory/Data/ResouceTable.csv`
-- 파이프 액체 색상 관리를 위해 `PipeColor` 컬럼을 추가했다.
-- 비액체 row는 `PipeColor`를 비워 두고, 액체 5종만 색상 값을 기록했다.
+- 자원 공용 시각 색상 관리를 위해 `VisualColor` 컬럼을 사용한다.
+- 파이프를 포함한 시각 표현은 `VisualColor`를 참조하며, 자원별 상징색을 기록한다.
 
 ## 2026-06-15
 

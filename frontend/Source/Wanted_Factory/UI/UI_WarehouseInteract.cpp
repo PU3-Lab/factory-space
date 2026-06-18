@@ -18,6 +18,40 @@
 #include "Blueprint/SlateBlueprintLibrary.h"
 #include "UObject/ConstructorHelpers.h"
 
+namespace
+{
+FText GetResourceDisplayText(const UDataTable* ResourceDataTable, FName ItemName)
+{
+    if (ItemName.IsNone())
+    {
+        return FText::GetEmpty();
+    }
+
+    if (ResourceDataTable)
+    {
+        if (const FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("GetResourceDisplayText")))
+        {
+            if (!RowData->DisplayName.IsEmpty())
+            {
+                return FText::FromString(RowData->DisplayName);
+            }
+        }
+    }
+
+    return FText::FromName(ItemName);
+}
+
+FText GetMachineDisplayText(UMachineSubsystem* MachineSubsystem, FName MachineTypeName)
+{
+    if (MachineSubsystem)
+    {
+        return MachineSubsystem->GetMachineDisplayName(MachineTypeName);
+    }
+
+    return MachineTypeName.IsNone() ? FText::GetEmpty() : FText::FromName(MachineTypeName);
+}
+}
+
 
 
 UUI_WarehouseInteract::UUI_WarehouseInteract(const FObjectInitializer& ObjectInitializer)
@@ -56,14 +90,14 @@ void UUI_WarehouseInteract::SetTargetMachine(AMachineBase* InMachine)
         }
 
         FName MachineTypeName = TargetMachine->GetMachineType();
-        UpdateMachineName(MachineTypeName.ToString());
+        UMachineSubsystem* MachineSubsystem = GetGameInstance()
+            ? GetGameInstance()->GetSubsystem<UMachineSubsystem>()
+            : nullptr;
+        UpdateMachineName(GetMachineDisplayText(MachineSubsystem, MachineTypeName));
         
         if (MachineDataTable && IMG_MachinePreview)
         {
             FMachineTableRow MachineData;
-            UMachineSubsystem* MachineSubsystem = GetGameInstance()
-                ? GetGameInstance()->GetSubsystem<UMachineSubsystem>()
-                : nullptr;
             const bool bFoundMachineData = MachineSubsystem &&
                 MachineSubsystem->FindMachineData(MachineTypeName, MachineData);
 
@@ -163,7 +197,7 @@ void UUI_WarehouseInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, 
 
     if (TXT_OutputName && TXT_OutputCount && PB_OutputBuffer)
     {
-        TXT_OutputName->SetText(FText::FromName(DisplayItemName));
+        TXT_OutputName->SetText(GetResourceDisplayText(ResourceDataTable, DisplayItemName));
         FString CountStr = FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount);
         TXT_OutputCount->SetText(FText::FromString(CountStr));
         
@@ -395,7 +429,7 @@ void UUI_WarehouseInteract::CancelMachineProcess()
     UE_LOG(LogTemp, Log, TEXT("[창고 홀드] 아이템이 배달부 등짐으로 옮겨져 임시 차감 연산을 완료했습니다."));
 }
 
-void UUI_WarehouseInteract::UpdateMachineName(FString MachineName) { if (TXT_MachineName) TXT_MachineName->SetText(FText::FromString(MachineName)); }
+void UUI_WarehouseInteract::UpdateMachineName(const FText& MachineName) { if (TXT_MachineName) TXT_MachineName->SetText(MachineName); }
 void UUI_WarehouseInteract::UpdateMachineState(FString StateText, FLinearColor StateColor) { if (TXT_MachineState) { TXT_MachineState->SetText(FText::FromString(StateText)); TXT_MachineState->SetColorAndOpacity(FSlateColor(StateColor)); } }
 void UUI_WarehouseInteract::OnCloseClicked() { RemoveFromParent(); }
 void UUI_WarehouseInteract::OnRepairClicked() { if (TargetMachine) TargetMachine->RepairUsingWarehouse(); }

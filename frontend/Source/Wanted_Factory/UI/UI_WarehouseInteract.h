@@ -50,7 +50,7 @@ protected:
 
     // UpdateOutputUI
     void UpdateOutputUI(FName ItemName, int32 CurrentAmount, int32 MaxAmount);
-    void UpdateMachineName(FString MachineName);
+    void UpdateMachineName(const FText& MachineName);
     void UpdateMachineState(FString StateText, FLinearColor StateColor);
     void UpdateDurabilityUI(float CurrentDurability, float MaxDurability);
     void UpdateCraftingProgress(float Percent);
