@@ -384,6 +384,17 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 		return;
 	}
 
+	// [#184] 등반 시작 — 진입-오버랩 의존 제거: 사다리 겹침 중 W(위) 누르면 시작(이미 트리거 안이어도).
+	// BeginClimb 내부 가드(쿨다운·밑동 위치 FeetZ>Bottom+80)가 상면 재등반/직후 재진입을 막는다.
+	if (Axis.Y > 0.f && OverlappingLadder.IsValid())
+	{
+		BeginClimb(OverlappingLadder.Get());
+		if (CurrentLadder)
+		{
+			return; // 시작 성공 → 이번 프레임 걷기 입력 스킵(다음 프레임부터 등반 분기).
+		}
+	}
+
 	// 카메라(컨트롤러) yaw 기준 전/후·좌/우 방향 산출 — pitch/roll은 이동에서 제외
 	const FRotator YawRotation(0.f, Controller->GetControlRotation().Yaw, 0.f);
 	const FVector Forward = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
@@ -430,6 +441,7 @@ void AOJJ_Player::BeginClimb(AOJJ_Ladder* Ladder)
 	bClimbing = true;
 	UE_LOG(LogTemp, Verbose, TEXT("[Climb] BeginClimb Bottom=%.1f Top=%.1f"),
 		Ladder->GetClimbBottomZ(), Ladder->GetClimbTopZ());
+
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		// 중력 끄고 비행 모드로 수직 이동. 키를 떼면 빠르게 멈춰 사다리에서 호버하도록 제동 강하게.
@@ -452,12 +464,6 @@ void AOJJ_Player::EndClimb(bool bStepOffTop)
 	CurrentLadder = nullptr;
 	bClimbing = false;
 
-	// 진단(#184): 낙하 원인 추적 — 어느 경로로 등반이 끝났는지(상단 step-off / 하단·기타) + 당시 발 Z.
-	const float DbgFeetZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
-	UE_LOG(LogTemp, Verbose, TEXT("[Climb] EndClimb stepOff=%d FeetZ=%.1f Top=%.1f Bottom=%.1f"),
-		bStepOffTop ? 1 : 0, DbgFeetZ,
-		Ladder ? Ladder->GetClimbTopZ() : 0.f, Ladder ? Ladder->GetClimbBottomZ() : 0.f);
-
 	// 상단 도달: Foundation 상면으로 '부드럽게' 보간 안착(StepOffDuration). 즉시 텔레포트는 순간이동 느낌이라
 	// 짧은 lerp로 부드럽게 + 보간 중 입력 잠금(진동 방지). 완료 시 Walking 복귀 + 쿨다운(Tick에서).
 	if (bStepOffTop && Ladder && StepOffDuration > KINDA_SMALL_NUMBER)
@@ -465,9 +471,10 @@ void AOJJ_Player::EndClimb(bool bStepOffTop)
 		const FVector LadderLoc = Ladder->GetActorLocation();
 		const FVector Dir = Ladder->GetStepOffDirection();
 		const float HalfHeight = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		const float StepDist = GetCapsuleComponent()->GetScaledCapsuleRadius() + StepOffForward; // [#184] 캡슐반경 + 여유(기본 0)
 		StepOffTarget = FVector(
-			LadderLoc.X + Dir.X * StepOffForward,
-			LadderLoc.Y + Dir.Y * StepOffForward,
+			LadderLoc.X + Dir.X * StepDist,
+			LadderLoc.Y + Dir.Y * StepDist,
 			Ladder->GetClimbTopZ() + HalfHeight + StepOffZMargin);
 		StepOffStart = GetActorLocation();
 		StepOffElapsed = 0.f;
@@ -489,9 +496,10 @@ void AOJJ_Player::EndClimb(bool bStepOffTop)
 		const FVector LadderLoc = Ladder->GetActorLocation();
 		const FVector Dir = Ladder->GetStepOffDirection();
 		const float HalfHeight = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		const float StepDist = GetCapsuleComponent()->GetScaledCapsuleRadius() + StepOffForward; // [#184] 캡슐반경 + 여유(기본 0)
 		SetActorLocation(FVector(
-			LadderLoc.X + Dir.X * StepOffForward,
-			LadderLoc.Y + Dir.Y * StepOffForward,
+			LadderLoc.X + Dir.X * StepDist,
+			LadderLoc.Y + Dir.Y * StepDist,
 			Ladder->GetClimbTopZ() + HalfHeight + StepOffZMargin),
 			/*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
 	}
@@ -524,6 +532,17 @@ void AOJJ_Player::Tick(float DeltaSeconds)
 		AbortClimb();
 	}
 
+	// [#184] 등반 중 X/Y를 사다리 등반 면으로 '부드럽게' 당김(즉시 SetActorLocation은 멀리서 시작 시 순간이동
+	// → VInterpTo). Z는 등반(비행 수직)이 전담하므로 현재 Z 유지. 가까이서 W로 시작하면 거의 즉시 붙음.
+	if (bClimbing && CurrentLadder)
+	{
+		const FVector Cur = GetActorLocation();
+		const FVector Face = OJJ_GetClimbFaceLocation(CurrentLadder, Cur.Z);
+		const FVector NewLoc = FMath::VInterpTo(Cur, FVector(Face.X, Face.Y, Cur.Z), DeltaSeconds, ClimbAttachInterpSpeed);
+		SetActorLocation(NewLoc,
+			/*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
+	}
+
 	if (!bSteppingOff)
 	{
 		return; // 평상시 무비용.
@@ -554,6 +573,35 @@ void AOJJ_Player::AbortClimb()
 	bClimbing = false;
 	bSteppingOff = false;
 	ResumeWalkingWithCooldown();
+}
+
+FVector AOJJ_Player::OJJ_GetClimbFaceLocation(const AOJJ_Ladder* Ladder, float WorldZ) const
+{
+	// 등반 면 = Foundation 반대(바깥). 액터 전방(+X)=inward이므로 바깥 = -GetStepOffDirection.
+	// 거리 = 캡슐 반경 + ClimbFaceGap(소량). 사다리가 벽면 라인에 있으니 캡슐이 면에 살짝 닿는 위치로 붙임.
+	const FVector LadderLoc = Ladder->GetActorLocation();
+	const FVector Outward = -Ladder->GetStepOffDirection();
+	const float Dist = GetCapsuleComponent()->GetScaledCapsuleRadius() + ClimbFaceGap;
+	return FVector(LadderLoc.X + Outward.X * Dist, LadderLoc.Y + Outward.Y * Dist, WorldZ);
+}
+
+void AOJJ_Player::NotifyLadderOverlap(AOJJ_Ladder* Ladder)
+{
+	// 근접 사다리 갱신만(시작은 W 입력에서). 등반 시작을 트리거 진입 순간에 묶지 않아, 이미 트리거 안이어도
+	// W로 시작 가능 + 멀리서 강제 스냅(순간이동) 없음.
+	if (Ladder)
+	{
+		OverlappingLadder = Ladder;
+	}
+}
+
+void AOJJ_Player::NotifyLadderEndOverlap(AOJJ_Ladder* Ladder)
+{
+	// 이탈한 사다리가 현재 후보면 해제(다른 사다리 포인터는 안 건드림). 등반 중(CurrentLadder)은 별개라 영향 없음.
+	if (OverlappingLadder.Get() == Ladder)
+	{
+		OverlappingLadder = nullptr;
+	}
 }
 
 void AOJJ_Player::Look(const FInputActionValue& Value)

@@ -3,7 +3,7 @@
 #include "OJJ_Ladder.h"
 
 #include "Components/BoxComponent.h"
-#include "Components/StaticMeshComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "OJJ_Player.h"
 #include "UObject/ConstructorHelpers.h"
@@ -16,14 +16,16 @@ AOJJ_Ladder::AOJJ_Ladder()
 	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
 
-	LadderMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LadderMesh"));
+	LadderMesh = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("LadderMesh"));
 	LadderMesh->SetupAttachment(Root);
 
-	// 프로토 비주얼: 엔진 큐브를 얇고 길게. 등반은 트리거+비행 이동이라 메시는 충돌 없음(플레이어를 막지 않음).
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Engine/BasicShapes/Cube.Cube"));
-	if (CubeMesh.Succeeded())
+	// [#184] 1칸 사다리 메시(팀 에셋 구조 변경: Content/Assets/Platform/Ladder/StaticMeshes/Ladder).
+	// ClimbHeight까지 수직 타일링(ApplyDimensions). 등반은 트리거+비행 이동이라 메시는 충돌 없음(플레이어를 막지 않음).
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> LadderSegmentMesh(
+		TEXT("/Game/Assets/Platform/Ladder/StaticMeshes/Ladder.Ladder"));
+	if (LadderSegmentMesh.Succeeded())
 	{
-		LadderMesh->SetStaticMesh(CubeMesh.Object);
+		LadderMesh->SetStaticMesh(LadderSegmentMesh.Object);
 	}
 	LadderMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	LadderMesh->SetCanEverAffectNavigation(false);
@@ -46,13 +48,34 @@ void AOJJ_Ladder::OnConstruction(const FTransform& Transform)
 
 void AOJJ_Ladder::ApplyDimensions()
 {
-	// 엔진 Cube는 변당 100uu. 사다리 몸체: 가로/세로 얇게(0.2 = 20uu), 높이 = ClimbHeight.
-	// 루트(바닥) 기준 위로 ClimbHeight/2 올려 큐브 중심을 사다리 중앙에 둠 → 하단이 액터 원점.
+	// [#184] 1칸 메시를 ClimbHeight까지 수직 타일링. 회전(MeshLocalRotation)·스케일(MeshScaleMultiplier)을
+	// 반영한 "유효 1칸 박스"의 세로(Z) 높이 = SegmentHeight → 회전/스케일을 바꿔도 칸 간격 자동 정합(연동).
+	// N = ceil(ClimbHeight/Seg). 각 타일은 회전·스케일 적용 + 바닥(EffBox.Min.Z)을 i*SegmentHeight에 정렬
+	// (피벗이 바닥이든 가운데든 자동 보정). 마지막 타일은 ClimbHeight를 다소 초과 가능(틈보다 초과가 안전).
 	if (LadderMesh && LadderMesh->GetStaticMesh())
 	{
-		const float ZScale = FMath::Max(ClimbHeight, 1.f) / 100.f;
-		LadderMesh->SetRelativeScale3D(FVector(0.2f, 0.2f, ZScale));
-		LadderMesh->SetRelativeLocation(FVector(0.f, 0.f, ClimbHeight * 0.5f));
+		const float Scale = FMath::Max(MeshScaleMultiplier, 0.01f);
+		const FTransform MeshXf(MeshLocalRotation, FVector::ZeroVector, FVector(Scale));
+
+		const FBox LocalBox = LadderMesh->GetStaticMesh()->GetBoundingBox();
+		const FBox EffBox = LocalBox.TransformBy(MeshXf); // 회전·스케일 반영 AABB
+		const float SegZ = EffBox.GetSize().Z;
+		SegmentHeight = (SegZ > KINDA_SMALL_NUMBER) ? SegZ : 100.f; // 무효 시 폴백(100uu).
+		const FVector EffCenter = EffBox.GetCenter(); // 회전·스케일 후 박스 중심(피벗/회전 보정용).
+
+		const float SafeHeight = FMath::Max(ClimbHeight, 1.f);
+		const int32 N = FMath::Max(1, FMath::CeilToInt(SafeHeight / SegmentHeight));
+		// [#184] 위 딱 맞춤: 올림(N)이라 총높이(N*Seg)가 ClimbHeight를 초과 → 전체 적층을 초과분만큼 아래로 내려
+		// 꼭대기 칸 윗면 = ClimbHeight(Foundation 윗면)에 맞춘다. 남는 초과분은 맨 아래 칸이 지면 아래로 박힘(OK).
+		const float Overshoot = N * SegmentHeight - SafeHeight; // ≥ 0
+
+		LadderMesh->ClearInstances();
+		for (int32 i = 0; i < N; ++i)
+		{
+			// XY: 타일을 액터 중심(=벽면 라인)에 정렬. Z: 바닥 i*SegmentHeight - 초과분(전체 아래로) → 위가 ClimbHeight에 딱.
+			const FVector InstPos(-EffCenter.X, -EffCenter.Y, i * SegmentHeight - EffBox.Min.Z - Overshoot);
+			LadderMesh->AddInstance(FTransform(MeshLocalRotation, InstPos, FVector(Scale)));
+		}
 	}
 
 	if (ClimbTrigger)
@@ -86,20 +109,22 @@ void AOJJ_Ladder::BeginPlay()
 void AOJJ_Ladder::OnTriggerBeginOverlap(UPrimitiveComponent* /*OverlappedComp*/, AActor* OtherActor,
 	UPrimitiveComponent* /*OtherComp*/, int32 /*OtherBodyIndex*/, bool /*bFromSweep*/, const FHitResult& /*Sweep*/)
 {
+	// [#184] 감지/시작 분리: 진입 즉시 등반(BeginClimb) 대신 '근접 사다리'로만 등록. 실제 시작은 W 입력에서.
+	// → 멀리서 강제 스냅(순간이동) 없음 + 이미 트리거 안이어도 W로 시작 가능.
 	if (AOJJ_Player* Player = Cast<AOJJ_Player>(OtherActor))
 	{
-		Player->BeginClimb(this);
+		Player->NotifyLadderOverlap(this);
 	}
 }
 
 void AOJJ_Ladder::OnTriggerEndOverlap(UPrimitiveComponent* /*OverlappedComp*/, AActor* OtherActor,
 	UPrimitiveComponent* /*OtherComp*/, int32 /*OtherBodyIndex*/)
 {
-	// ⚠️ 등반 종료를 여기서 하지 않는다 — 수직 등반은 수평 드리프트가 없어(Move가 D/A 무시) 트리거를
-	// '옆으로' 벗어날 일이 없고, '위/아래'로 벗어나는 건 Move의 상/하단 도달 판정이 전담한다.
-	// EndOverlap로 끊으면 등반 도중(트리거 경계)에서 EndClimb→중력 복귀→낙하가 발생했음. 진단 로그만 남김.
-	if (Cast<AOJJ_Player>(OtherActor))
+	// [#184] 근접 후보에서 해제만. 등반 종료(EndClimb)는 여기서 하지 않는다 — 수직 등반은 수평 드리프트가 없어
+	// 트리거를 '옆으로' 벗어날 일이 없고, '위/아래' 이탈은 Move의 상/하단 도달 판정이 전담(EndOverlap로 끊으면
+	// 등반 도중 낙하 이력). 등반 중(CurrentLadder)은 이 해제와 별개라 영향 없음.
+	if (AOJJ_Player* Player = Cast<AOJJ_Player>(OtherActor))
 	{
-		UE_LOG(LogTemp, Verbose, TEXT("[Ladder] 트리거 EndOverlap (등반 종료는 Move의 도달 판정이 전담 — 무동작)"));
+		Player->NotifyLadderEndOverlap(this);
 	}
 }
