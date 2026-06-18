@@ -15,6 +15,7 @@ from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS
 SINGLE_LEAF_AGENT_IDS = {
     "material_generation": ("material_generation",),
     "process_optimizer": ("process_optimizer",),
+    "new_material_generator": ("new_material_generator",),
 }
 
 TOP_LEVEL_AGENT_BRANCHES = {
@@ -22,6 +23,7 @@ TOP_LEVEL_AGENT_BRANCHES = {
     "operator_guide": "operator_guide.route_sub_agent",
     "quest_generator": "quest_generator.route_sub_agent",
     "material_generation": "synthesize_material",
+    "new_material_generator": "new_material_generator.route_sub_agent",
 }
 
 
@@ -41,6 +43,7 @@ def wire_agent_graph(graph: StateGraph) -> None:
         "validate_process_payload",
         "operator_guide.route_sub_agent",
         "quest_generator.route_sub_agent",
+        "new_material_generator.route_sub_agent",
     ):
         graph.add_conditional_edges(
             node,

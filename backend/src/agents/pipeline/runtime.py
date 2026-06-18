@@ -282,6 +282,21 @@ class AgentPipeline:
                 }
             return {"selectedLeafAgent": "process_optimizer"}
 
+        def route_new_material_sub_agent(state: AgentGraphState) -> AgentGraphState:
+            explicit_sub_agent = state["typedPayload"].get("sub_agent")
+            if (
+                explicit_sub_agent is not None
+                and explicit_sub_agent != "new_material_generator"
+            ):
+                return {
+                    "error": build_error_payload(
+                        "INVALID_SUB_AGENT",
+                        "Explicit sub_agent is not valid for new_material_generator.",
+                        details={"sub_agent": explicit_sub_agent},
+                    )
+                }
+            return {"selectedLeafAgent": "new_material_generator"}
+
         def synthesize_material(state: AgentGraphState) -> AgentGraphState:
             if state.get("error"):
                 return {}
@@ -720,6 +735,9 @@ class AgentPipeline:
         graph.add_node("validate_process_payload", validate_process_payload)
         graph.add_node("operator_guide.route_sub_agent", route_operator_guide_sub_agent)
         graph.add_node("quest_generator.route_sub_agent", route_quest_sub_agent)
+        graph.add_node(
+            "new_material_generator.route_sub_agent", route_new_material_sub_agent
+        )
         graph.add_node("synthesize_material", synthesize_material)
         graph.add_node("cache_lookup", cache_lookup)
         graph.add_node("build_cached_response", build_cached_response)

@@ -319,6 +319,7 @@ def test_pipeline_includes_safe_details_for_invalid_top_level_routing_output() -
             "operator_guide",
             "quest_generator",
             "material_generation",
+            "new_material_generator",
         ],
     }
 

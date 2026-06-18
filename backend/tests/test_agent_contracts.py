@@ -35,6 +35,7 @@ def test_default_agent_router_contains_leaf_agents() -> None:
 
     assert router.list_agent_ids() == [
         "material_generation",
+        "new_material_generator",
         "operator_guide.machine_help",
         "operator_guide.recipe_explainer",
         "operator_guide.troubleshooter",

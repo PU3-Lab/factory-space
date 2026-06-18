@@ -35,6 +35,7 @@ def test_agent_connection_manifest_lists_supported_agent_ids() -> None:
         "operator_guide",
         "quest_generator",
         "material_generation",
+        "new_material_generator",
     ]
     assert body["leaf_agents"] == {
         "process_optimizer": ["process_optimizer"],
@@ -48,4 +49,5 @@ def test_agent_connection_manifest_lists_supported_agent_ids() -> None:
             "quest_generator.economy_quest",
         ],
         "material_generation": ["material_generation"],
+        "new_material_generator": ["new_material_generator"],
     }
