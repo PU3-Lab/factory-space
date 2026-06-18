@@ -17,6 +17,9 @@ class WANTED_FACTORY_API UUI_MachineInteract : public UUserWidget
 {
 	GENERATED_BODY()
 
+protected:
+	UUI_MachineInteract(const FObjectInitializer& ObjectInitializer);
+
 public:
 	virtual void NativeConstruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
@@ -93,6 +96,8 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	class UBorder* B_OutputDropZone;
 	FName ManualDroppedOutputItemID = NAME_None;
+	FName LastInputVisualItemID = NAME_None;
+	FName LastOutputVisualItemID = NAME_None;
 	
 
 private:

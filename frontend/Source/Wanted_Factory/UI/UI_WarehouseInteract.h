@@ -42,6 +42,8 @@ protected:
     class AMachineBase* TargetMachine;
     FName ManualDroppedOutputItemID = NAME_None; // 유저가 수동 지정한 아이템 기억 주머니
 
+    FName LastOutputVisualItemID = NAME_None;
+
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
     virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
