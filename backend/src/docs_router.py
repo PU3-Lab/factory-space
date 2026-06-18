@@ -1272,7 +1272,7 @@ function renderMaterialResult(rawJson) {
   var label = MR_KIND_LABEL[kind] || kind;
   var rows = '';
 
-  if (kind === 'existing_recipe' || kind === 'cached_experiment') {
+  if (kind === 'existing_recipe') {
     if (p.recipe_name) rows += mrRow('레시피', p.recipe_name);
     if (Array.isArray(p.outputs) && p.outputs.length) {
       var chips = p.outputs.map(function(o) {
@@ -1281,15 +1281,18 @@ function renderMaterialResult(rawJson) {
       rows += '<div class="mr-row"><span class="mr-k">산출물</span>' +
               '<span class="mr-v"><span class="mr-outputs">' + chips + '</span></span></div>';
     }
-    if (p.cached) rows += mrRow('캐시', '예');
-  } else if (kind === 'new_material') {
+  } else if (kind === 'new_material' || kind === 'cached_experiment') {
     if (p.name) rows += mrRow('이름', p.name);
     if (p.rarity) rows += mrRow('희귀도', p.rarity);
     if (p.material_id) rows += mrRow('물질 ID', p.material_id);
     if (p.generation_status) rows += mrRow('생성 상태', p.generation_status);
     if (p.visual_status) rows += mrRow('비주얼 상태', p.visual_status);
     if (p.fallback_icon) rows += mrRow('대체 아이콘', p.fallback_icon);
+    if (p.visual_asset_key) rows += mrRow('비주얼 키', p.visual_asset_key);
+    if (p.texture_asset_key) rows += mrRow('텍스처 키', p.texture_asset_key);
+    if (p.thumbnail_asset_key) rows += mrRow('썸네일 키', p.thumbnail_asset_key);
     if (p.message) rows += mrRow('메시지', p.message);
+    if (p.cached) rows += mrRow('캐시', '예');
     if (p.properties && typeof p.properties === 'object') {
       var order = [['strength','강도'],['conductivity','전도도'],['stability','안정성'],['reactivity','반응성']];
       var grid = order.map(function(pair) {
@@ -1570,7 +1573,13 @@ applyPreset();
 
 
 def _render_test_page() -> str:
-    """Render an interactive WebSocket test console for agent requests."""
+    """테스트 페이지 HTML 문자열을 렌더링하여 반환합니다.
+
+    데이터 흐름:
+    1. 미리 정의된 에이전트 요청용 프리셋 딕셔너리(PRESETS)를 JSON 문자열로 변환합니다.
+    2. HTML 템플릿(_TEST_PAGE_TEMPLATE) 내의 프리셋 치환자(__PRESETS_JSON__)를 해당 JSON 데이터로 교체합니다.
+    3. 최종적으로 브라우저가 에이전트 WebSocket 및 API 요청 테스트를 수행할 수 있는 웹 콘솔 화면을 반환합니다.
+    """
     presets: dict[str, Any] = {
         "process_optimizer": {
             "type": "agent.request",
