@@ -4,6 +4,8 @@
 #include "Engine/DataTable.h"
 #include "ResourceData.generated.h"
 
+class UStaticMesh;
+
 UENUM(BlueprintType)
 enum class EResourceType : uint8
 {
@@ -49,4 +51,7 @@ public:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TSoftObjectPtr<UTexture2D> ImgAsset;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TSoftObjectPtr<UStaticMesh> StaticMeshAsset;
 };

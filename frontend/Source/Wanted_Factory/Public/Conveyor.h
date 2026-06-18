@@ -15,6 +15,7 @@ class UTextRenderComponent;
 struct FConveyorDepartingVisual
 {
 	int32 VisualId = INDEX_NONE;
+	FName ItemId = NAME_None;
 	FVector StartLocation = FVector::ZeroVector;
 	FVector EndLocation = FVector::ZeroVector;
 	float StartWorldTime = 0.0f;
@@ -153,6 +154,9 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UDataTable> ResourceTable;
 
+	UPROPERTY(Transient)
+	TMap<FName, TObjectPtr<UInstancedStaticMeshComponent>> ItemVisualMeshComponents;
+
 	FTimerHandle ItemMoveTimerHandle;
 	float LastItemMoveWorldTime = 0.0f;
 	int32 NextItemVisualId = 1;
@@ -222,8 +226,11 @@ private:
 	void MoveItemsOneGrid();
 	bool IsSolidItem(FName ItemID) const;
 	void RefreshItemVisualInstances();
+	void ClearAllItemVisualInstances();
 	void PruneDepartingVisuals();
-	void StartDepartingVisual(int32 VisualId, int32 SlotIndex);
+	void StartDepartingVisual(int32 VisualId, FName ItemId, int32 SlotIndex);
+	UInstancedStaticMeshComponent* GetVisualComponentForItem(FName ItemId);
+	UStaticMesh* ResolveItemStaticMesh(FName ItemId) const;
 	float GetCurrentMoveAlpha() const;
 	FVector GetCellLocalCenter(FIntPoint Cell) const;
 	// [OJJ F3.7-0, F3.8''' 노드화] 노드(셀 경계)/셀 중심 로컬 Z 조회 — 빈 배열/무효 인덱스는 0

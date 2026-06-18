@@ -643,6 +643,7 @@ AOJJ_Grid::AOJJ_Grid()
 
 	GridFloorMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("GridFloorMesh"));
 	GridFloorMesh->SetupAttachment(RootComponent);
+	GridFloorMesh->SetVisibleInRayTracing(false);
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> PlaneMesh(TEXT("/Engine/BasicShapes/Plane.Plane"));
 	if (PlaneMesh.Succeeded())
@@ -667,11 +668,13 @@ AOJJ_Grid::AOJJ_Grid()
 	ValidHoverISM->SetupAttachment(RootComponent);
 	ValidHoverISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ValidHoverISM->SetCastShadow(false);
+	ValidHoverISM->SetVisibleInRayTracing(false);
 
 	InvalidHoverISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("InvalidHoverISM"));
 	InvalidHoverISM->SetupAttachment(RootComponent);
 	InvalidHoverISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	InvalidHoverISM->SetCastShadow(false);
+	InvalidHoverISM->SetVisibleInRayTracing(false);
 
 	if (PlaneMesh.Succeeded())
 	{
@@ -703,6 +706,7 @@ AOJJ_Grid::AOJJ_Grid()
 	GhostMeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GhostMeshComp->SetCastShadow(false);
 	GhostMeshComp->SetVisibility(false);
+	GhostMeshComp->SetVisibleInRayTracing(false);
 
 	// 고스트 틴트 머티리얼 기본값(#187) — CDO에 박아 모든 그리드가 자동 적용(레벨별 수동 지정·맵 변경 불필요).
 	// 오버레이용 반투명(Translucent) 틴트 머티(파라미터 TintColor/Opacity). 인스턴스에서 교체 가능(EditAnywhere).
@@ -718,6 +722,7 @@ AOJJ_Grid::AOJJ_Grid()
 	BuildableCellISM->SetupAttachment(RootComponent);
 	BuildableCellISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	BuildableCellISM->SetCastShadow(false);
+	BuildableCellISM->SetVisibleInRayTracing(false);
 	if (PlaneMesh.Succeeded())
 	{
 		BuildableCellISM->SetStaticMesh(PlaneMesh.Object);
@@ -732,6 +737,7 @@ AOJJ_Grid::AOJJ_Grid()
 	BlockedCellISM->SetupAttachment(RootComponent);
 	BlockedCellISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	BlockedCellISM->SetCastShadow(false);
+	BlockedCellISM->SetVisibleInRayTracing(false);
 	if (PlaneMesh.Succeeded())
 	{
 		BlockedCellISM->SetStaticMesh(PlaneMesh.Object);
@@ -747,6 +753,7 @@ AOJJ_Grid::AOJJ_Grid()
 	CoveredCellISM->SetupAttachment(RootComponent);
 	CoveredCellISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	CoveredCellISM->SetCastShadow(false);
+	CoveredCellISM->SetVisibleInRayTracing(false);
 	if (PlaneMesh.Succeeded())
 	{
 		CoveredCellISM->SetStaticMesh(PlaneMesh.Object);
@@ -761,6 +768,7 @@ AOJJ_Grid::AOJJ_Grid()
 	CharacterCellISM->SetupAttachment(RootComponent);
 	CharacterCellISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	CharacterCellISM->SetCastShadow(false);
+	CharacterCellISM->SetVisibleInRayTracing(false);
 	if (PlaneMesh.Succeeded())
 	{
 		CharacterCellISM->SetStaticMesh(PlaneMesh.Object);
@@ -775,6 +783,7 @@ AOJJ_Grid::AOJJ_Grid()
 	WaterCellISM->SetupAttachment(RootComponent);
 	WaterCellISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	WaterCellISM->SetCastShadow(false);
+	WaterCellISM->SetVisibleInRayTracing(false);
 	if (PlaneMesh.Succeeded())
 	{
 		WaterCellISM->SetStaticMesh(PlaneMesh.Object);
@@ -788,6 +797,7 @@ AOJJ_Grid::AOJJ_Grid()
 		ISM->SetupAttachment(RootComponent);
 		ISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		ISM->SetCastShadow(false);
+		ISM->SetVisibleInRayTracing(false);
 		return ISM;
 	};
 	PlacedInputArrowISM = MakeArrowISM(TEXT("PlacedInputArrowISM"));

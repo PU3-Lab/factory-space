@@ -9,6 +9,9 @@ class WANTED_FACTORY_API UUI_InventorySlot : public UUserWidget
 {
 	GENERATED_BODY()
 
+public:
+	UUI_InventorySlot(const FObjectInitializer& ObjectInitializer);
+
 protected:
 	// 아이콘 이미지
 	UPROPERTY(meta = (BindWidget))
