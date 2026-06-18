@@ -137,6 +137,9 @@ flowchart LR
 | `generation_status` | `str \| null` | `new_material` | 생성 상태 |
 | `visual_status` | `str \| null` | `new_material` | 비주얼 상태 (`pending` / `skipped` 등) |
 | `fallback_icon` | `str \| null` | `new_material` | 대체 아이콘 |
+| `visual_asset_key` | `str \| null` | 아니오 | `visual_status == "visual_ready"`인 cached material의 아이콘 asset key |
+| `texture_asset_key` | `str \| null` | 아니오 | `visual_status == "visual_ready"`인 cached material의 텍스처 asset key |
+| `thumbnail_asset_key` | `str \| null` | 아니오 | `visual_status == "visual_ready"`인 cached material의 썸네일 asset key |
 | `message` | `str \| null` | 선택 | 부가 메시지 |
 | `cached` | `bool \| null` | `cached_experiment` | 캐시 재사용 여부 |
 | `failure_reason` | `str \| null` | `failed_result`, `invalid_input` | 실패 사유 |
@@ -277,6 +280,8 @@ sequenceDiagram
 - 요청 트랜잭션 commit이 성공했다.
 
 `generate_visual_asset=false`이면 초기 `visual_status`는 `skipped`다. 작업 실패는 합성 트랜잭션을 되돌리지 않으며 `visual_status=failed`, `visual_error`, `fallback_icon`으로 격리한다.
+
+이미지는 HTTP URL 계약으로 반환하지 않는다. 백엔드는 `materials/{material_id}/icon.png` 형태의 asset key만 반환하며, 실제 로딩 경로 또는 런타임 asset 참조로 변환하는 책임은 클라이언트의 asset resolver에 있다.
 
 ## 6. Executor 생명주기
 
