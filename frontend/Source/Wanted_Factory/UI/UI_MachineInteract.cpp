@@ -246,15 +246,28 @@ void UUI_MachineInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, in
 
     if (ResourceDataTable && IMG_OutputIcon)
     {
-        IMG_OutputIcon->SetVisibility(ESlateVisibility::Visible);
-
         if (FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("FindOutputIconContext")))
         {
-            if (RowData->ImgAsset.IsValid()) IMG_OutputIcon->SetBrushFromTexture(RowData->ImgAsset.Get());
+            UTexture2D* IconTexture = nullptr;
+            if (RowData->ImgAsset.IsValid())
+            {
+                IconTexture = RowData->ImgAsset.Get();
+            }
             else
             {
-                UTexture2D* LoadedTexture = RowData->ImgAsset.LoadSynchronous();
-                if (LoadedTexture) IMG_OutputIcon->SetBrushFromTexture(LoadedTexture);
+                IconTexture = RowData->ImgAsset.LoadSynchronous();
+            }
+
+            if (IconTexture)
+            {
+                IMG_OutputIcon->SetVisibility(ESlateVisibility::Visible);
+                IMG_OutputIcon->SetBrushFromTexture(IconTexture);
+            }
+            else
+            {
+                IMG_OutputIcon->SetBrush(FSlateBrush());
+                IMG_OutputIcon->SetVisibility(ESlateVisibility::Hidden);
+                return;
             }
             if (CurrentAmount <= 0 && ItemName != ManualDroppedOutputItemID)
             {
@@ -264,6 +277,11 @@ void UUI_MachineInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, in
             {
                 IMG_OutputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
             }
+        }
+        else
+        {
+            IMG_OutputIcon->SetBrush(FSlateBrush());
+            IMG_OutputIcon->SetVisibility(ESlateVisibility::Hidden);
         }
     }
 }
@@ -424,14 +442,26 @@ bool UUI_MachineInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDragD
                 FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(DroppedItemID, TEXT("FindDroppedOutputIconContext"));
                 if (RowData)
                 {
-                    IMG_OutputIcon->SetVisibility(ESlateVisibility::Visible);
-                    IMG_OutputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
-
-                    if (RowData->ImgAsset.IsValid()) IMG_OutputIcon->SetBrushFromTexture(RowData->ImgAsset.Get());
+                    UTexture2D* IconTexture = nullptr;
+                    if (RowData->ImgAsset.IsValid())
+                    {
+                        IconTexture = RowData->ImgAsset.Get();
+                    }
                     else
                     {
-                        UTexture2D* LoadedTexture = RowData->ImgAsset.LoadSynchronous();
-                        if (LoadedTexture) IMG_OutputIcon->SetBrushFromTexture(LoadedTexture);
+                        IconTexture = RowData->ImgAsset.LoadSynchronous();
+                    }
+
+                    if (IconTexture)
+                    {
+                        IMG_OutputIcon->SetVisibility(ESlateVisibility::Visible);
+                        IMG_OutputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
+                        IMG_OutputIcon->SetBrushFromTexture(IconTexture);
+                    }
+                    else
+                    {
+                        IMG_OutputIcon->SetBrush(FSlateBrush());
+                        IMG_OutputIcon->SetVisibility(ESlateVisibility::Hidden);
                     }
                 }
             }

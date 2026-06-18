@@ -16,8 +16,27 @@
 #include "PlayerWarehouseSubsystem.h"
 #include "QuestManagerSubsystem.h"
 #include "Blueprint/SlateBlueprintLibrary.h"
+#include "UObject/ConstructorHelpers.h"
 
 
+
+UUI_WarehouseInteract::UUI_WarehouseInteract(const FObjectInitializer& ObjectInitializer)
+    : Super(ObjectInitializer)
+{
+    static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
+        TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData"));
+    if (ResourceTableFinder.Succeeded())
+    {
+        ResourceDataTable = ResourceTableFinder.Object;
+    }
+
+    static ConstructorHelpers::FObjectFinder<UDataTable> MachineTableFinder(
+        TEXT("/Game/DataTable/DT_MachineData.DT_MachineData"));
+    if (MachineTableFinder.Succeeded())
+    {
+        MachineDataTable = MachineTableFinder.Object;
+    }
+}
 
 void UUI_WarehouseInteract::SetTargetMachine(AMachineBase* InMachine)
 {
@@ -153,14 +172,28 @@ void UUI_WarehouseInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, 
 
     if (ResourceDataTable && IMG_OutputIcon)
     {
-        IMG_OutputIcon->SetVisibility(ESlateVisibility::Visible);
         if (FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("FindOutputContext")))
         {
-            if (RowData->ImgAsset.IsValid()) IMG_OutputIcon->SetBrushFromTexture(RowData->ImgAsset.Get());
+            UTexture2D* IconTexture = nullptr;
+            if (RowData->ImgAsset.IsValid())
+            {
+                IconTexture = RowData->ImgAsset.Get();
+            }
             else
             {
-                UTexture2D* LoadedTexture = RowData->ImgAsset.LoadSynchronous();
-                if (LoadedTexture) IMG_OutputIcon->SetBrushFromTexture(LoadedTexture);
+                IconTexture = RowData->ImgAsset.LoadSynchronous();
+            }
+
+            if (IconTexture)
+            {
+                IMG_OutputIcon->SetVisibility(ESlateVisibility::Visible);
+                IMG_OutputIcon->SetBrushFromTexture(IconTexture);
+            }
+            else
+            {
+                IMG_OutputIcon->SetBrush(FSlateBrush());
+                IMG_OutputIcon->SetVisibility(ESlateVisibility::Hidden);
+                return;
             }
 
             if (CurrentAmount <= 0 && ItemName != ManualDroppedOutputItemID)
@@ -171,6 +204,11 @@ void UUI_WarehouseInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, 
             {
                 IMG_OutputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
             }
+        }
+        else
+        {
+            IMG_OutputIcon->SetBrush(FSlateBrush());
+            IMG_OutputIcon->SetVisibility(ESlateVisibility::Hidden);
         }
     }
 }

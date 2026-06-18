@@ -16,6 +16,8 @@ class WANTED_FACTORY_API UUI_WarehouseInteract : public UUserWidget
     GENERATED_BODY()
 
 protected:
+    UUI_WarehouseInteract(const FObjectInitializer& ObjectInitializer);
+
     // --- 기계 공통 및 출력(Output) 관련 위젯만 바인딩 ---
     UPROPERTY(meta = (BindWidget)) class UImage* IMG_MachinePreview;
     UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_MachineName;

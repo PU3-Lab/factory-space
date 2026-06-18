@@ -9,6 +9,7 @@
 class AMachineBase;
 class UDataTable;
 class UInstancedStaticMeshComponent;
+class UStaticMeshComponent;
 class USceneComponent;
 class UTextRenderComponent;
 
@@ -20,6 +21,19 @@ struct FConveyorDepartingVisual
 	FVector EndLocation = FVector::ZeroVector;
 	float StartWorldTime = 0.0f;
 	float Duration = 0.0f;
+};
+
+struct FConveyorVisualInstanceState
+{
+	TWeakObjectPtr<UStaticMeshComponent> Component;
+	FName ItemId = NAME_None;
+};
+
+struct FConveyorDesiredVisual
+{
+	int32 VisualId = INDEX_NONE;
+	FName ItemId = NAME_None;
+	FTransform Transform = FTransform::Identity;
 };
 
 UCLASS()
@@ -154,13 +168,11 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UDataTable> ResourceTable;
 
-	UPROPERTY(Transient)
-	TMap<FName, TObjectPtr<UInstancedStaticMeshComponent>> ItemVisualMeshComponents;
-
 	FTimerHandle ItemMoveTimerHandle;
 	float LastItemMoveWorldTime = 0.0f;
 	int32 NextItemVisualId = 1;
 	TArray<FConveyorDepartingVisual> DepartingVisuals;
+	TMap<int32, FConveyorVisualInstanceState> VisualInstanceStates;
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
@@ -227,9 +239,11 @@ private:
 	bool IsSolidItem(FName ItemID) const;
 	void RefreshItemVisualInstances();
 	void ClearAllItemVisualInstances();
+	void SyncDesiredVisual(const FConveyorDesiredVisual& DesiredVisual);
+	void RemoveVisualInstance(int32 VisualId);
 	void PruneDepartingVisuals();
 	void StartDepartingVisual(int32 VisualId, FName ItemId, int32 SlotIndex);
-	UInstancedStaticMeshComponent* GetVisualComponentForItem(FName ItemId);
+	UStaticMeshComponent* CreateVisualComponentForItem(int32 VisualId, FName ItemId);
 	UStaticMesh* ResolveItemStaticMesh(FName ItemId) const;
 	float GetCurrentMoveAlpha() const;
 	FVector GetCellLocalCenter(FIntPoint Cell) const;
