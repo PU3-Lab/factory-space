@@ -4424,23 +4424,26 @@ void AOJJ_Grid::OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntP
 
 	const float Thickness = FMath::Max(1.0f, FoundationCDO->GetThickness());
 
-	// UpdateSlabVisual 산식 재현: Cube(100uu, 중심 피벗) → 풋프린트(EffSize×CellSize) × Thickness 스케일.
-	const FVector Scale(EffSize.X * CellSize / 100.0f, EffSize.Y * CellSize / 100.0f, Thickness / 100.0f);
+	// [Deck] 배치(UpdateSlabVisual)와 동일 공용 헬퍼로 스케일/피벗·회전 보정 — 미리보기=배치 정합(Cube 100^3 가정 폐기).
+	const FRotator SlabRot = FoundationCDO->GetSlabMeshLocalRotation();
+	FVector Scale, Offset;
+	AOJJ_Foundation::OJJ_ComputeDeckSlabTransform(Mesh, SlabRot,
+		EffSize.X * CellSize, EffSize.Y * CellSize, Thickness, Scale, Offset);
 
-	// XY 중심 = GetFoundationPlacementLocation 산식(머신과 동일 (EffSize-1)*CellSize/2 offset).
+	// XY 중심 = GetFoundationPlacementLocation 산식(머신과 동일 (EffSize-1)*CellSize/2 offset) + 헬퍼 피벗 오프셋.
 	const FVector LowerLeftCenter = GridToWorld(Origin);
 	const float OffsetX = (EffSize.X - 1) * CellSize * 0.5f;
 	const float OffsetY = (EffSize.Y - 1) * CellSize * 0.5f;
 
-	// Z: 배치(PlaceFoundationAtCursor)와 동일 — 액터 Z = 평면 + 스냅 리프트, 슬래브 중심 = 액터 Z + Thickness/2.
-	// SnapLift는 평판 OJJ_ComputeSnapLift(이웃 상속 → 지형 씨앗)로 산출 — 호버=배치 정합(CDO-safe: Grid+Thickness만 사용).
+	// Z: 액터 Z 등가 = 평면 + 스냅 리프트, 그 위 헬퍼 Offset.Z로 윗면을 +Thickness에. SnapLift는 호버=배치 정합.
 	const float SnapLift = FoundationCDO->OJJ_ComputeSnapLift(*this, Origin, EffSize, /*RotationSteps=*/0, nullptr);
-	const float SlabCenterZ = LowerLeftCenter.Z + SnapLift + Thickness * 0.5f;
 
 	GhostMeshComp->SetStaticMesh(Mesh);
 	GhostMeshComp->SetWorldScale3D(Scale);
 	GhostMeshComp->SetWorldLocationAndRotation(
-		FVector(LowerLeftCenter.X + OffsetX, LowerLeftCenter.Y + OffsetY, SlabCenterZ), FRotator::ZeroRotator);
+		FVector(LowerLeftCenter.X + OffsetX + Offset.X, LowerLeftCenter.Y + OffsetY + Offset.Y,
+			LowerLeftCenter.Z + SnapLift + Offset.Z),
+		SlabRot);
 
 	// 틴트는 Overlay Material 패스(#187 B안) — 머신 고스트와 동일. 베이스(슬래브 원본) 위에 초록/빨강 합성.
 	GhostMeshComp->EmptyOverrideMaterials();
