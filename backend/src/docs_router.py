@@ -1031,6 +1031,7 @@ _TEST_PAGE_TEMPLATE = """<!doctype html>
           </optgroup>
         </select>
         <button class="btn btn-ghost btn-sm" onclick="newId()">ID 갱신</button>
+        <button class="btn btn-ghost btn-sm" onclick="randomInputs()">랜덤 조합</button>
       </div>
       <textarea id="editor" spellcheck="false" oninput="onInput()"></textarea>
       <div class="send-row">
@@ -1225,6 +1226,40 @@ function newId() {
     msg.request_id = uuid();
     document.getElementById('editor').value = JSON.stringify(msg, null, 2);
   } catch(_) {}
+}
+
+// 등록된 아이템에서 무작위로 골라 material_generation 요청 inputs를 다양하게 생성한다.
+// 머신은 Synthesizer로 고정한다: 신물질(=텍스쳐 생성)이 나오는 유일한 머신이기 때문.
+var RANDOM_ITEMS = [
+  'iron_ore', 'copper_ore', 'gold_ore', 'nickel_ore', 'aluminum_ore',
+  'lead_ore', 'magnesium_ore', 'iron_ingot', 'copper_ingot', 'gold_ingot',
+  'nickel_ingot', 'iron_powder', 'copper_powder', 'coal', 'charcoal', 'sand'
+];
+
+function randomInputs() {
+  var count = 2 + Math.floor(Math.random() * 3); // 2~4개 (서로 다른 아이템)
+  var pool = RANDOM_ITEMS.slice();
+  var inputs = [];
+  for (var i = 0; i < count && pool.length; i++) {
+    var idx = Math.floor(Math.random() * pool.length);
+    var item = pool.splice(idx, 1)[0];
+    inputs.push({ item_id: item, qty: 1 + Math.floor(Math.random() * 5) });
+  }
+  var msg = {
+    type: 'agent.request',
+    request_id: uuid(),
+    session_id: 'test-session',
+    client_id: 'test-console',
+    agent: 'material_generation',
+    payload: {
+      machine_type: 'Synthesizer',
+      inputs: inputs,
+      process_conditions: { temperature: (800 + Math.floor(Math.random() * 1200)) + 'C' },
+      generate_visual_asset: true
+    }
+  };
+  document.getElementById('editor').value = JSON.stringify(msg, null, 2);
+  onInput();
 }
 
 function onInput() {
