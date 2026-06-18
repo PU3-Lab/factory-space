@@ -16,6 +16,12 @@ from agents.quest_generator.models import (
 class QuestRuleGenerator:
     """공장의 자원 부족 상태를 분석하여 collect_item 유형의 지원 퀘스트 초안들을 생성하는 규칙 엔진입니다."""
 
+    # 밸런싱 및 상한선 상수 정의
+    HARD_CAP = 1000
+    NONPRODUCIBLE_CAP = 10
+    QTY_SCALE_FACTOR = 10
+    REWARD_SCALE_FACTOR = 100
+
     @classmethod
     def generate_drafts(
         cls, context: QuestContext, active_target_ids: set[str]
@@ -43,6 +49,15 @@ class QuestRuleGenerator:
             if issue.item_id in active_target_ids:
                 continue
 
+            # 레벨 게이트: 해당 아이템의 최소 요구 레벨이 공장 레벨보다 높은 경우 스킵
+            # [설계 불변식]
+            #   데드락을 방지하기 위해 "레벨 N의 메인 퀘스트는 min_level <= N 인 아이템만 요구한다"는
+            #   기획적 불변식을 전제로 합니다. 따라서 메인 퀘스트의 목표 아이템은 항상 공장 레벨 이하이며,
+            #   이 게이트에 의해 차단되지 않습니다.
+            min_level = game_data.get_item_min_level(issue.item_id)
+            if min_level > context.factory_level:
+                continue
+
             # 해당 부족 자원에 매칭되는 메인 퀘스트 목표를 검색
             main_objective = None
             for obj in context.current_main_quest.objectives:
@@ -58,12 +73,18 @@ class QuestRuleGenerator:
             item_name = game_data.get_item_name(issue.item_id)
 
             # 퀘스트 정보 생성
-            # U-1 결정에 의거하여 target_amount는 메인 퀘스트의 required 수량과 일치시켜 정합성 보장
-            target_amount = main_objective.required
+            # 레벨 기반 수량 스케일링 적용 (기본: QTY_SCALE_FACTOR * 레벨)
+            base_amount = cls.QTY_SCALE_FACTOR * context.factory_level
+
+            # 생산성 여부(producible)에 따라 상한(Cap) 적용
+            if issue.producible:
+                target_amount = min(base_amount, cls.HARD_CAP)
+            else:
+                target_amount = min(base_amount, cls.NONPRODUCIBLE_CAP)
+
             title = f"{item_name} 확보 지원"
             description = (
-                f"메인 퀘스트 진행을 위해 {item_name} {issue.shortage_amount}개가 더 필요합니다. "
-                f"총 {target_amount}개를 모으세요."
+                f"공장 지원을 위해 {item_name} {target_amount}개를 확보하세요."
             )
 
             # 퀘스트 목표(QuestObjective) 목록 구성 (obj_{uuid} 스킴 적용)
@@ -77,11 +98,11 @@ class QuestRuleGenerator:
                 status="in_progress",
             )
 
-            # 퀘스트 보상(QuestReward) 구성 (MVP: 고정 100 골드 제공)
+            # 퀘스트 보상(QuestReward) 구성: 레벨 비례 스케일링 (REWARD_SCALE_FACTOR * 레벨)
             reward = QuestReward(
                 type="currency",
                 target_id="gold",
-                amount=100,
+                amount=cls.REWARD_SCALE_FACTOR * context.factory_level,
             )
 
             drafts.append(

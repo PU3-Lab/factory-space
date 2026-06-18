@@ -502,7 +502,7 @@ def test_revalidation_failure_falls_back_to_original_draft(mock_db_ctx: None) ->
             )
 
     with unittest.mock.patch(
-        "agents.quest_generator.quest_router.QuestValidator.validate",
+        "agents.quest_generator.compose_service.QuestValidator.validate",
         side_effect=mock_validate,
     ):
         context_payload = {

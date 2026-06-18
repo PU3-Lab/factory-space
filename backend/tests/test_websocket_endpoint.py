@@ -254,3 +254,13 @@ def test_agent_websocket_progress_reflects_requested_agent() -> None:
     assert progress_messages
     for progress_message in progress_messages:
         assert progress_message["agent"] == "quest_generator"
+
+
+def test_agent_websocket_returns_error_for_non_dict_json() -> None:
+    with TestClient(create_app()) as client:
+        with client.websocket_connect("/ws/agent") as websocket:
+            websocket.send_json([1, 2, 3])
+            response = websocket.receive_json()
+
+    assert response["type"] == "agent.error"
+    assert response["error"]["code"] == "INVALID_ENVELOPE"
