@@ -2,49 +2,91 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "OJJ_BuildController.h"
 #include "UI_BuildModeMain.generated.h"
+
+class UButton;
+class UImage;
+class UTextBlock;
+class UWidgetAnimation;
+
+UENUM(BlueprintType)
+enum class EBuildSubMode : uint8
+{
+    Machine,
+    Power,
+    Structure
+};
+
+USTRUCT(BlueprintType)
+struct FHotbarSlotData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    EOJJ_BuildPlacementMode PlacementMode = EOJJ_BuildPlacementMode::Machine;
+    
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    FName SubsystemKey = NAME_None;
+    
+    // 모드가 바뀔 때 슬롯에 띄워줄 진짜 한글 이름표
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    FText DisplayName = FText::GetEmpty();
+};
 
 UCLASS()
 class WANTED_FACTORY_API UUI_BuildModeMain : public UUserWidget
 {
-	GENERATED_BODY()
+    GENERATED_BODY()
 
 public:
-	virtual void NativeConstruct() override;
-	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+    virtual void NativeConstruct() override;
+    virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+
+    UFUNCTION(BlueprintCallable, Category = "Build Mode")
+    void SwitchBuildSubMode(EBuildSubMode NewMode);
 
 protected:
-	// 6번 제외
-	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_1_Storage;
-	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_2_Conveyor;
-	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_3_Smelter;
-	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_4_Grinder;
-	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_5_Miner;
-    
-	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_7_PowerPlant;
-	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_8_PowerGridNode;
-	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_9_PowerLine;
-	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Slot_0_MagneticShield;
+    UPROPERTY(meta = (BindWidget)) UButton* BTN_SubMode_Machine;
+    UPROPERTY(meta = (BindWidget)) UButton* BTN_SubMode_Power;
+    UPROPERTY(meta = (BindWidget)) UButton* BTN_SubMode_Structure;
+
+    UPROPERTY(meta = (BindWidget)) class UWidget* HB_HotbarContainer;
+
+    UPROPERTY(meta = (BindWidgetAnim), Transient) UWidgetAnimation* Anim_HotbarOut;
+    UPROPERTY(meta = (BindWidgetAnim), Transient) UWidgetAnimation* Anim_HotbarIn;
 
 private:
-	// 각 버튼의 클릭 이벤트에 매핑될 내부 함수들
-	UFUNCTION() void OnStorageClicked();
-	UFUNCTION() void OnConveyorClicked();
-	UFUNCTION() void OnSmelterClicked();
-	UFUNCTION() void OnGrinderClicked();
-	UFUNCTION() void OnMinerClicked();
-    
-	UFUNCTION() void OnPowerPlantClicked();
-	UFUNCTION() void OnPowerGridNodeClicked();
-	UFUNCTION() void OnPowerLineClicked();
-	UFUNCTION() void OnMagneticShieldClicked();
+    EBuildSubMode CurrentSubMode = EBuildSubMode::Machine;
+    EBuildSubMode PendingSubMode = EBuildSubMode::Machine;
 
-	// 단축키 번호(SlotIndex)를 넘겨받아 처리할 공통 함수
-	void ExecutePlacementMode(int32 SlotIndex);
-	void RefreshSlotIcons();
+    // 가비지 컬렉션(GC) 보호막이 완벽히 씌워진 핫바 3대 컴포넌트 배열
+    UPROPERTY() TArray<UButton*> HotbarButtons;
+    UPROPERTY() TArray<UImage*> HotbarIcons;
+    UPROPERTY() TArray<UTextBlock*> HotbarTexts;
 
-	int32 CachedConveyorLevel = INDEX_NONE;
-	int32 CachedSmelterLevel = INDEX_NONE;
-	int32 CachedGrinderLevel = INDEX_NONE;
-	int32 CachedMinerLevel = INDEX_NONE;
+    TMap<EBuildSubMode, TArray<FHotbarSlotData>> SubModeHotbarRegistry;
+
+    UFUNCTION() void OnMachineModeClicked();
+    UFUNCTION() void OnPowerModeClicked();
+    UFUNCTION() void OnStructureModeClicked();
+
+    UFUNCTION() void OnSlot1Clicked();
+    UFUNCTION() void OnSlot2Clicked();
+    UFUNCTION() void OnSlot3Clicked();
+    UFUNCTION() void OnSlot4Clicked();
+    UFUNCTION() void OnSlot5Clicked();
+    UFUNCTION() void OnSlot6Clicked();
+    UFUNCTION() void OnSlot7Clicked();
+    UFUNCTION() void OnSlot8Clicked();
+    UFUNCTION() void OnSlot9Clicked();
+    UFUNCTION() void OnSlot10Clicked();
+
+    UFUNCTION() void OnHotbarOutFinished();
+
+    void InitializeHotbarRegistry();
+    void RefreshHotbarSlotsVisual();
+    void ExecutePlacementMode(int32 SlotIndex);
+
+    TMap<FName, int32> CachedMachineLevels;
 };
