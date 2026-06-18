@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import func, select
 
 from agent_connection.router import router as agent_connection_router
 from agents.material_generation.events import MaterialEventPublisher
@@ -22,15 +23,83 @@ from agents.operator_guide.rag_store import SqlAlchemyManualRagStore
 from agents.operator_guide.service import ManualQAService
 from agents.pipeline import AgentPipeline
 from agents.quest_generator.quest_router import router as quest_router
-from db.engine import engine
+from db.engine import engine, get_db_session
+from db.models import RecipeModel
+from db.recipe_ingestion import ingest_recipes
 from docs_router import router as docs_router
 from manual_qa_docs.router import router as manual_qa_docs_router
 from websocket_gateway.gateway import router as websocket_router
 
 
+def _load_env_file(env_file: Path) -> None:
+    """Load simple KEY=VALUE entries from an env file without overriding env."""
+
+    if not env_file.exists():
+        return
+
+    for raw_line in env_file.read_text(encoding="utf-8-sig").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+
+
+def _load_backend_env() -> None:
+    """Load the configured backend env file for direct ASGI app startup."""
+
+    backend_root = Path(__file__).resolve().parents[1]
+    configured_env_file = Path(os.environ.get("FACTORY_ENV_FILE") or ".env")
+    env_file = (
+        configured_env_file
+        if configured_env_file.is_absolute()
+        else backend_root / configured_env_file
+    )
+    _load_env_file(env_file)
+
+
+def _auto_ingest_recipes_enabled() -> bool:
+    value = os.environ.get("FACTORY_AUTO_INGEST_RECIPES", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _count_recipes() -> int:
+    with get_db_session() as session:
+        return session.scalar(select(func.count(RecipeModel.id))) or 0
+
+
+def _ingest_recipes_from_csv() -> None:
+    ingest_recipes()
+
+
+def _maybe_ingest_dev_recipes() -> None:
+    if not _auto_ingest_recipes_enabled():
+        return
+
+    try:
+        if _count_recipes() > 0:
+            return
+        _ingest_recipes_from_csv()
+    except Exception as exc:
+        logging.getLogger("app").warning(
+            "Failed to auto-ingest recipes for development: %s",
+            exc,
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Initialize application-scoped runtime dependencies."""
+    _load_backend_env()
+    _maybe_ingest_dev_recipes()
+
     # Ensure the background executor is initialized and active for this app context
     MaterialEventPublisher.reset_executor(wait=False)
 

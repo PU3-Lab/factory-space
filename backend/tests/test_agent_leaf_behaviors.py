@@ -6,6 +6,7 @@ import pytest
 
 from agents.base import AgentContext, AgentRunResult
 from agents.material_generation.agent import MaterialCreationAgent
+from agents.new_material_generator import NewMaterialGeneratorAgent
 from agents.operator_guide.machine_help import MachineHelpAgent
 from agents.operator_guide.recipe_explainer import RecipeExplainerAgent
 from agents.operator_guide.troubleshooter import TroubleshooterAgent
@@ -82,6 +83,33 @@ def test_material_creation_agent_contract(
     assert prompt == "Initiating material synthesis agent."
     assert result.agent == "material_generation"
     assert result.payload["result_type"] == "failed_result"
+
+
+def test_new_material_generator_prompt_includes_constraints(
+    context: AgentContext,
+) -> None:
+    agent = NewMaterialGeneratorAgent()
+
+    prompt = agent.build_prompt({"goal": "heat-resistant alloy"}, context)
+
+    assert "신소재" in prompt
+    assert "heat-resistant alloy" in prompt
+    assert "materials" in prompt
+    assert context.request_id not in prompt
+
+
+def test_new_material_generator_fallback_returns_materials_array(
+    context: AgentContext,
+) -> None:
+    agent = NewMaterialGeneratorAgent()
+
+    result = agent.fallback({"goal": "heat-resistant alloy"}, context)
+
+    assert result.agent == "new_material_generator"
+    assert result.metadata == {"fallback": True}
+    materials = result.payload["materials"]
+    assert isinstance(materials, list) and len(materials) >= 1
+    assert materials[0]["role"] == "heat-resistant alloy"
 
 
 @pytest.mark.parametrize(

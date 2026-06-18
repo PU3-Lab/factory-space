@@ -58,8 +58,13 @@ TOP_LEVEL_AGENT_CAPABILITIES = (
     ),
     AgentCapability(
         agent_id="material_generation",
-        summary="설계 제약을 바탕으로 신소재 후보를 생성한다.",
-        when_to_use="신소재 아이디어, 소재 목표, 속성, 희귀도, 생산 메모 요청에 사용한다.",
+        summary="머신 종류와 투입 아이템 레시피로 단일 신물질을 합성한다.",
+        when_to_use="machine_type와 inputs(아이템·수량)가 주어진 구체적 합성/제련/조합 요청에 사용한다.",
+    ),
+    AgentCapability(
+        agent_id="new_material_generator",
+        summary="설계 제약(목표)을 바탕으로 신소재 후보 목록을 생성한다.",
+        when_to_use="구체적 레시피 없이 소재 목표, 속성, 희귀도, 생산 메모 등 신소재 아이디어 요청에 사용한다.",
     ),
 )
 

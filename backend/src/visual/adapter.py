@@ -77,13 +77,86 @@ class OpenAIImageAdapter:
             return None
 
 
+@dataclass(frozen=True)
+class LocalDiffusersImageAdapter:
+    """Generates a single master image locally via a diffusers pipeline (e.g. SDXL-Turbo).
+
+    The heavy ``torch``/``diffusers`` stack is imported lazily and only when a
+    pipeline must be built, so importing this module never requires the
+    optional ``[image-local]`` dependencies. Inject ``pipeline`` in tests to
+    avoid loading a real model.
+    """
+
+    settings: ImageGenSettings
+    pipeline: object = field(default=None, compare=False)
+    num_inference_steps: int = 2
+    guidance_scale: float = 0.0
+
+    def generate(self, prompt: str) -> bytes | None:
+        if not self.settings.model:
+            return None
+        logger.info(
+            "LocalDiffusersImageAdapter: generating master image (model=%s)",
+            self.settings.model,
+        )
+        try:
+            pipeline = self.pipeline or _create_diffusers_pipeline(self.settings)
+            if pipeline is None:
+                return None
+            result = pipeline(
+                prompt=prompt,
+                num_inference_steps=self.num_inference_steps,
+                guidance_scale=self.guidance_scale,
+                width=MASTER.width,
+                height=MASTER.height,
+            )
+            image = result.images[0]
+            buf = io.BytesIO()
+            image.save(buf, format=MASTER.format)
+            return buf.getvalue()
+        except Exception as exc:
+            logger.warning("LocalDiffusersImageAdapter: generation failed: %s", exc)
+            return None
+
+
 def create_image_adapter(settings: ImageGenSettings) -> ImageGenerationAdapter:
     """Create an image generation adapter for the configured provider."""
     if settings.provider == "none":
         return PlaceholderImageAdapter()
     if settings.provider == "openai":
         return OpenAIImageAdapter(settings=settings)
+    if settings.provider == "local":
+        return LocalDiffusersImageAdapter(settings=settings)
     return PlaceholderImageAdapter()
+
+
+def _autodetect_device() -> str:
+    """Pick the best available torch device, preferring GPU/MPS over CPU."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda"
+        if torch.backends.mps.is_available():
+            return "mps"
+    except Exception:  # pragma: no cover - torch import/feature probing
+        pass
+    return "cpu"
+
+
+def _create_diffusers_pipeline(settings: ImageGenSettings) -> object | None:
+    if not settings.model:
+        return None
+    import torch
+    from diffusers import AutoPipelineForText2Image
+
+    device = settings.device or _autodetect_device()
+    dtype = torch.float16 if device in {"cuda", "mps"} else torch.float32
+    pipeline = AutoPipelineForText2Image.from_pretrained(
+        settings.model,
+        torch_dtype=dtype,
+    )
+    return pipeline.to(device)
 
 
 def resize_to_profile(master_bytes: bytes, profile: ImageProfile) -> bytes:

@@ -76,7 +76,10 @@ def test_agent_synthesize_new_material_fallback_path(db_session: Session) -> Non
         assert res.name  # 비어있지 않음
         assert res.rarity in {"common", "uncommon", "rare", "epic"}
         assert res.state in {"solid", "liquid", "gas", "plasma"}
-        assert res.visual_status == "pending"
+        assert res.visual_status == "visual_ready"
+        assert res.visual_asset_key == f"materials/{res.material_id}/icon.png"
+        assert res.texture_asset_key == f"materials/{res.material_id}/texture.png"
+        assert res.thumbnail_asset_key == f"materials/{res.material_id}/thumbnail.png"
 
         # 저장된 물질의 결정론 값 검증 (iron_ore+iron_ingot @ Synthesizer)
         stored = db_session.execute(
@@ -262,10 +265,10 @@ def test_agent_synthesize_new_material_visual_asset_false(db_session: Session) -
         assert res.message == "새로운 물질이 발견되었습니다."
 
 
-def test_agent_synthesize_new_material_visual_asset_true_background_processing(
+def test_agent_synthesize_new_material_visual_asset_true_returns_ready_assets(
     db_session: Session,
 ) -> None:
-    """generate_visual_asset=True로 설정하면 백그라운드 작업이 실행되고 DB가 업데이트되는지 테스트합니다."""
+    """generate_visual_asset=True이면 이미지 생성 완료 후 에셋 키가 포함된 응답을 반환합니다."""
     agent = MaterialCreationAgent()
     req = MaterialCreationRequest(
         machine_type="Synthesizer",
@@ -285,13 +288,10 @@ def test_agent_synthesize_new_material_visual_asset_true_background_processing(
         res = agent.synthesize(db_session, req)
         assert res.result_type == "new_material"
         assert res.material_id is not None
-        assert res.visual_status == "pending"
-
-        # "after_commit" 이벤트 리스너를 트리거하기 위해 세션 커밋
-        db_session.commit()
-
-        # 모든 백그라운드 실행자 작업이 완료될 때까지 대기
-        MaterialEventPublisher.wait_for_jobs()
+        assert res.visual_status == "visual_ready"
+        assert res.visual_asset_key == f"materials/{res.material_id}/icon.png"
+        assert res.texture_asset_key == f"materials/{res.material_id}/texture.png"
+        assert res.thumbnail_asset_key == f"materials/{res.material_id}/thumbnail.png"
 
         # DB에서 업데이트된 재료를 쿼리
         db_session.expire_all()
@@ -470,7 +470,10 @@ def test_agent_synthesize_existing_material_returns_asset_keys_when_experiment_c
         patch("llm.adapter.GoogleGenAiLLMAdapter.invoke", return_value=None),
         patch("llm.adapter.OpenAILLMAdapter.invoke", return_value=None),
         patch("llm.adapter.LocalLLMAdapter.invoke", return_value=None),
-        patch("agents.material_generation.nodes.generate_material_hash", return_value=mat_hash),
+        patch(
+            "agents.material_generation.nodes.generate_material_hash",
+            return_value=mat_hash,
+        ),
     ):
         # 3. synthesize 실행 - 이 실험의 해시는 DB에 없으므로 캐시 미스 발생.
         # 그러나 generate_material_hash 모킹으로 deduplicate_material_node에서 existing_mat를 만나게 됨.
@@ -485,5 +488,3 @@ def test_agent_synthesize_existing_material_returns_asset_keys_when_experiment_c
     assert res.visual_asset_key == f"materials/{material_id}/icon.png"
     assert res.texture_asset_key == f"materials/{material_id}/texture.png"
     assert res.thumbnail_asset_key == f"materials/{material_id}/thumbnail.png"
-
-

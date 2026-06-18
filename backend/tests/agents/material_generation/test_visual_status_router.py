@@ -43,9 +43,7 @@ def test_visual_status_returns_asset_keys(db_session: Session) -> None:
 
     with patch("agents.material_generation.router.get_db_session", get_test_db_session):
         with TestClient(create_app()) as client:
-            response = client.get(
-                "/api/v1/materials/mat_ready_001/visual-status"
-            )
+            response = client.get("/api/v1/materials/mat_ready_001/visual-status")
 
     assert response.status_code == 200
     assert response.json() == {
