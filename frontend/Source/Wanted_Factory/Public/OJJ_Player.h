@@ -48,6 +48,11 @@ public:
 	// 등반/step-off 상태를 즉시 청산하고 걷기로 수렴(빌드모드 진입·EndPlay·사다리 소멸 등 비정상 종료용).
 	void AbortClimb();
 
+	// [#184] 사다리 트리거 겹침 알림(감지/시작 분리) — 트리거 Begin/EndOverlap가 호출. 여기선 '근접 사다리'
+	// 포인터만 갱신하고, 실제 등반 시작은 W(위) 입력에서 BeginClimb로 한다(이미 트리거 안이어도 W로 시작 가능).
+	void NotifyLadderOverlap(AOJJ_Ladder* Ladder);
+	void NotifyLadderEndOverlap(AOJJ_Ladder* Ladder);
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -261,9 +266,20 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
 	float ClimbSpeed = 250.f;
 
-	// 상단 step-off 시 사다리 전방(상면 안쪽)으로 내딛는 수평 거리(uu). 작을수록 튀는 느낌 적음.
+	// [#184] 등반 중 캐릭터를 사다리 등반 면에서 띄우는 여유(uu). 실제 거리 = 캡슐반경 + 이 값. 너무 작으면
+	// 메시 관통, 크면 떨어져 보임 — 캡슐 반경 부근이 적정이라 이 값은 그 위 소량 gap.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
-	float StepOffForward = 60.f;
+	float ClimbFaceGap = 5.f;
+
+	// [#184] 등반 면 X/Y 당김 보간 속도(VInterpTo). 즉시 SetActorLocation은 멀리서 시작 시 순간이동이라 부드럽게
+	// 당긴다. 클수록 빠르게 붙음(가까이 시작이면 거의 즉시). 0이면 사실상 안 붙음 주의.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.1"))
+	float ClimbAttachInterpSpeed = 12.f;
+
+	// [#184] 상단 step-off 시 캡슐 반경에 **더하는** 전방(상면 안쪽) 여유 거리(uu). 실제 전진 = 캡슐반경 + 이 값.
+	// 캡슐 반경만큼이면 가장자리에 발 얹힘(60처럼 안 튐) — 이 값은 그 위 ±미세조정용(기본 0).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
+	float StepOffForward = 0.f;
 
 	// step-off 안착 보간 시간(초). 0이면 즉시(순간이동). 0.15~0.25가 부드러움. 보간 중 이동 입력 잠금.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
@@ -292,6 +308,10 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<AOJJ_Ladder> CurrentLadder;
 
+	// [#184] 현재 트리거 겹침 중인 사다리(없으면 null) — W 입력 등반 시작 후보. 등반 상태(CurrentLadder)와 별개
+	// (근접 감지 전용). 사다리 파괴 대비 weak.
+	TWeakObjectPtr<AOJJ_Ladder> OverlappingLadder;
+
 	// 재진입 쿨다운 만료 월드시각(초). BeginClimb이 이 시각 전이면 무시.
 	float ClimbCooldownUntil = 0.f;
 
@@ -304,6 +324,10 @@ protected:
 	FVector StepOffStart = FVector::ZeroVector;
 	FVector StepOffTarget = FVector::ZeroVector;
 	float StepOffElapsed = 0.f;
+
+	// [#184] 등반 면 위치: 사다리에서 바깥(Foundation 반대)으로 (캡슐반경 + ClimbFaceGap) 떨어진 X/Y + 주어진 Z.
+	// 등반 시작 스냅·등반 중 X/Y 고정 공용(진입 위치가 멀어도 사다리에 붙여 오르게).
+	FVector OJJ_GetClimbFaceLocation(const AOJJ_Ladder* Ladder, float WorldZ) const;
 
 	// 등반/step-off 종료 후 걷기 복귀 + 재진입 쿨다운 개시(공통 단일원).
 	void ResumeWalkingWithCooldown();

@@ -1659,22 +1659,13 @@ void AOJJ_BuildController::UpdateLadderHover(FIntPoint CursorCell, const FHitRes
 	// 후 고스트도 숨기므로, 아래 OJJ_ShowGhostForLadder가 다시 표시(Foundation 호버의 Clear→Show 패턴과 동일).
 	TargetGrid->ClearHoverPreview();
 
-	// 고스트 메시 = 사다리 CDO의 메시(없으면 숨김). 후속 Meshy 교체도 자동 추종.
-	UStaticMesh* GhostMesh = nullptr;
-	if (const AOJJ_Ladder* LadderCDO = LadderClass ? LadderClass.GetDefaultObject() : nullptr)
-	{
-		if (UStaticMeshComponent* MeshComp = LadderCDO->GetLadderMesh())
-		{
-			GhostMesh = MeshComp->GetStaticMesh();
-		}
-	}
-
+	// 고스트는 엔진 Cube 박스(그리드 내부에서 로드) — 실제 사다리 ISM 메시와 독립. 위치/높이만 전달.
 	FVector BottomLoc;
 	float ClimbHeight = 0.0f;
 	FRotator Rot = FRotator::ZeroRotator;
 	if (ComputeLadderPlacement(CursorCell, BottomLoc, ClimbHeight, Rot))
 	{
-		TargetGrid->OJJ_ShowGhostForLadder(GhostMesh, BottomLoc, ClimbHeight, Rot, /*bValid=*/true);
+		TargetGrid->OJJ_ShowGhostForLadder(BottomLoc, ClimbHeight, Rot, /*bValid=*/true);
 	}
 	else
 	{
@@ -1685,7 +1676,7 @@ void AOJJ_BuildController::UpdateLadderHover(FIntPoint CursorCell, const FHitRes
 		{
 			GroundZ = CursorWorld.Z;
 		}
-		TargetGrid->OJJ_ShowGhostForLadder(GhostMesh,
+		TargetGrid->OJJ_ShowGhostForLadder(
 			FVector(CursorWorld.X, CursorWorld.Y, GroundZ), /*ClimbHeight=*/100.0f, FRotator::ZeroRotator, /*bValid=*/false);
 	}
 }
