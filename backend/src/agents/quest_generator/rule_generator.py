@@ -50,6 +50,10 @@ class QuestRuleGenerator:
                 continue
 
             # 레벨 게이트: 해당 아이템의 최소 요구 레벨이 공장 레벨보다 높은 경우 스킵
+            # [설계 불변식]
+            #   데드락을 방지하기 위해 "레벨 N의 메인 퀘스트는 min_level <= N 인 아이템만 요구한다"는
+            #   기획적 불변식을 전제로 합니다. 따라서 메인 퀘스트의 목표 아이템은 항상 공장 레벨 이하이며,
+            #   이 게이트에 의해 차단되지 않습니다.
             min_level = game_data.get_item_min_level(issue.item_id)
             if min_level > context.factory_level:
                 continue
