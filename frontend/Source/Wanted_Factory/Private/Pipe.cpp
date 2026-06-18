@@ -621,7 +621,7 @@ FLinearColor APipe::GetFilledPipeColor() const
 		return FilledPipeColor;
 	}
 
-	return Resource->PipeColor;
+	return Resource->VisualColor;
 }
 
 UMaterialInterface* APipe::GetPipeMaterial(bool bHasLiquid)

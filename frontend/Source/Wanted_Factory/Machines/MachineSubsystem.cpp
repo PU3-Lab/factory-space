@@ -278,6 +278,22 @@ bool UMachineSubsystem::UpgradeMachineType(FName MachineType)
 	return true;
 }
 
+FText UMachineSubsystem::GetMachineDisplayName(FName MachineType) const
+{
+	if (MachineType.IsNone())
+	{
+		return FText::GetEmpty();
+	}
+
+	FMachineTableRow MachineData;
+	if (FindMachineData(MachineType, MachineData) && !MachineData.DisplayName.IsEmpty())
+	{
+		return FText::FromString(MachineData.DisplayName);
+	}
+
+	return FText::FromName(MachineType);
+}
+
 void UMachineSubsystem::ApplyMachineDataToExistingMachines(FName MachineType, const FMachineTableRow& MachineData) const
 {
 	UWorld* World = GetWorld();

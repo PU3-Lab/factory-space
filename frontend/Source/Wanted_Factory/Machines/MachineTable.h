@@ -17,6 +17,9 @@ struct FMachineTableRow : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName MachineType;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FString DisplayName;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	int32 Level = 0;

@@ -48,7 +48,7 @@ public:
 	void SetTargetMachine(AMachineBase* InMachine);
 	
 	UFUNCTION(BlueprintCallable, Category = "Factory UI")
-	void UpdateMachineName(FString MachineName);
+	void UpdateMachineName(const FText& MachineName);
 	
 	UFUNCTION(BlueprintCallable, Category = "Factory UI")
 	void UpdateDurabilityUI(float CurrentDurability, float MaxDurability);

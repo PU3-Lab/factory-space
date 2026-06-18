@@ -18,6 +18,40 @@
 #include "Components/Border.h"
 #include "UObject/ConstructorHelpers.h"
 
+namespace
+{
+FText GetResourceDisplayText(const UDataTable* ResourceDataTable, FName ItemName)
+{
+    if (ItemName.IsNone())
+    {
+        return FText::GetEmpty();
+    }
+
+    if (ResourceDataTable)
+    {
+        if (const FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("GetResourceDisplayText")))
+        {
+            if (!RowData->DisplayName.IsEmpty())
+            {
+                return FText::FromString(RowData->DisplayName);
+            }
+        }
+    }
+
+    return FText::FromName(ItemName);
+}
+
+FText GetMachineDisplayText(UMachineSubsystem* MachineSubsystem, FName MachineTypeName)
+{
+    if (MachineSubsystem)
+    {
+        return MachineSubsystem->GetMachineDisplayName(MachineTypeName);
+    }
+
+    return MachineTypeName.IsNone() ? FText::GetEmpty() : FText::FromName(MachineTypeName);
+}
+}
+
 UUI_MachineInteract::UUI_MachineInteract(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
 {
@@ -55,14 +89,14 @@ void UUI_MachineInteract::SetTargetMachine(AMachineBase* InMachine)
         }
 
         FName MachineTypeName = TargetMachine->GetMachineType();
-        UpdateMachineName(MachineTypeName.ToString());
+        UMachineSubsystem* MachineSubsystem = GetGameInstance()
+            ? GetGameInstance()->GetSubsystem<UMachineSubsystem>()
+            : nullptr;
+        UpdateMachineName(GetMachineDisplayText(MachineSubsystem, MachineTypeName));
         
         if (MachineDataTable && IMG_MachinePreview)
         {
             FMachineTableRow MachineData;
-            UMachineSubsystem* MachineSubsystem = GetGameInstance()
-                ? GetGameInstance()->GetSubsystem<UMachineSubsystem>()
-                : nullptr;
             const bool bFoundMachineData = MachineSubsystem &&
                 MachineSubsystem->FindMachineData(MachineTypeName, MachineData);
 
@@ -214,7 +248,7 @@ void UUI_MachineInteract::UpdateInputUI(FName ItemName, int32 CurrentAmount, int
 
     if (TXT_InputName && TXT_InputCount && PB_InputBuffer)
     {
-        TXT_InputName->SetText(FText::FromName(DisplayItemName));
+        TXT_InputName->SetText(GetResourceDisplayText(ResourceDataTable, DisplayItemName));
         
         FString CountStr = FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount);
         TXT_InputCount->SetText(FText::FromString(CountStr));
@@ -267,7 +301,7 @@ void UUI_MachineInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, in
     if (TXT_OutputName && TXT_OutputCount && PB_OutputBuffer)
     {
         // 1. 산출물 이름 텍스트 세팅
-        TXT_OutputName->SetText(FText::FromName(DisplayItemName));
+        TXT_OutputName->SetText(GetResourceDisplayText(ResourceDataTable, DisplayItemName));
         
         // 2. 수량 텍스트 세팅 (예: "850 / 2000")
         FString CountStr = FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount);
@@ -347,11 +381,11 @@ void UUI_MachineInteract::UpdateCraftingProgress(float Percent)
         TXT_ProgressPercent->SetText(FText::FromString(ProgressStr));
     }
 }
-void UUI_MachineInteract::UpdateMachineName(FString MachineName)
+void UUI_MachineInteract::UpdateMachineName(const FText& MachineName)
 {
     if (TXT_MachineName)
     {
-        TXT_MachineName->SetText(FText::FromString(MachineName));
+        TXT_MachineName->SetText(MachineName);
     }
 }
 

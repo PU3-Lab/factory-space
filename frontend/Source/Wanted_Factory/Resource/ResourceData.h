@@ -47,7 +47,10 @@ public:
 	EResourceShape shape = EResourceShape::None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	FLinearColor PipeColor = FLinearColor::White;
+	FString DisplayName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FLinearColor VisualColor = FLinearColor::White;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TSoftObjectPtr<UTexture2D> ImgAsset;
