@@ -389,6 +389,39 @@ def test_pipeline_uses_deterministic_fallback_after_all_slots_fail() -> None:
     assert len(adapters["fallback2"].prompts) == 1
 
 
+def test_pipeline_routes_new_material_generator_to_deterministic_fallback() -> None:
+    settings = LLMSettings(
+        default=LLMModelSlot(name="default", provider="none"),
+        fallback1=LLMModelSlot(name="fallback1", provider="none"),
+        fallback2=LLMModelSlot(name="fallback2", provider="none"),
+    )
+    adapters = {
+        "default": StubLLM([top_agent_decision("new_material_generator"), None]),
+        "fallback1": StubLLM([None]),
+        "fallback2": StubLLM([None]),
+    }
+
+    pipeline = AgentPipeline(
+        llm_settings=settings,
+        llm_adapter_factory=lambda slot: adapters[slot.name],
+    )
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-new-material-fallback",
+            "agent": "new_material_generator",
+            "payload": {"goal": "heat-resistant alloy"},
+        }
+    )
+
+    assert_agent_response(response, agent="new_material_generator")
+    assert response["payload"]["metadata"]["fallback"] is True
+    materials = response["payload"]["materials"]
+    assert isinstance(materials, list) and len(materials) >= 1
+    assert materials[0]["role"] == "heat-resistant alloy"
+
+
 def test_pipeline_deterministic_fallback_clears_stale_model_metadata() -> None:
     settings = LLMSettings(
         default=LLMModelSlot(name="default", provider="none"),

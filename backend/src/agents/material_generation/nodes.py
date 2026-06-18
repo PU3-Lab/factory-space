@@ -6,15 +6,13 @@ import logging
 import uuid
 from typing import Any
 
-from sqlalchemy import event, select
-from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from agents.material_generation.classifier import ExperimentClassifier
 from agents.material_generation.derivation import (
     DerivedAttributes,
     derive_material_attributes,
 )
-from agents.material_generation.events import MaterialEventPublisher
 from agents.material_generation.graph_state import MaterialGraphState
 from agents.material_generation.normalizer import (
     generate_experiment_hash,
@@ -37,6 +35,7 @@ from agents.material_generation.schemas import (
     OutputItemSchema,
 )
 from agents.material_generation.similarity import ExperimentSimilarityService
+from agents.material_generation.visual_pipeline import VisualAssetPipeline
 from db.models import GeneratedExperimentModel, GeneratedMaterialModel
 
 logger = logging.getLogger(__name__)
@@ -555,19 +554,26 @@ def register_material_node(state: MaterialGraphState) -> dict[str, Any]:
 
     if request.generate_visual_asset and is_new:
         assert proposal.result is not None
-        v_prompt = proposal.result.visual_prompt
-        cat = proposal.result.category
-
-        def trigger_visual_pipeline(session_obj: Session) -> None:
-            try:
-                MaterialEventPublisher.publish_material_created(
-                    material_id=material_id,
-                    visual_prompt=v_prompt,
-                    category=cat,
+        VisualAssetPipeline.process_visual_asset_in_session(
+            session,
+            material_id=material_id,
+            visual_prompt=proposal.result.visual_prompt,
+            category=proposal.result.category,
+        )
+        session.flush()
+        material = session.get(GeneratedMaterialModel, material_id)
+        if material:
+            response.visual_status = material.visual_status
+            response.visual_asset_key = material.visual_asset_key
+            response.texture_asset_key = material.texture_asset_key
+            response.thumbnail_asset_key = material.thumbnail_asset_key
+            if material.visual_status == "visual_ready":
+                response.message = (
+                    "새로운 물질이 발견되었고 비주얼 자산 생성이 완료되었습니다."
                 )
-            except Exception as exc:
-                logger.error("Failed to trigger visual asset pipeline event: %s", exc)
-
-        event.listen(session, "after_commit", trigger_visual_pipeline, once=True)
+            elif material.visual_status == "failed":
+                response.message = (
+                    "새로운 물질이 발견되었지만 비주얼 자산 생성에 실패했습니다."
+                )
 
     return {"response": response}

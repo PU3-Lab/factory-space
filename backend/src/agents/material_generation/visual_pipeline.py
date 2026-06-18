@@ -53,73 +53,93 @@ class VisualAssetPipeline:
         """Generate icon, texture, and thumbnail for a material and update its DB record."""
         logger.info("VisualAssetPipeline: starting for material %s", material_id)
 
+        factory = cls.session_factory or get_db_session
+        with factory() as session:
+            cls.process_visual_asset_in_session(
+                session,
+                material_id,
+                visual_prompt,
+                category,
+            )
+            session.commit()
+
+    @classmethod
+    def process_visual_asset_in_session(
+        cls,
+        session: Session,
+        material_id: str,
+        visual_prompt: str,
+        category: str,
+    ) -> None:
+        """Generate visual assets using the provided session without committing it."""
         image_adapter = cls._image_adapter or _default_image_adapter()
         storage_adapter = cls._storage_adapter or _default_storage_adapter()
 
-        factory = cls.session_factory or get_db_session
-        with factory() as session:
-            try:
-                material = session.execute(
-                    select(GeneratedMaterialModel).where(
-                        GeneratedMaterialModel.id == material_id
-                    )
-                ).scalar_one_or_none()
-
-                if not material:
-                    logger.warning(
-                        "VisualAssetPipeline: material %s not found", material_id
-                    )
-                    return
-
-                # Generate two separate master images: one for icon/thumbnail, one for texture.
-                icon_prompt = f"A standalone icon of {visual_prompt}, sci-fi game item asset, isolated on black background, high resolution"
-                texture_prompt = f"A seamless, tileable texture of {visual_prompt} surface, flat top-down orthographic view, realistic game material texture, unreal engine style"
-
-                logger.info("VisualAssetPipeline: generating icon master image")
-                icon_master = image_adapter.generate(icon_prompt)
-
-                logger.info("VisualAssetPipeline: generating texture master image")
-                texture_master = image_adapter.generate(texture_prompt)
-
-                if icon_master is None or texture_master is None:
-                    logger.warning(
-                        "VisualAssetPipeline: image generation returned None for %s (icon=%s, texture=%s)",
-                        material_id,
-                        "OK" if icon_master else "FAILED",
-                        "OK" if texture_master else "FAILED",
-                    )
-                    material.visual_status = "failed"
-                    material.visual_error = (
-                        "Image generation returned no data for one or more assets."
-                    )
-                    material.fallback_icon = f"materials/default/{category}.png"
-                else:
-                    icon_key = f"materials/{material_id}/icon.png"
-                    texture_key = f"materials/{material_id}/texture.png"
-                    thumbnail_key = f"materials/{material_id}/thumbnail.png"
-
-                    storage_adapter.save(icon_key, resize_to_profile(icon_master, ICON))
-                    storage_adapter.save(
-                        texture_key, resize_to_profile(texture_master, TEXTURE)
-                    )
-                    storage_adapter.save(
-                        thumbnail_key, resize_to_profile(icon_master, THUMBNAIL)
-                    )
-
-                    material.visual_status = "visual_ready"
-                    material.visual_asset_key = icon_key
-                    material.texture_asset_key = texture_key
-                    material.thumbnail_asset_key = thumbnail_key
-                    logger.info("VisualAssetPipeline: complete for %s", material_id)
-
-                session.commit()
-            except Exception as exc:
-                logger.error(
-                    "VisualAssetPipeline: unexpected failure for %s: %s",
-                    material_id,
-                    exc,
+        try:
+            material = session.execute(
+                select(GeneratedMaterialModel).where(
+                    GeneratedMaterialModel.id == material_id
                 )
-                session.rollback()
+            ).scalar_one_or_none()
+
+            if not material:
+                logger.warning(
+                    "VisualAssetPipeline: material %s not found", material_id
+                )
+                return
+
+            icon_prompt = f"A standalone icon of {visual_prompt}, sci-fi game item asset, isolated on black background, high resolution"
+            texture_prompt = f"A seamless, tileable texture of {visual_prompt} surface, flat top-down orthographic view, realistic game material texture, unreal engine style"
+
+            logger.info("VisualAssetPipeline: generating icon master image")
+            icon_master = image_adapter.generate(icon_prompt)
+
+            logger.info("VisualAssetPipeline: generating texture master image")
+            texture_master = image_adapter.generate(texture_prompt)
+
+            if icon_master is None or texture_master is None:
+                logger.warning(
+                    "VisualAssetPipeline: image generation returned None for %s (icon=%s, texture=%s)",
+                    material_id,
+                    "OK" if icon_master else "FAILED",
+                    "OK" if texture_master else "FAILED",
+                )
+                material.visual_status = "failed"
+                material.visual_error = (
+                    "Image generation returned no data for one or more assets."
+                )
+                material.fallback_icon = f"materials/default/{category}.png"
+                return
+
+            icon_key = f"materials/{material_id}/icon.png"
+            texture_key = f"materials/{material_id}/texture.png"
+            thumbnail_key = f"materials/{material_id}/thumbnail.png"
+
+            storage_adapter.save(icon_key, resize_to_profile(icon_master, ICON))
+            storage_adapter.save(
+                texture_key, resize_to_profile(texture_master, TEXTURE)
+            )
+            storage_adapter.save(
+                thumbnail_key,
+                resize_to_profile(icon_master, THUMBNAIL),
+            )
+
+            material.visual_status = "visual_ready"
+            material.visual_asset_key = icon_key
+            material.texture_asset_key = texture_key
+            material.thumbnail_asset_key = thumbnail_key
+            logger.info("VisualAssetPipeline: complete for %s", material_id)
+        except Exception as exc:
+            logger.error(
+                "VisualAssetPipeline: unexpected failure for %s: %s",
+                material_id,
+                exc,
+            )
+            material = session.get(GeneratedMaterialModel, material_id)
+            if material:
+                material.visual_status = "failed"
+                material.visual_error = str(exc)
+                material.fallback_icon = f"materials/default/{category}.png"
 
 
 def _default_image_adapter() -> ImageGenerationAdapter:

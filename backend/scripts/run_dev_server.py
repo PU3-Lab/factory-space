@@ -39,9 +39,16 @@ def prepare_environment(backend_root: Path) -> None:
     src_path = str(backend_root / "src")
     if src_path not in sys.path:
         sys.path.insert(0, src_path)
-    load_env_file(backend_root / ".env.dev")
+    configured_env_file = Path(os.environ.setdefault("FACTORY_ENV_FILE", ".env.dev"))
+    env_file = (
+        configured_env_file
+        if configured_env_file.is_absolute()
+        else backend_root / configured_env_file
+    )
+    load_env_file(env_file)
     # Fall back to the dedicated test DB unless an env file/shell already set one.
     os.environ.setdefault("DATABASE_URL", DEV_DATABASE_URL)
+    os.environ.setdefault("FACTORY_AUTO_INGEST_RECIPES", "true")
 
 
 def run_migrations(backend_root: Path) -> None:

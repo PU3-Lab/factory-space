@@ -102,6 +102,7 @@ AI Agent 실행 계층이다.
 - `process_optimizer`
 - `quest_generator`
 - `operator_guide`
+- `material_generation`
 - `new_material_generator`
 
 대표 파일:
@@ -119,7 +120,8 @@ AI Agent 실행 계층이다.
 - `process_optimizer.py`: 공정 최적화 Agent
 - `quest_generator/`: 퀘스트 생성 Agent와 서브 에이전트
 - `operator_guide/`: 운영자 가이드 Agent와 서브 에이전트
-- `new_material_generator.py`: 신물질 생성 Agent
+- `material_generation/`: 레시피 기반 단일 물질 합성 Agent(전용 `synthesize_material` 노드로 실행)
+- `new_material_generator.py`: 목표(goal) 기반 신소재 후보 목록 생성 Agent
 
 오케스트레이터 수:
 
@@ -127,7 +129,7 @@ AI Agent 실행 계층이다.
 - 도메인 오케스트레이터는 `operator_guide/agent.py`, `quest_generator/agent.py` 2개다.
 - `pipeline/`은 실행 파이프라인이고, `router.py`는 registry/router이므로 오케스트레이터가 아니다.
 - `operator_guide/agent.py`와 `quest_generator/agent.py`는 각 도메인 내부에서 서브 에이전트 선택, payload 정리, 결과 정규화를 맡는 도메인 오케스트레이터다.
-- top-level Agent 중 `process_optimizer`, `new_material_generator`는 현재 내부 서브 에이전트가 없으므로 leaf Agent로 처리한다.
+- top-level Agent 중 `process_optimizer`, `new_material_generator`는 현재 내부 서브 에이전트가 없으므로 leaf Agent로 처리한다. `material_generation`은 서브 에이전트는 없지만 LLM 프롬프트 leaf 경로가 아니라 전용 `synthesize_material` 노드로 실행된다.
 - top-level Agent라도 내부 서브 에이전트나 실행 전략을 다시 선택해야 하는 도메인은 `operator_guide`, `quest_generator`처럼 도메인 오케스트레이터로 분리한다.
 
 공식 용어:
@@ -146,9 +148,7 @@ AI Agent 실행 계층이다.
 `quest_generator/` 내부:
 
 - `agent.py`: 퀘스트 생성 요청을 서브 에이전트로 분기하는 도메인 오케스트레이터
-- `tutorial_quest.py`: 튜토리얼 퀘스트 서브 에이전트
 - `production_quest.py`: 생산 퀘스트 서브 에이전트
-- `exploration_quest.py`: 탐험 퀘스트 서브 에이전트
 - `economy_quest.py`: 경제 퀘스트 서브 에이전트
 
 `quest_generator.route_sub_agent` 역할:
@@ -209,23 +209,23 @@ MVP 제약:
 
 ## `visual`
 
-신물질 비주얼 프로파일 생성 계층이다.
+신물질 비주얼 자산(아이콘/텍스처/썸네일) 생성·저장 계층이다.
+`material_generation`의 `VisualAssetPipeline`이 신물질 합성 성공 시 호출한다.
 
 역할:
 
-- `new_material_generator`가 사용할 `visualProfile` 생성
-- material type, rarity, properties 기반 색상/표면/패턴/형태 힌트 결정
-- placeholder visual 응답 구성 지원
-
-MVP 제약:
-
-- 실제 이미지 생성은 하지 않는다.
-- texture/icon 파일 저장소는 다루지 않는다.
-- `visual.ready` 이벤트는 후속 단계에서 구현한다.
+- 설정된 프로바이더로 마스터 이미지를 1회 생성하고 프로파일별로 다운스케일
+- 생성한 자산을 저장소 백엔드에 저장하고 asset key를 반환
 
 대표 파일:
 
-- `profile.py`: material visual profile builder
+- `settings.py`: 이미지 생성 프로바이더 설정(`FACTORY_IMAGE_GEN_*`). `none`/`openai`/`local`
+- `adapter.py`: 프로바이더별 어댑터
+  - `PlaceholderImageAdapter`: 단색 placeholder(프로바이더 미설정 시)
+  - `OpenAIImageAdapter`: OpenAI Images API
+  - `LocalDiffusersImageAdapter`: 로컬 diffusers(예: SDXL-Turbo), torch/diffusers lazy import
+- `storage.py`: `LocalFileStorageAdapter`(디스크) / `NoopStorageAdapter`(폐기), `FACTORY_IMAGE_STORAGE_*`
+- `profile.py`: ICON/TEXTURE/THUMBNAIL/MASTER 크기·포맷 프로파일
 
 ## 의존 방향
 
@@ -238,7 +238,7 @@ agents.pipeline -> agents.router
 agents.pipeline -> cache
 agents.pipeline -> llm
 agents.orchestrator -> agents.router
-agents.new_material_generator -> visual
+agents.material_generation -> visual
 ```
 
 피해야 할 의존:
@@ -272,22 +272,27 @@ flowchart TD
     RouteSelectedAgent -->|process_optimizer| ProcessPayload[validate_process_payload]
     RouteSelectedAgent -->|operator_guide| OperatorGuideRoute[operator_guide.route_sub_agent]
     RouteSelectedAgent -->|quest_generator| QuestRoute[quest_generator.route_sub_agent]
-    RouteSelectedAgent -->|new_material_generator| MaterialPayload[validate_material_payload]
+    RouteSelectedAgent -->|material_generation| Synthesize[synthesize_material]
+    RouteSelectedAgent -->|new_material_generator| NewMaterialRoute[new_material_generator.route_sub_agent]
     RouteSelectedAgent -->|unknown / invalid| ErrorNode[build_agent_error]
 
     ProcessPayload --> ProcessLeafResult{route_selected_leaf_agent}
     OperatorGuideRoute --> OperatorGuideLeafResult{route_selected_leaf_agent}
     QuestRoute --> QuestLeafResult{route_selected_leaf_agent}
-    MaterialPayload --> MaterialLeafResult{route_selected_leaf_agent}
+    NewMaterialRoute --> NewMaterialLeafResult{route_selected_leaf_agent}
 
     ProcessLeafResult -->|valid| CacheLookup[cache_lookup]
     OperatorGuideLeafResult -->|valid| CacheLookup
     QuestLeafResult -->|valid| CacheLookup
-    MaterialLeafResult -->|valid| CacheLookup
+    NewMaterialLeafResult -->|valid| CacheLookup
     ProcessLeafResult -->|error| ErrorNode
     OperatorGuideLeafResult -->|error| ErrorNode
     QuestLeafResult -->|error| ErrorNode
-    MaterialLeafResult -->|error| ErrorNode
+    NewMaterialLeafResult -->|error| ErrorNode
+
+    Synthesize --> SynthesisResult{route_synthesis_result}
+    SynthesisResult -->|valid| BuildResponse[build_agent_response]
+    SynthesisResult -->|error| ErrorNode
 
     CacheLookup --> CacheDecision{cache_hit?}
     CacheDecision -->|yes| BuildCachedResponse[build_cached_response]

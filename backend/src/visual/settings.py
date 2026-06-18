@@ -7,9 +7,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-ImageGenProvider = Literal["none", "openai"]
+ImageGenProvider = Literal["none", "openai", "local"]
 
-_PROVIDERS: frozenset[str] = frozenset({"none", "openai"})
+_PROVIDERS: frozenset[str] = frozenset({"none", "openai", "local"})
 
 
 @dataclass(frozen=True)
@@ -19,6 +19,7 @@ class ImageGenSettings:
     provider: ImageGenProvider
     model: str | None = None
     api_key: str | None = None
+    device: str | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> ImageGenSettings:
@@ -34,6 +35,12 @@ class ImageGenSettings:
         model = _string_from_env(source, "FACTORY_IMAGE_GEN_MODEL")
         if model is None:
             raise ValueError("Provider requires FACTORY_IMAGE_GEN_MODEL")
+
+        if provider == "local":
+            # Local diffusers needs no API key; device is optional (auto-detected
+            # by the adapter when unset). Override with FACTORY_IMAGE_GEN_DEVICE.
+            device = _string_from_env(source, "FACTORY_IMAGE_GEN_DEVICE")
+            return cls(provider=provider, model=model, device=device)
 
         slot_key = _string_from_env(source, "FACTORY_IMAGE_GEN_API_KEY")
         api_key = slot_key or _string_from_env(source, "OPENAI_API_KEY")

@@ -1,170 +1,231 @@
 #include "UI_BuildModeMain.h"
 #include "Components/Button.h"
-#include "Components/ContentWidget.h"
 #include "Components/Image.h"
+#include "Components/TextBlock.h"
 #include "Components/PanelWidget.h"
-#include "OJJ_BuildController.h"
+#include "Components/ContentWidget.h"
 #include "Machines/MachineSubsystem.h"
 #include "QuestManagerSubsystem.h"
 #include "Kismet/GameplayStatics.h"
+#include "Animation/WidgetAnimation.h"
 
 namespace
 {
-	void CollectImageWidgetsRecursive(UWidget* Widget, TArray<UImage*>& OutImages)
-	{
-		if (!Widget)
-		{
-			return;
-		}
+    void CollectImageWidgetsRecursive(UWidget* Widget, TArray<UImage*>& OutImages)
+    {
+       if (!Widget) return;
+       if (UImage* Image = Cast<UImage>(Widget))
+       {
+          OutImages.Add(Image);
+          return;
+       }
+       if (UPanelWidget* Panel = Cast<UPanelWidget>(Widget))
+       {
+          for (int32 ChildIndex = 0; ChildIndex < Panel->GetChildrenCount(); ++ChildIndex)
+          {
+             CollectImageWidgetsRecursive(Panel->GetChildAt(ChildIndex), OutImages);
+          }
+          return;
+       }
+       if (UContentWidget* Content = Cast<UContentWidget>(Widget))
+       {
+          CollectImageWidgetsRecursive(Content->GetContent(), OutImages);
+       }
+    }
 
-		if (UImage* Image = Cast<UImage>(Widget))
-		{
-			OutImages.Add(Image);
-			return;
-		}
+    void ApplyMachineIconToButton(UButton* Button, const FMachineTableRow& MachineData)
+    {
+       if (!Button) return;
+       UTexture2D* Texture = MachineData.ImgAsset.IsValid()
+          ? MachineData.ImgAsset.Get()
+          : MachineData.ImgAsset.LoadSynchronous();
+       if (!Texture) return;
 
-		if (UPanelWidget* Panel = Cast<UPanelWidget>(Widget))
-		{
-			for (int32 ChildIndex = 0; ChildIndex < Panel->GetChildrenCount(); ++ChildIndex)
-			{
-				CollectImageWidgetsRecursive(Panel->GetChildAt(ChildIndex), OutImages);
-			}
-			return;
-		}
-
-		if (UContentWidget* Content = Cast<UContentWidget>(Widget))
-		{
-			CollectImageWidgetsRecursive(Content->GetContent(), OutImages);
-		}
-	}
-
-	void ApplyMachineIconToButton(UButton* Button, const FMachineTableRow& MachineData)
-	{
-		if (!Button)
-		{
-			return;
-		}
-
-		UTexture2D* Texture = MachineData.ImgAsset.IsValid()
-			? MachineData.ImgAsset.Get()
-			: MachineData.ImgAsset.LoadSynchronous();
-		if (!Texture)
-		{
-			return;
-		}
-
-		TArray<UImage*> Images;
-		CollectImageWidgetsRecursive(Button->GetContent(), Images);
-		for (UImage* Image : Images)
-		{
-			if (Image)
-			{
-				Image->SetBrushFromTexture(Texture);
-			}
-		}
-
-		if (Images.Num() == 0)
-		{
-			FButtonStyle ButtonStyle = Button->GetStyle();
-			ButtonStyle.Normal.SetResourceObject(Texture);
-			ButtonStyle.Hovered.SetResourceObject(Texture);
-			ButtonStyle.Pressed.SetResourceObject(Texture);
-			ButtonStyle.Disabled.SetResourceObject(Texture);
-			Button->SetStyle(ButtonStyle);
-		}
-	}
+       TArray<UImage*> Images;
+       CollectImageWidgetsRecursive(Button->GetContent(), Images);
+       for (UImage* Image : Images)
+       {
+          if (Image) Image->SetBrushFromTexture(Texture);
+       }
+    }
 }
 
 void UUI_BuildModeMain::NativeConstruct()
 {
     Super::NativeConstruct();
     
-    // 1. 위젯 버튼과 클릭 함수 1:1 바인딩
-    if (BTN_Slot_1_Storage)        BTN_Slot_1_Storage->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnStorageClicked);
-    if (BTN_Slot_2_Conveyor)       BTN_Slot_2_Conveyor->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnConveyorClicked);
-    if (BTN_Slot_3_Smelter)        BTN_Slot_3_Smelter->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnSmelterClicked);
-    if (BTN_Slot_4_Grinder)        BTN_Slot_4_Grinder->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnGrinderClicked);
-    if (BTN_Slot_5_Miner)          BTN_Slot_5_Miner->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnMinerClicked);
-    
-    if (BTN_Slot_7_PowerPlant)     BTN_Slot_7_PowerPlant->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnPowerPlantClicked);
-    if (BTN_Slot_8_PowerGridNode)  BTN_Slot_8_PowerGridNode->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnPowerGridNodeClicked);
-    if (BTN_Slot_9_PowerLine)      BTN_Slot_9_PowerLine->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnPowerLineClicked);
-    if (BTN_Slot_0_MagneticShield) BTN_Slot_0_MagneticShield->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnMagneticShieldClicked);
+    if (BTN_SubMode_Machine)   BTN_SubMode_Machine->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnMachineModeClicked);
+    if (BTN_SubMode_Power)     BTN_SubMode_Power->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnPowerModeClicked);
+    if (BTN_SubMode_Structure) BTN_SubMode_Structure->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnStructureModeClicked);
 
-    RefreshSlotIcons();
+    // 1~10번 슬롯 컴포넌트 자동 수집구역
+    HotbarButtons.Empty();
+    HotbarIcons.Empty();
+    HotbarTexts.Empty(); // 초기화 추가
+
+    for (int i = 1; i <= 10; ++i)
+    {
+        FString ButtonName = FString::Printf(TEXT("BTN_Slot_%d"), i);
+        FString IconName = FString::Printf(TEXT("IMG_Icon_%d"), i);
+        FString TextName = FString::Printf(TEXT("TXT_Name_%d"), i); // 이름 규칙 긁어오기
+
+        UButton* SlotBtn = Cast<UButton>(GetWidgetFromName(*ButtonName));
+        UImage* SlotImg = Cast<UImage>(GetWidgetFromName(*IconName));
+        UTextBlock* SlotTxt = Cast<UTextBlock>(GetWidgetFromName(*TextName)); // 텍스트 컴포넌트 탐색
+
+        if (SlotBtn && SlotImg)
+        {
+            HotbarButtons.Add(SlotBtn);
+            HotbarIcons.Add(SlotImg);
+        }
+        
+        // 발견된 텍스트 컴포넌트를 무결하게 캐싱합니다
+        if (SlotTxt)
+        {
+            HotbarTexts.Add(SlotTxt);
+        }
+    }
+
+    if (HotbarButtons.IsValidIndex(0)) HotbarButtons[0]->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnSlot1Clicked);
+    if (HotbarButtons.IsValidIndex(1)) HotbarButtons[1]->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnSlot2Clicked);
+    if (HotbarButtons.IsValidIndex(2)) HotbarButtons[2]->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnSlot3Clicked);
+    if (HotbarButtons.IsValidIndex(3)) HotbarButtons[3]->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnSlot4Clicked);
+    if (HotbarButtons.IsValidIndex(4)) HotbarButtons[4]->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnSlot5Clicked);
+    if (HotbarButtons.IsValidIndex(5)) HotbarButtons[5]->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnSlot6Clicked);
+    if (HotbarButtons.IsValidIndex(6)) HotbarButtons[6]->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnSlot7Clicked);
+    if (HotbarButtons.IsValidIndex(7)) HotbarButtons[7]->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnSlot8Clicked);
+    if (HotbarButtons.IsValidIndex(8)) HotbarButtons[8]->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnSlot9Clicked);
+    if (HotbarButtons.IsValidIndex(9)) HotbarButtons[9]->OnClicked.AddDynamic(this, &UUI_BuildModeMain::OnSlot10Clicked);
+
+    if (Anim_HotbarOut)
+    {
+        FWidgetAnimationDynamicEvent EndEvent;
+        EndEvent.BindDynamic(this, &UUI_BuildModeMain::OnHotbarOutFinished);
+        BindToAnimationFinished(Anim_HotbarOut, EndEvent);
+    }
+
+    InitializeHotbarRegistry();
+    RefreshHotbarSlotsVisual();
 }
 
 void UUI_BuildModeMain::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
     Super::NativeTick(MyGeometry, InDeltaTime);
-    RefreshSlotIcons();
+    RefreshHotbarSlotsVisual();
 }
 
-void UUI_BuildModeMain::OnStorageClicked()        { ExecutePlacementMode(1); } // 1번: 창고
-void UUI_BuildModeMain::OnConveyorClicked()       { ExecutePlacementMode(2); } // 2번: 컨베이어
-void UUI_BuildModeMain::OnSmelterClicked()        { ExecutePlacementMode(3); } // 3번: 제련기
-void UUI_BuildModeMain::OnGrinderClicked()        { ExecutePlacementMode(4); } // 4번: 분쇄기
-void UUI_BuildModeMain::OnMinerClicked()          { ExecutePlacementMode(5); } // 5번: 채굴기
+void UUI_BuildModeMain::OnMachineModeClicked()   { SwitchBuildSubMode(EBuildSubMode::Machine); }
+void UUI_BuildModeMain::OnPowerModeClicked()     { SwitchBuildSubMode(EBuildSubMode::Power); }
+void UUI_BuildModeMain::OnStructureModeClicked() { SwitchBuildSubMode(EBuildSubMode::Structure); }
 
-void UUI_BuildModeMain::OnPowerPlantClicked()     { ExecutePlacementMode(7); } // 7번: 발전소
-void UUI_BuildModeMain::OnPowerGridNodeClicked()  { ExecutePlacementMode(8); } // 8번: 송전탑
-void UUI_BuildModeMain::OnPowerLineClicked()      { ExecutePlacementMode(9); } // 9번: 송전선
-void UUI_BuildModeMain::OnMagneticShieldClicked() { ExecutePlacementMode(0); } // 0번: 차폐막
+void UUI_BuildModeMain::SwitchBuildSubMode(EBuildSubMode NewMode)
+{
+    if (CurrentSubMode == NewMode) return;
+    PendingSubMode = NewMode;
 
-// 3. 집중 제어 switch-case 함수
-void UUI_BuildModeMain::RefreshSlotIcons()
+    if (Anim_HotbarOut) PlayAnimation(Anim_HotbarOut);
+    else OnHotbarOutFinished();
+}
+
+void UUI_BuildModeMain::OnHotbarOutFinished()
+{
+    CurrentSubMode = PendingSubMode;
+    CachedMachineLevels.Empty();
+    RefreshHotbarSlotsVisual();
+
+    if (Anim_HotbarIn) PlayAnimation(Anim_HotbarIn);
+}
+
+void UUI_BuildModeMain::InitializeHotbarRegistry()
+{
+    SubModeHotbarRegistry.Empty();
+
+    // 🤖 [1. 기계 설치 모드 한글 이름표 완벽 바인딩]
+    TArray<FHotbarSlotData>& MachineHotbar = SubModeHotbarRegistry.FindOrAdd(EBuildSubMode::Machine);
+    MachineHotbar.SetNum(10);
+    MachineHotbar[0] = { EOJJ_BuildPlacementMode::Conveyor,       TEXT("Conveyor"),       FText::FromString(TEXT("컨베이어")) };
+    MachineHotbar[1] = { EOJJ_BuildPlacementMode::Warehouse,      TEXT("Warehouse"),      FText::FromString(TEXT("창고")) };
+    MachineHotbar[2] = { EOJJ_BuildPlacementMode::Smelter,        TEXT("Smelter"),        FText::FromString(TEXT("제련기")) };
+    MachineHotbar[3] = { EOJJ_BuildPlacementMode::Grinder,        TEXT("Grinder"),        FText::FromString(TEXT("분쇄기")) };
+    MachineHotbar[4] = { EOJJ_BuildPlacementMode::MoldingMachine, TEXT("MoldingMachine"), FText::FromString(TEXT("성형기")) };
+    MachineHotbar[5] = { EOJJ_BuildPlacementMode::Synthesizer,    TEXT("Synthesizer"),    FText::FromString(TEXT("합성기")) };
+    MachineHotbar[6] = { EOJJ_BuildPlacementMode::Miner,          TEXT("MinerMachine"),   FText::FromString(TEXT("채굴기")) };
+    MachineHotbar[7] = { EOJJ_BuildPlacementMode::Pump,           TEXT("Pump"),           FText::FromString(TEXT("펌프")) };
+    MachineHotbar[8] = { EOJJ_BuildPlacementMode::LiquidTank,     TEXT("LiquidTank"),     FText::FromString(TEXT("액체 탱크")) };
+    MachineHotbar[9] = { EOJJ_BuildPlacementMode::Pipe,           TEXT("Pipe"),           FText::FromString(TEXT("파이프")) };
+
+    // ⚡ [2. 전력 설치 모드 한글 이름표 완벽 바인딩]
+    TArray<FHotbarSlotData>& PowerHotbar = SubModeHotbarRegistry.FindOrAdd(EBuildSubMode::Power);
+    PowerHotbar.SetNum(10);
+    PowerHotbar[0] = { EOJJ_BuildPlacementMode::PowerLine,  TEXT("PowerLine"),  FText::FromString(TEXT("전력선")) };
+    PowerHotbar[1] = { EOJJ_BuildPlacementMode::PowerNode,  TEXT("PowerGridNode"),  FText::FromString(TEXT("송전탑")) };
+    PowerHotbar[2] = { EOJJ_BuildPlacementMode::PowerPlant, TEXT("PowerPlant"), FText::FromString(TEXT("기본 발전소")) };
+    // 4~10번 자리는 미래에 구현될 수력, 화력 발전소 등을 위해 깔끔하게 빈 칸 유지
+
+    // 🏢 [3. 건물 설치 모드 한글 이름표 완벽 바인딩]
+    TArray<FHotbarSlotData>& StructHotbar = SubModeHotbarRegistry.FindOrAdd(EBuildSubMode::Structure);
+    StructHotbar.SetNum(10);
+    StructHotbar[0] = { EOJJ_BuildPlacementMode::Machine,                NAME_None, FText::FromString(TEXT("중앙거점")) };
+    StructHotbar[1] = { EOJJ_BuildPlacementMode::TeleCommunicationTower, TEXT("TeleCommunicationTower"), FText::FromString(TEXT("통신탑")) };
+    StructHotbar[2] = { EOJJ_BuildPlacementMode::Machine,                NAME_None, FText::FromString(TEXT("신호 증폭기")) };
+    StructHotbar[8] = { EOJJ_BuildPlacementMode::Shield,                 TEXT("MagneticShield"),    FText::FromString(TEXT("차폐막")) };
+}
+
+void UUI_BuildModeMain::RefreshHotbarSlotsVisual()
 {
     UGameInstance* GameInstance = GetGameInstance();
-    UMachineSubsystem* MachineSubsystem = GameInstance
-        ? GameInstance->GetSubsystem<UMachineSubsystem>()
-        : nullptr;
-    if (!MachineSubsystem)
-    {
-        return;
-    }
+    UMachineSubsystem* MachineSubsystem = GameInstance ? GameInstance->GetSubsystem<UMachineSubsystem>() : nullptr;
+    if (!MachineSubsystem) return;
 
-    const int32 ConveyorLevel = MachineSubsystem->GetMachineLevel(TEXT("Conveyor"));
-    const int32 SmelterLevel = MachineSubsystem->GetMachineLevel(TEXT("Smelter"));
-    const int32 GrinderLevel = MachineSubsystem->GetMachineLevel(TEXT("Grinder"));
-    const int32 MinerLevel = MachineSubsystem->GetMachineLevel(TEXT("MinerMachine"));
+    const TArray<FHotbarSlotData>* ActiveHotbarData = SubModeHotbarRegistry.Find(CurrentSubMode);
+    if (!ActiveHotbarData) return;
 
-    if (ConveyorLevel != CachedConveyorLevel)
+    for (int32 i = 0; i < HotbarButtons.Num(); ++i)
     {
-        FMachineTableRow MachineData;
-        if (MachineSubsystem->FindMachineData(TEXT("Conveyor"), MachineData))
+        if (!ActiveHotbarData->IsValidIndex(i)) continue;
+
+        const FHotbarSlotData& SlotData = (*ActiveHotbarData)[i];
+        UButton* TargetBtn = HotbarButtons[i];
+        UImage* TargetImg = HotbarIcons[i];
+        
+        // 실시간 스왑용 텍스트 컴포넌트 안전 획득
+        UTextBlock* TargetTxt = HotbarTexts.IsValidIndex(i) ? HotbarTexts[i] : nullptr;
+
+        // 슬롯 정보가 통째로 비어있는 미래 확장용 예약 칸 구조라면 텍스트와 이미지 숨김
+        if (SlotData.SubsystemKey.IsNone() && SlotData.DisplayName.IsEmpty())
         {
-            ApplyMachineIconToButton(BTN_Slot_2_Conveyor, MachineData);
-            CachedConveyorLevel = ConveyorLevel;
+            if (TargetImg) TargetImg->SetVisibility(ESlateVisibility::Hidden);
+            if (TargetTxt) TargetTxt->SetVisibility(ESlateVisibility::Hidden);
+            continue;
         }
-    }
 
-    if (SmelterLevel != CachedSmelterLevel)
-    {
-        FMachineTableRow MachineData;
-        if (MachineSubsystem->FindMachineData(TEXT("Smelter"), MachineData))
+        // 장부에 적어둔 이쁜 한글 이름표로 텍스트를 즉시 갈아끼웁니다
+        if (TargetTxt)
         {
-            ApplyMachineIconToButton(BTN_Slot_3_Smelter, MachineData);
-            CachedSmelterLevel = SmelterLevel;
+            TargetTxt->SetVisibility(ESlateVisibility::Visible);
+            TargetTxt->SetText(SlotData.DisplayName);
         }
-    }
 
-    if (GrinderLevel != CachedGrinderLevel)
-    {
-        FMachineTableRow MachineData;
-        if (MachineSubsystem->FindMachineData(TEXT("Grinder"), MachineData))
+        // 서브시스템 키가 없는 순수 Placeholder 가이드용 건물("중앙거점" 등)은 이미지만 가려줍니다.
+        if (SlotData.SubsystemKey.IsNone())
         {
-            ApplyMachineIconToButton(BTN_Slot_4_Grinder, MachineData);
-            CachedGrinderLevel = GrinderLevel;
+            if (TargetImg) TargetImg->SetVisibility(ESlateVisibility::Hidden);
+            continue;
         }
-    }
 
-    if (MinerLevel != CachedMinerLevel)
-    {
-        FMachineTableRow MachineData;
-        if (MachineSubsystem->FindMachineData(TEXT("MinerMachine"), MachineData))
+        // 아이콘 이미지 파일 실시간 리트리브 및 캐싱 처리 구역
+        const int32 CurrentLevel = MachineSubsystem->GetMachineLevel(SlotData.SubsystemKey);
+        const int32 CachedLevel = CachedMachineLevels.FindRef(SlotData.SubsystemKey);
+
+        if (CurrentLevel != CachedLevel || CachedLevel == 0)
         {
-            ApplyMachineIconToButton(BTN_Slot_5_Miner, MachineData);
-            CachedMinerLevel = MinerLevel;
+            FMachineTableRow MachineData;
+            if (MachineSubsystem->FindMachineData(SlotData.SubsystemKey, MachineData))
+            {
+                if (TargetImg) TargetImg->SetVisibility(ESlateVisibility::Visible);
+                ApplyMachineIconToButton(TargetBtn, MachineData);
+                CachedMachineLevels.FindOrAdd(SlotData.SubsystemKey) = CurrentLevel;
+            }
         }
     }
 }
@@ -173,44 +234,35 @@ void UUI_BuildModeMain::ExecutePlacementMode(int32 SlotIndex)
 {
     AOJJ_BuildController* BuildController = Cast<AOJJ_BuildController>(
        UGameplayStatics::GetActorOfClass(GetWorld(), AOJJ_BuildController::StaticClass()));
-
     if (!BuildController) return;
-    
-    // 단축키 번호
-    switch (SlotIndex)
-    {
-        case 1: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Warehouse); break;   // 1번: 창고
-        case 2: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Conveyor); break;    // 2번: 컨베이어
-        case 3: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Smelter); break;     // 3번: 제련기
-        case 4: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Grinder); break;     // 4번: 분쇄기
-        case 5: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Miner); break;       // 5번: 채굴기
-        case 6: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pump); break;        // 6번 : 수력발전소
-        case 7: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerPlant); break;  // 7번: 발전소
-        case 8: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerNode); break;   // 8번: 송전탑
-        case 9: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerLine); break;   // 9번: 송전선
-        case 0: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Shield); break;      // 0번: 차폐막
-        
-        default: break;
-    }
+
+    const TArray<FHotbarSlotData>* ActiveHotbarData = SubModeHotbarRegistry.Find(CurrentSubMode);
+    if (!ActiveHotbarData || !ActiveHotbarData->IsValidIndex(SlotIndex - 1)) return;
+
+    const FHotbarSlotData& FinalTargetSlot = (*ActiveHotbarData)[SlotIndex - 1];
+
+    if (FinalTargetSlot.SubsystemKey.IsNone() && FinalTargetSlot.DisplayName.IsEmpty()) return;
+
+    BuildController->SetPlacementMode(FinalTargetSlot.PlacementMode);
 
     UGameInstance* GameInstance = GetGameInstance();
-    UQuestManagerSubsystem* QuestManager = GameInstance
-        ? GameInstance->GetSubsystem<UQuestManagerSubsystem>()
-        : nullptr;
-    if (!QuestManager)
-    {
-        return;
-    }
+    UQuestManagerSubsystem* QuestManager = GameInstance ? GameInstance->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+    if (!QuestManager) return;
 
-    switch (SlotIndex)
+    if (!FinalTargetSlot.SubsystemKey.IsNone())
     {
-        case 1: QuestManager->NotifyTutorialEvent(TEXT("SelectWarehouseMode")); break;
-        case 2: QuestManager->NotifyTutorialEvent(TEXT("SelectConveyorMode")); break;
-        case 3: QuestManager->NotifyTutorialEvent(TEXT("SelectSmelterMode")); break;
-        case 5: QuestManager->NotifyTutorialEvent(TEXT("SelectMinerMode")); break;
-        case 7: QuestManager->NotifyTutorialEvent(TEXT("SelectPowerPlantMode")); break;
-        case 8: QuestManager->NotifyTutorialEvent(TEXT("SelectPowerNodeMode")); break;
-        case 9: QuestManager->NotifyTutorialEvent(TEXT("SelectPowerLineMode")); break;
-        default: break;
+        FString EventString = FString::Printf(TEXT("Select%sMode"), *FinalTargetSlot.SubsystemKey.ToString());
+        QuestManager->NotifyTutorialEvent(*EventString);
     }
 }
+
+void UUI_BuildModeMain::OnSlot1Clicked()  { ExecutePlacementMode(1); }
+void UUI_BuildModeMain::OnSlot2Clicked()  { ExecutePlacementMode(2); }
+void UUI_BuildModeMain::OnSlot3Clicked()  { ExecutePlacementMode(3); }
+void UUI_BuildModeMain::OnSlot4Clicked()  { ExecutePlacementMode(4); }
+void UUI_BuildModeMain::OnSlot5Clicked()  { ExecutePlacementMode(5); }
+void UUI_BuildModeMain::OnSlot6Clicked()  { ExecutePlacementMode(6); }
+void UUI_BuildModeMain::OnSlot7Clicked()  { ExecutePlacementMode(7); }
+void UUI_BuildModeMain::OnSlot8Clicked()  { ExecutePlacementMode(8); }
+void UUI_BuildModeMain::OnSlot9Clicked()  { ExecutePlacementMode(9); }
+void UUI_BuildModeMain::OnSlot10Clicked() { ExecutePlacementMode(10); }

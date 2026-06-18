@@ -89,10 +89,11 @@ void UUI_InventorySlot::NativeOnDragDetected(const FGeometry& MyGeometry, const 
    UItemDragDropOperation* DragOp = NewObject<UItemDragDropOperation>(this, UItemDragDropOperation::StaticClass());
    DragOp->DraggedItemID = CurrentSlotItemID; 
    DragOp->Pivot = EDragPivot::MouseDown;
+   DragOp->Payload = this;
 
    if (IMG_ItemIcon)
    {
-      // 생성 소유자(Outer)를 안전한 PlayerController(GetOwningPlayer)로 지정합니다
+      // 생성 소유자(Outer)를 PlayerController(GetOwningPlayer)로 지정합니다
       UImage* DragVisualImage = NewObject<UImage>(GetOwningPlayer(), UImage::StaticClass());
       if (DragVisualImage)
       {
@@ -131,6 +132,16 @@ bool UUI_InventorySlot::NativeOnDrop(const FGeometry& MyGeometry, const FDragDro
    FName DroppedItemID = ItemDragOp->DraggedItemID;
    if (DroppedItemID.IsNone()) return false;
 
+   // 내장 필드 Payload를 검사/저장해둔 출발지(Payload)가 나 혹은 또 다른 인벤토리 슬롯 클래스(UUI_InventorySlot)인지 검사
+   if (Cast<UUI_InventorySlot>(ItemDragOp->Payload))
+   {
+      UE_LOG(LogTemp, Log, TEXT("[가방 드롭 가드] 내 인벤토리 슬롯 간의 내부 이동/제자리 드롭이 감지되어 추가 연산을 취소합니다."));
+      
+      // true를 리턴해 연산을 안전하게 종료(Rollback)시킴으로써 개수가 늘어나는 버그를 완벽 차단합니다.
+      return true; 
+   }
+
+   // 📦 이하 구역은 캐스팅 가드를 통과한 '외부 기계 창고 UI' 등에서 아이템을 드래그해왔을 때만 실행됩니다.
    UGameInstance* GI = GetGameInstance();
    if (GI)
    {
@@ -147,7 +158,6 @@ bool UUI_InventorySlot::NativeOnDrop(const FGeometry& MyGeometry, const FDragDro
             AOJJ_Player* OJJPlayer = Cast<AOJJ_Player>(PC->GetPawn());
             if (OJJPlayer)
             {
-               // 플레이어 헤더에 있는 GetInventoryWidgetInstance()를 통해 내부의 공식 새로고침 함수를 완벽하게 트리거
                UUI_Inventory* TargetInventory = OJJPlayer->GetInventoryWidgetInstance();
                if (TargetInventory)
                {
@@ -156,7 +166,7 @@ bool UUI_InventorySlot::NativeOnDrop(const FGeometry& MyGeometry, const FDragDro
             }
          }
 
-         UE_LOG(LogTemp, Log, TEXT("[가방 드롭 마감 완료] '%s' 아이템을 성공적으로 내 인벤토리에 안전 바인딩했습니다!"), *DroppedItemID.ToString());
+         UE_LOG(LogTemp, Log, TEXT("[가방 드롭 마감 완료] 외부에서 들어온 '%s' 아이템을 인벤토리에 장부 등록했습니다!"), *DroppedItemID.ToString());
          return true;
       }
    }

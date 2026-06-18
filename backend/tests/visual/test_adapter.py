@@ -9,8 +9,10 @@ from unittest.mock import MagicMock, patch
 from PIL import Image
 
 from visual.adapter import (
+    LocalDiffusersImageAdapter,
     OpenAIImageAdapter,
     PlaceholderImageAdapter,
+    create_image_adapter,
     resize_to_profile,
 )
 from visual.profile import ICON, MASTER, THUMBNAIL
@@ -128,3 +130,55 @@ class TestOpenAIImageAdapter:
 
         adapter = OpenAIImageAdapter(settings=_settings_openai(), client=mock_client)
         assert adapter.generate("prompt") is None
+
+
+def _settings_local(model: str = "stabilityai/sdxl-turbo") -> ImageGenSettings:
+    return ImageGenSettings(provider="local", model=model)
+
+
+def _fake_pipeline_returning(image: Image.Image) -> MagicMock:
+    """Mimic a diffusers pipeline: callable returning an object with .images."""
+    pipe = MagicMock()
+    result = MagicMock()
+    result.images = [image]
+    pipe.return_value = result
+    return pipe
+
+
+class TestLocalDiffusersImageAdapter:
+    def test_returns_none_when_model_missing(self) -> None:
+        settings = ImageGenSettings(provider="local", model=None)
+        adapter = LocalDiffusersImageAdapter(settings=settings)
+        assert adapter.generate("prompt") is None
+
+    def test_returns_master_png_on_success(self) -> None:
+        master_image = Image.new("RGB", (MASTER.width, MASTER.height), (10, 20, 30))
+        pipe = _fake_pipeline_returning(master_image)
+
+        adapter = LocalDiffusersImageAdapter(settings=_settings_local(), pipeline=pipe)
+        result = adapter.generate("a seamless metal texture")
+
+        assert result is not None
+        img = Image.open(io.BytesIO(result))
+        assert img.format == "PNG"
+        assert img.size == (MASTER.width, MASTER.height)
+        pipe.assert_called_once()
+
+    def test_returns_none_on_pipeline_exception(self) -> None:
+        pipe = MagicMock(side_effect=RuntimeError("CUDA OOM"))
+        adapter = LocalDiffusersImageAdapter(settings=_settings_local(), pipeline=pipe)
+        assert adapter.generate("prompt") is None
+
+
+class TestCreateImageAdapter:
+    def test_none_provider_returns_placeholder(self) -> None:
+        adapter = create_image_adapter(ImageGenSettings(provider="none"))
+        assert isinstance(adapter, PlaceholderImageAdapter)
+
+    def test_openai_provider_returns_openai_adapter(self) -> None:
+        adapter = create_image_adapter(_settings_openai())
+        assert isinstance(adapter, OpenAIImageAdapter)
+
+    def test_local_provider_returns_local_adapter(self) -> None:
+        adapter = create_image_adapter(_settings_local())
+        assert isinstance(adapter, LocalDiffusersImageAdapter)
