@@ -180,3 +180,45 @@ def test_production_quest_agent_exposes_selection_tool(
     assert [tool.name for tool in agent.tools] == [PRODUCTION_QUEST_SELECTION_TOOL_NAME]
     assert PRODUCTION_QUEST_SELECTION_TOOL_NAME in prompt
     assert "tool_call" in prompt
+
+
+def test_production_quest_prompt_is_game_state_driven_not_request_driven(
+    context: AgentContext,
+) -> None:
+    """생산 퀘스트는 자연어 '만들어줘' 요청이 아니라 게임 상태로 자동 생성한다.
+
+    초보자용 설명:
+        게임에서 퀘스트 요청이 오면 플레이어가 어떤 퀘스트를 원하는지 글로 적는 게 아니라,
+        게임 상태(진행도/보유 자원 등)를 보고 시스템이 알아서 퀘스트를 고릅니다.
+        게임 상태가 아직 없으면 대표 퀘스트를 자동으로 고릅니다.
+    """
+    agent = ProductionQuestAgent()
+
+    prompt = agent.build_prompt(
+        {"game_state": {"stage": 2, "inventory": ["iron_ore"]}}, context
+    )
+
+    assert "[GAME_STATE]" in prompt
+    assert "자동" in prompt
+    assert "stage" in prompt and "iron_ore" in prompt
+    assert "[REQUEST_PAYLOAD]" not in prompt
+
+    empty_prompt = agent.build_prompt({}, context)
+    assert "[GAME_STATE]" in empty_prompt
+
+
+def test_economy_quest_prompt_is_game_state_driven_not_request_driven(
+    context: AgentContext,
+) -> None:
+    """경제 퀘스트도 자연어 요청이 아니라 게임 상태로 자동 생성한다."""
+    agent = EconomyQuestAgent()
+
+    prompt = agent.build_prompt({"game_state": {"warehouse_overflow": True}}, context)
+
+    assert "[GAME_STATE]" in prompt
+    assert "자동" in prompt
+    assert "warehouse_overflow" in prompt
+    assert "다음 요청을 바탕으로" not in prompt
+
+    empty_prompt = agent.build_prompt({}, context)
+    assert "[GAME_STATE]" in empty_prompt

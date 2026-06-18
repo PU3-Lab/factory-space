@@ -40,10 +40,16 @@ class MockLLMAdapter:
 def test_llm_classifier_success() -> None:
     """LLM이 성공적으로 분석하여 특정 스코프 정보 연동을 결정했을 때의 시나리오를 테스트합니다."""
     # LLM이 powerStatus와 inputInventory만 필요하다고 판별한 가짜 JSON 응답 설정
-    mock_response = json.dumps({
-        "requires_current_game_state": True,
-        "required_state_scopes": ["powerStatus", "inputInventory", "invalidScopeIgnored"]
-    })
+    mock_response = json.dumps(
+        {
+            "requires_current_game_state": True,
+            "required_state_scopes": [
+                "powerStatus",
+                "inputInventory",
+                "invalidScopeIgnored",
+            ],
+        }
+    )
     mock_adapter = MockLLMAdapter(response=mock_response)
     classifier = ContextNeedClassifier(llm_adapter=mock_adapter)
 
@@ -80,7 +86,9 @@ def test_llm_classifier_fallback() -> None:
 
 def test_new_scopes_inclusion() -> None:
     """새로이 추가된 스코프 connectedConveyors와 recentErrorEvents가 룰 기반 fallback 시 포함되는지 검증합니다."""
-    classifier = ContextNeedClassifier()  # llm_adapter가 없는 경우 기본적으로 룰 기반 작동
+    classifier = (
+        ContextNeedClassifier()
+    )  # llm_adapter가 없는 경우 기본적으로 룰 기반 작동
     requires_state, scopes = classifier.classify_need(
         "기계가 안 돌아가. 원인이 뭐야?",
         "troubleshooting_question",
@@ -117,7 +125,9 @@ def test_sprint_15_1_success_criteria_integration() -> None:
         }
     }
 
-    prompt_context = service.build_prompt_context("철괴가 안 만들어져. 왜 그래?", context=context)
+    prompt_context = service.build_prompt_context(
+        "철괴가 안 만들어져. 왜 그래?", context=context
+    )
     result = prompt_context.result
 
     # 7대 스코프가 모두 required_state_scopes에 포함되어야 함
@@ -131,7 +141,12 @@ def test_sprint_15_1_success_criteria_integration() -> None:
     assert "inputInventory" not in result.available_scopes  # 제공하지 않았으므로 제외됨
 
     # 프롬프트에도 주입되었는지 확인
-    prompt = service.build_prompt("철괴가 안 만들어져. 왜 그래?", topic="troubleshooting", sub_agent="operator_guide", context=context)
+    prompt = service.build_prompt(
+        "철괴가 안 만들어져. 왜 그래?",
+        topic="troubleshooting",
+        sub_agent="operator_guide",
+        context=context,
+    )
     assert "[CURRENT_GAME_STATE]" in prompt
     assert "connectedConveyors: Conveyor A -> B" in prompt
     assert "recentErrorEvents: No power supply" in prompt

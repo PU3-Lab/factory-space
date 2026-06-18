@@ -59,7 +59,9 @@ def test_troubleshooting_rag_document_preserves_actions_and_resolution() -> None
 def test_tutorial_rag_document_preserves_progress_context() -> None:
     documents = ManualRagDocumentBuilder(CsvManualQARepository()).build_all()
     tutorial = next(
-        document for document in documents if document.doc_id == "tutorial:TUT_BASIC_001"
+        document
+        for document in documents
+        if document.doc_id == "tutorial:TUT_BASIC_001"
     )
 
     assert tutorial.source_file == "tutorial.csv"

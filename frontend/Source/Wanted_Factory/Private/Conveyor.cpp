@@ -493,6 +493,10 @@ void AConveyor::RebuildVisuals()
 			// ㄱ자 코너 메시: XZ평면 수직 벽 → Roll 90(X축)로 XY바닥에 눕히고 진행면을 위로.
 			// 합성 YawQuat * RollQuat → Roll(눕히기) 먼저, Yaw(격자 코너 방향) 나중.
 			// [OJJ F3.9] Eff 방향 사용 — 경로 안 코너는 원본과 동일값(보충은 끝 셀에서만 발생).
+			// [#252] 코너 pitch(경사 틸트) 제거 — 단일평면 수평 배치로 복귀. 컨베이어 코너는 경사 게이트
+			// (OJJ_ValidateConveyorSlopePath, tol=5uu)가 **평지에서만** 허용하므로 코너 DeltaZ≈0 = pitch 0.
+			// 경사 코너 위 틸트(흐름⊥/gradient축)·CornerBaseRoll/Pitch·CornerAxis 진단은 경사 코너가 금지된
+			// 이상 불필요해 전부 폐기(평지 코너는 원래 이 수평 배치가 정상).
 			const FQuat YawQuat(FRotator(0.0f, CornerToYaw90(EffPrevDirection, EffNextDirection) + CornerBaseYaw, 0.0f));
 			const FQuat RollQuat(FRotator(0.0f, 0.0f, 90.0f));   // XZ벽 → XY바닥
 			const FQuat CornerQuat = YawQuat * RollQuat;

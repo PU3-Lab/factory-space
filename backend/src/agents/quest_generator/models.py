@@ -169,3 +169,14 @@ class QuestProgress(BaseModel):
     last_event_id: str | None = Field(
         default=None, description="멱등성 처리를 위한 마지막 처리 이벤트 ID"
     )
+
+
+class ItemCollectedEvent(BaseModel):
+    """공장에서 수집된 아이템 획득 이벤트 스키마입니다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str = Field(description="이벤트 고유 식별자")
+    factory_id: str = Field(description="공장 식별자")
+    item_id: str = Field(description="획득한 아이템 ID")
+    current_total: int = Field(ge=0, description="현재 아이템 총 보유량")

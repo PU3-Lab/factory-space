@@ -400,6 +400,7 @@ protected:
 	void SetMoldingMachineModeShortcut();
 	void SetSynthesizerModeShortcut();
 	void SetTeleCommunicationTowerModeShortcut();
+	void SetDemolishModeShortcut();
 	void SetWarehouseMode(const FInputActionValue& Value);
 	void SetDemolishMode(const FInputActionValue& Value);
 

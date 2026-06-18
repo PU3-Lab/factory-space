@@ -189,7 +189,9 @@ class ManualQAService:
             )
             # 최종 정돈 진행 메시지 전송
             if on_progress and topic in PROGRESS_CATALOG:
-                on_progress(PROGRESS_CATALOG[topic][-1][0], PROGRESS_CATALOG[topic][-1][1])
+                on_progress(
+                    PROGRESS_CATALOG[topic][-1][0], PROGRESS_CATALOG[topic][-1][1]
+                )
 
             return ManualQAPromptContext(
                 result=result,

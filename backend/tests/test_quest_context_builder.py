@@ -33,11 +33,17 @@ def test_game_data_loader() -> None:
 
 def test_quest_context_builder_normalization() -> None:
     assert QuestContextBuilder.normalize_item_id("iron_ingot") == "resource_iron_ingot"
-    assert QuestContextBuilder.normalize_item_id("resource_iron_ingot") == "resource_iron_ingot"
+    assert (
+        QuestContextBuilder.normalize_item_id("resource_iron_ingot")
+        == "resource_iron_ingot"
+    )
     assert QuestContextBuilder.normalize_item_id("") == ""
 
     assert QuestContextBuilder.normalize_recipe_id("smelt_iron") == "recipe_smelt_iron"
-    assert QuestContextBuilder.normalize_recipe_id("recipe_smelt_iron") == "recipe_smelt_iron"
+    assert (
+        QuestContextBuilder.normalize_recipe_id("recipe_smelt_iron")
+        == "recipe_smelt_iron"
+    )
     assert QuestContextBuilder.normalize_recipe_id("") == ""
 
 
@@ -103,13 +109,21 @@ def test_quest_context_builder_build_context_success() -> None:
     # shortage_amount: iron_ingot (20 - 8 = 12), copper_ingot (10 - 2 = 8)
     assert len(context.known_issues) == 2
 
-    iron_issue = next(issue for issue in context.known_issues if issue.item_id == "resource_iron_ingot")
+    iron_issue = next(
+        issue
+        for issue in context.known_issues
+        if issue.item_id == "resource_iron_ingot"
+    )
     assert iron_issue.shortage_amount == 12
     assert iron_issue.main_objective_id == "need_iron_ingot"
     # producible: smelt_iron is in unlocked_recipes
     assert iron_issue.producible is True
 
-    copper_issue = next(issue for issue in context.known_issues if issue.item_id == "resource_copper_ingot")
+    copper_issue = next(
+        issue
+        for issue in context.known_issues
+        if issue.item_id == "resource_copper_ingot"
+    )
     assert copper_issue.shortage_amount == 8
     assert copper_issue.main_objective_id == "need_copper_ingot"
     # producible: smelt_copper is in unlocked_recipes
@@ -164,19 +178,23 @@ def test_db_model_to_pydantic_conversion() -> None:
         title="철괴 확보",
         description="철괴를 확보하세요.",
         status="in_progress",
-        objective_json=[{
-            "id": "obj_001",
-            "type": "collect_item",
-            "target_id": "resource_iron_ingot",
-            "target_amount": 10,
-            "current_amount": 2,
-            "status": "in_progress",
-        }],
-        reward_json=[{
-            "type": "currency",
-            "target_id": "gold",
-            "amount": 100,
-        }],
+        objective_json=[
+            {
+                "id": "obj_001",
+                "type": "collect_item",
+                "target_id": "resource_iron_ingot",
+                "target_amount": 10,
+                "current_amount": 2,
+                "status": "in_progress",
+            }
+        ],
+        reward_json=[
+            {
+                "type": "currency",
+                "target_id": "gold",
+                "amount": 100,
+            }
+        ],
         created_by="rule",
         level_reward_applied=False,
         created_at=datetime.now(UTC),

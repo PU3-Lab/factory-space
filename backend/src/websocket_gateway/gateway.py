@@ -12,6 +12,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from agents.pipeline import AgentPipeline
 from protocol.errors import build_error_payload
+from websocket_gateway.quest_dispatch import dispatch_quest_message
 
 router = APIRouter()
 LOGGER = logging.getLogger("uvicorn.error")
@@ -93,6 +94,24 @@ async def agent_websocket(websocket: WebSocket) -> None:
                 )
                 continue
 
+            if not isinstance(message, dict):
+                await send_agent_json(
+                    websocket,
+                    {
+                        "type": "agent.error",
+                        "error": build_error_payload(
+                            "INVALID_ENVELOPE",
+                            "WebSocket message must be a JSON object.",
+                        ),
+                    },
+                )
+                continue
+
+            message_type = message.get("type")
+            if isinstance(message_type, str) and message_type.startswith("quest."):
+                await dispatch_quest_message(websocket, message, send_agent_json)
+                continue
+
             loop = asyncio.get_running_loop()
 
             def handle_progress(stage: str, message_text: str) -> None:
@@ -101,7 +120,7 @@ async def agent_websocket(websocket: WebSocket) -> None:
                     "request_id": message.get("request_id") or str(uuid4()),
                     "session_id": message.get("session_id"),
                     "client_id": message.get("client_id"),
-                    "agent": "operator_guide",
+                    "agent": message.get("agent") or "operator_guide",
                     "payload": {
                         "stage": stage,
                         "message": message_text,
@@ -119,4 +138,3 @@ async def agent_websocket(websocket: WebSocket) -> None:
             await send_agent_json(websocket, response)
     except WebSocketDisconnect:
         return
-

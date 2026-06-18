@@ -19,6 +19,9 @@ from agents.operator_guide.agent import (
     OPERATOR_GUIDE_LEAF_AGENT_IDS,
     OperatorGuideAgent,
 )
+from agents.operator_guide.answer_sanitizer import (
+    sanitize_operator_guide_response_payload,
+)
 from agents.operator_guide.session_memory import (
     OPERATOR_GUIDE_RECENT_CONVERSATION_KEY,
     OperatorGuideSessionMemory,
@@ -83,6 +86,7 @@ def _clean_routing_decision(raw: str | None) -> str:
     if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {'"', "'"}:
         cleaned = cleaned[1:-1]
     return cleaned.strip()
+
 
 def build_context(
     state: AgentGraphState,
@@ -170,7 +174,6 @@ class AgentPipeline:
         operator_guide = OperatorGuideAgent()
         operator_guide_memory = OperatorGuideSessionMemory()
         quest_generator = QuestGeneratorAgent()
-
 
         def log_agent_started(state: AgentGraphState) -> AgentGraphState:
             return append_middleware_log(
@@ -358,8 +361,14 @@ class AgentPipeline:
             return output
 
         def build_cached_response(state: AgentGraphState) -> AgentGraphState:
+            cached_payload = state["cachedPayload"]
+            if state.get("selectedAgent") == "operator_guide":
+                cached_payload = sanitize_operator_guide_response_payload(
+                    cached_payload
+                )
+
             return {
-                "responsePayload": state["cachedPayload"],
+                "responsePayload": cached_payload,
                 "responseMetadata": {
                     **state.get("cachedMetadata", {}),
                     "cache": "hit",
@@ -378,7 +387,9 @@ class AgentPipeline:
                 or state["typedPayload"].get("message")
                 or ""
             )
-            operator_guide_memory.update_facts_from_question(context.session_id, question)
+            operator_guide_memory.update_facts_from_question(
+                context.session_id, question
+            )
 
             recent_turns = operator_guide_memory.recent_turns(context.session_id)
             confirmed_facts = operator_guide_memory.confirmed_facts(context.session_id)
@@ -533,6 +544,8 @@ class AgentPipeline:
                 **metadata,
                 **append_tool_metadata(state),
             }
+            if state.get("selectedAgent") == "operator_guide":
+                payload = sanitize_operator_guide_response_payload(payload)
             return {"responsePayload": payload, "responseMetadata": metadata}
 
         def build_fallback(state: AgentGraphState) -> AgentGraphState:

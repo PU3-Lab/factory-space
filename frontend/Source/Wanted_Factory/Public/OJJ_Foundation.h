@@ -41,6 +41,12 @@ struct FOJJFoundationFitResult
 
 	// #261 한쪽-지면 하강 램프 표식 — OJJ_ComputeSnapLift 높은끝 스냅 게이트.
 	bool bOneSideGroundRamp = false;
+
+	// 빗변 연장: 한쪽-지면 램프 낮은끝(r=0) 폭선 각 칸 GroundRaw 중 **최저** 월드 Z. 칼끝을 이 Z까지
+	// −ClimbDir로 연장(빗변 기울기 유지)해 단일평면이 지형과 교차 — 높은 칸 묻힘·최저 칸 닿음(안 뜸).
+	// bOneSideGroundRamp이고 한 칸이라도 GroundZ 유효일 때만 채워진다(bLoEndLowestValid).
+	float LoEndLowestGroundRaw = 0.0f;
+	bool bLoEndLowestValid = false;
 };
 
 /**

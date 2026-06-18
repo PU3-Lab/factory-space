@@ -69,7 +69,15 @@ def normalize_node(state: MaterialGraphState) -> dict[str, Any]:
 
 
 def lookup_cache_node(state: MaterialGraphState) -> dict[str, Any]:
-    """노드: 캐시된 결과가 있는지 실험 레지스트리를 확인합니다."""
+    """노드: 캐시된 결과가 있는지 실험 레지스트리를 확인합니다.
+
+    데이터 흐름:
+    1. 실험 요청 해시값(experiment_hash)을 이용해 DB에 기존 실험 기록이 있는지 확인합니다.
+    2. 기존 실험이 있고 신규 물질 생성 건(new_material)이라면, 해당 물질(material) 정보와
+       이미 생성 완료된 이미지 에셋(visual/texture/thumbnail asset key)을 DB에서 함께 조회합니다.
+    3. 조회한 에셋 키 정보를 응답(MaterialCreationResponse)에 매핑하여 반환(cache hit)함으로써,
+       동일 실험에 대해 중복된 이미지 생성 및 처리가 일어나지 않도록 방지합니다.
+    """
     session = state["db"]
     exp_hash = state["experiment_hash"]
 
@@ -88,6 +96,9 @@ def lookup_cache_node(state: MaterialGraphState) -> dict[str, Any]:
             mat_state = mat_model.state if mat_model else None
             visual_status = mat_model.visual_status if mat_model else None
             fallback_icon = mat_model.fallback_icon if mat_model else None
+            visual_asset_key = mat_model.visual_asset_key if mat_model else None
+            texture_asset_key = mat_model.texture_asset_key if mat_model else None
+            thumbnail_asset_key = mat_model.thumbnail_asset_key if mat_model else None
 
             response = MaterialCreationResponse(
                 result_type="cached_experiment",
@@ -101,6 +112,9 @@ def lookup_cache_node(state: MaterialGraphState) -> dict[str, Any]:
                 generation_status="cached",
                 visual_status=visual_status,
                 fallback_icon=fallback_icon,
+                visual_asset_key=visual_asset_key,
+                texture_asset_key=texture_asset_key,
+                thumbnail_asset_key=thumbnail_asset_key,
                 message="이미 발견된 물질입니다.",
             )
         elif existing_exp.result_type == "existing_recipe":
@@ -405,11 +419,15 @@ def validate_result_node(state: MaterialGraphState) -> dict[str, Any]:
 def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
     """노드: 기존 재료 해시를 확인하여 속성을 중복 제거합니다.
 
-    참고: material_hash가 (장비+정규화 입력+공정조건) 합성 정체성 기반으로 재정의되었기 때문에,
-    동일 합성 조건은 1차로 상위 `lookup_cache_node`(experiment_hash 캐시)에서 이미 걸러집니다.
-    따라서 이 노드의 `existing_mat` 매칭 분기는 주로 캐시 테이블(experiments)에 기록은 안 남아있으나
-    materials 테이블에는 존재하거나, 다른 장비/공정에서 같은 정체성을 유도하는 등의 드문 경로에 대한
-    안전장치(fallback) 성격으로 잔존 및 작동합니다.
+    데이터 흐름:
+    1. material_hash가 (장비+정규화 입력+공정조건) 합성 정체성 기반으로 재정의되었기 때문에,
+       동일 합성 조건은 1차로 상위 `lookup_cache_node`(experiment_hash 캐시)에서 이미 걸러집니다.
+    2. 이 노드의 `existing_mat` 매칭 분기는 주로 캐시 테이블(experiments)에 기록은 안 남아있으나
+       materials 테이블에는 존재하거나, 다른 장비/공정에서 같은 정체성을 유도하는 등의 드문 경로에 대한
+       안전장치(fallback) 성격으로 잔존 및 작동합니다.
+    3. 만약 기존 물질(existing_mat)이 발견되면, 해당 물질의 ID, 속성 정보와 함께 이미 완료된
+       비주얼 에셋 키 정보(visual_asset_key, texture_asset_key, thumbnail_asset_key)도
+       함께 응답에 포함시켜 반환하도록 처리합니다.
     """
     if state.get("response"):
         return {}
@@ -434,6 +452,9 @@ def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
         mat_state = existing_mat.state
         visual_status = existing_mat.visual_status
         fallback_icon = existing_mat.fallback_icon
+        visual_asset_key = existing_mat.visual_asset_key
+        texture_asset_key = existing_mat.texture_asset_key
+        thumbnail_asset_key = existing_mat.thumbnail_asset_key
         is_new = False
     else:
         material_id = f"mat_{proposal.result.id_hint}_{uuid.uuid4().hex[:6]}"
@@ -442,6 +463,9 @@ def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
         mat_state = proposal.result.state
         visual_status = "pending" if generate_visual else "skipped"
         fallback_icon = f"materials/default/{proposal.result.category}.png"
+        visual_asset_key = None
+        texture_asset_key = None
+        thumbnail_asset_key = None
         is_new = True
 
     response = MaterialCreationResponse(
@@ -455,6 +479,9 @@ def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
         generation_status="created" if is_new else "cached",
         visual_status=visual_status,
         fallback_icon=fallback_icon,
+        visual_asset_key=visual_asset_key,
+        texture_asset_key=texture_asset_key,
+        thumbnail_asset_key=thumbnail_asset_key,
         message="새로운 물질이 발견되었습니다. 아이콘과 텍스처는 생성 중입니다."
         if (is_new and generate_visual)
         else "새로운 물질이 발견되었습니다."

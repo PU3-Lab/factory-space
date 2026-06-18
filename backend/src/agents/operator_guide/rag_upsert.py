@@ -61,7 +61,9 @@ class ManualRagUpsertService:
         return self.upsert_batch(
             ManualRagIngestionBatch(
                 records=records,
-                content_hashes={record.doc_id: record.content_hash for record in records},
+                content_hashes={
+                    record.doc_id: record.content_hash for record in records
+                },
                 failed_rows=[],
             ),
             dry_run=dry_run,
@@ -89,7 +91,7 @@ class ManualRagUpsertService:
         incoming_ids = set(batch.content_hashes)
         records_by_id = {record.doc_id: record for record in batch.records}
         records_to_write: list[ManualRagIngestionRecord] = []
-        
+
         failed_ids = {row.doc_id for row in batch.failed_rows}
         inserted = 0
         updated = 0

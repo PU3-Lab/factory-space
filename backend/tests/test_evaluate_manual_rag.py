@@ -46,8 +46,12 @@ def test_evaluate_questions_sorts_sub_question_results_by_score() -> None:
     runtime = FakeRagRuntime(
         FakeRagResult(
             sub_question_results=[
-                FakeSubQuestionResult(FakeRetrieval([FakeSearchResult("doc:low", 0.25)])),
-                FakeSubQuestionResult(FakeRetrieval([FakeSearchResult("doc:expected", 0.80)])),
+                FakeSubQuestionResult(
+                    FakeRetrieval([FakeSearchResult("doc:low", 0.25)])
+                ),
+                FakeSubQuestionResult(
+                    FakeRetrieval([FakeSearchResult("doc:expected", 0.80)])
+                ),
             ],
             metadata={"confidence_counts": {"high": 1, "medium": 0, "low": 0}},
         ),
@@ -74,7 +78,9 @@ def test_evaluate_questions_fails_ambiguous_case_when_score_is_too_high() -> Non
     runtime = FakeRagRuntime(
         FakeRagResult(
             sub_question_results=[
-                FakeSubQuestionResult(FakeRetrieval([FakeSearchResult("action:too_specific", 0.55)])),
+                FakeSubQuestionResult(
+                    FakeRetrieval([FakeSearchResult("action:too_specific", 0.55)])
+                ),
             ],
             metadata={"confidence_counts": {"high": 0, "medium": 0, "low": 1}},
         ),
@@ -102,7 +108,9 @@ def test_evaluation_exit_code_fails_when_pass_rate_is_below_threshold() -> None:
     runtime = FakeRagRuntime(
         FakeRagResult(
             sub_question_results=[
-                FakeSubQuestionResult(FakeRetrieval([FakeSearchResult("doc:wrong", 0.70)])),
+                FakeSubQuestionResult(
+                    FakeRetrieval([FakeSearchResult("doc:wrong", 0.70)])
+                ),
             ],
             metadata={"confidence_counts": {"high": 1, "medium": 0, "low": 0}},
         ),

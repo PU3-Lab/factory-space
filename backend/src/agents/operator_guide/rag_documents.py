@@ -66,7 +66,8 @@ class ManualRagDocumentBuilder:
             for record in self._repository.list_action_policies()
         )
         documents.extend(
-            self._tutorial_document(record) for record in self._repository.list_tutorials()
+            self._tutorial_document(record)
+            for record in self._repository.list_tutorials()
         )
         return documents
 

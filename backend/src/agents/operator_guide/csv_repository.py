@@ -295,7 +295,9 @@ class CsvManualQARepository:
                 related_resources=_split_ids(
                     _value(row, "related_resources", "관련자원")
                 ),
-                related_recipes=_split_ids(_value(row, "related_recipes", "관련레시피")),
+                related_recipes=_split_ids(
+                    _value(row, "related_recipes", "관련레시피")
+                ),
             )
             for row in rows
         }

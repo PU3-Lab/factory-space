@@ -43,7 +43,9 @@ def _init_game_data() -> None:
                     data_dir = candidate
 
         if not data_dir:
-            raise FileNotFoundError("Could not find data/game directory in any parent paths.")
+            raise FileNotFoundError(
+                "Could not find data/game directory in any parent paths."
+            )
 
         resources_path = data_dir / "resources.csv"
         recipes_path = data_dir / "recipes.csv"
@@ -98,3 +100,50 @@ def get_recipe_map() -> dict[str, tuple[str, list[str]]]:
     """Returns the map of recipe_id -> (output_item_id, input_item_ids)."""
     _init_game_data()
     return _recipe_map
+
+
+_ITEM_MIN_LEVELS: dict[str, int] = {
+    # Tier 2
+    "resource_zinc_ore": 2,
+    "resource_zinc_ingot": 2,
+    "resource_zinc_powder": 2,
+    "resource_lead_ore": 2,
+    "resource_lead_ingot": 2,
+    "resource_lead_powder": 2,
+    "resource_tin_ore": 2,
+    "resource_tin_ingot": 2,
+    "resource_tin_powder": 2,
+    # Tier 3
+    "resource_aluminum_ore": 3,
+    "resource_aluminum_ingot": 3,
+    "resource_aluminum_powder": 3,
+    "resource_nickel_ore": 3,
+    "resource_nickel_ingot": 3,
+    "resource_nickel_powder": 3,
+    # Tier 4
+    "resource_tungsten_ore": 4,
+    "resource_tungsten_ingot": 4,
+    "resource_tungsten_powder": 4,
+    "resource_titanium_ore": 4,
+    "resource_titanium_ingot": 4,
+    "resource_titanium_powder": 4,
+    # Tier 5
+    "resource_magnesium_ore": 5,
+    "resource_magnesium_ingot": 5,
+    "resource_magnesium_powder": 5,
+    "resource_gold_ore": 5,
+    "resource_gold_ingot": 5,
+    "resource_gold_powder": 5,
+    "resource_silver_ore": 5,
+    "resource_silver_ingot": 5,
+    "resource_silver_powder": 5,
+    "resource_uranium": 5,
+}
+
+
+def get_item_min_level(item_id: str) -> int:
+    """해당 아이템 지원 퀘스트가 생성되기 위해 필요한 최소 공장 레벨을 반환합니다.
+
+    기본값은 1입니다.
+    """
+    return _ITEM_MIN_LEVELS.get(item_id, 1)

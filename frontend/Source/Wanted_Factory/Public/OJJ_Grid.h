@@ -859,6 +859,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
 	float OJJ_GetMaxConveyorStepZ() const { return OJJ_MaxConveyorStepZ; }
 
+	// #268 코너 게이트 — 코너 3셀 클램프Z span 허용 한계(uu).
+	// [#252] "반 단(=step*0.5=50uu)" 완화를 철회하고 **미세굴곡 epsilon(step*0.05=5uu)**으로 조인다:
+	// 반 단 정책은 빗변연장으로 단차가 ≤50으로 준 "램프 위 경사 코너"까지 통과시켰는데, 이게 시각상
+	// 비스듬히 꺾여 어색했다(③ cc13681이 푼 것). 컨베이어 코너는 **평지에서만** 꺾이게 한다 → span≈0인
+	// 평탄 Foundation 코너만 허용, 진짜 경사(bevel-reduced 포함 수십uu↑)는 거부. raw 지형추종 코너(#249)는
+	// 게이트 면제라 무영향. step 재튜닝 시 코너 허용폭이 함께 따라가게 한다(암묵 결합 명시화).
+	UFUNCTION(BlueprintPure, Category = "Grid|Conveyor")
+	float OJJ_GetConveyorCornerZTolerance() const { return OJJ_MaxConveyorStepZ * 0.05f; }
+
 	// #249 컨베이어 raw-terrain 경사 게이트 한계(uu) 접근자 — **컨베이어 raw 경로 전용**(파이프는 경사 제한 제거됨).
 	// raw 경로 인접 셀 |ΔZ| 판정에 쓰여 자연 경사(물가 둑 등)는 통과·수직 벽은 거부. Foundation/램프 컨베이어
 	// 경로는 OJJ_GetMaxConveyorStepZ(100) 별도(램프 MaxRampStepPerRow 가정 보존).
@@ -1095,6 +1104,10 @@ bool OJJ_BuildConveyorPlacementPath(
 	//  - 서버 (HasAuthority) 에서만 호출
 	UFUNCTION(BlueprintCallable, Category = "Grid|Placement")
 	bool RegisterExistingMachine(AMachineBase* Machine, FIntPoint Origin, FString& OutReason);
+
+	// Registers a pre-placed world machine only into occupancy maps.
+	// Use for authored story objects that must be demolishable but may sit on non-buildable terrain.
+	bool RegisterExistingMachineOccupancyOnly(AMachineBase* Machine, FIntPoint Origin, FString& OutReason);
 
 	// 그리드 시각화 평면 표시/숨김 (건설 모드 토글 등에 사용)
 	UFUNCTION(BlueprintCallable, Category = "Grid|Visualization")

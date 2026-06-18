@@ -95,10 +95,12 @@ def test_pipeline_emits_progress_once_per_stage() -> None:
     def on_progress(stage: str, message: str) -> None:
         progress_calls.append((stage, message))
 
-    llm = StubLLM([
-        top_agent_decision("operator_guide"),
-        None,
-    ])
+    llm = StubLLM(
+        [
+            top_agent_decision("operator_guide"),
+            None,
+        ]
+    )
     pipeline = AgentPipeline(llm=llm)
     message = {
         "type": "agent.request",

@@ -68,10 +68,14 @@ def test_extract_confirmed_facts() -> None:
     assert "전력 부족" in extract_confirmed_facts("전력이 부족해서 그런가?")
 
     # 컨베이어 멈춤 확인
-    assert "컨베이어가 멈춤" in extract_confirmed_facts("컨베이어 벨트가 멈췄는데 어쩌지")
+    assert "컨베이어가 멈춤" in extract_confirmed_facts(
+        "컨베이어 벨트가 멈췄는데 어쩌지"
+    )
 
     # 저장고 비어있음/가득참 확인
-    assert "출력 저장고는 비어 있음" in extract_confirmed_facts("출력 보관함은 비어 있어요")
+    assert "출력 저장고는 비어 있음" in extract_confirmed_facts(
+        "출력 보관함은 비어 있어요"
+    )
     assert "출력 저장고가 가득 참" in extract_confirmed_facts("저장고가 가득 찼어")
 
     # 라인 정체 확인
@@ -170,7 +174,9 @@ def test_pipeline_memory_context_and_query_expansion_integration() -> None:
                 },
             }
         )
-        assert_agent_response(res1, agent="operator_guide", sub_agent="operator_guide.troubleshooter")
+        assert_agent_response(
+            res1, agent="operator_guide", sub_agent="operator_guide.troubleshooter"
+        )
         mem1 = res1["payload"]["metadata"]["memory"]
         assert mem1["used"] is True
         assert mem1["confirmed_facts"] == ["컨베이어가 멈춤"]
@@ -189,7 +195,9 @@ def test_pipeline_memory_context_and_query_expansion_integration() -> None:
                 },
             }
         )
-        assert_agent_response(res2, agent="operator_guide", sub_agent="operator_guide.troubleshooter")
+        assert_agent_response(
+            res2, agent="operator_guide", sub_agent="operator_guide.troubleshooter"
+        )
         mem2 = res2["payload"]["metadata"]["memory"]
         assert mem2["used"] is True
         assert "컨베이어가 멈춤" in mem2["confirmed_facts"]
@@ -209,7 +217,9 @@ def test_pipeline_memory_context_and_query_expansion_integration() -> None:
                 },
             }
         )
-        assert_agent_response(res3, agent="operator_guide", sub_agent="operator_guide.troubleshooter")
+        assert_agent_response(
+            res3, agent="operator_guide", sub_agent="operator_guide.troubleshooter"
+        )
         mem3 = res3["payload"]["metadata"]["memory"]
         assert mem3["used"] is True
         assert mem3["summary_version"] == 2  # 신규 사실 없으므로 버전 고정
