@@ -50,7 +50,8 @@ Unreal/웹 클라이언트가 WebSocket으로 보내는 `agent.request` 메시�
 | `process_optimizer` | (없음) | 단일 leaf |
 | `operator_guide` | `operator_guide.machine_help` / `.recipe_explainer` / `.troubleshooter` | |
 | `quest_generator` | `quest_generator.production_quest` / `.economy_quest` | |
-| `material_generation` | (없음 — sub_agent 지정 금지) | 단일 leaf |
+| `material_generation` | (없음 — sub_agent 지정 금지) | 단일 leaf. 머신+레시피로 단일 물질 합성 |
+| `new_material_generator` | (없음 — sub_agent 지정 금지) | 단일 leaf. 설계 제약(목표) 기반 신소재 후보 목록 생성 |
 
 ---
 
@@ -202,6 +203,36 @@ asset key는 서버의 `FACTORY_IMAGE_STORAGE_PATH`(기본값: `var/assets`) 아
 |--------------|------|------|------|
 | `request` | string | **필수** | 원하는 퀘스트 설명 |
 | `sub_agent` | string | 선택 | `quest_generator.production_quest` / `.economy_quest`. 생략 시 자동 선택 |
+
+---
+
+### 3-5. `new_material_generator` — 신소재 후보 생성 (목표 기반)
+
+구체적인 머신/레시피 없이 **설계 제약(목표)** 만으로 신소재 후보 목록을 LLM이 생성합니다.
+(레시피로 단일 물질을 합성하는 `material_generation`과 구분됩니다.)
+
+```json
+{
+  "type": "agent.request",
+  "agent": "new_material_generator",
+  "payload": {
+    "goal": "고온 내성 경량 합금",
+    "constraints": ["저비용", "재활용 가능"]
+  }
+}
+```
+
+| payload 필드 | 타입 | 필수 | 설명 |
+|--------------|------|------|------|
+| `goal` | string | 선택 | 신소재 목표/용도. LLM 부재 시 fallback의 `role`로 사용됨 |
+| 그 외 키 | any | 선택 | 자유 형식 제약 조건. 프롬프트에 그대로 전달됨 |
+
+응답 payload는 `materials` 배열입니다(각 항목: `name` / `role` / `rarity` / `production_notes`).
+LLM 실패 시 deterministic fallback이 후보 1개를 반환합니다.
+
+```json
+{ "materials": [ { "name": "...", "role": "...", "rarity": "...", "production_notes": "..." } ] }
+```
 
 ---
 
