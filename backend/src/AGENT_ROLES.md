@@ -19,7 +19,8 @@ flowchart TD
     Pipeline --> Orchestrator[agents.orchestrator]
 
     Orchestrator --> Process[process_optimizer]
-    Orchestrator --> Material[new_material_generator]
+    Orchestrator --> MaterialGen[material_generation]
+    Orchestrator --> NewMaterial[new_material_generator]
     Orchestrator --> OperatorGuide[operator_guide.agent]
     Orchestrator --> Quest[quest_generator.agent]
 
@@ -27,9 +28,7 @@ flowchart TD
     OperatorGuide --> Machine[operator_guide.machine_help]
     OperatorGuide --> Trouble[operator_guide.troubleshooter]
 
-    Quest --> Tutorial[quest_generator.tutorial_quest]
     Quest --> Production[quest_generator.production_quest]
-    Quest --> Exploration[quest_generator.exploration_quest]
     Quest --> Economy[quest_generator.economy_quest]
 ```
 
@@ -59,7 +58,8 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 
 - `Global Orchestrator`: 서버 전체 요청을 어떤 top-level Agent가 처리할지 결정하는 최상위 오케스트레이터다. 현재는 `agents/orchestrator.py`다.
 - `Domain Orchestrator`: 특정 도메인 안에서 하위 서브 에이전트나 내부 실행 전략을 고르는 중간 계층 Agent다. 현재는 `operator_guide`, `quest_generator`다.
-- `Leaf Agent`: 더 이상 하위 Agent를 고르지 않고 prompt/schema/fallback 계약을 제공하는 실행 Agent다. 현재 top-level leaf는 `process_optimizer`, `new_material_generator`다.
+- `Leaf Agent`: 더 이상 하위 Agent를 고르지 않고 prompt/schema/fallback 계약을 제공하는 실행 Agent다. 현재 LLM 프롬프트 경로를 타는 top-level leaf는 `process_optimizer`, `new_material_generator`다.
+- `material_generation`도 하위 Agent가 없는 top-level이지만, LLM 프롬프트 leaf 경로가 아니라 전용 `synthesize_material` 노드(레시피 기반 합성 서브그래프)로 실행된다.
 
 한국어 문서에서는 `Domain Orchestrator`를 `도메인 오케스트레이터`라고 부른다. `중간 에이전트` 같은 계층 위치 표현은 책임을 드러내지 못하므로 공식 용어로 쓰지 않는다.
 
@@ -69,6 +69,7 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 - top-level routing 결과는 항상 `selectedAgent`로 기록하고, leaf인지 도메인 오케스트레이터인지는 LangGraph edge가 다음 node를 선택하면서 드러낸다.
 - `operator_guide`, `quest_generator`는 내부 서브 에이전트가 있으므로 도메인 오케스트레이터다.
 - `process_optimizer`, `new_material_generator`는 현재 내부 서브 에이전트가 없으므로 leaf top-level Agent다.
+- `material_generation`은 서브 에이전트는 없지만 LLM 프롬프트 leaf가 아닌 전용 합성 노드(`synthesize_material`)로 실행되는 top-level Agent다.
 
 따라서 top-level Agent를 "오케스트레이터처럼" 처리해야 하는 경우는 그 Agent가 다시 하위 Agent를 선택하는 책임을 가질 때뿐이다.
 
@@ -98,11 +99,12 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 - observability용 `routingPrompt`
 - observability용 `routingRaw`
 
-선택 가능한 Agent:
+선택 가능한 Agent (`TOP_LEVEL_AGENT_IDS`):
 
 - `process_optimizer`
 - `operator_guide`
 - `quest_generator`
+- `material_generation`
 - `new_material_generator`
 
 소유하지 않는 책임:
@@ -156,36 +158,62 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 - 퀘스트 생성
 - 운영자 가이드
 
-## `agents/new_material_generator.py`
+## `agents/material_generation/`
 
-역할: 현재 게임 상태와 설계 제약에 맞는 신규 재료 후보를 생성한다.
+역할: 머신 종류와 투입 아이템 레시피로 단일 신물질을 합성하는 top-level Agent다.
+LLM 프롬프트 leaf 경로가 아니라 전용 `synthesize_material` 노드(내부 합성 서브그래프)로 실행된다.
 
-입력:
+입력 (`MaterialCreationRequest`):
 
-- 현재 unlock 상태
-- 기존 재료 목록
-- 생산 체인 제약
-- 밸런스 목표
+- `machine_type` (`Smelter` / `Grinder` / `Synthesizer`)
+- `inputs` (아이템 id + 수량)
+- `process_conditions` (온도/압력/촉매, 선택)
+- `generate_visual_asset` (아이콘/텍스처/썸네일 생성 여부)
 
 출력:
 
-- 신규 재료 후보
-- 속성, 희귀도, 생산/소비처
-- 밸런스 근거
-- 관련 레시피 후보
+- `result_type` (`existing_recipe` / `new_material` / `cached_experiment` / `failed_result` / `invalid_input`)
+- 합성된 물질 정보(이름/희귀도/상태/속성)
+- 신물질일 때 비주얼 자산 키(`visual_asset_key` / `texture_asset_key` / `thumbnail_asset_key`)
 
 주요 판단:
 
-- 기존 재료와 역할이 중복되지 않는지
-- 생산 체인을 과도하게 복잡하게 만들지 않는지
-- 초반/중반/후반 progression 중 어디에 들어갈지
+- 입력 사전 검증(머신/아이템/수량)과 실험 분류(레시피 일치/신물질 후보/실패)
+- 신물질 합성 여부와 중복 실험 캐시 처리
+- 비주얼 자산 생성 파이프라인 트리거
 
 소유하지 않는 책임:
 
-- 최종 밸런스 확정
+- top-level routing
+- WebSocket 송수신
+- 최종 envelope 생성
+
+## `agents/new_material_generator.py`
+
+역할: 구체적 레시피 없이 설계 제약(목표)만으로 신소재 후보 목록을 생성하는 goal 기반 leaf Agent다.
+`material_generation`(레시피 기반 단일 합성)과 구분된다.
+
+입력 (자유 형식 payload):
+
+- `goal` (신소재 목표/용도; fallback 시 후보 `role`로 사용)
+- 그 외 제약 키는 프롬프트에 그대로 전달
+
+출력 (`materials` 배열):
+
+- 각 후보의 `name` / `role` / `rarity` / `production_notes`
+- LLM 실패 시 deterministic fallback이 후보 1개 반환
+
+주요 판단:
+
+- 목표/제약에 맞는 신소재 후보를 LLM이 자유 생성하도록 프롬프트를 구성
+- LLM 부재/실패 시 fallback 후보 제공
+
+소유하지 않는 책임:
+
 - DB write
-- 퀘스트 자동 생성
 - 시각 asset 생성
+- 레시피 기반 합성(이것은 `material_generation`의 책임)
+- 퀘스트 자동 생성
 
 ## `agents/operator_guide/agent.py`
 
@@ -339,14 +367,12 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 
 선택 가능한 서브 에이전트:
 
-- `tutorial_quest`
 - `production_quest`
-- `exploration_quest`
 - `economy_quest`
 
 주요 판단:
 
-- routing prompt는 지금 필요한 퀘스트가 온보딩인지, 생산 개선인지, 탐험 유도인지, 경제 균형인지 판단하도록 지시한다.
+- routing prompt는 지금 필요한 퀘스트가 생산 개선인지 경제 균형인지 판단하도록 지시한다.
 - `quest_type`, 진행도, 최근 이벤트는 LLM router가 참고하는 입력 신호다.
 - 코드가 `quest_type`, 진행도, 최근 이벤트를 if/else로 분류해서 sub-agent를 선택하지 않는다.
 - 명시적으로 사용할 수 있는 값은 검증된 `sub_agent`뿐이며, `quest_type`은 직접 라우팅 값으로 사용하지 않는다.
@@ -357,23 +383,6 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 - LLM 호출
 - cache 정책
 - 최종 envelope 생성
-
-## `agents/quest_generator/tutorial_quest.py`
-
-역할: 온보딩과 기능 학습 목적의 퀘스트를 생성한다.
-
-입력:
-
-- 튜토리얼 진행도
-- 아직 사용하지 않은 핵심 기능
-- 현재 unlock 상태
-
-출력:
-
-- 학습 목표
-- 단계별 완료 조건
-- 보상 후보
-- 다음 튜토리얼 연결점
 
 ## `agents/quest_generator/production_quest.py`
 
@@ -391,23 +400,6 @@ top-level Agent라고 해서 모두 오케스트레이터로 처리하지 않는
 - 생산 목표
 - 완료 조건
 - 측정 기준
-- 보상 후보
-
-## `agents/quest_generator/exploration_quest.py`
-
-역할: 신규 재료, 지역, 이벤트 탐색을 유도하는 퀘스트를 생성한다.
-
-입력:
-
-- 탐험 unlock 상태
-- 발견하지 않은 재료나 지역
-- 최근 탐험 이벤트
-
-출력:
-
-- 탐험 목표
-- 발견 조건
-- 위험/제약 조건
 - 보상 후보
 
 ## `agents/quest_generator/economy_quest.py`
