@@ -12,11 +12,18 @@ Quest Generator는 공장(factory)의 현재 상태 스냅샷을 받아, 메인 
 **지원 퀘스트(support quest)** 를 생성·관리하는 에이전트입니다. 클라이언트는 아래 3개의 REST
 엔드포인트만으로 전체 라이프사이클을 다룹니다.
 
-| # | 동작 | 메서드 · 경로 |
+| # | 동작 | 채널 · 경로 |
 |---|------|---------------|
-| 1 | 지원 퀘스트 생성 | `POST /api/v1/factories/{factory_id}/quests/compose-support` |
-| 2 | 퀘스트 목록 조회 | `GET /api/v1/factories/{factory_id}/quests` |
-| 3 | 진행 이벤트 보고 | `POST /api/v1/factories/{factory_id}/quests/events` |
+| 0 | **튜토리얼 완료 → 지원 퀘스트 트리거** | **WS** `/ws/agent` · `quest.tutorial_completed` (§2.4) |
+| 1 | 지원 퀘스트 생성 (직접 호출) | REST `POST /api/v1/factories/{factory_id}/quests/compose-support` |
+| 2 | 퀘스트 목록 조회 | REST `GET /api/v1/factories/{factory_id}/quests` |
+| 3 | 진행 이벤트 보고 | REST `POST /api/v1/factories/{factory_id}/quests/events` |
+
+> **구현 상태 (2026-06-18 기준)**
+> - ✅ **구현 완료:**
+>   - REST 1·2·3 (compose-support / list / events), 규칙 기반 생성·검증·문구 윤색·진행도 추적.
+>   - WS `quest.tutorial_completed` 핸들러 구현 완료 (§2.4).
+>   - 공장 레벨 기반 생성 구현 완료 (목표 수량·보상 스케일링 + 퀘스트 게이트) (§3).
 
 기본 흐름은 다음과 같습니다.
 
@@ -109,77 +116,173 @@ Quest Generator는 공장(factory)의 현재 상태 스냅샷을 받아, 메인 
 }
 ```
 
-**성공 응답 — `201 Created`, 바디 `QuestInstance`** (스키마는 [4장](#4-questinstance-스키마) 참고)
+**성공 응답 — `201 Created`, 바디 `QuestInstance`** (스키마는 [5장](#5-questinstance-스키마) 참고)
 
 **서버 처리 정책 (클라이언트가 알아야 할 부분)**
 
 1. 공장당 **active 지원 퀘스트는 최대 3개**(`MAX_ACTIVE_SUPPORT_QUESTS`)로 제한됩니다.
-2. 이미 active한 퀘스트의 타겟 아이템과 **동일한 아이템**은 중복 생성되지 않습니다.
-3. 부족 자원이 없거나 후보가 모두 차단되면 생성에 실패합니다.
-4. 생성된 초안은 검증(feasibility)을 통과한 뒤 LLM으로 문구만 윤색됩니다.
-   목표 수량·보상 등 **수치 값은 LLM이 바꿀 수 없도록 원본으로 강제 고정**됩니다.
+2. 이미 active한 퀘스트의 타겟 아이템과 **동일한 아이템**은 중복 생성�### 2.4 (WS) 튜토리얼 완료 → 지원 퀘스트 트리거 — `quest.tutorial_completed`
 
-**에러 응답**
+튜토리얼은 **클라이언트에서 전부 진행**하고, 완료되면 **이미 열려 있는 `/ws/agent` 연결로** 완료 신호를
+보냅니다(HTTP 별도 호출 X). 서버는 이 신호를 트리거로 첫 지원 퀘스트를 생성해 같은 연결로 돌려줍니다.
 
-| 상태 | `detail` | 의미 |
-|------|----------|------|
-| 400 | `Active support quest limit exceeded (maximum 3)` | active 퀘스트 상한 초과 |
-| 400 | `No candidate support quests could be generated ...` | 부족 자원 없음 / 전부 이미 active |
-| 400 | `No valid support quest draft passed the feasibility conditions` | 검증 통과 초안 없음 |
-| 422 | (Pydantic 검증 오류) | 요청 바디 형식 오류 |
+> 서버는 튜토리얼을 **개별 관리·DB 기록하지 않습니다.** "끝났다"는 신호를 받는 즉시 지원 퀘스트 생성만
+> 수행합니다. 단, 생성을 하려면 부족 자원 계산이 필요하므로 **완료 신호 + 그 시점의 공장 스냅샷(`context`)** 을
+> 한 메시지로 보내야 합니다.
 
-> 클라이언트는 **400을 "지금은 생성할 퀘스트가 없음"** 으로 정상 처리하고, UI에서 조용히 무시하거나
-> 다음 스냅샷에서 재시도하면 됩니다. 사용자에게 에러 팝업을 띄울 필요는 없습니다.
-
----
-
-### 2.2 퀘스트 목록 조회 — `GET /factories/{factory_id}/quests`
-
-해당 공장에 발급된 **모든 상태**(`in_progress` / `completed` / `reward_claimed`)의 퀘스트를 반환합니다.
-
-- **응답:** `200 OK`, 바디 `QuestInstance[]`
-- 퀘스트 보드 / HUD 진입 시 또는 폴링 주기로 호출해 UI 상태를 동기화하는 용도입니다.
-
----
-
-### 2.3 진행 이벤트 보고 — `POST /factories/{factory_id}/quests/events`
-
-플레이어가 아이템을 모을 때 발생하는 이벤트를 보고하면, 매칭되는 퀘스트의 진행도가 갱신됩니다.
-
-**요청 바디 — `ItemCollectedEvent`**
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `event_id` | string | 이벤트 고유 식별자 (멱등 키) |
-| `factory_id` | string | 공장 식별자 |
-| `item_id` | string | 획득한 아이템 ID |
-| `current_total` | int (≥0) | 현재 아이템 **총 보유량** (증분이 아닌 누적 총량) |
+**클라 → 서버**
 
 ```json
 {
-  "event_id": "evt_8f3a21",
-  "factory_id": "factory_001",
-  "item_id": "resource_iron_plate",
-  "current_total": 35
+  "type": "quest.tutorial_completed",
+  "request_id": "unreal-tut-1",
+  "session_id": "dev-session",
+  "client_id": "unreal-client",
+  "payload": {
+    "context": {
+      "factory_id": "factory_001",
+      "factory_level": 1,
+      "inventory": { "resource_iron_ore": 40, "resource_iron_plate": 20 },
+      "current_main_quest": { "...있으면 부족 자원 산출이 더 정확...": "..." }
+    }
+  }
 }
 ```
 
-- **응답:** `204 No Content`
-- **멱등성:** 같은 `event_id`로 여러 번 보내도 진행도가 중복 반영되지 않습니다. 네트워크 재시도가 안전합니다.
-- `current_total`은 **현재 총 보유량**을 그대로 보내면 됩니다(델타 계산 불필요).
+| 필드 | 필수 | 설명 |
+|------|:--:|------|
+| `type` | ✅ | `"quest.tutorial_completed"` 고정. **이 타입 자체가 "튜토리얼 끝남" 플래그** — 별도 튜토리얼 ID 불필요 |
+| `request_id` | ✅ | 클라 발급. 응답이 이 값으로 돌아오며, 재시도 시 같은 값 → **멱등** |
+| `session_id` / `client_id` | ✅ | 기존 WS 핸드셰이크 값 그대로 |
+| `payload.context` | ✅ | 완료 **그 시점**의 공장 스냅샷 = `QuestContext` (§2.1과 동일 스키마). 튜토리얼 직후이므로 `factory_level`은 **1** |
 
-**에러 응답**
+**서버 → 클라** (같은 `request_id`로 셋 중 하나)
 
-| 상태 | `detail` | 의미 |
-|------|----------|------|
-| 400 | `Path factory_id does not match request body factory_id` | 경로와 바디의 `factory_id` 불일치 |
-| 422 | (Pydantic 검증 오류) | 요청 바디 형식 오류 |
+| `type` | `payload` | 의미 |
+|--------|-----------|------|
+| `quest.composed` | `QuestInstance` | 첫 지원 퀘스트 생성됨 |
+| `quest.none` | — | 만들 게 없음(부족 자원 없음 등). **정상 상황 — 무시** |
+| `agent.error` | 오류 정보 | 형식 오류 등 |
 
-> 경로의 `{factory_id}`와 바디 `factory_id`는 **반드시 동일**해야 합니다.
+**중복 방지** — 튜토리얼을 개별 추적하지 않으므로 신호가 중복돼도 안전해야 합니다. 두 겹으로 막힙니다:
+1. `request_id` 멱등 — 재시도 시 동일 값.
+2. 서버 가드 — active 지원 퀘스트 최대 3개 상한 + 동일 아이템 중복 차단(compose-support와 공유).
+
+> **공유 로직:** `quest.tutorial_completed`와 REST `compose-support`는 **동일한 규칙 기반 파이프라인**
+> (ContextBuilder → RuleGenerator → Validator → PhraseRefiner → QuestManager)을 호출합니다.
+> 트리거 채널만 다를 뿐 생성 결과·정책은 같습니다.
+
+> **이후 진행은 REST:** 첫 퀘스트를 받은 뒤 진행도 보고(`events`)·목록 조회(`list`)는 그대로 REST를
+> 사용합니다. WS는 **튜토리얼 완료 트리거 한 지점**에만 적용합니다.
 
 ---
 
-## 3. 아이템 ID 규칙
+## 3. 공장 레벨 모델 (클라이언트 소유)
+
+레벨은 **클라이언트가 소유·관리**합니다. 서버는 레벨을 저장하지 않고, 스냅샷으로 받은 `factory_level`을
+그대로 사용해 퀘스트를 생성합니다.
+
+| 시점 | 레벨 |
+|------|------|
+| 튜토리얼 완료 (`quest.tutorial_completed` 전송) | **1** 로 시작 |
+| 메인 퀘스트 1개 완료할 때마다 | **+1** |
+
+- 레벨 증가는 **클라 내부 규칙**이며, 서버로 보내는 별도 "메인 퀘스트 완료" 신호는 없습니다.
+  클라가 증가시킨 결과 값을 이후 모든 요청의 `context.factory_level`에 담아 보내면 됩니다.
+
+**레벨이 생성에 미치는 영향** (✅ 구현 완료)
+1. **목표 수량·보상 스케일링:** 레벨이 높을수록 `target_amount`와 `reward.amount`가 커집니다.
+   - `target_amount = min(10 * factory_level, 1000)` (`producible = True` 일 때)
+   - `target_amount = min(10 * factory_level, 10)` (`producible = False` 일 때)
+   - `reward.amount = 100 * factory_level` (골드 보상)
+2. **생성 가능 퀘스트 게이트:** 아이템별 최소 요구 레벨(`min_level`) 미만인 경우 퀘스트가 생성되지 않고 스킵됩니다.
+   - 1단계 자원 (나무, 철광석, 구리 등): 1레벨 이상
+   - 2단계 자원 (아연, 납, 주석 등): 2레벨 이상
+   - 3단계 자원 (알루미늄, 니켈 등): 3레벨 이상
+   - 4단계 자원 (텅스텐, 티타늄 등): 4레벨 이상
+   - 5단계 자원 (마그네슘, 금, 은, 우라늄 등): 5레벨 이상이언트에서 전부 진행**하고, 완료되면 **이미 열려 있는 `/ws/agent` 연결로** 완료 신호를
+보냅니다(HTTP 별도 호출 X). 서버는 이 신호를 트리거로 첫 지원 퀘스트를 생성해 같은 연결로 돌려줍니다.
+
+> 서버는 튜토리얼을 **개별 관리·DB 기록하지 않습니다.** "끝났다"는 신호를 받는 즉시 지원 퀘스트 생성만
+> 수행합니다. 단, 생성을 하려면 부족 자원 계산이 필요하므로 **완료 신호 + 그 시점의 공장 스냅샷(`context`)** 을
+> 한 메시지로 보내야 합니다.
+
+**클라 → 서버**
+
+```json
+{
+  "type": "quest.tutorial_completed",
+  "request_id": "unreal-tut-1",
+  "session_id": "dev-session",
+  "client_id": "unreal-client",
+  "payload": {
+    "context": {
+      "factory_id": "factory_001",
+      "factory_level": 1,
+      "inventory": { "resource_iron_ore": 40, "resource_iron_plate": 20 },
+      "current_main_quest": { "...있으면 부족 자원 산출이 더 정확...": "..." }
+    }
+  }
+}
+```
+
+| 필드 | 필수 | 설명 |
+|------|:--:|------|
+| `type` | ✅ | `"quest.tutorial_completed"` 고정. **이 타입 자체가 "튜토리얼 끝남" 플래그** — 별도 튜토리얼 ID 불필요 |
+| `request_id` | ✅ | 클라 발급. 응답이 이 값으로 돌아오며, 재시도 시 같은 값 → **멱등** |
+| `session_id` / `client_id` | ✅ | 기존 WS 핸드셰이크 값 그대로 |
+| `payload.context` | ✅ | 완료 **그 시점**의 공장 스냅샷 = `QuestContext` (§2.1과 동일 스키마). 튜토리얼 직후이므로 `factory_level`은 **1** |
+
+**서버 → 클라** (같은 `request_id`로 셋 중 하나)
+
+| `type` | `payload` | 의미 |
+|--------|-----------|------|
+| `quest.composed` | `QuestInstance` | 첫 지원 퀘스트 생성됨 |
+| `quest.none` | — | 만들 게 없음(부족 자원 없음 등). **정상 상황 — 무시** |
+| `agent.error` | 오류 정보 | 형식 오류 등 |
+
+**중복 방지** — 튜토리얼을 개별 추적하지 않으므로 신호가 중복돼도 안전해야 합니다. 두 겹으로 막힙니다:
+1. `request_id` 멱등 — 재시도 시 동일 값.
+2. 서버 가드 — active 지원 퀘스트 최대 3개 상한 + 동일 아이템 중복 차단(compose-support와 공유).
+
+> **공유 로직:** `quest.tutorial_completed`와 REST `compose-support`는 **동일한 규칙 기반 파이프라인**
+> (ContextBuilder → RuleGenerator → Validator → PhraseRefiner → QuestManager)을 호출합니다.
+> 트리거 채널만 다를 뿐 생성 결과·정책은 같습니다.
+
+> **이후 진행은 REST:** 첫 퀘스트를 받은 뒤 진행도 보고(`events`)·목록 조회(`list`)는 그대로 REST를
+> 사용합니다. WS는 **튜토리얼 완료 트리거 한 지점**에만 적용합니다.
+
+---
+
+## 3. 공장 레벨 모델 (클라이언트 소유)
+
+레벨은 **클라이언트가 소유·관리**합니다. 서버는 레벨을 저장하지 않고, 스냅샷으로 받은 `factory_level`을
+그대로 사용해 퀘스트를 생성합니다.
+
+| 시점 | 레벨 |
+|------|------|
+| 튜토리얼 완료 (`quest.tutorial_completed` 전송) | **1** 로 시작 |
+| 메인 퀘스트 1개 완료할 때마다 | **+1** |
+
+- 레벨 증가는 **클라 내부 규칙**이며, 서버로 보내는 별도 "메인 퀘스트 완료" 신호는 없습니다.
+  클라가 증가시킨 결과 값을 이후 모든 요청의 `context.factory_level`에 담아 보내면 됩니다.
+
+**레벨이 생성에 미치는 영향** (✅ 구현 완료)
+1. **목표 수량·보상 스케일링:** 레벨이 높을수록 `target_amount`와 `reward.amount`가 커집니다.
+   - `target_amount = min(10 * factory_level, 1000)` (`producible = True` 일 때)
+   - `target_amount = min(10 * factory_level, 10)` (`producible = False` 일 때)
+   - `reward.amount = 100 * factory_level` (골드 보상)
+2. **생성 가능 퀘스트 게이트:** 아이템별 최소 요구 레벨(`min_level`) 미만인 경우 퀘스트가 생성되지 않고 스킵됩니다.
+   - 1단계 자원 (나무, 철광석, 구리 등): 1레벨 이상
+   - 2단계 자원 (아연, 납, 주석 등): 2레벨 이상
+   - 3단계 자원 (알루미늄, 니켈 등): 3레벨 이상
+   - 4단계 자원 (텅스텐, 티타늄 등): 4레벨 이상
+   - 5단계 자원 (마그네슘, 금, 은, 우라늄 등): 5레벨 이상
+
+---
+
+## 4. 아이템 ID 규칙
+>>>>>>> b0ec402 (feat(quest): Quest WS 튜토리얼 트리거 및 레벨링 기능 구현 및 리뷰 피드백 반영)
 
 - 자원 아이템 ID는 `resources.csv`의 `resource_*` 형태입니다. (예: `resource_iron_plate`)
 - 보상은 MVP 기준 `currency` / `gold` 고정입니다.
@@ -187,7 +290,7 @@ Quest Generator는 공장(factory)의 현재 상태 스냅샷을 받아, 메인 
 
 ---
 
-## 4. `QuestInstance` 스키마
+## 5. `QuestInstance` 스키마
 
 생성/조회 응답으로 내려오는 핵심 객체입니다.
 
@@ -261,20 +364,22 @@ Quest Generator는 공장(factory)의 현재 상태 스냅샷을 받아, 메인 
 
 ---
 
-## 5. 권장 클라이언트 연동 흐름
+## 6. 권장 클라이언트 연동 흐름
 
-1. **퀘스트 보드 진입** → `GET .../quests`로 현재 상태를 동기화한다.
-2. **지원 퀘스트 요청 시점**(메인 퀘스트 진행 중 자원 부족 감지 등) → 공장 상태 스냅샷을 모아
-   `POST .../compose-support` 호출.
+0. **튜토리얼 완료(클라 진행)** → 레벨을 **1**로 두고, `/ws/agent`로 `quest.tutorial_completed`
+   (+ 공장 스냅샷)를 전송. 응답 `quest.composed`의 `QuestInstance`를 보드에 추가(`quest.none`이면 무시).
+1. **퀘스트 보드 진입** → `GET .../quests`로 현재 상태를동기화한다.
+2. **추가 지원 퀘스트가 필요할 때** → 공장 스냅샷을 모아 `POST .../compose-support` 호출.
    - `201`이면 반환된 `QuestInstance`를 보드에 추가.
    - `400`이면 "생성할 퀘스트 없음"으로 간주하고 조용히 넘어감.
 3. **아이템 획득 시마다** → `POST .../events`로 `current_total`(현재 총 보유량)을 보고.
    - `event_id`는 클라이언트가 고유하게 생성하고, 재시도 시 **동일 값**을 사용해 멱등성을 보장.
-4. 진행도/상태 변화를 UI에 반영할 때 다시 `GET .../quests`로 갱신.
+4. **메인 퀘스트 1개 완료할 때마다** → 클라가 `factory_level`을 **+1** 하고, 이후 모든 요청 스냅샷에 반영.
+5. 진행도/상태 변화를 UI에 반영할 때 다시 `GET .../quests`로 갱신.
 
 ---
 
-## 6. 참고 사항 / 주의
+## 7. 참고 사항 / 주의
 
 - **인가(auth):** 현재 라우터에는 호출자–`factory_id` 소유권 검증이 `TODO`로 남아 있습니다.
   운영 단계에서는 인증 헤더가 추가될 수 있으니, 클라이언트는 인증 토큰 주입 지점을 미리 확보해 두는 것을 권장합니다.
