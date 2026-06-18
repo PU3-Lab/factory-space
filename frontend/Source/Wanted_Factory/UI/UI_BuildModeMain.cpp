@@ -35,18 +35,28 @@ namespace
 
     void ApplyMachineIconToButton(UButton* Button, const FMachineTableRow& MachineData)
     {
-       if (!Button) return;
-       UTexture2D* Texture = MachineData.ImgAsset.IsValid()
-          ? MachineData.ImgAsset.Get()
-          : MachineData.ImgAsset.LoadSynchronous();
-       if (!Texture) return;
+        if (!Button) return;
+        UTexture2D* Texture = MachineData.ImgAsset.IsValid()
+           ? MachineData.ImgAsset.Get()
+           : MachineData.ImgAsset.LoadSynchronous();
+        if (!Texture) return;
 
-       TArray<UImage*> Images;
-       CollectImageWidgetsRecursive(Button->GetContent(), Images);
-       for (UImage* Image : Images)
-       {
-          if (Image) Image->SetBrushFromTexture(Texture);
-       }
+        TArray<UImage*> Images;
+        CollectImageWidgetsRecursive(Button->GetContent(), Images);
+        for (UImage* Image : Images)
+        {
+            if (Image) Image->SetBrushFromTexture(Texture);
+        }
+        
+        if (Images.Num() == 0)
+        {
+            FButtonStyle ButtonStyle = Button->GetStyle();
+            ButtonStyle.Normal.SetResourceObject(Texture);
+            ButtonStyle.Hovered.SetResourceObject(Texture);
+            ButtonStyle.Pressed.SetResourceObject(Texture);
+            ButtonStyle.Disabled.SetResourceObject(Texture);
+            Button->SetStyle(ButtonStyle);
+        }
     }
 }
 
