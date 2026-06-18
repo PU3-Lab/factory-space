@@ -383,3 +383,48 @@ def test_consecutive_app_lifespans_processing_events(db_session: Session) -> Non
 
         assert updated is not None
         assert updated.visual_status == "visual_ready"
+
+
+def test_agent_synthesize_cached_experiment_returns_ready_visual_asset_keys(
+    db_session: Session,
+) -> None:
+    agent = MaterialCreationAgent()
+    req = MaterialCreationRequest(
+        machine_type="Synthesizer",
+        inputs=[
+            InputItemSchema(item_id="iron_ore", qty=1),
+            InputItemSchema(item_id="iron_ingot", qty=1),
+        ],
+        player_id="player_visual_asset_key_test",
+        generate_visual_asset=False,
+    )
+
+    with (
+        patch("llm.adapter.GoogleGenAiLLMAdapter.invoke", return_value=None),
+        patch("llm.adapter.OpenAILLMAdapter.invoke", return_value=None),
+        patch("llm.adapter.LocalLLMAdapter.invoke", return_value=None),
+    ):
+        first = agent.synthesize(db_session, req)
+
+    assert first.result_type == "new_material"
+    assert first.material_id is not None
+
+    stored = db_session.get(GeneratedMaterialModel, first.material_id)
+    assert stored is not None
+    stored.visual_status = "visual_ready"
+    stored.visual_asset_key = f"materials/{first.material_id}/icon.png"
+    stored.texture_asset_key = f"materials/{first.material_id}/texture.png"
+    stored.thumbnail_asset_key = f"materials/{first.material_id}/thumbnail.png"
+    db_session.commit()
+
+    cached = agent.synthesize(db_session, req)
+
+    assert cached.result_type == "cached_experiment"
+    assert cached.material_id == first.material_id
+    assert cached.visual_status == "visual_ready"
+    assert cached.visual_asset_key == f"materials/{first.material_id}/icon.png"
+    assert cached.texture_asset_key == f"materials/{first.material_id}/texture.png"
+    assert cached.thumbnail_asset_key == (
+        f"materials/{first.material_id}/thumbnail.png"
+    )
+
