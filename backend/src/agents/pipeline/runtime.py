@@ -88,6 +88,48 @@ def _clean_routing_decision(raw: str | None) -> str:
     return cleaned.strip()
 
 
+def _routing_failure_reason(raw: str | None) -> str:
+    return "invalid_model_decision" if raw else "missing_model_decision"
+
+
+def _allowed_leaf_agent_ids(selected_agent: str | None) -> list[str]:
+    if selected_agent == "operator_guide":
+        return list(OPERATOR_GUIDE_LEAF_AGENT_IDS)
+    if selected_agent == "quest_generator":
+        return list(QUEST_SUB_AGENT_IDS)
+    if selected_agent in {"material_generation", "process_optimizer"}:
+        return [selected_agent]
+    return []
+
+
+def _build_routing_error_details(
+    state: AgentGraphState,
+    envelope: AgentRequestEnvelope,
+) -> dict[str, Any]:
+    selected_agent = state.get("selectedAgent")
+    routing_raw = state.get("routingRaw")
+    if selected_agent not in TOP_LEVEL_AGENT_IDS:
+        return {
+            "scope": "top_level",
+            "reason": _routing_failure_reason(routing_raw),
+            "requestedAgent": envelope.agent,
+            "routingRawPresent": bool(routing_raw),
+            "allowedAgentIds": list(TOP_LEVEL_AGENT_IDS),
+        }
+
+    selected_leaf_agent = state.get("selectedLeafAgent")
+    allowed_leaf_agent_ids = _allowed_leaf_agent_ids(selected_agent)
+    return {
+        "scope": "leaf",
+        "reason": _routing_failure_reason(routing_raw),
+        "requestedAgent": envelope.agent,
+        "selectedAgent": selected_agent,
+        "selectedLeafAgentPresent": bool(selected_leaf_agent),
+        "routingRawPresent": bool(routing_raw),
+        "allowedLeafAgentIds": allowed_leaf_agent_ids,
+    }
+
+
 def build_context(
     state: AgentGraphState,
     config: RunnableConfig,
@@ -659,6 +701,7 @@ class AgentPipeline:
             default_error = build_error_payload(
                 "ROUTING_UNAVAILABLE",
                 "Agent routing requires a valid orchestrator model decision.",
+                details=_build_routing_error_details(state, envelope),
             )
             response = AgentErrorEnvelope(
                 request_id=envelope.request_id,

@@ -278,13 +278,27 @@ def _tool_not_allowed() -> StructuredTool:
 def _parse_json_object(raw: str | None) -> dict[str, Any] | None:
     if not raw:
         return None
+    cleaned = raw.strip()
     try:
-        parsed = json.loads(raw)
+        parsed = json.loads(cleaned)
     except json.JSONDecodeError:
-        return None
+        parsed = _parse_json_object_with_trailing_brace_repair(cleaned)
     if not isinstance(parsed, dict):
         return None
     return parsed
+
+
+def _parse_json_object_with_trailing_brace_repair(raw: str) -> dict[str, Any] | None:
+    if not raw.startswith("{") or '"tool_call"' not in raw:
+        return None
+
+    for missing_brace_count in range(1, 4):
+        try:
+            parsed = json.loads(f"{raw}{'}' * missing_brace_count}")
+        except json.JSONDecodeError:
+            continue
+        return parsed if isinstance(parsed, dict) else None
+    return None
 
 
 def _is_valid_tool_name(tool_name: str) -> bool:
