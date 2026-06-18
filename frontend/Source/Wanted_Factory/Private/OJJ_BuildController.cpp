@@ -3,6 +3,7 @@
 
 #include "OJJ_BuildController.h"
 
+#include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/GameInstance.h"
 #include "Engine/HitResult.h"
@@ -31,6 +32,7 @@
 #include "Machines/WarehousePort.h"
 #include "Machines/EscapePod.h"
 #include "OJJ_Foundation.h"
+#include "OJJ_Ladder.h"
 #include "OJJ_ProtectionTower.h"
 #include "Pipe.h"
 #include "PlayerWarehouseSubsystem.h"
@@ -181,6 +183,8 @@ AOJJ_BuildController::AOJJ_BuildController()
 	MoldingMachineClass = AMoldingMachine::StaticClass();
 	SynthesizerClass = ASynthesizer::StaticClass();
 	TeleCommunicationTowerClass = ATeleCommunicationTower::StaticClass();
+	// [#184] 사다리 기본 클래스(BP 미지정 시) — C++ AOJJ_Ladder. BP 없이도 C키 배치 동작.
+	LadderClass = AOJJ_Ladder::StaticClass();
 }
 
 void AOJJ_BuildController::Tick(float DeltaSeconds)
@@ -641,6 +645,13 @@ void AOJJ_BuildController::UpdateMouseHover()
 		return;
 	}
 
+	// [#184] Ladder 모드: Foundation 변 조준 → 변 바깥 지면에 세로 사다리 고스트(독립 분기, 자유 배치).
+	if (PlacementMode == EOJJ_BuildPlacementMode::Ladder)
+	{
+		UpdateLadderHover(CursorCell, Hit);
+		return;
+	}
+
 	// === Machine 모드 (기존 동작 무변경) ===
 	TSubclassOf<AMachineBase> ActiveMachineClass = GetActiveMachineClass();
 	if (!ActiveMachineClass)
@@ -1085,6 +1096,13 @@ void AOJJ_BuildController::OnLeftClickPressed()
 		return;
 	}
 
+	// [#184] Ladder 모드: 클릭 즉시 자유 배치(드래그 없음, 그리드 장부 미등록). Foundation 분기 미러.
+	if (PlacementMode == EOJJ_BuildPlacementMode::Ladder)
+	{
+		PlaceLadderAtCursor();
+		return;
+	}
+
 	// === Machine 모드 (기존 동작 무변경) ===
 	TSubclassOf<AMachineBase> ActiveMachineClass = GetActiveMachineClass();
 	if (!TargetGrid || !ActiveMachineClass)
@@ -1512,6 +1530,212 @@ void AOJJ_BuildController::OnLeftClickReleased()
 	}
 }
 
+bool AOJJ_BuildController::ComputeLadderPlacement(
+	FIntPoint CursorCell,
+	FVector& OutBottomLocation,
+	float& OutClimbHeight,
+	FRotator& OutRotation) const
+{
+	if (!TargetGrid)
+	{
+		return false;
+	}
+
+	// 커서 셀을 덮는 Foundation을 찾는다(슬래브는 NoCollision이라 레이는 floor를 맞지만 XY 셀은 Foundation 위).
+	AActor* Foundation = TargetGrid->GetFoundationAtCell(CursorCell);
+	if (!Foundation)
+	{
+		return false; // Foundation 위가 아님 → 무효(호출자가 빨강/숨김 처리).
+	}
+	const TArray<FIntPoint>* FootprintCells = TargetGrid->GetFoundationCells(Foundation);
+	if (!FootprintCells || FootprintCells->Num() == 0)
+	{
+		return false;
+	}
+
+	// 기준점 = 커서 셀 중심. 호버/클릭 모두 셀 단위라 같은 입력 → 같은 변(미리보기 = 배치 결정적 정합).
+	const FVector CursorRef = TargetGrid->GridToWorld(CursorCell);
+
+	// 4방향 — OJJ_Grid의 OJJ_NeighborSteps와 동일(그 배열은 파일 로컬이라 여기 동일 값 재선언).
+	static const FIntPoint Cardinals[4] = { FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1) };
+
+	// 경계 변 후보: 풋프린트 셀 중 이웃이 비-Foundation(지면)이고 그리드 안인 (변셀, 바깥방향, 바깥 지면셀).
+	// 커서 기준점에 XY 최근접인 변셀 선택 → "커서로 조준한 변".
+	bool bFound = false;
+	FIntPoint BestEdgeCell;     // Foundation 상면 Z(변 셀)
+	FIntPoint BestGroundCell;   // 사다리 바닥/지면 Z(바깥 인접 셀)
+	FIntPoint BestOutwardStep;  // 바깥(지면) 방향
+	float BestDistSq = TNumericLimits<float>::Max();
+	for (const FIntPoint& Cell : *FootprintCells)
+	{
+		for (const FIntPoint& Step : Cardinals)
+		{
+			const FIntPoint Neighbor = Cell + Step;
+			if (TargetGrid->IsCellOnFoundation(Neighbor))
+			{
+				continue; // 이웃도 Foundation → 내부(변 아님).
+			}
+			if (!TargetGrid->IsValidGridCell(Neighbor))
+			{
+				continue; // 그리드 밖 → 바깥 지면 셀 산출 불가.
+			}
+			const FVector EdgeCenter = TargetGrid->GridToWorld(Cell);
+			const float dx = EdgeCenter.X - CursorRef.X;
+			const float dy = EdgeCenter.Y - CursorRef.Y;
+			const float DistSq = dx * dx + dy * dy;
+			if (DistSq < BestDistSq)
+			{
+				BestDistSq = DistSq;
+				BestEdgeCell = Cell;
+				BestGroundCell = Neighbor;
+				BestOutwardStep = Step;
+				bFound = true;
+			}
+		}
+	}
+	if (!bFound)
+	{
+		return false;
+	}
+
+	// 높이 = Foundation 상면 Z(변 셀) − 지면 Z(바깥 인접 셀).
+	float TopZ = 0.0f;
+	if (!TargetGrid->GetFoundationSurfaceZ(BestEdgeCell, TopZ))
+	{
+		return false;
+	}
+	float GroundZ = 0.0f;
+	if (!TargetGrid->OJJ_GetRawTerrainSurfaceZ(BestGroundCell, GroundZ))
+	{
+		// 베이크 지형 Z 없으면(미베이크) 그리드 평면 Z 폴백 — 평면 레벨에서도 동작.
+		GroundZ = TargetGrid->GridToWorld(BestGroundCell).Z;
+	}
+	const float Height = TopZ - GroundZ;
+	if (Height <= 1.0f)
+	{
+		return false; // 지면과 동일/역전 → 사다리 불필요(무효).
+	}
+
+	// 바닥 XY = Foundation 벽면(edge 셀 ↔ 바깥 지면 셀 경계 라인)에 사다리 중심을 붙인다(#184 벽면 정렬).
+	// 바깥 지면 셀 "중앙"에 두면 벽에서 half-cell 떨어져 보이므로, 두 셀 중심의 중점(=정확히 벽면 라인)을 쓴다.
+	// 변마다 법선 방향이 달라도 중점이 자동으로 그 변의 벽면에 맞음(북/남/동/서 공통, CellSize 무의존). Z는 지면 유지.
+	// ⚠️ 메시 두께(placeholder Cube ~20uu) 보정은 PIE 후 미세조정 — 우선 벽면 라인에 중심 정렬.
+	const FVector EdgeCenter = TargetGrid->GridToWorld(BestEdgeCell);
+	const FVector GroundCenter = TargetGrid->GridToWorld(BestGroundCell);
+	const FVector WallMid = (EdgeCenter + GroundCenter) * 0.5f;
+	OutBottomLocation = FVector(WallMid.X, WallMid.Y, GroundZ);
+	const FVector InwardDir(-(float)BestOutwardStep.X, -(float)BestOutwardStep.Y, 0.0f);
+	OutRotation = InwardDir.Rotation(); // cardinal → yaw 0/90/180/270 (전방 +X = Foundation 향함)
+	OutClimbHeight = Height;
+	return true;
+}
+
+void AOJJ_BuildController::UpdateLadderHover(FIntPoint CursorCell, const FHitResult& Hit)
+{
+	// 표면 게이트 — Foundation 호버와 동일(floor/머신/Foundation/Landscape 위에서만 유효, 그 외 off-grid).
+	UPrimitiveComponent* HitComp = Hit.GetComponent();
+	AActor* HitActor = Hit.GetActor();
+	const bool bHitFloor = (HitComp == TargetGrid->GetGridFloorMesh());
+	const bool bHitMachine = HitActor && HitActor->IsA<AMachineBase>();
+	const bool bHitFoundation = HitActor && HitActor->IsA<AOJJ_Foundation>();
+	const bool bHitLandscape = HitActor && HitActor->IsA<ALandscapeProxy>();
+	if (!bHitFloor && !bHitMachine && !bHitFoundation && !bHitLandscape)
+	{
+		// ClearHoverPreview = ISM 타일/화살표 클리어 + 고스트 숨김(OJJ_HideGhost만으론 ISM 잔존). off-grid 퇴장 정리.
+		TargetGrid->ClearHoverPreview();
+		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+		return;
+	}
+
+	// 동일-셀 ISM/고스트 리빌드 스킵(Tick 비용 절감) — 머신/Foundation 경로와 동일.
+	if (CursorCell == CurrentHoverCell)
+	{
+		return;
+	}
+	CurrentHoverCell = CursorCell;
+
+	// [#184] 이전 모드(머신/Foundation)의 ISM 호버 타일/화살표 잔존 제거 — 사다리는 ISM 미사용(고스트만)이라
+	// 직접 안 지우면 모드 전환 시 스테일 타일이 사다리 고스트 밑에 남는다. ClearHoverPreview가 ISM+화살표 클리어
+	// 후 고스트도 숨기므로, 아래 OJJ_ShowGhostForLadder가 다시 표시(Foundation 호버의 Clear→Show 패턴과 동일).
+	TargetGrid->ClearHoverPreview();
+
+	// 고스트 메시 = 사다리 CDO의 메시(없으면 숨김). 후속 Meshy 교체도 자동 추종.
+	UStaticMesh* GhostMesh = nullptr;
+	if (const AOJJ_Ladder* LadderCDO = LadderClass ? LadderClass.GetDefaultObject() : nullptr)
+	{
+		if (UStaticMeshComponent* MeshComp = LadderCDO->GetLadderMesh())
+		{
+			GhostMesh = MeshComp->GetStaticMesh();
+		}
+	}
+
+	FVector BottomLoc;
+	float ClimbHeight = 0.0f;
+	FRotator Rot = FRotator::ZeroRotator;
+	if (ComputeLadderPlacement(CursorCell, BottomLoc, ClimbHeight, Rot))
+	{
+		TargetGrid->OJJ_ShowGhostForLadder(GhostMesh, BottomLoc, ClimbHeight, Rot, /*bValid=*/true);
+	}
+	else
+	{
+		// 유효 변 없음(Foundation 위 아님/끝 셀 등) → 빨강 고스트(커서 셀 지면에 기본 높이)로 "여기 불가" 신호.
+		const FVector CursorWorld = TargetGrid->GridToWorld(CursorCell);
+		float GroundZ = 0.0f;
+		if (!TargetGrid->OJJ_GetRawTerrainSurfaceZ(CursorCell, GroundZ))
+		{
+			GroundZ = CursorWorld.Z;
+		}
+		TargetGrid->OJJ_ShowGhostForLadder(GhostMesh,
+			FVector(CursorWorld.X, CursorWorld.Y, GroundZ), /*ClimbHeight=*/100.0f, FRotator::ZeroRotator, /*bValid=*/false);
+	}
+}
+
+void AOJJ_BuildController::PlaceLadderAtCursor()
+{
+	if (!TargetGrid || !LadderClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] TargetGrid 또는 LadderClass 미설정"));
+		return;
+	}
+
+	// 마우스가 유효 표면 밖이라 호버 갱신이 한 번도 안 됐으면 클릭 무시(머신/Foundation 경로와 동일).
+	if (CurrentHoverCell.X == INT_MIN || CurrentHoverCell.Y == INT_MIN)
+	{
+		return;
+	}
+
+	// 호버와 같은 입력(CurrentHoverCell)으로 재산출 → "미리보기 = 실제 배치" 정합(Foundation 경로 계약과 동일).
+	FVector BottomLoc;
+	float ClimbHeight = 0.0f;
+	FRotator Rot = FRotator::ZeroRotator;
+	if (!ComputeLadderPlacement(CurrentHoverCell, BottomLoc, ClimbHeight, Rot))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] 사다리 배치 거부 — 커서가 Foundation 변이 아님"));
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 자유 배치(그리드 장부 미등록) — TryPlaceMachine 미경유. SpawnActorDeferred로 FinishSpawning 전에
+	// ClimbHeight를 주입해 OnConstruction(ApplyDimensions)이 올바른 높이로 메시/트리거를 사이징하게 한다.
+	// ⚠️ 액터 스케일은 1 유지(끝점 산식이 스케일 미반영) — 높이는 ClimbHeight로만.
+	const FTransform SpawnXf(Rot, BottomLoc);
+	AOJJ_Ladder* NewLadder = World->SpawnActorDeferred<AOJJ_Ladder>(
+		LadderClass, SpawnXf, this, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!NewLadder)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] 사다리 SpawnActorDeferred 실패"));
+		return;
+	}
+	NewLadder->OJJ_SetClimbHeight(ClimbHeight);
+	NewLadder->FinishSpawning(SpawnXf);
+	UE_LOG(LogTemp, Log, TEXT("[BuildController] 사다리 배치 — height=%.1f loc=%s"), ClimbHeight, *BottomLoc.ToString());
+}
+
 void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 {
 	if (PlacementMode == NewMode)
@@ -1544,6 +1768,7 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::MoldingMachine: ModeName = TEXT("MoldingMachine"); break;
 	case EOJJ_BuildPlacementMode::Synthesizer: ModeName = TEXT("Synthesizer"); break;
 	case EOJJ_BuildPlacementMode::TeleCommunicationTower: ModeName = TEXT("TeleCommunicationTower"); break;
+	case EOJJ_BuildPlacementMode::Ladder:    ModeName = TEXT("Ladder");     break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 

@@ -401,6 +401,8 @@ protected:
 	void SetSynthesizerModeShortcut();
 	void SetTeleCommunicationTowerModeShortcut();
 	void SetDemolishModeShortcut();
+	// [#184] C키 — 사다리 빌드 서브모드 진입(빌드모드 중에만, SetDemolishModeShortcut 패턴).
+	void SetLadderModeShortcut();
 	void SetWarehouseMode(const FInputActionValue& Value);
 	void SetDemolishMode(const FInputActionValue& Value);
 
