@@ -373,7 +373,7 @@ bool OJJ_ValidateConveyorSlopePath(
 			const float CornerZSpan =
 				FMath::Max3(OutCellZs[Index - 1], OutCellZs[Index], OutCellZs[Index + 1])
 				- FMath::Min3(OutCellZs[Index - 1], OutCellZs[Index], OutCellZs[Index + 1]);
-			const float CornerZTolerance = Grid->OJJ_GetConveyorCornerZTolerance(); // 반 단(~50uu)
+			const float CornerZTolerance = Grid->OJJ_GetConveyorCornerZTolerance(); // [#252] 미세굴곡 epsilon(~5uu)
 			const bool bCornerHomogeneous = bCellIsFoundation[Index - 1] == bCellIsFoundation[Index]
 				&& bCellIsFoundation[Index] == bCellIsFoundation[Index + 1];
 			if (!bCornerHomogeneous)
@@ -448,7 +448,7 @@ bool OJJ_ValidateConveyorSlopePath(
 		// 클램프Z span 연속성(≤tol)으로 완화. 램프 위 컨베이어 코너는 전셀 Foundation이라 이 경로를 타므로
 		// (혼합이 아닌 한) on-a-slope 완화의 실제 적용 지점. 빗변연장으로 단차가 준 램프 코너는 허용,
 		// 진짜 경사/단차(~100)는 거부. raw 경로(#249)는 위에서 면제되어 도달 안 함.
-		const float CornerZTolerance = Grid->OJJ_GetConveyorCornerZTolerance(); // 반 단(~50uu)
+		const float CornerZTolerance = Grid->OJJ_GetConveyorCornerZTolerance(); // [#252] 미세굴곡 epsilon(~5uu)
 		// 루프 bound는 인덱싱 대상(OutCellZs)과 동일 소스로 — PathCells와 1:1이나 desync footgun 방지.
 		const int32 N = OutCellZs.Num();
 		for (int32 Index = 1; Index + 1 < N; ++Index)
