@@ -4448,9 +4448,18 @@ void AOJJ_Grid::OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntP
 	GhostMeshComp->SetVisibility(true);
 }
 
-void AOJJ_Grid::OJJ_ShowGhostForLadder(UStaticMesh* Mesh, const FVector& BottomLocation, float ClimbHeight, const FRotator& Rotation, bool bValid)
+void AOJJ_Grid::OJJ_ShowGhostForLadder(const FVector& BottomLocation, float ClimbHeight, const FRotator& Rotation, bool bValid)
 {
-	if (!GhostMeshComp || !Mesh || ClimbHeight < 1.0f)
+	if (!GhostMeshComp || ClimbHeight < 1.0f)
+	{
+		OJJ_HideGhost();
+		return;
+	}
+
+	// 고스트는 실제 사다리 ISM(타일)과 독립적으로 엔진 Cube 얇은 박스로 위치/높이만 표시(깔끔한 배치 인디케이터,
+	// 실제 메시 교체와 무관). 단발 로드 캐시 — 엔진 기본 에셋이라 항상 가용(게임스레드 전용).
+	static UStaticMesh* GhostCube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!GhostCube)
 	{
 		OJJ_HideGhost();
 		return;
@@ -4464,14 +4473,12 @@ void AOJJ_Grid::OJJ_ShowGhostForLadder(UStaticMesh* Mesh, const FVector& BottomL
 		return;
 	}
 
-	// AOJJ_Ladder::ApplyDimensions 산식 재현(미리보기 = 실제 사다리 비주얼 정합):
-	//   엔진 Cube(100uu) → 가로/세로 0.2(20uu) 얇게, 높이 = ClimbHeight, 중심 = 바닥 + ClimbHeight/2.
-	// ⚠️ 0.2 얇기 계수는 AOJJ_Ladder::ApplyDimensions와 동일해야 함(단일원 아님 — 한쪽 변경 시 양쪽 동기 필수).
+	// 엔진 Cube(100uu) → 가로/세로 0.2(20uu) 얇게, 높이 = ClimbHeight, 중심 = 바닥 + ClimbHeight/2.
 	const float ZScale = FMath::Max(ClimbHeight, 1.0f) / 100.0f;
 	const FVector Scale(0.2f, 0.2f, ZScale);
 	const FVector CenterLocation(BottomLocation.X, BottomLocation.Y, BottomLocation.Z + ClimbHeight * 0.5f);
 
-	GhostMeshComp->SetStaticMesh(Mesh);
+	GhostMeshComp->SetStaticMesh(GhostCube);
 	GhostMeshComp->SetWorldScale3D(Scale);
 	GhostMeshComp->SetWorldLocationAndRotation(CenterLocation, Rotation);
 

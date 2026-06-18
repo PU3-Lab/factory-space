@@ -16,11 +16,32 @@
 #include "PlayerWarehouseSubsystem.h"
 #include "Blueprint/SlateBlueprintLibrary.h"
 #include "Components/Border.h"
+#include "UObject/ConstructorHelpers.h"
+
+UUI_MachineInteract::UUI_MachineInteract(const FObjectInitializer& ObjectInitializer)
+    : Super(ObjectInitializer)
+{
+    static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
+        TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData"));
+    if (ResourceTableFinder.Succeeded())
+    {
+        ResourceDataTable = ResourceTableFinder.Object;
+    }
+
+    static ConstructorHelpers::FObjectFinder<UDataTable> MachineTableFinder(
+        TEXT("/Game/DataTable/DT_MachineData.DT_MachineData"));
+    if (MachineTableFinder.Succeeded())
+    {
+        MachineDataTable = MachineTableFinder.Object;
+    }
+}
 
 void UUI_MachineInteract::SetTargetMachine(AMachineBase* InMachine)
 {
     TargetMachine = InMachine;
     ManualDroppedOutputItemID = NAME_None;
+    LastInputVisualItemID = NAME_None;
+    LastOutputVisualItemID = NAME_None;
     
     if (TargetMachine)
     {
@@ -60,10 +81,16 @@ void UUI_MachineInteract::SetTargetMachine(AMachineBase* InMachine)
                     {
                         IMG_MachinePreview->SetBrushFromTexture(LoadedTexture);
                     }
+                    else
+                    {
+                        IMG_MachinePreview->SetBrush(FSlateBrush());
+                        IMG_MachinePreview->SetVisibility(ESlateVisibility::Hidden);
+                    }
                 }
             }
             else
             {
+                IMG_MachinePreview->SetBrush(FSlateBrush());
                 IMG_MachinePreview->SetVisibility(ESlateVisibility::Hidden);
             }
         }
@@ -179,9 +206,15 @@ void UUI_MachineInteract::NativeTick(const FGeometry& MyGeometry, float InDeltaT
 
 void UUI_MachineInteract::UpdateInputUI(FName ItemName, int32 CurrentAmount, int32 MaxAmount)
 {
+    const FName DisplayItemName = ItemName.IsNone() ? LastInputVisualItemID : ItemName;
+    if (!ItemName.IsNone())
+    {
+        LastInputVisualItemID = ItemName;
+    }
+
     if (TXT_InputName && TXT_InputCount && PB_InputBuffer)
     {
-        TXT_InputName->SetText(FText::FromName(ItemName));
+        TXT_InputName->SetText(FText::FromName(DisplayItemName));
         
         FString CountStr = FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount);
         TXT_InputCount->SetText(FText::FromString(CountStr));
@@ -190,7 +223,7 @@ void UUI_MachineInteract::UpdateInputUI(FName ItemName, int32 CurrentAmount, int
         PB_InputBuffer->SetPercent(FillPercent);
     }
 
-    if (ItemName.IsNone())
+    if (DisplayItemName.IsNone())
     {
         if (IMG_InputIcon) IMG_InputIcon->SetVisibility(ESlateVisibility::Hidden);
         return;
@@ -207,7 +240,7 @@ void UUI_MachineInteract::UpdateInputUI(FName ItemName, int32 CurrentAmount, int
     {
         IMG_InputIcon->SetVisibility(ESlateVisibility::Visible);
         
-        FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("FindInputIconContext"));
+        FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(DisplayItemName, TEXT("FindInputIconContext"));
         if (RowData)
         {
             if (RowData->ImgAsset.IsValid()) IMG_InputIcon->SetBrushFromTexture(RowData->ImgAsset.Get());
@@ -225,10 +258,16 @@ void UUI_MachineInteract::UpdateInputUI(FName ItemName, int32 CurrentAmount, int
 
 void UUI_MachineInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, int32 MaxAmount)
 {
+    const FName DisplayItemName = ItemName.IsNone() ? LastOutputVisualItemID : ItemName;
+    if (!ItemName.IsNone())
+    {
+        LastOutputVisualItemID = ItemName;
+    }
+
     if (TXT_OutputName && TXT_OutputCount && PB_OutputBuffer)
     {
         // 1. 산출물 이름 텍스트 세팅
-        TXT_OutputName->SetText(FText::FromName(ItemName));
+        TXT_OutputName->SetText(FText::FromName(DisplayItemName));
         
         // 2. 수량 텍스트 세팅 (예: "850 / 2000")
         FString CountStr = FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount);
@@ -238,7 +277,7 @@ void UUI_MachineInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, in
         float FillPercent = (MaxAmount > 0) ? (float)CurrentAmount / MaxAmount : 0.0f;
         PB_OutputBuffer->SetPercent(FillPercent);
     }
-    if (ItemName.IsNone())
+    if (DisplayItemName.IsNone())
     {
         if (IMG_OutputIcon) IMG_OutputIcon->SetVisibility(ESlateVisibility::Hidden);
         return;
@@ -246,7 +285,7 @@ void UUI_MachineInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, in
 
     if (ResourceDataTable && IMG_OutputIcon)
     {
-        if (FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("FindOutputIconContext")))
+        if (FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(DisplayItemName, TEXT("FindOutputIconContext")))
         {
             UTexture2D* IconTexture = nullptr;
             if (RowData->ImgAsset.IsValid())
@@ -269,7 +308,7 @@ void UUI_MachineInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, in
                 IMG_OutputIcon->SetVisibility(ESlateVisibility::Hidden);
                 return;
             }
-            if (CurrentAmount <= 0 && ItemName != ManualDroppedOutputItemID)
+            if (CurrentAmount <= 0 && DisplayItemName != ManualDroppedOutputItemID)
             {
                 IMG_OutputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.15f));
             }

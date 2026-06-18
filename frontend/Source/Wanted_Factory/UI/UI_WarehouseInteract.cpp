@@ -42,6 +42,7 @@ void UUI_WarehouseInteract::SetTargetMachine(AMachineBase* InMachine)
 {
     TargetMachine = InMachine;
     ManualDroppedOutputItemID = NAME_None;
+    LastOutputVisualItemID = NAME_None;
     
     if (TargetMachine)
     {
@@ -154,9 +155,15 @@ void UUI_WarehouseInteract::NativeTick(const FGeometry& MyGeometry, float InDelt
 
 void UUI_WarehouseInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, int32 MaxAmount)
 {
+    const FName DisplayItemName = ItemName.IsNone() ? LastOutputVisualItemID : ItemName;
+    if (!ItemName.IsNone())
+    {
+        LastOutputVisualItemID = ItemName;
+    }
+
     if (TXT_OutputName && TXT_OutputCount && PB_OutputBuffer)
     {
-        TXT_OutputName->SetText(FText::FromName(ItemName));
+        TXT_OutputName->SetText(FText::FromName(DisplayItemName));
         FString CountStr = FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount);
         TXT_OutputCount->SetText(FText::FromString(CountStr));
         
@@ -164,7 +171,7 @@ void UUI_WarehouseInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, 
         PB_OutputBuffer->SetPercent(FillPercent);
     }
 
-    if (ItemName.IsNone())
+    if (DisplayItemName.IsNone())
     {
         if (IMG_OutputIcon) IMG_OutputIcon->SetVisibility(ESlateVisibility::Hidden);
         return;
@@ -172,7 +179,7 @@ void UUI_WarehouseInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, 
 
     if (ResourceDataTable && IMG_OutputIcon)
     {
-        if (FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("FindOutputContext")))
+        if (FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(DisplayItemName, TEXT("FindOutputContext")))
         {
             UTexture2D* IconTexture = nullptr;
             if (RowData->ImgAsset.IsValid())
@@ -196,7 +203,7 @@ void UUI_WarehouseInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, 
                 return;
             }
 
-            if (CurrentAmount <= 0 && ItemName != ManualDroppedOutputItemID)
+            if (CurrentAmount <= 0 && DisplayItemName != ManualDroppedOutputItemID)
             {
                 IMG_OutputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.15f));
             }
