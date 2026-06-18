@@ -428,3 +428,62 @@ def test_agent_synthesize_cached_experiment_returns_ready_visual_asset_keys(
         f"materials/{first.material_id}/thumbnail.png"
     )
 
+
+def test_agent_synthesize_existing_material_returns_asset_keys_when_experiment_cache_miss(
+    db_session: Session,
+) -> None:
+    """실험 캐시(experiments 테이블)에는 정보가 없지만, 기존 생성된 물질(materials 테이블)이 존재하는 경우,
+    deduplicate_material_node에서 기존 물질 정보와 함께 이미 완료된 비주얼 에셋 키를 반환하는지 테스트합니다."""
+    # 1. 기존 물질 정보 직접 삽입 (visual_ready 상태 및 에셋 키 설정)
+    material_id = "mat_existing_test_001"
+    mat_hash = "hash_existing_test_001"
+    db_session.add(
+        GeneratedMaterialModel(
+            id=material_id,
+            material_hash=mat_hash,
+            name="Existing Test Material",
+            category="alloy",
+            rarity="rare",
+            properties_json={},
+            visual_status="visual_ready",
+            visual_asset_key=f"materials/{material_id}/icon.png",
+            texture_asset_key=f"materials/{material_id}/texture.png",
+            thumbnail_asset_key=f"materials/{material_id}/thumbnail.png",
+            fallback_icon="materials/default/alloy.png",
+        )
+    )
+    db_session.commit()
+
+    # 2. Mocking generate_material_hash to return the exact hash we registered
+    agent = MaterialCreationAgent()
+    req = MaterialCreationRequest(
+        machine_type="Synthesizer",
+        inputs=[
+            InputItemSchema(item_id="iron_ore", qty=1),
+            InputItemSchema(item_id="iron_ingot", qty=1),
+        ],
+        player_id="player_existing_material_test",
+        generate_visual_asset=False,
+    )
+
+    with (
+        patch("llm.adapter.GoogleGenAiLLMAdapter.invoke", return_value=None),
+        patch("llm.adapter.OpenAILLMAdapter.invoke", return_value=None),
+        patch("llm.adapter.LocalLLMAdapter.invoke", return_value=None),
+        patch("agents.material_generation.nodes.generate_material_hash", return_value=mat_hash),
+    ):
+        # 3. synthesize 실행 - 이 실험의 해시는 DB에 없으므로 캐시 미스 발생.
+        # 그러나 generate_material_hash 모킹으로 deduplicate_material_node에서 existing_mat를 만나게 됨.
+        res = agent.synthesize(db_session, req)
+
+    # 4. 검증: result_type은 new_material이고(중복 물질 발견 시점),
+    # generation_status는 cached이며, asset key들이 정확히 반환되는지 확인.
+    assert res.result_type == "new_material"
+    assert res.material_id == material_id
+    assert res.generation_status == "cached"
+    assert res.visual_status == "visual_ready"
+    assert res.visual_asset_key == f"materials/{material_id}/icon.png"
+    assert res.texture_asset_key == f"materials/{material_id}/texture.png"
+    assert res.thumbnail_asset_key == f"materials/{material_id}/thumbnail.png"
+
+
