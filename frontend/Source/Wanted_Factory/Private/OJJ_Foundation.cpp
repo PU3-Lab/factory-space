@@ -2,6 +2,7 @@
 
 #include "OJJ_Foundation.h"
 
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -32,17 +33,53 @@ AOJJ_Foundation::AOJJ_Foundation()
 	SlabMesh->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 	SlabMesh->SetCanEverAffectNavigation(false);
 
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Engine/BasicShapes/Cube.Cube"));
-	if (CubeMesh.Succeeded())
+	// [Deck] 윗면 비주얼 = Deck 메시(엔진 Cube 대체). 머티리얼은 에셋에 포함돼 SetStaticMesh로 함께 적용.
+	// 고스트(OJJ_ShowGhostForFoundation)는 CDO GetSlabMesh()를 읽으므로 이 교체로 고스트도 자동 Deck.
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> DeckMesh(TEXT("/Game/Assets/Platform/Deck/StaticMeshes/Deck.Deck"));
+	if (DeckMesh.Succeeded())
 	{
-		SlabMesh->SetStaticMesh(CubeMesh.Object);
+		SlabMesh->SetStaticMesh(DeckMesh.Object);
 	}
+
+	// [Deck step2] 4모서리 다리(TrussTower) ISM — 평지·램프 공용. 충돌 없음(시각 지지대; 걷기 충돌은 데크 슬래브).
+	LegISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("LegISM"));
+	LegISM->SetupAttachment(RootComponent);
+	LegISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	LegISM->SetCanEverAffectNavigation(false);
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> TrussMesh(TEXT("/Game/Assets/Platform/TrussTower/StaticMeshes/TrussTower.TrussTower"));
+	if (TrussMesh.Succeeded())
+	{
+		LegISM->SetStaticMesh(TrussMesh.Object);
+	}
+}
+
+void AOJJ_Foundation::OJJ_ComputeDeckSlabTransform(const UStaticMesh* Mesh, const FRotator& Rot,
+	float TargetX, float TargetY, float Thickness, FVector& OutScale, FVector& OutOffset)
+{
+	OutScale = FVector::OneVector;
+	OutOffset = FVector::ZeroVector;
+	if (!Mesh)
+	{
+		return;
+	}
+	const FBox Box = Mesh->GetBoundingBox();
+	const FVector Native = Box.GetSize();
+	// 엔진 Cube(100^3) 가정 폐기 — 실제 바운즈로 footprint(XY)=Target, 두께(Z)=Thickness 맞춤(per-axis).
+	OutScale = FVector(
+		TargetX / FMath::Max(Native.X, 1.0f),
+		TargetY / FMath::Max(Native.Y, 1.0f),
+		Thickness / FMath::Max(Native.Z, 1.0f));
+	// 회전·스케일 후 AABB로 피벗 보정: XY는 박스중심을 원점에, Z는 윗면을 +Thickness에(상면 높이 불변).
+	const FBox Eff = Box.TransformBy(FTransform(Rot, FVector::ZeroVector, OutScale));
+	const FVector C = Eff.GetCenter();
+	OutOffset = FVector(-C.X, -C.Y, Thickness - Eff.Max.Z);
 }
 
 void AOJJ_Foundation::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 	UpdateSlabVisual();
+	UpdateLegVisual();
 }
 
 float AOJJ_Foundation::OJJ_ResolveCellSize() const
@@ -72,7 +109,7 @@ float AOJJ_Foundation::OJJ_ResolveCellSize() const
 
 void AOJJ_Foundation::UpdateSlabVisual()
 {
-	if (!SlabMesh)
+	if (!SlabMesh || !SlabMesh->GetStaticMesh())
 	{
 		return;
 	}
@@ -82,10 +119,91 @@ void AOJJ_Foundation::UpdateSlabVisual()
 	const int32 SizeY = FMath::Max(1, FoundationSize.Y);
 	const float SlabThickness = FMath::Max(1.0f, Thickness);
 
-	// 액터 원점 = 풋프린트 중심(GetFoundationPlacementLocation 계약) → XY 오프셋 0.
-	// Cube(100uu, 중심 피벗): Z중심 = Thickness/2 → 상면이 정확히 평면 + Thickness.
-	SlabMesh->SetRelativeScale3D(FVector(SizeX * CellSize / 100.0f, SizeY * CellSize / 100.0f, SlabThickness / 100.0f));
-	SlabMesh->SetRelativeLocation(FVector(0.0f, 0.0f, SlabThickness * 0.5f));
+	// [Deck] 실제 Deck 바운즈로 footprint(8셀)×Thickness 맞춤(공용 헬퍼 = 고스트와 정합). 액터 원점 = 풋프린트
+	// 중심 → XY 박스중심 정렬, 윗면 = 액터 Z + Thickness **불변**(머신 배치·사다리 step-off·등반 기준이라 절대 유지).
+	FVector Scale, Offset;
+	OJJ_ComputeDeckSlabTransform(SlabMesh->GetStaticMesh(), SlabMeshLocalRotation,
+		SizeX * CellSize, SizeY * CellSize, SlabThickness, Scale, Offset);
+	SlabMesh->SetRelativeRotation(SlabMeshLocalRotation);
+	SlabMesh->SetRelativeScale3D(Scale);
+	SlabMesh->SetRelativeLocation(Offset);
+}
+
+void AOJJ_Foundation::UpdateLegVisual()
+{
+	if (!LegISM || !LegISM->GetStaticMesh())
+	{
+		return;
+	}
+
+	const float CellSize = OJJ_ResolveCellSize();
+	const int32 SizeX = FMath::Max(1, FoundationSize.X);
+	const int32 SizeY = FMath::Max(1, FoundationSize.Y);
+	// footprint 꼭짓점(가장자리)까지 = Size/2 × CellSize (8셀 → 400uu). 다리는 굵기만큼 안으로 들어와 바깥면이 꼭짓점.
+	const float FootHalfX = SizeX * 0.5f * CellSize;
+	const float FootHalfY = SizeY * 0.5f * CellSize;
+
+	// 굵기는 XY만 스케일(Z=1 고정 → SegZ/타일링 단위 보존). 높이 그대로, 가로/세로만 굵게.
+	const float LegThick = FMath::Max(LegMeshScaleMultiplier, 0.01f);
+	const FVector LegScale(LegThick, LegThick, 1.0f);
+	const FBox Eff = LegISM->GetStaticMesh()->GetBoundingBox().TransformBy(
+		FTransform(LegMeshLocalRotation, FVector::ZeroVector, LegScale));
+	const float SegZ = Eff.GetSize().Z;        // 1세그 세로높이(Z 스케일 1 → 네이티브 = 타일링 단위, 굵기 무관)
+
+	// 3단계: 모서리별 지형까지 타일링(사다리 Overshoot 패턴). DeckBottom(액터 Z)에서 각 모서리 지형Z까지 N세그 —
+	// 위(상대 0=DeckBottom)는 딱, 남는 건 지형 아래로 박힘(맵 박힘 OK). 4모서리 독립(울퉁불퉁 대응).
+	// 지형Z는 RegisteredGrid->OJJ_GetRawTerrainSurfaceZ — false(미베이크/off-grid)면 폴백 1세그 + 경고.
+	const AOJJ_Grid* Grid = RegisteredGrid.Get();
+	const FVector ActorLoc = GetActorLocation();
+	const float CellHalfX = (SizeX - 1) * 0.5f * CellSize; // 모서리 '셀 중심' 거리(지형Z 조회 셀, ±350)
+	const float CellHalfY = (SizeY - 1) * 0.5f * CellSize;
+	bool bAnyUnbaked = false;
+
+	LegISM->ClearInstances();
+	const float SignX[4] = { -1.0f, +1.0f, -1.0f, +1.0f };
+	const float SignY[4] = { -1.0f, -1.0f, +1.0f, +1.0f };
+	for (int32 i = 0; i < 4; ++i)
+	{
+		// XY 바깥면을 footprint 꼭짓점(±FootHalf)에 정렬(굵기만큼 안으로).
+		const float PosX = (SignX[i] > 0.0f) ? (FootHalfX - Eff.Max.X) : (-FootHalfX - Eff.Min.X);
+		const float PosY = (SignY[i] > 0.0f) ? (FootHalfY - Eff.Max.Y) : (-FootHalfY - Eff.Min.Y);
+
+		// 이 모서리 다리 높이 = DeckBottom(ActorZ) − 모서리 지형Z. 베이크 없거나 off-grid면 false → 폴백 1세그.
+		float Height = SegZ;
+		if (Grid)
+		{
+			const FIntPoint CornerCell = Grid->WorldToGrid(
+				FVector(ActorLoc.X + SignX[i] * CellHalfX, ActorLoc.Y + SignY[i] * CellHalfY, ActorLoc.Z));
+			float TerrainZ = 0.0f;
+			if (Grid->OJJ_GetRawTerrainSurfaceZ(CornerCell, TerrainZ))
+			{
+				Height = FMath::Max(ActorLoc.Z - TerrainZ, SegZ);
+			}
+			else
+			{
+				bAnyUnbaked = true;
+			}
+		}
+		else
+		{
+			bAnyUnbaked = true;
+		}
+
+		// 사다리 패턴: 위(DeckBottom=상대 0)에 딱, 아래로 N세그(N*SegZ ≥ Height → 마지막 세그가 지형/그 아래).
+		const int32 N = FMath::Max(1, FMath::CeilToInt(Height / SegZ));
+		for (int32 j = 0; j < N; ++j)
+		{
+			// 세그 j 윗면 = 상대 −j*SegZ → 인스턴스 Z = −j*SegZ − Eff.Max.Z. j=0 윗면 = DeckBottom.
+			const float InstZ = -static_cast<float>(j) * SegZ - Eff.Max.Z;
+			LegISM->AddInstance(FTransform(LegMeshLocalRotation, FVector(PosX, PosY, InstZ), LegScale));
+		}
+	}
+
+	if (bAnyUnbaked)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Leg] 베이크 GroundZ 없음/off-grid — 일부 다리 폴백 1세그(공중 가능). 맵 RebakeAndCache 후 재배치 필요."));
+	}
 }
 
 FOJJFoundationFitResult AOJJ_Foundation::OJJ_ComputeHoverFootprint(const AOJJ_Grid& Grid, FIntPoint CursorCell,
@@ -134,6 +252,7 @@ void AOJJ_Foundation::OJJ_NotifyPlacedOnGrid(AOJJ_Grid* Grid)
 	RegisteredGrid = Grid;
 	// 배치 시점 그리드의 실제 CellSize 확정 반영(스폰 시 OnConstruction에서 그리드를 못 찾았을 경우 대비).
 	UpdateSlabVisual();
+	UpdateLegVisual();
 }
 
 void AOJJ_Foundation::EndPlay(const EEndPlayReason::Type EndPlayReason)

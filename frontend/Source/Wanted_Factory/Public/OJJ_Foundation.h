@@ -7,7 +7,9 @@
 #include "OJJ_Foundation.generated.h"
 
 class AOJJ_Grid;
+class UStaticMesh;
 class UStaticMeshComponent;
+class UInstancedStaticMeshComponent;
 
 // Foundation 호버/배치 풋프린트 산출 결과(F3.6-0, 결정 ㉽ — f3_6_autofit_ramp_plan.md §2).
 // 자동 맞춤 램프(F3.6-1)는 풋프린트가 "커서+그리드 상태의 함수"라 컨트롤러의 CDO 정적 산출을
@@ -75,8 +77,17 @@ public:
 	FIntPoint GetFoundationSize() const { return FoundationSize; }
 	float GetThickness() const { return Thickness; }
 
-	// 고스트 프리뷰(#187)가 슬래브 메시(엔진 Cube)를 액터 spawn 없이 그리기 위한 접근자(CDO에서 StaticMesh 취득).
+	// 고스트 프리뷰(#187)가 슬래브 메시를 액터 spawn 없이 그리기 위한 접근자(CDO에서 StaticMesh 취득).
 	UStaticMeshComponent* GetSlabMesh() const { return SlabMesh; }
+
+	// [Deck] 슬래브 메시 로컬 회전 보정 — 고스트가 배치와 같은 회전을 쓰도록 노출.
+	FRotator GetSlabMeshLocalRotation() const { return SlabMeshLocalRotation; }
+
+	// [Deck] Deck 슬래브 메시를 footprint(TargetX×TargetY uu) × Thickness에 맞추는 스케일 + 피벗/회전 보정
+	// 오프셋(XY는 박스중심을 원점에, Z는 윗면을 +Thickness에)을 산출. 배치(UpdateSlabVisual)·고스트 공용 —
+	// "미리보기 = 실제 배치" 정합을 한 곳에서 보장. (회전 0 기준 정확; 비0 회전 시 per-axis 스케일은 근사.)
+	static void OJJ_ComputeDeckSlabTransform(const UStaticMesh* Mesh, const FRotator& Rot,
+		float TargetX, float TargetY, float Thickness, FVector& OutScale, FVector& OutOffset);
 
 	// 배치 확정 직후 BuildController가 호출 — EndPlay 대칭 해제용 그리드 보관 + 비주얼 확정 갱신.
 	void OJJ_NotifyPlacedOnGrid(AOJJ_Grid* Grid);
@@ -135,11 +146,33 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Foundation")
 	TObjectPtr<UStaticMeshComponent> SlabMesh;
 
+	// [Deck] 슬래브(Deck) 메시 로컬 회전 보정(deg). Deck 임포트 축이 틀어졌을 때(예: 두께축이 Z 아님) 세움.
+	// 기본 0(평평한 deck은 보정 불필요 가정) — DIAG 로그로 축 확인 후 필요시 다이얼(사다리 전례).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Foundation")
+	FRotator SlabMeshLocalRotation = FRotator::ZeroRotator;
+
+	// [Deck step2] 4모서리 다리(TrussTower) ISM — 평지·램프 공용. 충돌 없음(시각 지지대; 걷기 충돌은 데크 슬래브).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Foundation")
+	TObjectPtr<UInstancedStaticMeshComponent> LegISM;
+
+	// [Deck step2] 다리 메시 로컬 회전 보정(deg). TrussTower 세로축이 Z 아니면(누움) 세움. 기본 0 — DIAG로 확인 후 다이얼.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Foundation")
+	FRotator LegMeshLocalRotation = FRotator::ZeroRotator;
+
+	// [Deck step2] 다리 굵기 배율 — **XY만** 스케일(Z=1 고정 → 세로높이/SegZ·타일링 단위 보존). 기본 1.5
+	// (네이티브 XY≈40 → ≈60cm). 적정 굵기 PIE 보고 다이얼. ⚠️ Z는 안 키움(타일링 단위 틀어짐 방지).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Foundation", meta = (ClampMin = "0.01"))
+	float LegMeshScaleMultiplier = 1.5f;
+
 	// FoundationSize/Thickness/그리드 CellSize에 맞춰 슬래브 스케일·위치 갱신.
 	// 액터 원점 = 풋프린트 중심(GetFoundationPlacementLocation 계약) → XY 오프셋 0, 상면 = 액터 Z + Thickness
 	// (액터 상대라 F2-4 스냅 리프트에도 수식 불변 — 컨트롤러가 액터째 들어 올림).
 	// F3-2: virtual — 램프 등 비평탄 파생이 계단 비주얼로 교체(OnConstruction/NotifyPlacedOnGrid가 디스패치).
 	virtual void UpdateSlabVisual();
+
+	// [Deck step2] 4모서리 다리(TrussTower) ISM 갱신 — 평지·램프 공용(OnConstruction/NotifyPlacedOnGrid에서 호출).
+	// 2단계: 4모서리 셀 중심에 고정 1세그. 3단계에서 모서리별 지형Z까지 타일링(사다리 Overshoot 정렬 재활용).
+	void UpdateLegVisual();
 
 	// 그리드 CellSize 역산(public GridToWorld 경유 — 등록 그리드 우선, 폴백 월드 첫 그리드, 기본 100).
 	// UpdateSlabVisual에서 추출(F3-2) — 파생 비주얼도 동일 규칙 공유.
