@@ -90,6 +90,9 @@ class MaterialCreationResponse(BaseModel):
     generation_status: str | None = None
     visual_status: str | None = None
     fallback_icon: str | None = None
+    visual_asset_key: str | None = None  # 비주얼 이미지 에셋 키 (materials/{material_id}/icon.png 형식)
+    texture_asset_key: str | None = None  # 텍스처 에셋 키 (materials/{material_id}/texture.png 형식)
+    thumbnail_asset_key: str | None = None  # 썸네일 에셋 키 (materials/{material_id}/thumbnail.png 형식)
     message: str | None = None
 
     cached: bool | None = None

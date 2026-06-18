@@ -34,3 +34,13 @@ def test_response_state_optional() -> None:
     """MaterialCreationResponse 생성 시 state 필드가 기본적으로 None 상태가 될 수 있는지 테스트합니다."""
     resp = MaterialCreationResponse(result_type="new_material", experiment_hash="h")
     assert resp.state is None
+
+
+def test_response_visual_asset_key_fields_optional() -> None:
+    """MaterialCreationResponse 생성 시 visual asset key 필드는 기본적으로 None이어야 합니다."""
+    resp = MaterialCreationResponse(result_type="new_material", experiment_hash="h")
+
+    assert resp.visual_asset_key is None
+    assert resp.texture_asset_key is None
+    assert resp.thumbnail_asset_key is None
+
