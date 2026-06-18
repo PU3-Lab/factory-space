@@ -9,16 +9,31 @@
 class AMachineBase;
 class UDataTable;
 class UInstancedStaticMeshComponent;
+class UStaticMeshComponent;
 class USceneComponent;
 class UTextRenderComponent;
 
 struct FConveyorDepartingVisual
 {
 	int32 VisualId = INDEX_NONE;
+	FName ItemId = NAME_None;
 	FVector StartLocation = FVector::ZeroVector;
 	FVector EndLocation = FVector::ZeroVector;
 	float StartWorldTime = 0.0f;
 	float Duration = 0.0f;
+};
+
+struct FConveyorVisualInstanceState
+{
+	TWeakObjectPtr<UStaticMeshComponent> Component;
+	FName ItemId = NAME_None;
+};
+
+struct FConveyorDesiredVisual
+{
+	int32 VisualId = INDEX_NONE;
+	FName ItemId = NAME_None;
+	FTransform Transform = FTransform::Identity;
 };
 
 UCLASS()
@@ -157,6 +172,7 @@ protected:
 	float LastItemMoveWorldTime = 0.0f;
 	int32 NextItemVisualId = 1;
 	TArray<FConveyorDepartingVisual> DepartingVisuals;
+	TMap<int32, FConveyorVisualInstanceState> VisualInstanceStates;
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Conveyor|Path")
@@ -222,8 +238,13 @@ private:
 	void MoveItemsOneGrid();
 	bool IsSolidItem(FName ItemID) const;
 	void RefreshItemVisualInstances();
+	void ClearAllItemVisualInstances();
+	void SyncDesiredVisual(const FConveyorDesiredVisual& DesiredVisual);
+	void RemoveVisualInstance(int32 VisualId);
 	void PruneDepartingVisuals();
-	void StartDepartingVisual(int32 VisualId, int32 SlotIndex);
+	void StartDepartingVisual(int32 VisualId, FName ItemId, int32 SlotIndex);
+	UStaticMeshComponent* CreateVisualComponentForItem(int32 VisualId, FName ItemId);
+	UStaticMesh* ResolveItemStaticMesh(FName ItemId) const;
 	float GetCurrentMoveAlpha() const;
 	FVector GetCellLocalCenter(FIntPoint Cell) const;
 	// [OJJ F3.7-0, F3.8''' 노드화] 노드(셀 경계)/셀 중심 로컬 Z 조회 — 빈 배열/무효 인덱스는 0

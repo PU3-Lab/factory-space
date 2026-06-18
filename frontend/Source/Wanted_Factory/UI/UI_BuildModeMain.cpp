@@ -10,37 +10,32 @@
 
 namespace
 {
-	UImage* FindImageWidgetRecursive(UWidget* Widget)
+	void CollectImageWidgetsRecursive(UWidget* Widget, TArray<UImage*>& OutImages)
 	{
 		if (!Widget)
 		{
-			return nullptr;
+			return;
 		}
 
 		if (UImage* Image = Cast<UImage>(Widget))
 		{
-			return Image;
+			OutImages.Add(Image);
+			return;
 		}
 
 		if (UPanelWidget* Panel = Cast<UPanelWidget>(Widget))
 		{
 			for (int32 ChildIndex = 0; ChildIndex < Panel->GetChildrenCount(); ++ChildIndex)
 			{
-				if (UImage* Image = FindImageWidgetRecursive(Panel->GetChildAt(ChildIndex)))
-				{
-					return Image;
-				}
+				CollectImageWidgetsRecursive(Panel->GetChildAt(ChildIndex), OutImages);
 			}
-
-			return nullptr;
+			return;
 		}
 
 		if (UContentWidget* Content = Cast<UContentWidget>(Widget))
 		{
-			return FindImageWidgetRecursive(Content->GetContent());
+			CollectImageWidgetsRecursive(Content->GetContent(), OutImages);
 		}
-
-		return nullptr;
 	}
 
 	void ApplyMachineIconToButton(UButton* Button, const FMachineTableRow& MachineData)
@@ -50,21 +45,32 @@ namespace
 			return;
 		}
 
-		UImage* Image = FindImageWidgetRecursive(Button->GetContent());
-		if (!Image)
+		UTexture2D* Texture = MachineData.ImgAsset.IsValid()
+			? MachineData.ImgAsset.Get()
+			: MachineData.ImgAsset.LoadSynchronous();
+		if (!Texture)
 		{
 			return;
 		}
 
-		if (MachineData.ImgAsset.IsValid())
+		TArray<UImage*> Images;
+		CollectImageWidgetsRecursive(Button->GetContent(), Images);
+		for (UImage* Image : Images)
 		{
-			Image->SetBrushFromTexture(MachineData.ImgAsset.Get());
-			return;
+			if (Image)
+			{
+				Image->SetBrushFromTexture(Texture);
+			}
 		}
 
-		if (UTexture2D* LoadedTexture = MachineData.ImgAsset.LoadSynchronous())
+		if (Images.Num() == 0)
 		{
-			Image->SetBrushFromTexture(LoadedTexture);
+			FButtonStyle ButtonStyle = Button->GetStyle();
+			ButtonStyle.Normal.SetResourceObject(Texture);
+			ButtonStyle.Hovered.SetResourceObject(Texture);
+			ButtonStyle.Pressed.SetResourceObject(Texture);
+			ButtonStyle.Disabled.SetResourceObject(Texture);
+			Button->SetStyle(ButtonStyle);
 		}
 	}
 }

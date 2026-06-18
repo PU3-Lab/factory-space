@@ -101,4 +101,7 @@ protected:
 	// 단일 그리드 가정(SP) — 멀티 그리드는 OJJ_Grid.h KNOWN LIMITATION 참조.
 	// 기본 구현은 단일 셀 등록(광맥). 다중 셀 영역(AWaterArea 등)은 override로 확장 — 본 경로/광맥 동작 무변경.
 	virtual void RegisterToGrid();
+
+	// 레거시 ResourceID / 누락된 DataTable 핸들을 기본 리소스 테이블로 보정한다.
+	void NormalizeResourceDataHandle();
 };

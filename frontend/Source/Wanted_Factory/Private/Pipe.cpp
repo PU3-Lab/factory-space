@@ -47,15 +47,18 @@ APipe::APipe()
 	SegmentInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("SegmentInstances"));
 	SegmentInstances->SetupAttachment(Root);
 	SetupTubeCollision(SegmentInstances);
+	SegmentInstances->SetVisibleInRayTracing(false);
 
 	JoinInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("JoinInstances"));
 	JoinInstances->SetupAttachment(Root);
 	SetupTubeCollision(JoinInstances);
+	JoinInstances->SetVisibleInRayTracing(false);
 
 	LiquidVisualInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("LiquidVisualInstances"));
 	LiquidVisualInstances->SetupAttachment(Root);
 	LiquidVisualInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	LiquidVisualInstances->SetCastShadow(false);
+	LiquidVisualInstances->SetVisibleInRayTracing(false);
 
 	DebugStateText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("DebugStateText"));
 	DebugStateText->SetupAttachment(Root);

@@ -5,6 +5,7 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "Engine/DataTable.h"
 #include "Engine/StaticMesh.h"
@@ -91,15 +92,18 @@ AConveyor::AConveyor()
 	StraightSegmentInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("StraightSegmentInstances"));
 	StraightSegmentInstances->SetupAttachment(Root);
 	StraightSegmentInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	StraightSegmentInstances->SetVisibleInRayTracing(false);
 
 	CornerSegmentInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("CornerSegmentInstances"));
 	CornerSegmentInstances->SetupAttachment(Root);
 	CornerSegmentInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CornerSegmentInstances->SetVisibleInRayTracing(false);
 
 	ItemVisualInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("ItemVisualInstances"));
 	ItemVisualInstances->SetupAttachment(Root);
 	ItemVisualInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ItemVisualInstances->SetCastShadow(false);
+	ItemVisualInstances->SetVisibleInRayTracing(false);
 
 	DebugStateText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("DebugStateText"));
 	DebugStateText->SetupAttachment(Root);
@@ -307,6 +311,18 @@ void AConveyor::ClearPath()
 	PreviousItemVisualIds.Reset();
 	NextItemVisualId = 1;
 	DepartingVisuals.Reset();
+	if (ItemVisualInstances)
+	{
+		ItemVisualInstances->ClearInstances();
+	}
+	for (TPair<int32, FConveyorVisualInstanceState>& Pair : VisualInstanceStates)
+	{
+		if (UStaticMeshComponent* Component = Pair.Value.Component.Get())
+		{
+			Component->DestroyComponent();
+		}
+	}
+	VisualInstanceStates.Reset();
 	StopItemMoveTimer();
 	RebuildVisuals();
 	RefreshItemVisualInstances();
@@ -595,7 +611,7 @@ void AConveyor::MoveItemsOneGrid()
 		{
 			if (TargetMachine->ReceiveConveyorItem(LastItem, 1))
 			{
-				StartDepartingVisual(ItemVisualIds[LastIndex], LastIndex);
+				StartDepartingVisual(ItemVisualIds[LastIndex], LastItem, LastIndex);
 				ItemSlots[LastIndex] = NAME_None;
 				ItemVisualIds[LastIndex] = INDEX_NONE;
 			}
@@ -649,19 +665,23 @@ void AConveyor::RefreshItemVisualInstances()
 	}
 
 	PruneDepartingVisuals();
-	ItemVisualInstances->ClearInstances();
+
 	if (!HasVisibleItems() && DepartingVisuals.Num() == 0)
 	{
+		ClearAllItemVisualInstances();
 		return;
 	}
 
 	const float MoveAlpha = GetCurrentMoveAlpha();
 	const float ItemScale = FMath::Max(0.01f, CellSize * ItemVisualScaleRatio / 100.0f);
 	const FVector ItemVisualScale(ItemScale, ItemScale, ItemScale);
+	TArray<FConveyorDesiredVisual> DesiredVisuals;
+	DesiredVisuals.Reserve(ItemSlots.Num() + DepartingVisuals.Num());
 
 	for (int32 SlotIndex = 0; SlotIndex < ItemSlots.Num(); ++SlotIndex)
 	{
-		if (ItemSlots[SlotIndex].IsNone())
+		const FName ItemId = ItemSlots[SlotIndex];
+		if (ItemId.IsNone() || !ItemVisualIds.IsValidIndex(SlotIndex) || ItemVisualIds[SlotIndex] == INDEX_NONE)
 		{
 			continue;
 		}
@@ -669,7 +689,10 @@ void AConveyor::RefreshItemVisualInstances()
 		const FVector StartLocation = ResolveItemVisualStartLocation(SlotIndex);
 		const FVector EndLocation = GetSlotLocalCenter(SlotIndex);
 		const FVector ItemLocation = FMath::Lerp(StartLocation, EndLocation, MoveAlpha);
-		ItemVisualInstances->AddInstance(FTransform(FRotator::ZeroRotator, ItemLocation, ItemVisualScale));
+		FConveyorDesiredVisual& DesiredVisual = DesiredVisuals.AddDefaulted_GetRef();
+		DesiredVisual.VisualId = ItemVisualIds[SlotIndex];
+		DesiredVisual.ItemId = ItemId;
+		DesiredVisual.Transform = FTransform(FRotator::ZeroRotator, ItemLocation, ItemVisualScale);
 	}
 
 	const UWorld* World = GetWorld();
@@ -683,7 +706,92 @@ void AConveyor::RefreshItemVisualInstances()
 			? RawAlpha
 			: FMath::Pow(RawAlpha, ItemVisualLerpExponent);
 		const FVector ItemLocation = FMath::Lerp(DepartingVisual.StartLocation, DepartingVisual.EndLocation, VisualAlpha);
-		ItemVisualInstances->AddInstance(FTransform(FRotator::ZeroRotator, ItemLocation, ItemVisualScale));
+		FConveyorDesiredVisual& DesiredVisual = DesiredVisuals.AddDefaulted_GetRef();
+		DesiredVisual.VisualId = DepartingVisual.VisualId;
+		DesiredVisual.ItemId = DepartingVisual.ItemId;
+		DesiredVisual.Transform = FTransform(FRotator::ZeroRotator, ItemLocation, ItemVisualScale);
+	}
+
+	TSet<int32> DesiredVisualIds;
+	DesiredVisualIds.Reserve(DesiredVisuals.Num());
+	for (const FConveyorDesiredVisual& DesiredVisual : DesiredVisuals)
+	{
+		DesiredVisualIds.Add(DesiredVisual.VisualId);
+		SyncDesiredVisual(DesiredVisual);
+	}
+
+	TArray<int32> StaleVisualIds;
+	for (const TPair<int32, FConveyorVisualInstanceState>& Pair : VisualInstanceStates)
+	{
+		if (!DesiredVisualIds.Contains(Pair.Key))
+		{
+			StaleVisualIds.Add(Pair.Key);
+		}
+	}
+
+	for (const int32 VisualId : StaleVisualIds)
+	{
+		RemoveVisualInstance(VisualId);
+	}
+}
+
+void AConveyor::ClearAllItemVisualInstances()
+{
+	TArray<int32> VisualIds;
+	VisualInstanceStates.GenerateKeyArray(VisualIds);
+	for (const int32 VisualId : VisualIds)
+	{
+		RemoveVisualInstance(VisualId);
+	}
+}
+
+void AConveyor::SyncDesiredVisual(const FConveyorDesiredVisual& DesiredVisual)
+{
+	if (DesiredVisual.VisualId == INDEX_NONE)
+	{
+		return;
+	}
+
+	UStaticMeshComponent* DesiredComponent = CreateVisualComponentForItem(DesiredVisual.VisualId, DesiredVisual.ItemId);
+	if (!DesiredComponent)
+	{
+		RemoveVisualInstance(DesiredVisual.VisualId);
+		return;
+	}
+
+	if (FConveyorVisualInstanceState* ExistingState = VisualInstanceStates.Find(DesiredVisual.VisualId))
+	{
+		if (ExistingState->Component.Get() == DesiredComponent)
+		{
+			DesiredComponent->SetRelativeTransform(DesiredVisual.Transform);
+			return;
+		}
+
+		RemoveVisualInstance(DesiredVisual.VisualId);
+		DesiredComponent = CreateVisualComponentForItem(DesiredVisual.VisualId, DesiredVisual.ItemId);
+		if (!DesiredComponent)
+		{
+			return;
+		}
+	}
+
+	FConveyorVisualInstanceState& NewState = VisualInstanceStates.FindOrAdd(DesiredVisual.VisualId);
+	NewState.Component = DesiredComponent;
+	NewState.ItemId = DesiredVisual.ItemId;
+	DesiredComponent->SetRelativeTransform(DesiredVisual.Transform);
+}
+
+void AConveyor::RemoveVisualInstance(int32 VisualId)
+{
+	FConveyorVisualInstanceState ExistingState;
+	if (!VisualInstanceStates.RemoveAndCopyValue(VisualId, ExistingState))
+	{
+		return;
+	}
+
+	if (UStaticMeshComponent* Component = ExistingState.Component.Get())
+	{
+		Component->DestroyComponent();
 	}
 }
 
@@ -703,15 +811,16 @@ void AConveyor::PruneDepartingVisuals()
 	});
 }
 
-void AConveyor::StartDepartingVisual(int32 VisualId, int32 SlotIndex)
+void AConveyor::StartDepartingVisual(int32 VisualId, FName ItemId, int32 SlotIndex)
 {
-	if (VisualId == INDEX_NONE || !GetWorld())
+	if (VisualId == INDEX_NONE || ItemId.IsNone() || !GetWorld())
 	{
 		return;
 	}
 
 	FConveyorDepartingVisual DepartingVisual;
 	DepartingVisual.VisualId = VisualId;
+	DepartingVisual.ItemId = ItemId;
 	DepartingVisual.StartLocation = GetSlotLocalCenter(SlotIndex);
 	DepartingVisual.EndLocation = GetOutgoingItemLocalCenter();
 	DepartingVisual.StartWorldTime = GetWorld()->GetTimeSeconds();
@@ -719,6 +828,97 @@ void AConveyor::StartDepartingVisual(int32 VisualId, int32 SlotIndex)
 	const float CellsToTravel = CellSize <= KINDA_SMALL_NUMBER ? 1.0f : TravelDistance / CellSize;
 	DepartingVisual.Duration = FMath::Max(0.01f, SecondsPerGrid * CellsToTravel);
 	DepartingVisuals.Add(DepartingVisual);
+}
+
+UStaticMeshComponent* AConveyor::CreateVisualComponentForItem(int32 VisualId, FName ItemId)
+{
+	if (VisualId == INDEX_NONE)
+	{
+		return nullptr;
+	}
+
+	if (FConveyorVisualInstanceState* ExistingState = VisualInstanceStates.Find(VisualId))
+	{
+		if (UStaticMeshComponent* ExistingComponent = ExistingState->Component.Get())
+		{
+			if (ExistingState->ItemId == ItemId)
+			{
+				return ExistingComponent;
+			}
+
+			ExistingComponent->DestroyComponent();
+		}
+
+		VisualInstanceStates.Remove(VisualId);
+	}
+
+	UStaticMesh* ItemMesh = ResolveItemStaticMesh(ItemId);
+	UStaticMesh* FallbackMesh = ItemVisualInstances ? ItemVisualInstances->GetStaticMesh() : nullptr;
+	UStaticMesh* MeshToUse = ItemMesh ? ItemMesh : FallbackMesh;
+	if (!MeshToUse)
+	{
+		return nullptr;
+	}
+
+	UStaticMeshComponent* NewComponent = NewObject<UStaticMeshComponent>(
+		this,
+		MakeUniqueObjectName(this, UStaticMeshComponent::StaticClass(), FName(*FString::Printf(TEXT("ItemVisual_%d"), VisualId))));
+	if (!NewComponent)
+	{
+		return nullptr;
+	}
+
+	NewComponent->SetupAttachment(Root);
+	NewComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	NewComponent->SetCastShadow(false);
+	NewComponent->SetMobility(EComponentMobility::Movable);
+	NewComponent->SetVisibleInRayTracing(false);
+	NewComponent->SetStaticMesh(MeshToUse);
+	NewComponent->SetCanEverAffectNavigation(false);
+	const int32 MaterialCount = MeshToUse->GetStaticMaterials().Num();
+	for (int32 MaterialIndex = 0; MaterialIndex < MaterialCount; ++MaterialIndex)
+	{
+		UMaterialInterface* MaterialInterface = nullptr;
+		if (ItemMesh)
+		{
+			MaterialInterface = ItemMesh->GetMaterial(MaterialIndex);
+		}
+		else if (ItemVisualInstances)
+		{
+			MaterialInterface = ItemVisualInstances->GetMaterial(MaterialIndex);
+		}
+
+		if (MaterialInterface)
+		{
+			NewComponent->SetMaterial(MaterialIndex, MaterialInterface);
+		}
+	}
+	NewComponent->RegisterComponent();
+	AddInstanceComponent(NewComponent);
+	return NewComponent;
+}
+
+UStaticMesh* AConveyor::ResolveItemStaticMesh(FName ItemId) const
+{
+	if (!ResourceTable || ItemId.IsNone())
+	{
+		return nullptr;
+	}
+
+	const FResourceData* Resource = ResourceTable->FindRow<FResourceData>(ItemId, TEXT("Conveyor.ResolveItemStaticMesh"));
+	if (!Resource)
+	{
+		return nullptr;
+	}
+
+	if (Resource->StaticMeshAsset.IsNull())
+	{
+		return nullptr;
+	}
+
+	return Resource->StaticMeshAsset.IsValid()
+		? Resource->StaticMeshAsset.Get()
+		: Resource->StaticMeshAsset.LoadSynchronous();
 }
 
 float AConveyor::GetCurrentMoveAlpha() const

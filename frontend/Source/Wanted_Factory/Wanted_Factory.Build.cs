@@ -34,6 +34,11 @@ public class Wanted_Factory : ModuleRules
 			"ProceduralMeshComponent"
 		});
 
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.Add("UnrealEd");
+		}
+
 		PublicIncludePaths.AddRange(new string[] {
 			"Wanted_Factory"
 		});

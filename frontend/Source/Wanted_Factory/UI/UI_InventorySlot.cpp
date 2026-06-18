@@ -7,6 +7,18 @@
 #include "OJJ_Player.h"
 #include "UI/UI_Inventory.h" 
 #include "PlayerWarehouseSubsystem.h"
+#include "UObject/ConstructorHelpers.h"
+
+UUI_InventorySlot::UUI_InventorySlot(const FObjectInitializer& ObjectInitializer)
+   : Super(ObjectInitializer)
+{
+   static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
+      TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData"));
+   if (ResourceTableFinder.Succeeded())
+   {
+      ResourceDataTable = ResourceTableFinder.Object;
+   }
+}
 
 void UUI_InventorySlot::UpdateSlot(FName ItemID, int32 ItemCount)
 {
@@ -30,26 +42,40 @@ void UUI_InventorySlot::UpdateSlot(FName ItemID, int32 ItemCount)
     }
 
     // 3. 데이터 테이블에서 아이템 ID 정보 찾기
-    if (!ResourceDataTable) return;
+    if (!ResourceDataTable)
+    {
+       if (IMG_ItemIcon) IMG_ItemIcon->SetVisibility(ESlateVisibility::Hidden);
+       return;
+    }
     
     FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemID, TEXT("FindResourceIconContext"));
 
     if (RowData && IMG_ItemIcon)
     {
-       IMG_ItemIcon->SetVisibility(ESlateVisibility::Visible);
+       UTexture2D* IconTexture = nullptr;
 
        if (RowData->ImgAsset.IsValid())
        {
-          IMG_ItemIcon->SetBrushFromTexture(RowData->ImgAsset.Get());
+          IconTexture = RowData->ImgAsset.Get();
        }
        else
        {
-          UTexture2D* LoadedTexture = RowData->ImgAsset.LoadSynchronous();
-          if (LoadedTexture)
-          {
-             IMG_ItemIcon->SetBrushFromTexture(LoadedTexture);
-          }
+          IconTexture = RowData->ImgAsset.LoadSynchronous();
        }
+
+       if (IconTexture)
+       {
+          IMG_ItemIcon->SetVisibility(ESlateVisibility::Visible);
+          IMG_ItemIcon->SetBrushFromTexture(IconTexture);
+       }
+       else
+       {
+          IMG_ItemIcon->SetVisibility(ESlateVisibility::Hidden);
+       }
+    }
+    else if (IMG_ItemIcon)
+    {
+       IMG_ItemIcon->SetVisibility(ESlateVisibility::Hidden);
     }
 }
 

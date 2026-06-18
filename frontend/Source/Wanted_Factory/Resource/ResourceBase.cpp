@@ -8,6 +8,12 @@
 #include "OJJ_Grid.h"
 #include "Components/StaticMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+	const TCHAR DefaultResourceTablePath[] = TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData");
+}
 
 
 // Sets default values
@@ -21,6 +27,12 @@ AResourceBase::AResourceBase()
 
 	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
 	Mesh->SetupAttachment(Root);
+
+	static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(DefaultResourceTablePath);
+	if (ResourceTableFinder.Succeeded())
+	{
+		ResourceData.DataTable = ResourceTableFinder.Object;
+	}
 }
 
 // Called when the game starts or when spawned
@@ -28,9 +40,24 @@ void AResourceBase::BeginPlay()
 {
 	Super::BeginPlay();
 
+	NormalizeResourceDataHandle();
+
 	Amount = FMath::Clamp(Amount, 0, MaxAmount);
 
 	RegisterToGrid();
+}
+
+void AResourceBase::NormalizeResourceDataHandle()
+{
+	if (!ResourceData.DataTable)
+	{
+		ResourceData.DataTable = LoadObject<UDataTable>(nullptr, DefaultResourceTablePath);
+	}
+
+	if (ResourceData.RowName.IsNone() && !ResourceID.IsNone())
+	{
+		ResourceData.RowName = ResourceID;
+	}
 }
 
 void AResourceBase::RegisterToGrid()
