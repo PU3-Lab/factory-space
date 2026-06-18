@@ -184,10 +184,10 @@ void UUI_BuildModeMain::ExecutePlacementMode(int32 SlotIndex)
         case 3: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Smelter); break;     // 3번: 제련기
         case 4: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Grinder); break;     // 4번: 분쇄기
         case 5: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Miner); break;       // 5번: 채굴기
-        case 6: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pump); break;        // 6번 : 수력발전소
+        case 6: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pump); break;        // 6번: 펌프
         case 7: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerPlant); break;  // 7번: 발전소
         case 8: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerNode); break;   // 8번: 송전탑
-        case 9: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerLine); break;   // 9번: 송전선
+        case 9: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerLine); break;   // 9번: 전력선
         case 0: BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Shield); break;      // 0번: 차폐막
         
         default: break;

@@ -30,11 +30,12 @@
 #include "UI/UI_MachineInteract.h"
 #include "UI/UI_MainHUD.h"
 #include "UI/UI_Inventory.h"
+#include "UI/UI_WarehouseInteract.h"
+#include "UI/UI_QuestWindow.h"
 #include "Machines/MachineSubsystem.h"
 #include "Machines/LiquidTank.h"
 #include "Machines/WarehousePort.h"
 #include "PlayerWarehouseSubsystem.h"
-#include "UI/UI_WarehouseInteract.h"
 
 AOJJ_Player::AOJJ_Player()
 {
@@ -1282,8 +1283,6 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 
     	if (InventoryWidgetInstance)
     	{
-    		// 🌟 [여기에 한 줄 추가!] F키로 창고와 연동되어 켤 때는 무조건 
-    		// bIsWarehouseOpen 인자에 true를 전달해 에디터의 원래 고정 위치(우측 상태)로 강제 귀환시킵니다.
     		InventoryWidgetInstance->AdjustInventoryLayout(true); 
 
     		InventoryWidgetInstance->AddToViewport();
@@ -1368,13 +1367,21 @@ void AOJJ_Player::TriggerHUDQuestRequest()
 }
 void AOJJ_Player::TriggerHUDQuestWindowToggle()
 {
-	// 빌드모드 중에는 우측 퀘스트 레이아웃이 꺼지므로 단축키 작동 차단
+	// 빌드모드 내부에 있는 퀘스트 창을 찾아 토글합니다.
 	if (BuildController && BuildController->IsInBuildMode())
 	{
-		return;
+		if (BuildModeWidgetInstance)
+		{
+			UUI_QuestWindow* BuildQuestWindow = Cast<UUI_QuestWindow>(BuildModeWidgetInstance->GetWidgetFromName(TEXT("WBP_QuestWindow")));
+			if (BuildQuestWindow)
+			{
+				BuildQuestWindow->ToggleQuestWindow();
+			}
+		}
+		return; // 빌드모드 처리가 끝났으므로 아래 일반 HUD 로직으로 내려가지 못하게 차단
 	}
 
-	// 캐릭터가 들고 있던 위젯 인스턴스를 MainHUD 타입으로 캐스팅하여 애니메이션 함수 작동
+	// 기존 메인 HUD 내부의 퀘스트 창 토글
 	if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
 	{
 		MainHUD->ToggleQuestWindow();
