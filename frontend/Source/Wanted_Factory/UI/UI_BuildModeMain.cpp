@@ -35,18 +35,28 @@ namespace
 
     void ApplyMachineIconToButton(UButton* Button, const FMachineTableRow& MachineData)
     {
-       if (!Button) return;
-       UTexture2D* Texture = MachineData.ImgAsset.IsValid()
-          ? MachineData.ImgAsset.Get()
-          : MachineData.ImgAsset.LoadSynchronous();
-       if (!Texture) return;
+        if (!Button) return;
+        UTexture2D* Texture = MachineData.ImgAsset.IsValid()
+           ? MachineData.ImgAsset.Get()
+           : MachineData.ImgAsset.LoadSynchronous();
+        if (!Texture) return;
 
-       TArray<UImage*> Images;
-       CollectImageWidgetsRecursive(Button->GetContent(), Images);
-       for (UImage* Image : Images)
-       {
-          if (Image) Image->SetBrushFromTexture(Texture);
-       }
+        TArray<UImage*> Images;
+        CollectImageWidgetsRecursive(Button->GetContent(), Images);
+        for (UImage* Image : Images)
+        {
+            if (Image) Image->SetBrushFromTexture(Texture);
+        }
+        
+        if (Images.Num() == 0)
+        {
+            FButtonStyle ButtonStyle = Button->GetStyle();
+            ButtonStyle.Normal.SetResourceObject(Texture);
+            ButtonStyle.Hovered.SetResourceObject(Texture);
+            ButtonStyle.Pressed.SetResourceObject(Texture);
+            ButtonStyle.Disabled.SetResourceObject(Texture);
+            Button->SetStyle(ButtonStyle);
+        }
     }
 }
 
@@ -103,7 +113,10 @@ void UUI_BuildModeMain::NativeConstruct()
         EndEvent.BindDynamic(this, &UUI_BuildModeMain::OnHotbarOutFinished);
         BindToAnimationFinished(Anim_HotbarOut, EndEvent);
     }
-
+    
+    if (IMG_SelectedPreview) IMG_SelectedPreview->SetVisibility(ESlateVisibility::Collapsed);
+    if (TXT_SelectedName)    TXT_SelectedName->SetVisibility(ESlateVisibility::Collapsed);
+    
     InitializeHotbarRegistry();
     RefreshHotbarSlotsVisual();
 }
@@ -112,6 +125,7 @@ void UUI_BuildModeMain::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 {
     Super::NativeTick(MyGeometry, InDeltaTime);
     RefreshHotbarSlotsVisual();
+    UpdateSelectedPreview();
 }
 
 void UUI_BuildModeMain::OnMachineModeClicked()   { SwitchBuildSubMode(EBuildSubMode::Machine); }
@@ -253,6 +267,111 @@ void UUI_BuildModeMain::ExecutePlacementMode(int32 SlotIndex)
     {
         FString EventString = FString::Printf(TEXT("Select%sMode"), *FinalTargetSlot.SubsystemKey.ToString());
         QuestManager->NotifyTutorialEvent(*EventString);
+    }
+}
+
+void UUI_BuildModeMain::UpdateSelectedPreview()
+{
+    if (!IMG_SelectedPreview || !TXT_SelectedName) return;
+
+    AOJJ_BuildController* BuildController = Cast<AOJJ_BuildController>(
+       UGameplayStatics::GetActorOfClass(GetWorld(), AOJJ_BuildController::StaticClass()));
+    
+    if (!BuildController || !BuildController->IsInBuildMode())
+    {
+        IMG_SelectedPreview->SetVisibility(ESlateVisibility::Collapsed);
+        TXT_SelectedName->SetVisibility(ESlateVisibility::Collapsed);
+        return;
+    }
+
+    EOJJ_BuildPlacementMode CurrentMode = BuildController->GetPlacementMode();
+
+    if (CurrentMode == EOJJ_BuildPlacementMode::Demolish || CurrentMode == EOJJ_BuildPlacementMode::Foundation)
+    {
+        IMG_SelectedPreview->SetVisibility(ESlateVisibility::Collapsed);
+        TXT_SelectedName->SetVisibility(ESlateVisibility::Collapsed);
+        return;
+    }
+
+    FName TargetDTKey = NAME_None;
+    switch (CurrentMode)
+    {
+        case EOJJ_BuildPlacementMode::Conveyor:       TargetDTKey = TEXT("Conveyor"); break;
+        case EOJJ_BuildPlacementMode::Warehouse:      TargetDTKey = TEXT("Warehouse"); break;
+        case EOJJ_BuildPlacementMode::Smelter:        TargetDTKey = TEXT("Smelter"); break;
+        case EOJJ_BuildPlacementMode::Grinder:        TargetDTKey = TEXT("Grinder"); break;
+        case EOJJ_BuildPlacementMode::MoldingMachine: TargetDTKey = TEXT("MoldingMachine"); break;
+        case EOJJ_BuildPlacementMode::Synthesizer:    TargetDTKey = TEXT("Synthesizer"); break;
+        case EOJJ_BuildPlacementMode::Miner:          TargetDTKey = TEXT("MinerMachine"); break;
+        case EOJJ_BuildPlacementMode::Pump:           TargetDTKey = TEXT("Pump"); break;
+        case EOJJ_BuildPlacementMode::LiquidTank:     TargetDTKey = TEXT("LiquidTank"); break;
+        case EOJJ_BuildPlacementMode::Pipe:           TargetDTKey = TEXT("Pipe"); break;
+        case EOJJ_BuildPlacementMode::PowerLine:      TargetDTKey = TEXT("PowerLine"); break;
+        case EOJJ_BuildPlacementMode::PowerNode:      TargetDTKey = TEXT("PowerGridNode"); break;
+        case EOJJ_BuildPlacementMode::PowerPlant:     TargetDTKey = TEXT("PowerPlant"); break;
+        case EOJJ_BuildPlacementMode::TeleCommunicationTower: TargetDTKey = TEXT("TeleCommunicationTower"); break;
+        case EOJJ_BuildPlacementMode::Shield:         TargetDTKey = TEXT("MagneticShield"); break;
+        default: break;
+    }
+
+    if (TargetDTKey.IsNone())
+    {
+        IMG_SelectedPreview->SetVisibility(ESlateVisibility::Collapsed);
+        TXT_SelectedName->SetVisibility(ESlateVisibility::Collapsed);
+        return;
+    }
+    
+    // InitializeHotbarRegistry() 장판에 우리가 이미 적어둔 한글 이름표(DisplayName)를 
+    // 중복 코드 없이 전체 모드 장부에서 동적으로 역추적
+    FText SelectedItemDisplayName = FText::GetEmpty();
+    for (const auto& Pair : SubModeHotbarRegistry)
+    {
+        for (const FHotbarSlotData& SlotData : Pair.Value)
+        {
+            if (SlotData.PlacementMode == CurrentMode)
+            {
+                SelectedItemDisplayName = SlotData.DisplayName;
+                break;
+            }
+        }
+        if (!SelectedItemDisplayName.IsEmpty()) break;
+    }
+
+    // 이름표를 안전하게 찾았다면 화면 가시화 및 글자 세팅
+    if (!SelectedItemDisplayName.IsEmpty())
+    {
+        TXT_SelectedName->SetVisibility(ESlateVisibility::Visible);
+        TXT_SelectedName->SetText(SelectedItemDisplayName);
+    }
+    else
+    {
+        TXT_SelectedName->SetVisibility(ESlateVisibility::Collapsed);
+    }
+
+    // 데이터 테이블에서 실시간 썸네일 이미지 파일 구역
+    UGameInstance* GameInstance = GetGameInstance();
+    UMachineSubsystem* MachineSubsystem = GameInstance ? GameInstance->GetSubsystem<UMachineSubsystem>() : nullptr;
+    
+    FMachineTableRow MachineData;
+    if (MachineSubsystem && MachineSubsystem->FindMachineData(TargetDTKey, MachineData))
+    {
+        UTexture2D* PreviewTexture = MachineData.ImgAsset.IsValid()
+            ? MachineData.ImgAsset.Get()
+            : MachineData.ImgAsset.LoadSynchronous();
+
+        if (PreviewTexture)
+        {
+            IMG_SelectedPreview->SetVisibility(ESlateVisibility::Visible);
+            IMG_SelectedPreview->SetBrushFromTexture(PreviewTexture);
+        }
+        else
+        {
+            IMG_SelectedPreview->SetVisibility(ESlateVisibility::Collapsed);
+        }
+    }
+    else
+    {
+        IMG_SelectedPreview->SetVisibility(ESlateVisibility::Collapsed);
     }
 }
 

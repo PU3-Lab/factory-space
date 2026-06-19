@@ -2934,6 +2934,16 @@ bool AOJJ_Grid::OJJ_TryPlacePipe(APipe* Pipe, const TArray<FIntPoint>& PathCells
 	{
 		CellLifts[i] = BaseLift[i] + (bBridge[i] ? OJJ_PipeOverpassClearance : 0.0f);
 	}
+
+	// Foundation(솔리드 데크) 셀의 진입/이탈 수직 라이저를 셀 엣지로 옮겨 데크 관통 방지(시각=충돌 동시 교정).
+	// 오버패스 다리(공중)는 제외 — 현행 셀중심 ㄷ자 유지(#257/F4-3 무변경). 지면/비Foundation 셀도 false.
+	TArray<bool> EdgeRisers;
+	EdgeRisers.Init(false, NumPipeCells);
+	for (int32 i = 0; i < NumPipeCells; ++i)
+	{
+		EdgeRisers[i] = IsCellOnFoundation(PipePathCells[i]) && !bBridge[i];
+	}
+	Pipe->OJJ_SetPathCellEdgeRisers(EdgeRisers);
 	Pipe->OJJ_SetPathCellLocalZs(CellLifts);
 
 	FVector CentroidLocal = FVector::ZeroVector;

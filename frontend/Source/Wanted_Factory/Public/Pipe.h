@@ -75,6 +75,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "1.0"))
 	float PipeRadius = 30.0f;
 
+	// ⭐ Foundation 엣지 라이저 드롭 지점을 데크 가장자리 라인보다 바깥으로 더 미는 여유(uu). 라이저 중심을
+	// 엣지에 딱 맞추면 파이프 반지름만큼 안쪽 몸체가 데크 모서리를 스치므로, (HalfCell + 이 값)만큼 이웃 방향으로
+	// 밀어 데크 밖에서 수직 전이한다. "모서리 안 닿는 최소"(≈ PipeRadius + α)로 PIE 다이얼. 기본 40(반경 30 + 10).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.0"))
+	float OJJ_PipeEdgeDropMargin = 40.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.01"))
 	float LiquidVisualScaleRatio = 0.2f;
 
@@ -132,6 +138,12 @@ protected:
 	// 시각 전용 — 경로 판정/예약셀/액체 슬롯과 무관. Zero면 기존 직선 돌출(항등).
 	FIntPoint OJJ_EndPortFlowDir = FIntPoint::ZeroValue;
 
+	// Foundation(솔리드 데크) 셀의 진입/이탈 수직 라이저를 셀 중심이 아닌 셀 엣지(이웃 방향 HalfCell = 데크
+	// 가장자리 라인)에 두기 위한 플래그(PathCells와 1:1). 셀 중심 드롭은 데크 슬래브를 관통하므로, 솔리드 셀은
+	// 데크 위 수평을 엣지까지 끌고 가 엣지 밖에서 수직 전이(ㄴ자)한다. 그리드가 OJJ_SetPathCellEdgeRisers로
+	// 주입(IsCellOnFoundation ∧ 비오버패스). 빈 배열/길이불일치면 전부 false = 기존 셀중심 라이저(오버패스 ㄷ자 보존).
+	TArray<bool> PathCellEdgeRiser;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Path")
 	TArray<FIntPoint> OccupiedGridCells;
 
@@ -160,6 +172,13 @@ public:
 
 	// #257 탱크 진입 포트 방향 주입(시각 전용). SetPath 전에 호출 — RebuildVisuals가 마지막 스텁을 이 방향으로 꺾는다.
 	void OJJ_SetEndPortFlowDir(FIntPoint InEndPortFlowDir) { OJJ_EndPortFlowDir = InEndPortFlowDir; }
+
+	// Foundation 셀 엣지 라이저 플래그 주입(시각 전용). SetPath 후 · OJJ_SetPathCellLocalZs 전에 호출 —
+	// 이어지는 RebuildVisuals가 반영. 길이 불일치면 무시(전부 false = 기존 셀중심 라이저).
+	void OJJ_SetPathCellEdgeRisers(const TArray<bool>& InFlags)
+	{
+		PathCellEdgeRiser = (InFlags.Num() == PathCells.Num()) ? InFlags : TArray<bool>();
+	}
 
 	UFUNCTION(BlueprintCallable, Category = "Pipe|Path")
 	void ConfigureTransport(
