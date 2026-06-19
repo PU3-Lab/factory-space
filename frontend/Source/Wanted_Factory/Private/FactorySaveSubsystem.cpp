@@ -95,11 +95,6 @@ namespace
 
 		return FSoftClassPath(ClassPath).TryLoadClass<ActorType>();
 	}
-
-	bool IsManagedSavedMachine(const AMachineBase* Machine)
-	{
-		return Machine && !Machine->IsA<AEscapePod>();
-	}
 }
 
 void UFactorySaveSubsystem::Deinitialize()
@@ -117,6 +112,7 @@ void UFactorySaveSubsystem::HandlePlayerReady(AOJJ_Player* Player)
 	}
 
 	CachedPlayer = Player;
+	bIsResettingToNewGame = false;
 	if (!bHasLoadedInitialState)
 	{
 		LoadCurrentGame();
@@ -129,6 +125,11 @@ void UFactorySaveSubsystem::HandlePlayerReady(AOJJ_Player* Player)
 bool UFactorySaveSubsystem::SaveCurrentGame()
 {
 	if (bIsRestoring)
+	{
+		return false;
+	}
+
+	if (bIsResettingToNewGame)
 	{
 		return false;
 	}
@@ -197,11 +198,6 @@ bool UFactorySaveSubsystem::SaveCurrentGame()
 	for (int32 Index = 0; Index < Machines.Num(); ++Index)
 	{
 		AMachineBase* Machine = Machines[Index];
-		if (!IsManagedSavedMachine(Machine))
-		{
-			continue;
-		}
-
 		const FIntPoint Origin = Grid->GetMachineOrigin(Machine);
 		if (Origin.X == INT_MIN || Origin.Y == INT_MIN)
 		{
@@ -368,22 +364,29 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 	DestroyActorsOfType<AConveyor>(World);
 	DestroyActorsOfType<AOJJ_Ladder>(World);
 	DestroyActorsOfType<AOJJ_Foundation>(World);
+	TArray<AEscapePod*> ExistingEscapePods;
+	for (TActorIterator<AEscapePod> It(World); It; ++It)
 	{
-		TArray<AMachineBase*> MachinesToDestroy;
-		for (TActorIterator<AMachineBase> It(World); It; ++It)
+		if (AEscapePod* EscapePod = *It)
 		{
-			if (AMachineBase* Machine = *It; IsManagedSavedMachine(Machine))
-			{
-				MachinesToDestroy.Add(Machine);
-			}
+			ExistingEscapePods.Add(EscapePod);
 		}
+	}
 
-		for (AMachineBase* Machine : MachinesToDestroy)
+	TArray<AMachineBase*> MachinesToDestroy;
+	for (TActorIterator<AMachineBase> It(World); It; ++It)
+	{
+		if (AMachineBase* Machine = *It; Machine && !Machine->IsA<AEscapePod>())
 		{
-			if (IsValid(Machine))
-			{
-				Machine->Destroy();
-			}
+			MachinesToDestroy.Add(Machine);
+		}
+	}
+
+	for (AMachineBase* Machine : MachinesToDestroy)
+	{
+		if (IsValid(Machine))
+		{
+			Machine->Destroy();
 		}
 	}
 
@@ -440,7 +443,27 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 	{
 		if (TSubclassOf<AMachineBase> MachineClass = LoadActorClass<AMachineBase>(SavedMachine.ClassPath))
 		{
-			if (AMachineBase* Machine = World->SpawnActor<AMachineBase>(MachineClass, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams))
+			AMachineBase* Machine = nullptr;
+			if (SavedMachine.bOccupancyOnly && MachineClass->IsChildOf(AEscapePod::StaticClass()))
+			{
+				for (int32 EscapePodIndex = 0; EscapePodIndex < ExistingEscapePods.Num(); ++EscapePodIndex)
+				{
+					AEscapePod* ExistingEscapePod = ExistingEscapePods[EscapePodIndex];
+					if (ExistingEscapePod && ExistingEscapePod->GetClass() == MachineClass)
+					{
+						Machine = ExistingEscapePod;
+						ExistingEscapePods.RemoveAt(EscapePodIndex);
+						break;
+					}
+				}
+			}
+
+			if (!Machine)
+			{
+				Machine = World->SpawnActor<AMachineBase>(MachineClass, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+			}
+
+			if (Machine)
 			{
 				FString OutReason;
 				bool bPlaced = false;
@@ -468,9 +491,20 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 				}
 				else
 				{
-					Machine->Destroy();
+					if (!Machine->IsA<AEscapePod>())
+					{
+						Machine->Destroy();
+					}
 				}
 			}
+		}
+	}
+
+	for (AEscapePod* RemainingEscapePod : ExistingEscapePods)
+	{
+		if (IsValid(RemainingEscapePod))
+		{
+			RemainingEscapePod->Destroy();
 		}
 	}
 
@@ -571,6 +605,7 @@ bool UFactorySaveSubsystem::ResetToNewGame()
 	StopAutoSaveTimer();
 	bIsRestoring = false;
 	bHasLoadedInitialState = false;
+	bIsResettingToNewGame = true;
 	return UGameplayStatics::DeleteGameInSlot(SaveSlotName, 0);
 }
 

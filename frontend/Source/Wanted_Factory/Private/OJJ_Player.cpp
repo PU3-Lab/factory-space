@@ -1732,7 +1732,9 @@ void AOJJ_Player::OJJ_ResetGame()
 		return;
 	}
 
-	SaveSubsystem->ResetToNewGame();
+	const bool bDeletedSave = SaveSubsystem->ResetToNewGame();
+	UE_LOG(LogTemp, Log, TEXT("[OJJ_ResetGame] Save reset requested. DeletedExistingSave=%s"),
+		bDeletedSave ? TEXT("true") : TEXT("false"));
 
 	UWorld* World = GetWorld();
 	if (!World)
@@ -1740,8 +1742,14 @@ void AOJJ_Player::OJJ_ResetGame()
 		return;
 	}
 
-	const FString CurrentMapName = UWorld::RemovePIEPrefix(World->GetMapName());
-	UGameplayStatics::OpenLevel(this, FName(*CurrentMapName));
+	FString LevelName = World->GetOutermost()->GetName();
+	if (LevelName.IsEmpty())
+	{
+		LevelName = UWorld::RemovePIEPrefix(World->GetMapName());
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[OJJ_ResetGame] Reopening level: %s"), *LevelName);
+	UGameplayStatics::OpenLevel(this, FName(*LevelName));
 }
 
 void AOJJ_Player::UpdateInventoryRealtime()

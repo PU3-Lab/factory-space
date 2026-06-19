@@ -44,6 +44,7 @@ private:
 	FTimerHandle AutoSaveWarningTimerHandle;
 	bool bHasLoadedInitialState = false;
 	bool bIsRestoring = false;
+	bool bIsResettingToNewGame = false;
 
 	void StartAutoSaveTimer();
 	void StopAutoSaveTimer();
