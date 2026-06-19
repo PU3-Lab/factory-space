@@ -282,14 +282,6 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	{
 		EnhancedInput->BindAction(IA_SetTankMode, ETriggerEvent::Started, this, &AOJJ_Player::SetTankMode);
 	}
-	if (IA_SetFoundationMode)
-	{
-		EnhancedInput->BindAction(IA_SetFoundationMode, ETriggerEvent::Started, this, &AOJJ_Player::SetFoundationMode);
-	}
-	if (IA_SetRampMode)
-	{
-		EnhancedInput->BindAction(IA_SetRampMode, ETriggerEvent::Started, this, &AOJJ_Player::SetRampFoundationMode);
-	}
 	if (IA_SetPowerNodeMode)
 	{
 		EnhancedInput->BindAction(IA_SetPowerNodeMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerNodeMode);
@@ -360,10 +352,14 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::P, IE_Pressed, this, &AOJJ_Player::SetSynthesizerModeShortcut);
 	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &AOJJ_Player::SetTeleCommunicationTowerModeShortcut);
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AOJJ_Player::SetDemolishModeShortcut);
-	// [#184] C — 사다리 빌드 서브모드(레거시 BindKey, 핸들러에서 IsInBuildMode 가드. IMC 정석 전환은 후속 IMC 정리 때).
-	PlayerInputComponent->BindKey(EKeys::C, IE_Pressed, this, &AOJJ_Player::SetLadderModeShortcut);
-	// Foundation G/H는 #196에서 Enhanced Input(IA_SetFoundationMode/IA_SetRampMode)로 전환 —
-	// 레거시 BindKey 제거(이중발화 차단). 바인딩은 위 BindAction 블록 + IMC_Build/BP 매핑(에디터).
+	// [공용키] 카테고리 무관 — 빌드모드 중 항상 동작. 전부 레거시 BindKey + 핸들러 IsInBuildMode 가드.
+	// 옛 IA_SetFoundationMode(G)/IA_SetRampMode(H) IMC 매핑·IA 에셋은 폐기됨(F/G로 환원).
+	// ⚠️ F는 IA_Interact(머신 상호작용)와 공유 — 빌드모드 중=Foundation, 밖=Interact. 상호배타는
+	// SetFoundationModeShortcut(IsInBuildMode 요구)와 OnInteract(IsInBuildMode면 early-return)의 역가드에 의존.
+	PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AOJJ_Player::SetFoundationModeShortcut);     // 평면 플랫폼
+	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AOJJ_Player::SetRampFoundationModeShortcut); // 경사면
+	PlayerInputComponent->BindKey(EKeys::H, IE_Pressed, this, &AOJJ_Player::SetLadderModeShortcut);         // 사다리(기존 C에서 이동)
+	PlayerInputComponent->BindKey(EKeys::Z, IE_Pressed, this, &AOJJ_Player::CancelPlacementShortcut);       // 마우스 초기화(취소)
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -1091,6 +1087,36 @@ void AOJJ_Player::SetLadderModeShortcut()
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Ladder);
 }
 
+// [공용키 F] 평면 Foundation 직행. 레거시 BindKey라 IMC 게이팅 없음 → 빌드모드 가드 필수(Ladder/Demolish 패턴).
+void AOJJ_Player::SetFoundationModeShortcut()
+{
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+	BuildController->OJJ_SelectFoundationKind(false);
+}
+
+// [공용키 G] 경사 RampFoundation 직행.
+void AOJJ_Player::SetRampFoundationModeShortcut()
+{
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+	BuildController->OJJ_SelectFoundationKind(true);
+}
+
+// [공용키 Z] 마우스 초기화 — 들고 있던 placement 고스트 취소(None 모드), 빌드모드/배치된 액터는 그대로.
+void AOJJ_Player::CancelPlacementShortcut()
+{
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::None);
+}
+
 void AOJJ_Player::SetWarehouseMode(const FInputActionValue& Value)
 {
 	if (!BuildController)
@@ -1124,27 +1150,6 @@ void AOJJ_Player::SetDemolishMode(const FInputActionValue& Value)
 			QuestManager->NotifyTutorialEvent(TEXT("DemolishMode"));
 		}
 	}
-}
-
-// 평판 Foundation 모드 진입(G키 — #196 IA 전환). 다른 모드 핸들러(탱크/파이프)와 동일 구조 —
-// BuildController 위임만. 모드 진입/호버 갱신/빌드모드 밖 무해성은 컨트롤러 소관.
-void AOJJ_Player::SetFoundationMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->OJJ_SelectFoundationKind(false);
-}
-
-// 램프 Foundation 모드 진입(H키 — #196 IA 전환, F3-2.5 T 토글 대체).
-void AOJJ_Player::SetRampFoundationMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->OJJ_SelectFoundationKind(true);
 }
 
 void AOJJ_Player::StartSprint(const FInputActionValue& Value)

@@ -414,7 +414,7 @@ void AOJJ_BuildController::RotateHoverClockwise()
 
 void AOJJ_BuildController::OJJ_SelectFoundationKind(bool bSelectRamp)
 {
-	// F3.7' 키 개편(G=평판/H=램프 직행 — F3-2.5 T 토글 대체). 빌드모드 밖 호출은 기존 모드 키들과
+	// 공용키 직행 — F=평판/G=램프(공용 BindKey, 옛 G=평판/H=램프 IA 경로 폐기). 빌드모드 밖 호출은 기존 모드 키들과
 	// 동일하게 무해(호버/클릭이 bIsBuildMode 게이트, EnterBuildMode가 종류를 평판으로 리셋 — 회전 정책).
 	// 램프 미지정이면 선택 거부 — 사용처(호버/배치)의 silent 폴백보다 선택 시점 1회 경고가 명확.
 	if (bSelectRamp && !RampFoundationClass)
@@ -550,6 +550,14 @@ void AOJJ_BuildController::UpdateMouseHover()
 
 	if (!TargetGrid)
 	{
+		return;
+	}
+
+	// [공용키 Z] None = 들고 있는 placement 없음. 고스트/ISM/화살표만 클리어하고 무동작(빌드모드 유지).
+	if (PlacementMode == EOJJ_BuildPlacementMode::None)
+	{
+		TargetGrid->ClearHoverPreview();
+		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 		return;
 	}
 
@@ -1044,6 +1052,12 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	}
 
 	if (!bIsBuildMode)
+	{
+		return;
+	}
+
+	// [공용키 Z] None = 아무것도 들고 있지 않음 — 클릭 무동작(배치 경로 진입 방지).
+	if (PlacementMode == EOJJ_BuildPlacementMode::None)
 	{
 		return;
 	}
@@ -1764,6 +1778,7 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::Synthesizer: ModeName = TEXT("Synthesizer"); break;
 	case EOJJ_BuildPlacementMode::TeleCommunicationTower: ModeName = TEXT("TeleCommunicationTower"); break;
 	case EOJJ_BuildPlacementMode::Ladder:    ModeName = TEXT("Ladder");     break;
+	case EOJJ_BuildPlacementMode::None:      ModeName = TEXT("None");       break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
 
