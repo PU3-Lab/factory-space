@@ -46,7 +46,10 @@ enum class EOJJ_BuildPlacementMode : uint8
 	TeleCommunicationTower,
 	// [#184] 사다리 모드 — C키. 커서로 Foundation 변 조준 → 그 변 바깥 지면에 사다리 배치(자유 배치, 그리드
 	// 장부 미등록). ⚠️ 맨 끝 append 유지(BP enum 값 직렬화 — 중간 삽입 금지).
-	Ladder
+	Ladder,
+	// [공용키 Z] 마우스 초기화 — 들고 있던 placement 고스트 취소, 빌드모드 유지. 호버/클릭 무동작.
+	// ⚠️ 맨 끝 append 유지(BP enum 값 직렬화 — 중간 삽입 금지).
+	None
 };
 
 /**
