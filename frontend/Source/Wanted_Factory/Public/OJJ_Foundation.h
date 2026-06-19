@@ -170,9 +170,10 @@ protected:
 	// F3-2: virtual — 램프 등 비평탄 파생이 계단 비주얼로 교체(OnConstruction/NotifyPlacedOnGrid가 디스패치).
 	virtual void UpdateSlabVisual();
 
-	// [Deck step2] 4모서리 다리(TrussTower) ISM 갱신 — 평지·램프 공용(OnConstruction/NotifyPlacedOnGrid에서 호출).
-	// 2단계: 4모서리 셀 중심에 고정 1세그. 3단계에서 모서리별 지형Z까지 타일링(사다리 Overshoot 정렬 재활용).
-	void UpdateLegVisual();
+	// [Deck step2] 4모서리 다리(TrussTower) ISM 갱신 — 평지 전용(OnConstruction/NotifyPlacedOnGrid에서 호출).
+	// 4모서리 셀 중심에서 모서리별 지형Z까지 타일링(사다리 Overshoot 정렬 재활용).
+	// 램프 4단계 결정: virtual — 램프는 다리 없음(Deck 틸트만)이라 파생이 오버라이드해 다리 0개로 만든다.
+	virtual void UpdateLegVisual();
 
 	// 그리드 CellSize 역산(public GridToWorld 경유 — 등록 그리드 우선, 폴백 월드 첫 그리드, 기본 100).
 	// UpdateSlabVisual에서 추출(F3-2) — 파생 비주얼도 동일 규칙 공유.

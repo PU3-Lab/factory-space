@@ -1562,9 +1562,9 @@ bool AOJJ_BuildController::ComputeLadderPlacement(
 	// 경계 변 후보: 풋프린트 셀 중 이웃이 비-Foundation(지면)이고 그리드 안인 (변셀, 바깥방향, 바깥 지면셀).
 	// 커서 기준점에 XY 최근접인 변셀 선택 → "커서로 조준한 변".
 	bool bFound = false;
-	FIntPoint BestEdgeCell;     // Foundation 상면 Z(변 셀)
-	FIntPoint BestGroundCell;   // 사다리 바닥/지면 Z(바깥 인접 셀)
-	FIntPoint BestOutwardStep;  // 바깥(지면) 방향
+	FIntPoint BestEdgeCell(0, 0);     // Foundation 상면 Z(변 셀)
+	FIntPoint BestGroundCell(0, 0);   // 사다리 바닥/지면 Z(바깥 인접 셀)
+	FIntPoint BestOutwardStep(0, 0);  // 바깥(지면) 방향
 	float BestDistSq = TNumericLimits<float>::Max();
 	for (const FIntPoint& Cell : *FootprintCells)
 	{
