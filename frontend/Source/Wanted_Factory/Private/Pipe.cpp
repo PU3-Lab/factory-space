@@ -83,6 +83,12 @@ APipe::APipe()
 	LiquidVisualInstances->SetVisibleInRayTracing(false);
 	LiquidVisualInstances->NumCustomDataFloats = OJJ_PipeLiquidCustomDataCount;
 
+	FlowArrowInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("FlowArrowInstances"));
+	FlowArrowInstances->SetupAttachment(Root);
+	FlowArrowInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	FlowArrowInstances->SetCastShadow(false);
+	FlowArrowInstances->SetVisibleInRayTracing(false);
+
 	DebugStateText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("DebugStateText"));
 	DebugStateText->SetupAttachment(Root);
 	DebugStateText->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -103,6 +109,12 @@ APipe::APipe()
 		JoinInstances->SetStaticMesh(SphereMesh.Object);
 	}
 
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> ConeMesh(TEXT("/Engine/BasicShapes/Cone.Cone"));
+	if (ConeMesh.Succeeded())
+	{
+		FlowArrowInstances->SetStaticMesh(ConeMesh.Object);
+	}
+
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> MaterialAsset(
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	if (MaterialAsset.Succeeded())
@@ -111,6 +123,7 @@ APipe::APipe()
 		SegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		JoinInstances->SetMaterial(0, MaterialAsset.Object);
 		LiquidVisualInstances->SetMaterial(0, MaterialAsset.Object);
+		FlowArrowInstances->SetMaterial(0, MaterialAsset.Object);
 	}
 
 	static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
@@ -288,6 +301,10 @@ void APipe::RebuildVisuals()
 	{
 		JoinInstances->ClearInstances();
 	}
+	if (FlowArrowInstances)
+	{
+		FlowArrowInstances->ClearInstances();
+	}
 	if (PathCells.Num() == 0)
 	{
 		return;
@@ -348,6 +365,44 @@ void APipe::RebuildVisuals()
 			else
 			{
 				Nodes.Add(FVector(LocalX, LocalY, ZOffset + NextLift)); // 기존: 셀 중심(오버패스/일반)
+			}
+		}
+
+		if (FlowArrowInstances && bShowFlowArrows && (Index % 3) == 0)
+		{
+			FVector ArrowDirection = FVector::ZeroVector;
+			if (Index + 1 < NumCells)
+			{
+				const FIntPoint NextCell = PathCells[Index + 1];
+				ArrowDirection = FVector(
+					static_cast<float>(NextCell.X - Cell.X) * CellSize,
+					static_cast<float>(NextCell.Y - Cell.Y) * CellSize,
+					NextLift - Lift);
+			}
+			else if (Index > 0)
+			{
+				const FIntPoint PrevCell = PathCells[Index - 1];
+				const float PrevPrevLift = CellLift(Index - 1);
+				ArrowDirection = FVector(
+					static_cast<float>(Cell.X - PrevCell.X) * CellSize,
+					static_cast<float>(Cell.Y - PrevCell.Y) * CellSize,
+					Lift - PrevPrevLift);
+			}
+			else if (OJJ_EndPortFlowDir != FIntPoint::ZeroValue)
+			{
+				ArrowDirection = FVector(
+					static_cast<float>(OJJ_EndPortFlowDir.X) * CellSize,
+					static_cast<float>(OJJ_EndPortFlowDir.Y) * CellSize,
+					0.0f);
+			}
+
+			const FVector SafeArrowDirection = ArrowDirection.GetSafeNormal();
+			if (!SafeArrowDirection.IsNearlyZero())
+			{
+				const FVector ArrowLocation(LocalX, LocalY, ZOffset + Lift + PipeRadius + FlowArrowHeightOffset);
+				const FRotator ArrowRotation = FRotationMatrix::MakeFromZ(SafeArrowDirection).Rotator();
+				FlowArrowInstances->AddInstance(
+					FTransform(ArrowRotation, ArrowLocation, FVector(FMath::Max(0.01f, FlowArrowScale))));
 			}
 		}
 	}

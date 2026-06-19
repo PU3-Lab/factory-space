@@ -10,6 +10,7 @@ class UInstancedStaticMeshComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class USceneComponent;
+class UStaticMesh;
 class UTextRenderComponent;
 
 USTRUCT()
@@ -62,6 +63,9 @@ protected:
 	TObjectPtr<UInstancedStaticMeshComponent> LiquidVisualInstances;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Components")
+	TObjectPtr<UInstancedStaticMeshComponent> FlowArrowInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Components")
 	TObjectPtr<UTextRenderComponent> DebugStateText;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Grid", meta = (ClampMin = "1.0"))
@@ -69,6 +73,15 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
 	float ZOffset = 50.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
+	bool bShowFlowArrows = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.01"))
+	float FlowArrowScale = 0.16f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.0"))
+	float FlowArrowHeightOffset = 16.0f;
 
 	// 파이프 반경(월드 uu). 지름 = 2×PipeRadius (기본 60 = PIE 실측 확정). 메시 실측 치수로 환산하므로
 	// 엔진 기본 실린더/구의 절대 크기와 무관 — 메시를 바꿔도 반경이 유지됨. 직선/코너/라이저 전부 추종.
