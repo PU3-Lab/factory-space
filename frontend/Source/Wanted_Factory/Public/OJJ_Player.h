@@ -428,6 +428,19 @@ protected:
 	void SetFoundationModeShortcut();
 	void SetRampFoundationModeShortcut();
 	void CancelPlacementShortcut();
+	// [카테고리 숫자키] 1~9,0 → 현재 카테고리(LDJ UI_BuildModeMain)의 N번 슬롯 실행. 0키=10번 슬롯(1-base).
+	// ExecuteHotbarSlot: IsInBuildMode 가드 + BuildModeWidgetInstance Cast(null이면 무동작+로그). 10개 thin BindKey 래퍼.
+	void ExecuteHotbarSlot(int32 SlotIndex);
+	void SetHotbarSlot1();
+	void SetHotbarSlot2();
+	void SetHotbarSlot3();
+	void SetHotbarSlot4();
+	void SetHotbarSlot5();
+	void SetHotbarSlot6();
+	void SetHotbarSlot7();
+	void SetHotbarSlot8();
+	void SetHotbarSlot9();
+	void SetHotbarSlot10();
 	void SetWarehouseMode(const FInputActionValue& Value);
 	void SetDemolishMode(const FInputActionValue& Value);
 
