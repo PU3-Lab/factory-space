@@ -34,3 +34,4 @@ MoldingMachine_Lv3,MoldingMachine,성형기,3,iron_ingot,10,1000,10,1,1,1,1,3,4,
 TeleCommunicationTower,TeleCommunicationTower,통신탑,1,iron_ingot,1,1000,10,0,0,0,0,3,3,/Game/Assets/UIImg/etc/telecommunicationtower.telecommunicationtower,/Game/Assets/TeleCommunication_Tower/SM_TeleCommunication_Tower.SM_TeleCommunication_Tower,/Game/Assets/TeleCommunication_Tower/M_Telecommunication_Tower.M_Telecommunication_Tower
 EscapePod,EscapePid,탈출 포드,1,,0,1000,0,0,0,0,0,4,4,/Game/Assets/UIImg/etc/Cable.Cable,,
 Cable,Cable,전선,1,,,,,,,,,,,,,
+BaseCamp,BaseCamp,중앙거점,1,,,,,,,,,,,/Game/Assets/UIImg/Machine/BaseCamp.BaseCamp,/Game/Assets/Machine/BaseCamp/SM_BaseCamp.SM_BaseCamp,/Game/Assets/Machine/BaseCamp/M_BaseCamp.M_BaseCamp
