@@ -36,6 +36,56 @@ const FIntPoint OJJ_NeighborSteps[] = {
 	FIntPoint(0, -1)
 };
 
+// 파이프 시각 lift 평탄화(최고점 수평 plateau + 단차 꺾음). forced breakpoint(XY 코너/오버패스 다리/끝점)는
+// raw 고정(평탄화 제외)하고, 그 사이 셀들을 vertical span(최고−최저)이 TolZ 이하인 연속 구간(run)으로 묶어
+// 각 run을 그 run의 **최고 lift로 수평** 고정한다(낮은 셀은 그 아래로 떠 있음 — 압송이라 OK). span이 TolZ를
+// 초과하는 순간 run을 끊어(단차) 다음 run을 시작 → 완만한 굴곡은 최고점 수평선으로 흡수, 큰 단차서만 꺾인다.
+// span 기준이라 임계 근처 셀이 진동해도(band 양자화와 달리) 한 run으로 묶여 flicker가 없고, float은 ≤TolZ로 유계.
+// Pipe::RebuildVisuals가 같은 높이 연속 노드엔 조인트를 안 박아(Pipe.cpp:365) run 내부 잔 꺾임이 사라진다.
+void OJJ_FlattenLiftToPlateaus(TArray<float>& Lift, const TArray<bool>& bFixed, float TolZ)
+{
+	const int32 N = Lift.Num();
+	if (N == 0 || TolZ <= 0.0f || bFixed.Num() != N)
+	{
+		return;
+	}
+
+	int32 i = 0;
+	while (i < N)
+	{
+		if (bFixed[i])
+		{
+			++i; // 끝점/코너/다리 = raw 고정(평탄화 제외)
+			continue;
+		}
+
+		// run 성장: 다음 fixed 셀 전까지, vertical span ≤ Tol인 동안 확장.
+		int32 RunStart = i;
+		float RunMax = Lift[i];
+		float RunMin = Lift[i];
+		int32 j = i + 1;
+		while (j < N && !bFixed[j])
+		{
+			const float NewMax = FMath::Max(RunMax, Lift[j]);
+			const float NewMin = FMath::Min(RunMin, Lift[j]);
+			if (NewMax - NewMin > TolZ)
+			{
+				break; // span 초과 = 단차 → 여기서 run 끊고 꺾음
+			}
+			RunMax = NewMax;
+			RunMin = NewMin;
+			++j;
+		}
+
+		// run [RunStart..j-1]을 최고점으로 수평(낮은 셀은 떠 있음).
+		for (int32 k = RunStart; k < j; ++k)
+		{
+			Lift[k] = RunMax;
+		}
+		i = j;
+	}
+}
+
 int32 OJJ_ManhattanDistance(FIntPoint A, FIntPoint B)
 {
 	return FMath::Abs(A.X - B.X) + FMath::Abs(A.Y - B.Y);
@@ -2836,18 +2886,53 @@ bool AOJJ_Grid::OJJ_TryPlacePipe(APipe* Pipe, const TArray<FIntPoint>& PathCells
 	}
 	// #182 비주얼 lift = 셀별 지형추종(면 Z − 액터 base) + 오버패스 다리 클리어런스. 액터 base = PathSurfaceZ
 	// (경로 최저 면 Z)라 lift ≥ 0. RebuildVisuals가 인접 lift 차를 세그먼트 기울기로 렌더 → 굴곡/다리 자동 표현.
+	// base 지형 lift(클리어런스 더하기 전)와 다리 셀 플래그를 먼저 산출.
+	TArray<float> BaseLift;
+	BaseLift.Init(0.0f, NumPipeCells);
+	TArray<bool> bBridge;
+	bBridge.Init(false, NumPipeCells);
+	for (int32 i = 0; i < NumPipeCells; ++i)
+	{
+		BaseLift[i] = OJJ_GetPipeCellSurfaceZ(PipePathCells[i]) - PathSurfaceZ;
+		bBridge[i] = bCrossesConveyor[i]
+			|| (i > 0 && bCrossesConveyor[i - 1])
+			|| (i + 1 < NumPipeCells && bCrossesConveyor[i + 1]);
+	}
+
+	// 최고점 수평 plateau 평탄화 — forced breakpoint(끝점/XY 코너/오버패스 다리)는 raw 고정, 그 사이를 단차 임계로
+	// 구간화해 각 구간 최고점으로 수평. 다리 셀은 fixed라 base 유지 → 아래서 클리어런스 더하면 ㄷ자 그대로 보존.
+	TArray<bool> bFixed;
+	bFixed.Init(false, NumPipeCells);
+	if (NumPipeCells > 0)
+	{
+		bFixed[0] = true;
+		bFixed[NumPipeCells - 1] = true;
+	}
+	for (int32 i = 1; i + 1 < NumPipeCells; ++i)
+	{
+		// XY 코너(방향 전환) — 라우팅 보존, plateau가 회전을 가로지르지 않도록 고정.
+		if ((PipePathCells[i] - PipePathCells[i - 1]) != (PipePathCells[i + 1] - PipePathCells[i]))
+		{
+			bFixed[i] = true;
+		}
+	}
+	for (int32 i = 0; i < NumPipeCells; ++i)
+	{
+		if (bBridge[i])
+		{
+			bFixed[i] = true; // 오버패스 다리(의도 구조) — 평탄화 제외
+		}
+	}
+	OJJ_FlattenLiftToPlateaus(BaseLift, bFixed, OJJ_PipeLiftStepTolZ);
+
+	// 평탄화된 base lift + 다리 클리어런스 = 최종 시각 lift. RebuildVisuals가 인접 lift 차를 세그먼트 기울기로 렌더.
+	// ⚠️ 시각 전용 — 비fixed 셀에서 장부 CellZs(raw 면 Z, 위 :2830)보다 최대 TolZ만큼 위로 뜰 수 있다(plateau).
+	// 파이프 메시 Z를 충돌/보행 표면 질의에 쓰지 말 것(충돌/오버패스/흐름은 모두 그리드 셀·장부 기반).
 	TArray<float> CellLifts;
 	CellLifts.Init(0.0f, NumPipeCells);
 	for (int32 i = 0; i < NumPipeCells; ++i)
 	{
-		CellLifts[i] = OJJ_GetPipeCellSurfaceZ(PipePathCells[i]) - PathSurfaceZ;
-		const bool bBridge = bCrossesConveyor[i]
-			|| (i > 0 && bCrossesConveyor[i - 1])
-			|| (i + 1 < NumPipeCells && bCrossesConveyor[i + 1]);
-		if (bBridge)
-		{
-			CellLifts[i] += OJJ_PipeOverpassClearance;
-		}
+		CellLifts[i] = BaseLift[i] + (bBridge[i] ? OJJ_PipeOverpassClearance : 0.0f);
 	}
 	Pipe->OJJ_SetPathCellLocalZs(CellLifts);
 

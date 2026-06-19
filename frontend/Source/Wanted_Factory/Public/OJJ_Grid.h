@@ -132,6 +132,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Conveyor", meta = (ClampMin = "1.0"))
 	float OJJ_MaxSlopeStepZ = 300.0f;
 
+	// ⭐ 파이프 시각 lift 단차 임계(uu) — forced breakpoint(XY 코너/오버패스 다리/끝점) 사이 구간을 "최고점 수평
+	// plateau"로 평탄화한다. 연속 셀의 vertical span(최고−최저)이 이 값 이하면 한 구간 = 그 구간 최고 lift로 수평
+	// (낮은 셀은 그 아래로 떠 있음 — 압송이라 OK). span이 이 값을 초과하면 거기서 구간을 끊고 꺾어 다음 높이로.
+	// → 완만한 굴곡은 최고점 수평선으로 흡수, 큰 단차서만 꺾임. 장부 CellZs(레이어/오버패스 판정)는 raw 유지 —
+	// 시각 lift만 평탄화. 0이면 비활성(평탄화 스킵 = raw 추종). 기본 100 = PIE 다이얼 시작값.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Pipe", meta = (ClampMin = "0.0"))
+	float OJJ_PipeLiftStepTolZ = 100.0f;
+
 	// 실제 placement 가능 영역 (X 칸 × Y 칸).
 	// CanPlaceMachine / IsValidGridCell이 권위 있는 grid extent로 사용. 머신은 이 범위 내에서만 등록 가능.
 	// VisualizationRange (시각화 한 변당 셀 수) 와 독립 — 디자이너가 두 값을 분리 가능.

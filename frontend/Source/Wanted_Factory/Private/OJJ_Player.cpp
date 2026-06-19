@@ -711,11 +711,19 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 
 		if (BuildCamera && BuildController)
 		{
-			// 진입할 때마다 그리드 중심으로 카메라 재배치 — 그리드가 동적으로 커져도 매 진입 시 맞춰짐.
-			// XY/Z만 이동(회전은 보존). SpringArm pitch/arm이 높이·거리 담당.
+			// 진입 시 1회: 카메라 XY = 플레이어 현재 위치, Z = 그리드 평면(GetGridCenter().Z).
+			// "선 데에서 빌드" — B 누른 순간 플레이어 위로 탑다운 배치. 빌드 중 추종 아님(WASD 패닝/QE 회전으로 이동).
+			// Z를 그리드 평면에 고정해 플레이어가 높은 Foundation 위여도 탑다운 거리(화면 스케일) 일정.
+			// 회전은 보존 — SpringArm pitch/arm이 높이·거리 담당.
 			if (const AOJJ_Grid* Grid = BuildController->GetTargetGrid())
 			{
-				BuildCamera->SetActorLocation(Grid->GetGridCenter());
+				const FVector PlayerLoc = GetActorLocation();
+				// 플레이어가 그리드 placement 범위 안이면 그 위로(선 데서 빌드), 밖이면 그리드 센터로 폴백.
+				// off-grid 진입 시 커서가 무효 셀에서 시작해 hover/place가 막히는 것 방지(Codex 리뷰 2026-06-19).
+				const FVector AnchorXY = Grid->IsValidGridCell(Grid->WorldToGrid(PlayerLoc))
+					? PlayerLoc : Grid->GetGridCenter();
+				const FVector CamLoc(AnchorXY.X, AnchorXY.Y, Grid->GetGridCenter().Z);
+				BuildCamera->SetActorLocation(CamLoc);
 			}
 		}
 		if (PC && BuildCamera)
