@@ -17,6 +17,9 @@
 
 namespace
 {
+	constexpr float WorkingDurabilityDamagePerSecond = 1.0f;
+	constexpr float SandStormWorkingDurabilityDamagePerSecond = 5.0f;
+
 	void AddRecipeItemQuantity(TMap<FName, int32>& ItemQuantities, FName ItemID, int32 Count)
 	{
 		if (ItemID.IsNone() || Count <= 0)
@@ -318,6 +321,25 @@ void AMachineBase::OnConstruction(const FTransform& Transform)
 void AMachineBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (MachineState == EMachineState::Working && DeltaTime > 0.0f)
+	{
+		float DurabilityDamagePerSecond = WorkingDurabilityDamagePerSecond;
+
+		if (const UWorld* World = GetWorld())
+		{
+			if (const UPlanetEventManagerSubsystem* PlanetEventManager = World->GetSubsystem<UPlanetEventManagerSubsystem>())
+			{
+				if (PlanetEventManager->GetEventState().Type == EPlanetEventType::SandStorm)
+				{
+					DurabilityDamagePerSecond = SandStormWorkingDurabilityDamagePerSecond;
+				}
+			}
+		}
+
+		DamageDurability(DeltaTime * DurabilityDamagePerSecond);
+	}
+
 	if (bShowDebugBufferText)
 	{
 		UpdateDebugTextFacingPlayer();

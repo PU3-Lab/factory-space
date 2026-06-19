@@ -225,6 +225,9 @@ private:
 	bool HasAnyLiquid() const;
 	FName GetPrimaryLiquidID() const;
 	FLinearColor GetFilledPipeColor() const;
+	FLinearColor GetSlotVisualColor(const FPipeLiquidSlot& Slot) const;
+	float GetSlotFillRatio(const FPipeLiquidSlot& Slot) const;
+	FVector GetSlotFlowDirection(int32 SlotIndex) const;
 	UMaterialInterface* GetPipeMaterial(bool bHasLiquid);
 	void ConfigureMaterialInstance(UMaterialInstanceDynamic* MaterialInstance, bool bHasLiquid) const;
 	FVector GetPathCentroidLocal() const;

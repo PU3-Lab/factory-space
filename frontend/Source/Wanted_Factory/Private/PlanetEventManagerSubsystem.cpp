@@ -449,7 +449,10 @@ void UPlanetEventManagerSubsystem::ApplyActiveEventToMachine(AMachineBase* Machi
 
 	if (EventState.Type == EPlanetEventType::SandStorm)
 	{
-		Machine->ApplyDurabilityDamage(Machine->GetMaxDurability() * GetSandStormDamageRatio());
+		if (Machine->GetMachineState() != EMachineState::Working)
+		{
+			Machine->ApplyDurabilityDamage(Machine->GetMaxDurability() * GetSandStormDamageRatio());
+		}
 	}
 }
 

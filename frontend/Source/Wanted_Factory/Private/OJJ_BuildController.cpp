@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "OJJ_BuildController.h"
@@ -86,7 +86,7 @@ namespace
 		case EOJJ_BuildPlacementMode::Conveyor:
 			return TEXT("Conveyor");
 		case EOJJ_BuildPlacementMode::LiquidTank:
-			return TEXT("LiquidTank"); // F4-1' — ALiquidTank ctor의 MachineType과 동일 표기.
+			return TEXT("LiquidTank"); // F4-1' ??ALiquidTank ctor??MachineType怨??숈씪 ?쒓린.
 		case EOJJ_BuildPlacementMode::MoldingMachine:
 			return TEXT("MoldingMachine");
 		case EOJJ_BuildPlacementMode::Synthesizer:
@@ -162,12 +162,12 @@ namespace
 
 AOJJ_BuildController::AOJJ_BuildController()
 {
-	// 빌드모드 동안만 호버를 갱신하면 되므로 Tick은 켜두되 기본 비활성.
-	// Enter/ExitBuildMode에서 SetActorTickEnabled로 on/off → 빌드모드 밖 0비용.
+	// 鍮뚮뱶紐⑤뱶 ?숈븞留??몃쾭瑜?媛깆떊?섎㈃ ?섎?濡?Tick? 耳쒕몢??湲곕낯 鍮꾪솢??
+	// Enter/ExitBuildMode?먯꽌 SetActorTickEnabled濡?on/off ??鍮뚮뱶紐⑤뱶 諛?0鍮꾩슜.
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 
-	// 컨베이어 모드 기본 클래스(BP 미지정 시). Dummy와 동일 패턴.
+	// 而⑤쿋?댁뼱 紐⑤뱶 湲곕낯 ?대옒??BP 誘몄?????. Dummy? ?숈씪 ?⑦꽩.
 	ConveyorClass = AConveyor::StaticClass();
 	PipeClass = APipe::StaticClass();
 	LiquidTankClass = ALiquidTank::StaticClass();
@@ -183,7 +183,7 @@ AOJJ_BuildController::AOJJ_BuildController()
 	MoldingMachineClass = AMoldingMachine::StaticClass();
 	SynthesizerClass = ASynthesizer::StaticClass();
 	TeleCommunicationTowerClass = ATeleCommunicationTower::StaticClass();
-	// [#184] 사다리 기본 클래스(BP 미지정 시) — C++ AOJJ_Ladder. BP 없이도 C키 배치 동작.
+	// [#184] ?щ떎由?湲곕낯 ?대옒??BP 誘몄????? ??C++ AOJJ_Ladder. BP ?놁씠??C??諛곗튂 ?숈옉.
 	LadderClass = AOJJ_Ladder::StaticClass();
 }
 
@@ -191,7 +191,7 @@ void AOJJ_BuildController::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	// Enter/Exit에서 Tick을 on/off하지만, 방어적으로 모드 가드도 유지(UpdateMouseHover 내부에도 가드 있음).
+	// Enter/Exit?먯꽌 Tick??on/off?섏?留? 諛⑹뼱?곸쑝濡?紐⑤뱶 媛?쒕룄 ?좎?(UpdateMouseHover ?대??먮룄 媛???덉쓬).
 	if (bIsBuildMode)
 	{
 		UpdateMouseHover();
@@ -208,14 +208,14 @@ void AOJJ_BuildController::EnterBuildMode()
 
 	if (!TargetGrid)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[BuildController] TargetGrid 미설정 — EnterBuildMode 중단"));
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] TargetGrid 誘몄꽕????EnterBuildMode 以묐떒"));
 		return;
 	}
 
-	// 모드별 클래스 미설정 가드 — 머신 모드는 MachineClass, 컨베이어 모드는 ConveyorClass 필요.
+	// 紐⑤뱶蹂??대옒??誘몄꽕??媛????癒몄떊 紐⑤뱶??MachineClass, 而⑤쿋?댁뼱 紐⑤뱶??ConveyorClass ?꾩슂.
 	if (PlacementMode == EOJJ_BuildPlacementMode::Machine && !MachineClass)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[BuildController] MachineClass 미설정 — EnterBuildMode 중단"));
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] MachineClass 誘몄꽕????EnterBuildMode 以묐떒"));
 		return;
 	}
 	if (PlacementMode == EOJJ_BuildPlacementMode::PowerNode && !PowerGridNodeClass)
@@ -275,7 +275,7 @@ void AOJJ_BuildController::EnterBuildMode()
 	}
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor && !ConveyorClass)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[BuildController] ConveyorClass 미설정 — EnterBuildMode 중단"));
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] ConveyorClass 誘몄꽕????EnterBuildMode 以묐떒"));
 		return;
 	}
 	if (PlacementMode == EOJJ_BuildPlacementMode::PowerLine && !PowerLineClass)
@@ -286,24 +286,24 @@ void AOJJ_BuildController::EnterBuildMode()
 
 	TargetGrid->SetVisualizationVisible(true);
 
-	// 진입 즉시 배치 머신 포트 화살표 표시(첫 호버 전이라도 보이도록). 호버 화살표는 첫 UpdateMouseHover에서.
+	// 吏꾩엯 利됱떆 諛곗튂 癒몄떊 ?ы듃 ?붿궡???쒖떆(泥??몃쾭 ?꾩씠?쇰룄 蹂댁씠?꾨줉). ?몃쾭 ?붿궡?쒕뒗 泥?UpdateMouseHover?먯꽌.
 	TargetGrid->RefreshPlacedMachineArrows();
 
 	bIsBuildMode = true;
 
-	// 빌드 세션은 항상 회전 0(미회전)으로 시작 — 예측 가능한 기본 방향.
+	// 鍮뚮뱶 ?몄뀡? ??긽 ?뚯쟾 0(誘명쉶???쇰줈 ?쒖옉 ???덉륫 媛?ν븳 湲곕낯 諛⑺뼢.
 	HoverRotationSteps = 0;
 
-	// Foundation 종류도 평판으로 시작(F3-2.5) — 회전과 동일한 "예측 가능한 기본값" 정책.
+	// Foundation 醫낅쪟???됲뙋?쇰줈 ?쒖옉(F3-2.5) ???뚯쟾怨??숈씪??"?덉륫 媛?ν븳 湲곕낯媛? ?뺤콉.
 	bRampFoundationSelected = false;
 
-	// 컨베이어 드래그 상태 초기화(이전 세션 잔여 방지).
+	// 而⑤쿋?댁뼱 ?쒕옒洹??곹깭 珥덇린???댁쟾 ?몄뀡 ?붿뿬 諛⑹?).
 	bIsDraggingConveyor = false;
 	ConveyorDragCells.Reset();
 	bIsDraggingPowerLine = false;
 	PowerLineStartMachine.Reset();
 
-	// 빌드모드 동안에만 호버 Tick 가동
+	// 鍮뚮뱶紐⑤뱶 ?숈븞?먮쭔 ?몃쾭 Tick 媛??
 	SetActorTickEnabled(true);
 
 	if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
@@ -313,10 +313,10 @@ void AOJJ_BuildController::EnterBuildMode()
 		PC->bEnableMouseOverEvents = true;
 	}
 
-	// 첫 UpdateMouseHover 호출이 무조건 갱신을 트리거하도록 sentinel로 초기화
+	// 泥?UpdateMouseHover ?몄텧??臾댁“嫄?媛깆떊???몃━嫄고븯?꾨줉 sentinel濡?珥덇린??
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 
-	// 캐릭터 셀 표시(F2-4 후속 ②) — 빈 캐시로 시작해 첫 Tick이 무조건 적재.
+	// 罹먮┃??? ?쒖떆(F2-4 ?꾩냽 ?? ??鍮?罹먯떆濡??쒖옉??泥?Tick??臾댁“嫄??곸옱.
 	CharacterOverlayCells.Reset();
 }
 
@@ -330,21 +330,20 @@ void AOJJ_BuildController::ExitBuildMode()
 	if (TargetGrid)
 	{
 		TargetGrid->SetVisualizationVisible(false);
-		TargetGrid->ClearHoverPreview();         // 호버 셀 + 호버 화살표 제거
-		TargetGrid->ClearPlacedMachineArrows();  // 배치 머신 화살표 제거 (진입 RefreshPlacedMachineArrows와 대칭)
-		TargetGrid->OJJ_UpdateCharacterCellOverlay(TArray<FIntPoint>());  // 캐릭터 셀 표시 제거(F2-4 후속 ②)
+		TargetGrid->ClearHoverPreview();         // ?몃쾭 ? + ?몃쾭 ?붿궡???쒓굅
+		TargetGrid->OJJ_UpdateCharacterCellOverlay(TArray<FIntPoint>());  // 罹먮┃??? ?쒖떆 ?쒓굅(F2-4 ?꾩냽 ??
 	}
 	CharacterOverlayCells.Reset();
 
 	bIsBuildMode = false;
 
-	// 컨베이어 드래그 상태 정리.
+	// 而⑤쿋?댁뼱 ?쒕옒洹??곹깭 ?뺣━.
 	bIsDraggingConveyor = false;
 	ConveyorDragCells.Reset();
 	bIsDraggingPowerLine = false;
 	PowerLineStartMachine.Reset();
 
-	// 호버 Tick 정지 (빌드모드 밖 0비용)
+	// ?몃쾭 Tick ?뺤? (鍮뚮뱶紐⑤뱶 諛?0鍮꾩슜)
 	SetActorTickEnabled(false);
 
 	if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
@@ -352,13 +351,13 @@ void AOJJ_BuildController::ExitBuildMode()
 		PC->bShowMouseCursor = false;
 	}
 
-	// 재진입 시 같은 셀에 정지해 있어도 첫 갱신이 동작하도록 sentinel로 리셋
+	// ?ъ쭊????媛숈? ????뺤????덉뼱??泥?媛깆떊???숈옉?섎룄濡?sentinel濡?由ъ뀑
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 
-	// 회전 상태도 리셋 — 다음 진입은 미회전(0)으로 시작(EnterBuildMode 초기화와 일관).
+	// ?뚯쟾 ?곹깭??由ъ뀑 ???ㅼ쓬 吏꾩엯? 誘명쉶??0)?쇰줈 ?쒖옉(EnterBuildMode 珥덇린?붿? ?쇨?).
 	HoverRotationSteps = 0;
 
-	// Foundation 종류도 평판으로 리셋(F3-2.5 — EnterBuildMode 초기화와 대칭).
+	// Foundation 醫낅쪟???됲뙋?쇰줈 由ъ뀑(F3-2.5 ??EnterBuildMode 珥덇린?붿? ?移?.
 	bRampFoundationSelected = false;
 
 	if (UGameInstance* GameInstance = GetGameInstance())
@@ -384,8 +383,8 @@ void AOJJ_BuildController::ToggleBuildMode()
 
 void AOJJ_BuildController::RotateHoverClockwise()
 {
-	// R은 IMC_Build 전용이라 빌드모드에서만 발동하지만, 방어적으로 가드.
-	// 회전은 머신 + Foundation(F3-0 ㉱ — 램프 방향성 대비) 호버 전용 — 컨베이어 모드에서는 무시(Dummy parity).
+	// R? IMC_Build ?꾩슜?대씪 鍮뚮뱶紐⑤뱶?먯꽌留?諛쒕룞?섏?留? 諛⑹뼱?곸쑝濡?媛??
+	// ?뚯쟾? 癒몄떊 + Foundation(F3-0 ?????⑦봽 諛⑺뼢???鍮? ?몃쾭 ?꾩슜 ??而⑤쿋?댁뼱 紐⑤뱶?먯꽌??臾댁떆(Dummy parity).
 	if (!bIsBuildMode
 		|| (PlacementMode != EOJJ_BuildPlacementMode::Machine
 			&& PlacementMode != EOJJ_BuildPlacementMode::PowerNode
@@ -406,21 +405,21 @@ void AOJJ_BuildController::RotateHoverClockwise()
 
 	HoverRotationSteps = (HoverRotationSteps + 1) % 4;
 
-	// 마우스가 같은 셀에 멈춰 있어도 회전이 즉시 미리보기에 반영되도록 sentinel 리셋 후 강제 갱신.
-	// (UpdateMouseHover는 CursorCell==CurrentHoverCell이면 rebuild를 스킵하므로 sentinel이 필요.)
+	// 留덉슦?ㅺ? 媛숈? ???硫덉떠 ?덉뼱???뚯쟾??利됱떆 誘몃━蹂닿린??諛섏쁺?섎룄濡?sentinel 由ъ뀑 ??媛뺤젣 媛깆떊.
+	// (UpdateMouseHover??CursorCell==CurrentHoverCell?대㈃ rebuild瑜??ㅽ궢?섎?濡?sentinel???꾩슂.)
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 	UpdateMouseHover();
 }
 
 void AOJJ_BuildController::OJJ_SelectFoundationKind(bool bSelectRamp)
 {
-	// 공용키 직행 — F=평판/G=램프(공용 BindKey, 옛 G=평판/H=램프 IA 경로 폐기). 빌드모드 밖 호출은 기존 모드 키들과
-	// 동일하게 무해(호버/클릭이 bIsBuildMode 게이트, EnterBuildMode가 종류를 평판으로 리셋 — 회전 정책).
-	// 램프 미지정이면 선택 거부 — 사용처(호버/배치)의 silent 폴백보다 선택 시점 1회 경고가 명확.
+	// 怨듭슜??吏곹뻾 ??F=?됲뙋/G=?⑦봽(怨듭슜 BindKey, ??G=?됲뙋/H=?⑦봽 IA 寃쎈줈 ?먭린). 鍮뚮뱶紐⑤뱶 諛??몄텧? 湲곗〈 紐⑤뱶 ?ㅻ뱾怨?
+	// ?숈씪?섍쾶 臾댄빐(?몃쾭/?대┃??bIsBuildMode 寃뚯씠?? EnterBuildMode媛 醫낅쪟瑜??됲뙋?쇰줈 由ъ뀑 ???뚯쟾 ?뺤콉).
+	// ?⑦봽 誘몄??뺤씠硫??좏깮 嫄곕? ???ъ슜泥??몃쾭/諛곗튂)??silent ?대갚蹂대떎 ?좏깮 ?쒖젏 1??寃쎄퀬媛 紐낇솗.
 	if (bSelectRamp && !RampFoundationClass)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[BuildController] RampFoundationClass 미지정 — 램프 모드 선택 무시"));
+			TEXT("[BuildController] RampFoundationClass 誘몄??????⑦봽 紐⑤뱶 ?좏깮 臾댁떆"));
 		return;
 	}
 
@@ -429,8 +428,8 @@ void AOJJ_BuildController::OJJ_SelectFoundationKind(bool bSelectRamp)
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation: %s"),
 		bRampFoundationSelected ? TEXT("Ramp") : TEXT("Flat"));
 
-	// Foundation 모드 밖이면 진입까지(직행 키 의미) — SetPlacementMode가 sentinel 리셋 + 호버
-	// 강제 갱신을 수행하므로 별도 처리 불필요.
+	// Foundation 紐⑤뱶 諛뽰씠硫?吏꾩엯源뚯?(吏곹뻾 ???섎?) ??SetPlacementMode媛 sentinel 由ъ뀑 + ?몃쾭
+	// 媛뺤젣 媛깆떊???섑뻾?섎?濡?蹂꾨룄 泥섎━ 遺덊븘??
 	if (PlacementMode != EOJJ_BuildPlacementMode::Foundation)
 	{
 		SetPlacementMode(EOJJ_BuildPlacementMode::Foundation);
@@ -439,13 +438,13 @@ void AOJJ_BuildController::OJJ_SelectFoundationKind(bool bSelectRamp)
 
 	if (!bKindChanged)
 	{
-		return; // 같은 종류 재선택 — 호버 변화 없음.
+		return; // 媛숈? 醫낅쪟 ?ъ꽑?????몃쾭 蹂???놁쓬.
 	}
 
-	// 종류가 바뀌면 CDO 풋프린트(평판 8×8 vs 램프 비정사각)가 달라짐 — 회전(RotateHoverClockwise)과
-	// 동일하게 sentinel 리셋 후 강제 갱신(F3-2.5 T 로직 재사용). 단 커서가 유효 표면 밖이면
-	// UpdateMouseHover의 Foundation 분기가 리빌드 없이 끝날 수 있으므로, 이전 종류 타일 잔존 금지를
-	// 위해 먼저 명시적으로 클리어(유효 표면 위라면 프리뷰 함수가 어차피 클리어 후 재적재 — 이중 무해).
+	// 醫낅쪟媛 諛붾뚮㈃ CDO ?뗮봽由고듃(?됲뙋 8횞8 vs ?⑦봽 鍮꾩젙?ш컖)媛 ?щ씪吏????뚯쟾(RotateHoverClockwise)怨?
+	// ?숈씪?섍쾶 sentinel 由ъ뀑 ??媛뺤젣 媛깆떊(F3-2.5 T 濡쒖쭅 ?ъ궗??. ??而ㅼ꽌媛 ?좏슚 ?쒕㈃ 諛뽰씠硫?
+	// UpdateMouseHover??Foundation 遺꾧린媛 由щ퉴???놁씠 ?앸궇 ???덉쑝誘濡? ?댁쟾 醫낅쪟 ????붿〈 湲덉?瑜?
+	// ?꾪빐 癒쇱? 紐낆떆?곸쑝濡??대━???좏슚 ?쒕㈃ ?꾨씪硫??꾨━酉??⑥닔媛 ?댁감???대━?????ъ쟻?????댁쨷 臾댄빐).
 	if (TargetGrid)
 	{
 		TargetGrid->ClearHoverPreview();
@@ -461,9 +460,9 @@ FIntPoint AOJJ_BuildController::ComputeOriginFromCursorCell(FIntPoint CursorCell
 		return CursorCell;
 	}
 
-	// AOJJ_Grid::CalculateFootprint / GetMachinePlacementLocation과 동일한 정수화·회전 규칙(EffectiveSize).
-	// 입력(cursor → origin)과 시각 보정(origin → footprint center)이 반대 방향이지만
-	// 같은 size 가정에서 동작해야 호버/배치와 occupancy/메시 위치가 어긋나지 않음. step 0이면 기존과 동일.
+	// AOJJ_Grid::CalculateFootprint / GetMachinePlacementLocation怨??숈씪???뺤닔?붋룻쉶??洹쒖튃(EffectiveSize).
+	// ?낅젰(cursor ??origin)怨??쒓컖 蹂댁젙(origin ??footprint center)??諛섎? 諛⑺뼢?댁?留?
+	// 媛숈? size 媛?뺤뿉???숈옉?댁빞 ?몃쾭/諛곗튂? occupancy/硫붿떆 ?꾩튂媛 ?닿툔?섏? ?딆쓬. step 0?대㈃ 湲곗〈怨??숈씪.
 	const FIntPoint Size = AOJJ_Grid::EffectiveSize(Machine->GetMachineSize(), RotationSteps);
 
 	return ComputeOriginFromCursorCellForSize(CursorCell, Size);
@@ -471,8 +470,8 @@ FIntPoint AOJJ_BuildController::ComputeOriginFromCursorCell(FIntPoint CursorCell
 
 FIntPoint AOJJ_BuildController::ComputeOriginFromCursorCellForSize(FIntPoint CursorCell, FIntPoint EffSize)
 {
-	// 머신/Foundation 공통 수식 — 두 경로의 "마우스 = 풋프린트 중심" 정책이 갈라지지 않게 단일원 유지.
-	// F3.6-0: 본문을 그리드 정적으로 이관(Foundation 풋프린트 훅 베이스도 같은 수식을 쓰도록) — 위임만.
+	// 癒몄떊/Foundation 怨듯넻 ?섏떇 ????寃쎈줈??"留덉슦??= ?뗮봽由고듃 以묒떖" ?뺤콉??媛덈씪吏吏 ?딄쾶 ?⑥씪???좎?.
+	// F3.6-0: 蹂몃Ц??洹몃━???뺤쟻?쇰줈 ?닿?(Foundation ?뗮봽由고듃 ??踰좎씠?ㅻ룄 媛숈? ?섏떇???곕룄濡? ???꾩엫留?
 	return AOJJ_Grid::OJJ_OriginFromCursorCellForSize(CursorCell, EffSize);
 }
 
@@ -553,7 +552,7 @@ void AOJJ_BuildController::UpdateMouseHover()
 		return;
 	}
 
-	// [공용키 Z] None = 들고 있는 placement 없음. 고스트/ISM/화살표만 클리어하고 무동작(빌드모드 유지).
+	// [怨듭슜??Z] None = ?ㅺ퀬 ?덈뒗 placement ?놁쓬. 怨좎뒪??ISM/?붿궡?쒕쭔 ?대━?댄븯怨?臾대룞??鍮뚮뱶紐⑤뱶 ?좎?).
 	if (PlacementMode == EOJJ_BuildPlacementMode::None)
 	{
 		TargetGrid->ClearHoverPreview();
@@ -567,7 +566,7 @@ void AOJJ_BuildController::UpdateMouseHover()
 		return;
 	}
 
-	// === Demolish 모드 — 커서 대상 빨강 하이라이트(배치 트레이스/풋프린트 경로와 분리) ===
+	// === Demolish 紐⑤뱶 ??而ㅼ꽌 ???鍮④컯 ?섏씠?쇱씠??諛곗튂 ?몃젅?댁뒪/?뗮봽由고듃 寃쎈줈? 遺꾨━) ===
 	if (PlacementMode == EOJJ_BuildPlacementMode::Demolish)
 	{
 		UpdateDemolishHover();
@@ -582,15 +581,15 @@ void AOJJ_BuildController::UpdateMouseHover()
 
 	if (!bHit)
 	{
-		// 트레이스 실패 → stale 미리보기/캐시가 다음 클릭에 잘못 적용되지 않도록 명시적 리셋
+		// ?몃젅?댁뒪 ?ㅽ뙣 ??stale 誘몃━蹂닿린/罹먯떆媛 ?ㅼ쓬 ?대┃???섎せ ?곸슜?섏? ?딅룄濡?紐낆떆??由ъ뀑
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 		return;
 	}
 
-	const FIntPoint CursorCell = ResolveCursorCellOverWater(Hit.Location); // #182 물 위 패럴랙스 보정(호버=클릭 동일 셀)
+	const FIntPoint CursorCell = ResolveCursorCellOverWater(Hit.Location); // #182 臾????⑤윺?숈뒪 蹂댁젙(?몃쾭=?대┃ ?숈씪 ?)
 
-	// Conveyor/Pipe 모드: 드래그/단일 셀 미리보기로 분기 (머신 경로와 독립 — 파이프는 프리뷰만 분기).
+	// Conveyor/Pipe 紐⑤뱶: ?쒕옒洹??⑥씪 ? 誘몃━蹂닿린濡?遺꾧린 (癒몄떊 寃쎈줈? ?낅┰ ???뚯씠?꾨뒗 ?꾨━酉곕쭔 遺꾧린).
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor
 		|| PlacementMode == EOJJ_BuildPlacementMode::Pipe)
 	{
@@ -604,23 +603,23 @@ void AOJJ_BuildController::UpdateMouseHover()
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 
 #if ENABLE_DRAW_DEBUG
-		// 전선 드래그 미리보기 — 읽기 전용 시각화(팀원 연결 로직 비침범, 호버는 BuildController 영역).
-		// Shipping 등 ENABLE_DRAW_DEBUG=0 빌드에선 블록 전체가 컴파일 아웃 → 런타임 비용 0.
-		// 여기 도달 시점엔 위 (!bHit) 가드를 이미 통과한 상태이므로 Hit / Hit.Location 유효.
+		// ?꾩꽑 ?쒕옒洹?誘몃━蹂닿린 ???쎄린 ?꾩슜 ?쒓컖??????곌껐 濡쒖쭅 鍮꾩묠踰? ?몃쾭??BuildController ?곸뿭).
+		// Shipping ??ENABLE_DRAW_DEBUG=0 鍮뚮뱶?먯꽑 釉붾줉 ?꾩껜媛 而댄뙆???꾩썐 ???고???鍮꾩슜 0.
+		// ?ш린 ?꾨떖 ?쒖젏????(!bHit) 媛?쒕? ?대? ?듦낵???곹깭?대?濡?Hit / Hit.Location ?좏슚.
 		if (bIsDraggingPowerLine)
 		{
 			if (UWorld* World = GetWorld())
 			{
 				if (AMachineBase* StartMachine = PowerLineStartMachine.Get())
 				{
-					// 완성선(APowerLine::LineHeightOffset 기본값 350)과 높이를 맞춤. LineHeightOffset이
-					// protected·게터 없음 → 상수 사용. 팀원이 그 기본값을 바꾸면 여기도 동기화 필요.
+					// ?꾩꽦??APowerLine::LineHeightOffset 湲곕낯媛?350)怨??믪씠瑜?留욎땄. LineHeightOffset??
+					// protected쨌寃뚰꽣 ?놁쓬 ???곸닔 ?ъ슜. ??먯씠 洹?湲곕낯媛믪쓣 諛붽씀硫??ш린???숆린???꾩슂.
 					constexpr float PreviewEndpointHeightOffset = 20.0f;
 					const FVector StartLoc = APowerLine::GetEndpointLocationForActor(StartMachine, PreviewEndpointHeightOffset);
 
-					// 시작 노드(StartLoc) → 커서(CursorLoc)로 미리보기 선(매 프레임 비영속).
-					// 커서 아래 노드가 연결 가능하면 초록, 아니면 빨강. HoverNode가 non-null일 때만
-					// CanConnect 평가(단락 평가) → 노드 위가 아니면 매 프레임 그래프 순회 비용 없음.
+					// ?쒖옉 ?몃뱶(StartLoc) ??而ㅼ꽌(CursorLoc)濡?誘몃━蹂닿린 ??留??꾨젅??鍮꾩쁺??.
+					// 而ㅼ꽌 ?꾨옒 ?몃뱶媛 ?곌껐 媛?ν븯硫?珥덈줉, ?꾨땲硫?鍮④컯. HoverNode媛 non-null???뚮쭔
+					// CanConnect ?됯?(?⑤씫 ?됯?) ???몃뱶 ?꾧? ?꾨땲硫?留??꾨젅??洹몃옒???쒗쉶 鍮꾩슜 ?놁쓬.
 					AMachineBase* HoverMachine = Cast<AMachineBase>(Hit.GetActor());
 					if (!IsPowerLineEndpoint(HoverMachine))
 					{
@@ -640,47 +639,47 @@ void AOJJ_BuildController::UpdateMouseHover()
 				}
 			}
 		}
-		// [옵션·미구현] 비드래그 상태에서 커서 아래 노드를 스피어로 강조하면 "선택 가능" 힌트가 되지만,
-		// 요청 범위(드래그 중 피드백)를 넘어 생략. 필요 시 위 if 바깥에 HoverNode 강조를 추가.
+		// [?듭뀡쨌誘멸뎄?? 鍮꾨뱶?섍렇 ?곹깭?먯꽌 而ㅼ꽌 ?꾨옒 ?몃뱶瑜??ㅽ뵾?대줈 媛뺤“?섎㈃ "?좏깮 媛?? ?뚰듃媛 ?섏?留?
+		// ?붿껌 踰붿쐞(?쒕옒洹?以??쇰뱶諛?瑜??섏뼱 ?앸왂. ?꾩슂 ????if 諛붽묑??HoverNode 媛뺤“瑜?異붽?.
 #endif
 		return;
 	}
 
-	// Foundation 모드(F1-b): 머신 경로와 독립 분기(Conveyor/Demolish 패턴) — CDO FoundationSize 풋프린트 호버.
+	// Foundation 紐⑤뱶(F1-b): 癒몄떊 寃쎈줈? ?낅┰ 遺꾧린(Conveyor/Demolish ?⑦꽩) ??CDO FoundationSize ?뗮봽由고듃 ?몃쾭.
 	if (PlacementMode == EOJJ_BuildPlacementMode::Foundation)
 	{
 		UpdateFoundationHover(CursorCell, Hit);
 		return;
 	}
 
-	// [#184] Ladder 모드: Foundation 변 조준 → 변 바깥 지면에 세로 사다리 고스트(독립 분기, 자유 배치).
+	// [#184] Ladder 紐⑤뱶: Foundation 蹂 議곗? ??蹂 諛붽묑 吏硫댁뿉 ?몃줈 ?щ떎由?怨좎뒪???낅┰ 遺꾧린, ?먯쑀 諛곗튂).
 	if (PlacementMode == EOJJ_BuildPlacementMode::Ladder)
 	{
 		UpdateLadderHover(CursorCell, Hit);
 		return;
 	}
 
-	// === Machine 모드 (기존 동작 무변경) ===
+	// === Machine 紐⑤뱶 (湲곗〈 ?숈옉 臾대?寃? ===
 	TSubclassOf<AMachineBase> ActiveMachineClass = GetActiveMachineClass();
 	if (!ActiveMachineClass)
 	{
 		return;
 	}
 
-	// floor 또는 이미 배치된 머신 위에서 hover를 유지.
-	// 머신 Cube mesh가 Visibility 채널을 Block해서 trace를 가로채도, 머신 위 XY는
-	// 점유된 셀에 정확히 매핑되므로 CanPlaceMachine 검증을 거치게 그대로 통과시킨다
-	// → 점유 셀과 겹친 풋프린트가 빨강으로 표시됨. 그 외 표면(캐릭터/벽 등)은
-	// off-grid이므로 기존처럼 ClearHoverPreview로 차단.
+	// floor ?먮뒗 ?대? 諛곗튂??癒몄떊 ?꾩뿉??hover瑜??좎?.
+	// 癒몄떊 Cube mesh媛 Visibility 梨꾨꼸??Block?댁꽌 trace瑜?媛濡쒖콈?? 癒몄떊 ??XY??
+	// ?먯쑀??????뺥솗??留ㅽ븨?섎?濡?CanPlaceMachine 寃利앹쓣 嫄곗튂寃?洹몃?濡??듦낵?쒗궓??
+	// ???먯쑀 ?怨?寃뱀튇 ?뗮봽由고듃媛 鍮④컯?쇰줈 ?쒖떆?? 洹????쒕㈃(罹먮┃??踰????
+	// off-grid?대?濡?湲곗〈泥섎읆 ClearHoverPreview濡?李⑤떒.
 	UPrimitiveComponent* HitComp = Hit.GetComponent();
 	AActor* HitActor = Hit.GetActor();
 	const bool bHitFloor = (HitComp == TargetGrid->GetGridFloorMesh());
 	const bool bHitMachine = HitActor && HitActor->IsA<AMachineBase>();
-	// F1-c: Foundation 슬래브 상면(Visibility Block)도 유효 호버 표면 — 없으면 Foundation 위 머신 배치 불가.
+	// F1-c: Foundation ?щ옒釉??곷㈃(Visibility Block)???좏슚 ?몃쾭 ?쒕㈃ ???놁쑝硫?Foundation ??癒몄떊 諛곗튂 遺덇?.
 	const bool bHitFoundation = HitActor && HitActor->IsA<AOJJ_Foundation>();
-	// F2-1' 사각지대 해소: 평면 위(+델타) 지형은 Landscape가 커서 플레인보다 먼저 히트 — buildable 셀인데
-	// 호버 사망. 셀 매핑은 WorldToGrid가 XY만 쓰므로(Z 무관) 플로어 히트와 동일하게 통과시킨다.
-	// 배치 가능 여부는 기존처럼 CanPlace 경로가 판정(게이트는 표면 식별만).
+	// F2-1' ?ш컖吏? ?댁냼: ?됰㈃ ??+?명?) 吏?뺤? Landscape媛 而ㅼ꽌 ?뚮젅?몃낫??癒쇱? ?덊듃 ??buildable ??몃뜲
+	// ?몃쾭 ?щ쭩. ? 留ㅽ븨? WorldToGrid媛 XY留??곕?濡?Z 臾닿?) ?뚮줈???덊듃? ?숈씪?섍쾶 ?듦낵?쒗궓??
+	// 諛곗튂 媛???щ???湲곗〈泥섎읆 CanPlace 寃쎈줈媛 ?먯젙(寃뚯씠?몃뒗 ?쒕㈃ ?앸퀎留?.
 	const bool bHitLandscape = HitActor && HitActor->IsA<ALandscapeProxy>();
 	if (!bHitFloor && !bHitMachine && !bHitFoundation && !bHitLandscape)
 	{
@@ -689,7 +688,7 @@ void AOJJ_BuildController::UpdateMouseHover()
 		return;
 	}
 
-	// Tick마다 호출되는 경로라 동일 셀이면 ISM 리빌드 스킵 (CursorCell은 위에서 계산됨)
+	// Tick留덈떎 ?몄텧?섎뒗 寃쎈줈???숈씪 ??대㈃ ISM 由щ퉴???ㅽ궢 (CursorCell? ?꾩뿉??怨꾩궛??
 	if (CursorCell == CurrentHoverCell)
 	{
 		return;
@@ -702,12 +701,12 @@ void AOJJ_BuildController::UpdateMouseHover()
 	}
 	ApplyMachineDataToDefault(this, DefaultMachine);
 
-	// cursor cell → lower-left origin (마우스 = 풋프린트 중심 정책).
-	// 예전엔 IsValidGridCell(cursor)로 anchor 음수/초과를 사전 차단했으나, 이 차단이
-	// 왼쪽/위 경계 비대칭을 만들었음 (오른쪽/아래는 anchor가 valid한 상태에서 풋프린트가
-	// +X,+Y로 새서 빨강 표시되는데, 왼쪽/위는 anchor 자체가 음수가 되어 hover 사라짐).
-	// 이제 origin이 그리드 음수/초과여도 그대로 넘김 → CanPlaceMachine이 풋프린트 셀별
-	// IsValidGridCell 검사로 false → UpdateHoverPreview가 풋프린트 전체 빨강 (대칭).
+	// cursor cell ??lower-left origin (留덉슦??= ?뗮봽由고듃 以묒떖 ?뺤콉).
+	// ?덉쟾??IsValidGridCell(cursor)濡?anchor ?뚯닔/珥덇낵瑜??ъ쟾 李⑤떒?덉쑝?? ??李⑤떒??
+	// ?쇱そ/??寃쎄퀎 鍮꾨?移?쓣 留뚮뱾?덉쓬 (?ㅻⅨ履??꾨옒??anchor媛 valid???곹깭?먯꽌 ?뗮봽由고듃媛
+	// +X,+Y濡??덉꽌 鍮④컯 ?쒖떆?섎뒗?? ?쇱そ/?꾨뒗 anchor ?먯껜媛 ?뚯닔媛 ?섏뼱 hover ?щ씪吏?.
+	// ?댁젣 origin??洹몃━???뚯닔/珥덇낵?щ룄 洹몃?濡??섍? ??CanPlaceMachine???뗮봽由고듃 ?蹂?
+	// IsValidGridCell 寃?щ줈 false ??UpdateHoverPreview媛 ?뗮봽由고듃 ?꾩껜 鍮④컯 (?移?.
 	const FIntPoint Origin = ComputeOriginFromCursorCell(CursorCell, DefaultMachine, HoverRotationSteps);
 
 	TargetGrid->UpdateHoverPreview(DefaultMachine, Origin, HoverRotationSteps);
@@ -729,13 +728,13 @@ void AOJJ_BuildController::UpdateDemolishHover()
 	FIntPoint CursorCell;
 	if (!GetCursorCell(CursorCell))
 	{
-		// 커서가 그리드 밖 → 하이라이트 제거.
+		// 而ㅼ꽌媛 洹몃━??諛????섏씠?쇱씠???쒓굅.
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 		return;
 	}
 
-	// 동일 셀이면 리빌드 스킵(Tick 경로). 철거 직후엔 DemolishUnderCursor가 sentinel을 리셋해 강제 갱신.
+	// ?숈씪 ??대㈃ 由щ퉴???ㅽ궢(Tick 寃쎈줈). 泥좉굅 吏곹썑??DemolishUnderCursor媛 sentinel??由ъ뀑??媛뺤젣 媛깆떊.
 	if (CursorCell == CurrentHoverCell)
 	{
 		return;
@@ -744,38 +743,38 @@ void AOJJ_BuildController::UpdateDemolishHover()
 
 	AActor* Target = TargetGrid->GetActorAtCell(CursorCell);
 
-	// F4-1(Codex ③): 파이프 → Foundation 순서 — 클릭(DemolishUnderCursor)과 동일 우선순위(단일 진실원).
-	// 위→아래(건물→파이프→기초): Foundation 위 파이프를 호버/클릭 모두 파이프로 잡는다.
+	// F4-1(Codex ??: ?뚯씠????Foundation ?쒖꽌 ???대┃(DemolishUnderCursor)怨??숈씪 ?곗꽑?쒖쐞(?⑥씪 吏꾩떎??.
+	// ?꾟넂?꾨옒(嫄대Ъ?믫뙆?댄봽?믨린珥?: Foundation ???뚯씠?꾨? ?몃쾭/?대┃ 紐⑤몢 ?뚯씠?꾨줈 ?〓뒗??
 	if (!Target)
 	{
 		Target = TargetGrid->OJJ_GetPipeAtCell(CursorCell);
 	}
-	// F1-b': 점유(머신/컨베이어)·파이프가 없는 셀은 Foundation 역조회.
+	// F1-b': ?먯쑀(癒몄떊/而⑤쿋?댁뼱)쨌?뚯씠?꾧? ?녿뒗 ?? Foundation ??“??
 	if (!Target)
 	{
 		Target = TargetGrid->GetFoundationAtCell(CursorCell);
 	}
 
-	// 빈 셀 또는 맵 고정물(광맥/WaterArea = AResourceBase)은 철거 대상 아님 → 하이라이트 없음.
+	// 鍮?? ?먮뒗 留?怨좎젙臾?愿묐㎘/WaterArea = AResourceBase)? 泥좉굅 ????꾨떂 ???섏씠?쇱씠???놁쓬.
 	if (!Target || Target->IsA<AResourceBase>())
 	{
 		TargetGrid->ClearHoverPreview();
 		return;
 	}
 
-	// 머신/컨베이어는 점유 맵, Foundation은 커버리지 맵 — 어느 쪽이든 대상 셀 전체 빨강.
+	// 癒몄떊/而⑤쿋?댁뼱???먯쑀 留? Foundation? 而ㅻ쾭由ъ? 留????대뒓 履쎌씠?????? ?꾩껜 鍮④컯.
 	const TArray<FIntPoint>* Cells = TargetGrid->GetActorCells(Target);
 	if (!Cells)
 	{
-		// F2-0(Codex F1-b' #4): 위 건물이 있는 Foundation은 클릭(RemoveFoundation)이 거부하므로 호버도
-		// 표시 생략 — 단일 진실원(호버 = 클릭 판정)을 철거 모드에도 적용. 거부 사유 화면 표시는 UI 백로그.
+		// F2-0(Codex F1-b' #4): ??嫄대Ъ???덈뒗 Foundation? ?대┃(RemoveFoundation)??嫄곕??섎?濡??몃쾭??
+		// ?쒖떆 ?앸왂 ???⑥씪 吏꾩떎???몃쾭 = ?대┃ ?먯젙)??泥좉굅 紐⑤뱶?먮룄 ?곸슜. 嫄곕? ?ъ쑀 ?붾㈃ ?쒖떆??UI 諛깅줈洹?
 		if (TargetGrid->OJJ_CountOccupiedFoundationCells(Target) > 0)
 		{
 			TargetGrid->ClearHoverPreview();
 			return;
 		}
 		Cells = TargetGrid->GetFoundationCells(Target);
-		// F4-1: Foundation도 아니면 파이프 레이어 셀 — 라인 전체 빨강(클릭 철거 단위와 일치).
+		// F4-1: Foundation???꾨땲硫??뚯씠???덉씠??? ???쇱씤 ?꾩껜 鍮④컯(?대┃ 泥좉굅 ?⑥쐞? ?쇱튂).
 		if (!Cells)
 		{
 			Cells = TargetGrid->OJJ_GetPipeCells(Target);
@@ -801,31 +800,31 @@ void AOJJ_BuildController::DemolishUnderCursor()
 	FIntPoint CursorCell;
 	if (!GetCursorCell(CursorCell))
 	{
-		return; // 그리드 밖 클릭 무시.
+		return; // 洹몃━??諛??대┃ 臾댁떆.
 	}
 
 	AActor* Target = TargetGrid->GetActorAtCell(CursorCell);
-	// F4-1(Codex ③): 파이프가 Foundation보다 먼저 — 위→아래(건물→파이프→기초) 철거 순서. Foundation
-	// 우선이면 그 위 파이프를 직접 철거할 수 없고(파이프 분기 도달 불가), Foundation 게이트는
-	// OJJ_CountOccupiedFoundationCells의 파이프 합산이 막는다(거부 + 사유).
+	// F4-1(Codex ??: ?뚯씠?꾧? Foundation蹂대떎 癒쇱? ???꾟넂?꾨옒(嫄대Ъ?믫뙆?댄봽?믨린珥? 泥좉굅 ?쒖꽌. Foundation
+	// ?곗꽑?대㈃ 洹????뚯씠?꾨? 吏곸젒 泥좉굅?????녾퀬(?뚯씠??遺꾧린 ?꾨떖 遺덇?), Foundation 寃뚯씠?몃뒗
+	// OJJ_CountOccupiedFoundationCells???뚯씠???⑹궛??留됰뒗??嫄곕? + ?ъ쑀).
 	if (!Target)
 	{
 		Target = TargetGrid->OJJ_GetPipeAtCell(CursorCell);
 	}
-	// F1-b': 점유·파이프가 없으면 Foundation 역조회 — 호버(UpdateDemolishHover)와 동일 우선순위.
+	// F1-b': ?먯쑀쨌?뚯씠?꾧? ?놁쑝硫?Foundation ??“?????몃쾭(UpdateDemolishHover)? ?숈씪 ?곗꽑?쒖쐞.
 	if (!Target)
 	{
 		Target = TargetGrid->GetFoundationAtCell(CursorCell);
 	}
 	if (!Target)
 	{
-		return; // 빈 셀 무시.
+		return; // 鍮?? 臾댁떆.
 	}
 
-	// 광맥/WaterArea(AResourceBase)는 맵 고정물 — 철거 금지.
+	// 愿묐㎘/WaterArea(AResourceBase)??留?怨좎젙臾???泥좉굅 湲덉?.
 	if (Target->IsA<AResourceBase>())
 	{
-		UE_LOG(LogTemp, Log, TEXT("[BuildController] 광맥/Water(AResourceBase)는 철거 대상이 아님 — 무시. Cell=%s"),
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] 愿묐㎘/Water(AResourceBase)??泥좉굅 ??곸씠 ?꾨떂 ??臾댁떆. Cell=%s"),
 			*CursorCell.ToString());
 		return;
 	}
@@ -837,10 +836,10 @@ void AOJJ_BuildController::DemolishUnderCursor()
 	{
 		bRemovedEscapePod = Machine->IsA<AEscapePod>();
 
-		// 1) 이 머신을 끝점(Source/Target)으로 갖는 컨베이어 라인을 먼저 삭제(고아 방지). 두-머신 전제상 한쪽이
-		//    사라지면 라인은 존재 조건을 잃는다. 컨베이어는 라인 단위(1액터=다중셀)라 점유 셀 하나로
-		//    OJJ_RemoveActorAt 호출 시 라인 전체가 정리되고, 내부 UnregisterConveyor(그래프 엣지 제거) +
-		//    RefreshPlacedMachineArrows로 반대편(살아있는) 머신의 빈 포트 화살표가 복귀한다.
+		// 1) ??癒몄떊???앹젏(Source/Target)?쇰줈 媛뽯뒗 而⑤쿋?댁뼱 ?쇱씤??癒쇱? ??젣(怨좎븘 諛⑹?). ??癒몄떊 ?꾩젣???쒖そ??
+		//    ?щ씪吏硫??쇱씤? 議댁옱 議곌굔???껊뒗?? 而⑤쿋?댁뼱???쇱씤 ?⑥쐞(1?≫꽣=?ㅼ쨷?)???먯쑀 ? ?섎굹濡?
+		//    OJJ_RemoveActorAt ?몄텧 ???쇱씤 ?꾩껜媛 ?뺣━?섍퀬, ?대? UnregisterConveyor(洹몃옒???ｌ? ?쒓굅) +
+		//    RefreshPlacedMachineArrows濡?諛섎????댁븘?덈뒗) 癒몄떊??鍮??ы듃 ?붿궡?쒓? 蹂듦??쒕떎.
 		for (AConveyor* Conveyor : CollectConveyorsConnectedToMachine(Machine))
 		{
 			if (!Conveyor)
@@ -851,15 +850,15 @@ void AOJJ_BuildController::DemolishUnderCursor()
 			{
 				if (ConvCells->Num() > 0)
 				{
-					TargetGrid->OJJ_RemoveActorAt((*ConvCells)[0]); // 라인 전체 그리드 점유 해제.
+					TargetGrid->OJJ_RemoveActorAt((*ConvCells)[0]); // ?쇱씤 ?꾩껜 洹몃━???먯쑀 ?댁젣.
 				}
 			}
 			Conveyor->RefundItemsToWarehouse();
-			Conveyor->Destroy(); // 액터/비주얼 실제 제거 — 그리드 함수는 점유 해제만, Destroy는 호출자 책임(기존 854 패턴).
+			Conveyor->Destroy(); // ?≫꽣/鍮꾩＜???ㅼ젣 ?쒓굅 ??洹몃━???⑥닔???먯쑀 ?댁젣留? Destroy???몄텧??梨낆엫(湲곗〈 854 ?⑦꽩).
 		}
 
-		// F4-1: 파이프 캐스케이드 — 컨베이어와 동일 근거(끝점 머신 소실 = 라인 존재 조건 상실).
-		// 수집은 레이어 역방향 맵 + 끝점 대조(그리드 헬퍼) — 컨베이어판(둘레 스캔)보다 직접적.
+		// F4-1: ?뚯씠??罹먯뒪耳?대뱶 ??而⑤쿋?댁뼱? ?숈씪 洹쇨굅(?앹젏 癒몄떊 ?뚯떎 = ?쇱씤 議댁옱 議곌굔 ?곸떎).
+		// ?섏쭛? ?덉씠????갑??留?+ ?앹젏 ?議?洹몃━???ы띁) ??而⑤쿋?댁뼱???섎젅 ?ㅼ틪)蹂대떎 吏곸젒??
 		for (APowerLine* PowerLine : CollectPowerLinesConnectedToMachine(Machine))
 		{
 			if (!PowerLine)
@@ -880,8 +879,8 @@ void AOJJ_BuildController::DemolishUnderCursor()
 			Pipe->Destroy();
 		}
 
-		// 2) 머신 본체: RemoveMachineAt → RemoveMachine → OnRemovedFromGrid 훅(자원 Release/Claim 정리) +
-		//    FactoryManager Unregister + 화살표 재적재. 그 후 액터 Destroy.
+		// 2) 癒몄떊 蹂몄껜: RemoveMachineAt ??RemoveMachine ??OnRemovedFromGrid ???먯썝 Release/Claim ?뺣━) +
+		//    FactoryManager Unregister + ?붿궡???ъ쟻?? 洹????≫꽣 Destroy.
 		if (TargetGrid->RemoveMachineAt(CursorCell))
 		{
 			Machine->Destroy();
@@ -890,7 +889,7 @@ void AOJJ_BuildController::DemolishUnderCursor()
 	}
 	else if (AConveyor* Conveyor = Cast<AConveyor>(Target))
 	{
-		// 컨베이어 직접 철거: 라인 단위(액터 다중셀) 전체 그리드 해제 + Destroy. 반대편 머신 화살표는 내부 RefreshArrows로 복귀.
+		// 而⑤쿋?댁뼱 吏곸젒 泥좉굅: ?쇱씤 ?⑥쐞(?≫꽣 ?ㅼ쨷?) ?꾩껜 洹몃━???댁젣 + Destroy. 諛섎???癒몄떊 ?붿궡?쒕뒗 ?대? RefreshArrows濡?蹂듦?.
 		if (TargetGrid->OJJ_RemoveActorAt(CursorCell))
 		{
 			Conveyor->RefundItemsToWarehouse();
@@ -900,8 +899,8 @@ void AOJJ_BuildController::DemolishUnderCursor()
 	}
 	else if (APipe* Pipe = Cast<APipe>(Target))
 	{
-		// F4-1 파이프 직접 철거: 라인 단위(1액터=다중셀) 레이어 해제 + Destroy. 위 건물 게이트 없음
-		// (파이프 레이어 위엔 아무것도 안 올라감 — 항상 성공).
+		// F4-1 ?뚯씠??吏곸젒 泥좉굅: ?쇱씤 ?⑥쐞(1?≫꽣=?ㅼ쨷?) ?덉씠???댁젣 + Destroy. ??嫄대Ъ 寃뚯씠???놁쓬
+		// (?뚯씠???덉씠???꾩뿏 ?꾨Т寃껊룄 ???щ씪媛?????긽 ?깃났).
 		FString PipeReason;
 		if (TargetGrid->OJJ_UnregisterPipeCells(Pipe, PipeReason))
 		{
@@ -912,9 +911,9 @@ void AOJJ_BuildController::DemolishUnderCursor()
 	}
 	else if (AOJJ_Foundation* Foundation = Cast<AOJJ_Foundation>(Target))
 	{
-		// Foundation 철거(F1-b'): RemoveFoundation이 커버 셀 위 건물(점유)을 검사해 거부 + 사유 반환 —
-		// 성공 시에만 Destroy(머신의 RemoveMachineAt→Destroy 순서와 동일). Destroy 후 EndPlay의
-		// RemoveFoundation 재호출은 "not registered"로 끝나 이중 해제 안전(EndPlay 주석의 대칭 계약).
+		// Foundation 泥좉굅(F1-b'): RemoveFoundation??而ㅻ쾭 ? ??嫄대Ъ(?먯쑀)??寃?ы빐 嫄곕? + ?ъ쑀 諛섑솚 ??
+		// ?깃났 ?쒖뿉留?Destroy(癒몄떊??RemoveMachineAt?묭estroy ?쒖꽌? ?숈씪). Destroy ??EndPlay??
+		// RemoveFoundation ?ы샇異쒖? "not registered"濡??앸굹 ?댁쨷 ?댁젣 ?덉쟾(EndPlay 二쇱꽍???移?怨꾩빟).
 		FString OutReason;
 		if (TargetGrid->RemoveFoundation(Foundation, OutReason))
 		{
@@ -923,8 +922,8 @@ void AOJJ_BuildController::DemolishUnderCursor()
 		}
 		else
 		{
-			// 거부 사유 표시 — 배치 거부(TryPlaceFoundation 실패)와 동일 채널(로그). 예: 위 건물 N셀.
-			UE_LOG(LogTemp, Warning, TEXT("[BuildController] Foundation 철거 거부: %s"), *OutReason);
+			// 嫄곕? ?ъ쑀 ?쒖떆 ??諛곗튂 嫄곕?(TryPlaceFoundation ?ㅽ뙣)? ?숈씪 梨꾨꼸(濡쒓렇). ?? ??嫄대Ъ N?.
+			UE_LOG(LogTemp, Warning, TEXT("[BuildController] Foundation 泥좉굅 嫄곕?: %s"), *OutReason);
 		}
 	}
 
@@ -935,7 +934,7 @@ void AOJJ_BuildController::DemolishUnderCursor()
 		{
 			NotifyTutorialQuestEvent(this, TEXT("EscapePodDemolished"));
 		}
-		// 연속 철거: 셀이 비었으니 호버 즉시 갱신(sentinel 리셋 → 다음 UpdateMouseHover에서 빈 셀로 리빌드).
+		// ?곗냽 泥좉굅: ???鍮꾩뿀?쇰땲 ?몃쾭 利됱떆 媛깆떊(sentinel 由ъ뀑 ???ㅼ쓬 UpdateMouseHover?먯꽌 鍮??濡?由щ퉴??.
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 		UpdateMouseHover();
 	}
@@ -960,7 +959,7 @@ TArray<AConveyor*> AOJJ_BuildController::CollectConveyorsConnectedToMachine(AMac
 		FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1)
 	};
 
-	// footprint 전 둘레의 4방향 인접 셀을 스캔(2x2/3x3는 면이 여러 셀 — 포트 셀만이 아니라 둘레 전체).
+	// footprint ???섎젅??4諛⑺뼢 ?몄젒 ????ㅼ틪(2x2/3x3??硫댁씠 ?щ윭 ? ???ы듃 ?留뚯씠 ?꾨땲???섎젅 ?꾩껜).
 	TSet<AConveyor*> Seen;
 	int32 AdjacentConveyorCount = 0;
 	for (const FIntPoint& Cell : Footprint)
@@ -980,7 +979,7 @@ TArray<AConveyor*> AOJJ_BuildController::CollectConveyorsConnectedToMachine(AMac
 			Seen.Add(Conveyor);
 			++AdjacentConveyorCount;
 
-			// 검증: 실제로 이 머신을 끝점으로 갖는 라인만 삭제(나란히 붙은 다른 머신의 라인 오삭제 방지).
+			// 寃利? ?ㅼ젣濡???癒몄떊???앹젏?쇰줈 媛뽯뒗 ?쇱씤留???젣(?섎???遺숈? ?ㅻⅨ 癒몄떊???쇱씤 ?ㅼ궘??諛⑹?).
 			if (Conveyor->GetSourceMachine() == Machine || Conveyor->GetTargetMachine() == Machine)
 			{
 				Result.Add(Conveyor);
@@ -988,12 +987,12 @@ TArray<AConveyor*> AOJJ_BuildController::CollectConveyorsConnectedToMachine(AMac
 		}
 	}
 
-	// (보험) 인접에 컨베이어가 있었으나 이 머신과 연결된 것이 0개 → 나란한 라인이면 정상, 아니면 "연결 기록 vs 실제
-	// 인접" 불일치(규칙 위반 데이터)의 조기 신호. 그리드만으로의 근사 검출(FactoryManager 그래프 무조회).
+	// (蹂댄뿕) ?몄젒??而⑤쿋?댁뼱媛 ?덉뿀?쇰굹 ??癒몄떊怨??곌껐??寃껋씠 0媛????섎????쇱씤?대㈃ ?뺤긽, ?꾨땲硫?"?곌껐 湲곕줉 vs ?ㅼ젣
+	// ?몄젒" 遺덉씪移?洹쒖튃 ?꾨컲 ?곗씠????議곌린 ?좏샇. 洹몃━?쒕쭔?쇰줈??洹쇱궗 寃異?FactoryManager 洹몃옒??臾댁“??.
 	if (Result.Num() == 0 && AdjacentConveyorCount > 0)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[BuildController] 철거 머신 인접 컨베이어 %d개 — Source/Target 연결 일치 0. 나란한 라인이면 정상, 아니면 연결 데이터 불일치 의심. Machine=%s"),
+			TEXT("[BuildController] 泥좉굅 癒몄떊 ?몄젒 而⑤쿋?댁뼱 %d媛???Source/Target ?곌껐 ?쇱튂 0. ?섎????쇱씤?대㈃ ?뺤긽, ?꾨땲硫??곌껐 ?곗씠??遺덉씪移??섏떖. Machine=%s"),
 			AdjacentConveyorCount, *Machine->GetName());
 	}
 
@@ -1041,13 +1040,13 @@ TArray<APowerLine*> AOJJ_BuildController::CollectPowerLinesConnectedToMachine(AM
 
 void AOJJ_BuildController::OnLeftClickPressed()
 {
-	// SP-only contract 강제 (헤더의 MULTIPLAYER LIMITATION 명시와 일치).
-	// 클라이언트에서 호출되면 TryPlaceMachine의 HasAuthority ensure가 트리거되고
-	// spawn된 머신은 orphan으로 남음 → 진입부에서 차단.
+	// SP-only contract 媛뺤젣 (?ㅻ뜑??MULTIPLAYER LIMITATION 紐낆떆? ?쇱튂).
+	// ?대씪?댁뼵?몄뿉???몄텧?섎㈃ TryPlaceMachine??HasAuthority ensure媛 ?몃━嫄곕릺怨?
+	// spawn??癒몄떊? orphan?쇰줈 ?⑥쓬 ??吏꾩엯遺?먯꽌 李⑤떒.
 	if (!HasAuthority())
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[BuildController] OnLeftClickPressed called on non-authority — SP-only contract"));
+			TEXT("[BuildController] OnLeftClickPressed called on non-authority ??SP-only contract"));
 		return;
 	}
 
@@ -1056,26 +1055,26 @@ void AOJJ_BuildController::OnLeftClickPressed()
 		return;
 	}
 
-	// [공용키 Z] None = 아무것도 들고 있지 않음 — 클릭 무동작(배치 경로 진입 방지).
+	// [怨듭슜??Z] None = ?꾨Т寃껊룄 ?ㅺ퀬 ?덉? ?딆쓬 ???대┃ 臾대룞??諛곗튂 寃쎈줈 吏꾩엯 諛⑹?).
 	if (PlacementMode == EOJJ_BuildPlacementMode::None)
 	{
 		return;
 	}
 
-	// Conveyor/Pipe 모드: 좌클릭 누름 = 드래그 시작. (커밋은 OnLeftClickReleased.)
-	// 파이프(F4-1)는 드래그 상태머신 공용 — 프리뷰/커밋만 모드 분기.
+	// Conveyor/Pipe 紐⑤뱶: 醫뚰겢由??꾨쫫 = ?쒕옒洹??쒖옉. (而ㅻ컠? OnLeftClickReleased.)
+	// ?뚯씠??F4-1)???쒕옒洹??곹깭癒몄떊 怨듭슜 ???꾨━酉?而ㅻ컠留?紐⑤뱶 遺꾧린.
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor
 		|| PlacementMode == EOJJ_BuildPlacementMode::Pipe)
 	{
 		FIntPoint CursorCell;
 		if (GetCursorCell(CursorCell))
 		{
-			// #182 파이프 시작 스냅(파이프 전용) — 펌프 본체/출력 포트 근방을 클릭하면 등록된 출력 포트 셀로
-			// 보정. 3×3 펌프 바깥 한 칸을 픽셀단위로 집는 비현실적 조준 제거. 컨베이어는 미적용(시작 판정 무변경).
+			// #182 ?뚯씠???쒖옉 ?ㅻ깄(?뚯씠???꾩슜) ???뚰봽 蹂몄껜/異쒕젰 ?ы듃 洹쇰갑???대┃?섎㈃ ?깅줉??異쒕젰 ?ы듃 ?濡?
+			// 蹂댁젙. 3횞3 ?뚰봽 諛붽묑 ??移몄쓣 ?쎌??⑥쐞濡?吏묐뒗 鍮꾪쁽?ㅼ쟻 議곗? ?쒓굅. 而⑤쿋?댁뼱??誘몄쟻???쒖옉 ?먯젙 臾대?寃?.
 			if (PlacementMode == EOJJ_BuildPlacementMode::Pipe)
 			{
-				// ⭐ 1순위: 스크린 공간 출력 포트 스냅 — 화면에서 커서 근처 포트 박스로 스냅(월드 Z 패럴랙스 무관).
-				// 2순위(폴백): 그리드 셀 근방 2칸 스냅. 둘 다 실패면 원래 셀 유지.
+				// 狩?1?쒖쐞: ?ㅽ겕由?怨듦컙 異쒕젰 ?ы듃 ?ㅻ깄 ???붾㈃?먯꽌 而ㅼ꽌 洹쇱쿂 ?ы듃 諛뺤뒪濡??ㅻ깄(?붾뱶 Z ?⑤윺?숈뒪 臾닿?).
+				// 2?쒖쐞(?대갚): 洹몃━??? 洹쇰갑 2移??ㅻ깄. ?????ㅽ뙣硫??먮옒 ? ?좎?.
 				APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 				FIntPoint SnapCell;
 				if (PC && TargetGrid->OJJ_FindLiquidOutputPortUnderCursorScreen(PC, /*MaxScreenDist=*/64.0f, SnapCell))
@@ -1098,38 +1097,38 @@ void AOJJ_BuildController::OnLeftClickPressed()
 		return;
 	}
 
-	// Demolish 모드: 좌클릭 = 커서 셀 대상 제거(머신/컨베이어/Foundation). 배치 경로(CanPlaceMachine 등)와 분리.
+	// Demolish 紐⑤뱶: 醫뚰겢由?= 而ㅼ꽌 ? ????쒓굅(癒몄떊/而⑤쿋?댁뼱/Foundation). 諛곗튂 寃쎈줈(CanPlaceMachine ??? 遺꾨━.
 	if (PlacementMode == EOJJ_BuildPlacementMode::Demolish)
 	{
 		DemolishUnderCursor();
 		return;
 	}
 
-	// Foundation 모드(F1-b): 클릭 즉시 배치(드래그 없음). 머신 spawn-validate-destroy 패턴 미러 —
-	// 검증/등록은 F1-a TryPlaceFoundation(그리드는 데이터만), 액터 위치 세팅은 여기서.
-	// 머신 경로 도달 전 return → #164 퀘스트 훅(NotifyMainQuestMachinePlaced) 비경유(비간섭).
+	// Foundation 紐⑤뱶(F1-b): ?대┃ 利됱떆 諛곗튂(?쒕옒洹??놁쓬). 癒몄떊 spawn-validate-destroy ?⑦꽩 誘몃윭 ??
+	// 寃利??깅줉? F1-a TryPlaceFoundation(洹몃━?쒕뒗 ?곗씠?곕쭔), ?≫꽣 ?꾩튂 ?명똿? ?ш린??
+	// 癒몄떊 寃쎈줈 ?꾨떖 ??return ??#164 ?섏뒪????NotifyMainQuestMachinePlaced) 鍮꾧꼍??鍮꾧컙??.
 	if (PlacementMode == EOJJ_BuildPlacementMode::Foundation)
 	{
 		PlaceFoundationAtCursor();
 		return;
 	}
 
-	// [#184] Ladder 모드: 클릭 즉시 자유 배치(드래그 없음, 그리드 장부 미등록). Foundation 분기 미러.
+	// [#184] Ladder 紐⑤뱶: ?대┃ 利됱떆 ?먯쑀 諛곗튂(?쒕옒洹??놁쓬, 洹몃━???λ? 誘몃벑濡?. Foundation 遺꾧린 誘몃윭.
 	if (PlacementMode == EOJJ_BuildPlacementMode::Ladder)
 	{
 		PlaceLadderAtCursor();
 		return;
 	}
 
-	// === Machine 모드 (기존 동작 무변경) ===
+	// === Machine 紐⑤뱶 (湲곗〈 ?숈옉 臾대?寃? ===
 	TSubclassOf<AMachineBase> ActiveMachineClass = GetActiveMachineClass();
 	if (!TargetGrid || !ActiveMachineClass)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[BuildController] TargetGrid 또는 MachineClass 미설정"));
+        UE_LOG(LogTemp, Warning, TEXT("[BuildController] TargetGrid or MachineClass is missing."));
 		return;
 	}
 
-	// 마우스가 floor 밖이라 호버 갱신이 한 번도 안 됐으면 클릭 무시
+	// 留덉슦?ㅺ? floor 諛뽰씠???몃쾭 媛깆떊????踰덈룄 ???먯쑝硫??대┃ 臾댁떆
 	if (CurrentHoverCell.X == INT_MIN || CurrentHoverCell.Y == INT_MIN)
 	{
 		return;
@@ -1138,17 +1137,17 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	AMachineBase* DefaultMachine = ActiveMachineClass.GetDefaultObject();
 	if (!DefaultMachine)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[BuildController] MachineClass CDO 없음"));
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] MachineClass CDO ?놁쓬"));
 		return;
 	}
 
-	// cursor cell → lower-left origin — UpdateMouseHover와 같은 변환을 사용해야 호버
-	// 미리보기와 실제 배치 위치가 어긋나지 않음. CanPlaceMachine이 IsValidGridCell +
-	// OccupiedCells 통합 판정하므로 anchor 음수/초과도 자연 거부됨 → 사전 bounds
-	// 차단(IsValidGridCell)은 더 이상 필요 없음.
-	// 배치도 회전 반영(단계 4). origin/CanPlace/TryPlace + 메시 yaw 모두 같은 HoverRotationSteps를
-	// 써야 점유·중심·메시가 일치(Codex 지적 핵심). 호버 미리보기(UpdateMouseHover)와도 동일 step이라
-	// "미리보기 = 실제 배치" 정합.
+	// cursor cell ??lower-left origin ??UpdateMouseHover? 媛숈? 蹂?섏쓣 ?ъ슜?댁빞 ?몃쾭
+	// 誘몃━蹂닿린? ?ㅼ젣 諛곗튂 ?꾩튂媛 ?닿툔?섏? ?딆쓬. CanPlaceMachine??IsValidGridCell +
+	// OccupiedCells ?듯빀 ?먯젙?섎?濡?anchor ?뚯닔/珥덇낵???먯뿰 嫄곕??????ъ쟾 bounds
+	// 李⑤떒(IsValidGridCell)? ???댁긽 ?꾩슂 ?놁쓬.
+	// 諛곗튂???뚯쟾 諛섏쁺(?④퀎 4). origin/CanPlace/TryPlace + 硫붿떆 yaw 紐⑤몢 媛숈? HoverRotationSteps瑜?
+	// ?⑥빞 ?먯쑀쨌以묒떖쨌硫붿떆媛 ?쇱튂(Codex 吏???듭떖). ?몃쾭 誘몃━蹂닿린(UpdateMouseHover)????숈씪 step?대씪
+	// "誘몃━蹂닿린 = ?ㅼ젣 諛곗튂" ?뺥빀.
 	ApplyMachineDataToDefault(this, DefaultMachine);
 	const FName RequiredPlacementItem = GetRequiredInventoryItemForPlacement(DefaultMachine);
 	UPlayerWarehouseSubsystem* WarehouseSubsystem = nullptr;
@@ -1168,7 +1167,7 @@ void AOJJ_BuildController::OnLeftClickPressed()
 
 	if (!TargetGrid->CanPlaceMachine(DefaultMachine, Origin, HoverRotationSteps))
 	{
-		UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s 배치 불가 (bounds/점유)"),
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s 諛곗튂 遺덇? (bounds/?먯쑀)"),
 			*Origin.ToString());
 		return;
 	}
@@ -1191,21 +1190,21 @@ void AOJJ_BuildController::OnLeftClickPressed()
 
 	if (!NewMachine)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[BuildController] SpawnActor 실패"));
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] SpawnActor ?ㅽ뙣"));
 		return;
 	}
 
 	FString OutReason;
 	if (!TargetGrid->TryPlaceMachine(NewMachine, Origin, OutReason, HoverRotationSteps))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[BuildController] TryPlaceMachine 실패: %s"), *OutReason);
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] TryPlaceMachine ?ㅽ뙣: %s"), *OutReason);
 		NewMachine->Destroy();
 		return;
 	}
 
-	// 메시 yaw 회전 — TryPlaceMachine이 회전 footprint 중심(GetMachinePlacementLocation(.., step))에
-	// 액터를 놓았으므로, 그 중심을 기준으로 yaw만 돌리면 center-anchor 메시가 회전 footprint와 정렬.
-	// 시계방향 90°×step (R 방향). 부호가 R 의도와 반대면 -90.f로.
+	// 硫붿떆 yaw ?뚯쟾 ??TryPlaceMachine???뚯쟾 footprint 以묒떖(GetMachinePlacementLocation(.., step))??
+	// ?≫꽣瑜??볦븯?쇰?濡? 洹?以묒떖??湲곗??쇰줈 yaw留??뚮━硫?center-anchor 硫붿떆媛 ?뚯쟾 footprint? ?뺣젹.
+	// ?쒓퀎諛⑺뼢 90째횞step (R 諛⑺뼢). 遺?멸? R ?섎룄? 諛섎?硫?-90.f濡?
 	if (!RequiredPlacementItem.IsNone() && (!WarehouseSubsystem || !WarehouseSubsystem->TakeItem(RequiredPlacementItem, 1)))
 	{
 		UE_LOG(LogTemp, Warning,
@@ -1219,35 +1218,35 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	NewMachine->SetActorRotation(FRotator(0.f, 90.f * HoverRotationSteps, 0.f));
 	NotifyMainQuestMachinePlaced(this, GetQuestPlacementTargetId(PlacementMode));
 
-	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s 머신 배치 성공"),
+	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s 癒몄떊 諛곗튂 ?깃났"),
 		*Origin.ToString());
 
-	// 직전 origin이 이제 점유됨 → 다음 UpdateMouseHover에서 빨강으로 강제 재표시
+	// 吏곸쟾 origin???댁젣 ?먯쑀?????ㅼ쓬 UpdateMouseHover?먯꽌 鍮④컯?쇰줈 媛뺤젣 ?ы몴??
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 }
 
-// === Foundation 모드 (F1-b — 머신 경로와 독립, 커버리지 배치) ===
+// === Foundation 紐⑤뱶 (F1-b ??癒몄떊 寃쎈줈? ?낅┰, 而ㅻ쾭由ъ? 諛곗튂) ===
 
 TSubclassOf<AOJJ_Foundation> AOJJ_BuildController::GetActiveFoundationClass() const
 {
-	// F3-2.5: 종류 상태에 따라 평판/램프 선택. 램프 선택 상태인데 클래스가 비어 있는 경우는
-	// OJJ_SelectFoundationKind 게이트가 차단하므로 정상 흐름에선 도달 불가 — 그래도 null이면
-	// 사용처(호버/배치)의 기존 null 가드가 동작한다.
+	// F3-2.5: 醫낅쪟 ?곹깭???곕씪 ?됲뙋/?⑦봽 ?좏깮. ?⑦봽 ?좏깮 ?곹깭?몃뜲 ?대옒?ㅺ? 鍮꾩뼱 ?덈뒗 寃쎌슦??
+	// OJJ_SelectFoundationKind 寃뚯씠?멸? 李⑤떒?섎?濡??뺤긽 ?먮쫫?먯꽑 ?꾨떖 遺덇? ??洹몃옒??null?대㈃
+	// ?ъ슜泥??몃쾭/諛곗튂)??湲곗〈 null 媛?쒓? ?숈옉?쒕떎.
 	return bRampFoundationSelected ? RampFoundationClass : FlatFoundationClass;
 }
 
 void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHitResult& Hit)
 {
-	// 머신 호버와 동일한 표면 게이트: floor/머신 위에서만 유효(그 외 표면은 off-grid — 프리뷰 클리어).
-	// 머신 위 호버는 점유 셀로 매핑돼 CanPlaceFoundation occupied 게이트가 빨강 표시 — 의도된 피드백.
-	// (배치된 Foundation 슬래브는 NoCollision이라 트레이스가 통과해 floor에 닿음 → 겹침 빨강도 정상 동작.)
+	// 癒몄떊 ?몃쾭? ?숈씪???쒕㈃ 寃뚯씠?? floor/癒몄떊 ?꾩뿉?쒕쭔 ?좏슚(洹????쒕㈃? off-grid ???꾨━酉??대━??.
+	// 癒몄떊 ???몃쾭???먯쑀 ?濡?留ㅽ븨??CanPlaceFoundation occupied 寃뚯씠?멸? 鍮④컯 ?쒖떆 ???섎룄???쇰뱶諛?
+	// (諛곗튂??Foundation ?щ옒釉뚮뒗 NoCollision?대씪 ?몃젅?댁뒪媛 ?듦낵??floor???우쓬 ??寃뱀묠 鍮④컯???뺤긽 ?숈옉.)
 	UPrimitiveComponent* HitComp = Hit.GetComponent();
 	AActor* HitActor = Hit.GetActor();
 	const bool bHitFloor = (HitComp == TargetGrid->GetGridFloorMesh());
 	const bool bHitMachine = HitActor && HitActor->IsA<AMachineBase>();
-	// F1-c: 기존 슬래브 위 호버도 유효(겹침은 CanPlaceFoundation이 빨강으로 — 인접 확장 배치 UX).
+	// F1-c: 湲곗〈 ?щ옒釉????몃쾭???좏슚(寃뱀묠? CanPlaceFoundation??鍮④컯?쇰줈 ???몄젒 ?뺤옣 諛곗튂 UX).
 	const bool bHitFoundation = HitActor && HitActor->IsA<AOJJ_Foundation>();
-	// F2-1' 사각지대 해소: 평면 위(+델타) 지형의 Landscape 선히트 허용 — 머신 게이트와 동일 사유/처리.
+	// F2-1' ?ш컖吏? ?댁냼: ?됰㈃ ??+?명?) 吏?뺤쓽 Landscape ?좏엳???덉슜 ??癒몄떊 寃뚯씠?몄? ?숈씪 ?ъ쑀/泥섎━.
 	const bool bHitLandscape = HitActor && HitActor->IsA<ALandscapeProxy>();
 	if (!bHitFloor && !bHitMachine && !bHitFoundation && !bHitLandscape)
 	{
@@ -1256,7 +1255,7 @@ void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHi
 		return;
 	}
 
-	// 머신 경로와 동일한 동일-셀 ISM 리빌드 스킵(Tick 경로 비용 절감).
+	// 癒몄떊 寃쎈줈? ?숈씪???숈씪-? ISM 由щ퉴???ㅽ궢(Tick 寃쎈줈 鍮꾩슜 ?덇컧).
 	if (CursorCell == CurrentHoverCell)
 	{
 		return;
@@ -1266,24 +1265,24 @@ void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHi
 	const AOJJ_Foundation* DefaultFoundation = ActiveClass ? ActiveClass.GetDefaultObject() : nullptr;
 	if (!DefaultFoundation)
 	{
-		// 활성 클래스가 비어 있으면(예: 램프 선택 상태에서 PIE 중 에디터로 클래스 비움) 이전 종류
-		// 프리뷰가 stale로 남지 않게 정리 후 반환(Codex F3-2.5 ④ RISK 방어).
+		// ?쒖꽦 ?대옒?ㅺ? 鍮꾩뼱 ?덉쑝硫??? ?⑦봽 ?좏깮 ?곹깭?먯꽌 PIE 以??먮뵒?곕줈 ?대옒??鍮꾩?) ?댁쟾 醫낅쪟
+		// ?꾨━酉곌? stale濡??⑥? ?딄쾶 ?뺣━ ??諛섑솚(Codex F3-2.5 ??RISK 諛⑹뼱).
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 		return;
 	}
 
-	// F3.6-0(㉽): 풋프린트는 CDO 훅이 산출 — 베이스는 기존 정적 산출(홀수 step 스왑 + origin 공통
-	// 수식)과 동작 동일(회귀 0). 자동 맞춤 램프(F3.6-1)부터 커서+그리드 상태 기반 동적 풋프린트가
-	// override로 들어온다(CDO 호출 — spawn 부작용 없음은 종전과 동일).
+	// F3.6-0(??: ?뗮봽由고듃??CDO ?낆씠 ?곗텧 ??踰좎씠?ㅻ뒗 湲곗〈 ?뺤쟻 ?곗텧(???step ?ㅼ솑 + origin 怨듯넻
+	// ?섏떇)怨??숈옉 ?숈씪(?뚭? 0). ?먮룞 留욎땄 ?⑦봽(F3.6-1)遺??而ㅼ꽌+洹몃━???곹깭 湲곕컲 ?숈쟻 ?뗮봽由고듃媛
+	// override濡??ㅼ뼱?⑤떎(CDO ?몄텧 ??spawn 遺?묒슜 ?놁쓬? 醫낆쟾怨??숈씪).
 	const FOJJFoundationFitResult Fit = DefaultFoundation->OJJ_ComputeHoverFootprint(
 		*TargetGrid, CursorCell, HoverRotationSteps);
-	// F3.6-1(㊂): 풋프린트 구성 불가(자동 맞춤 경사 한계)는 클릭도 같은 훅 bValid로 거부 — 빨강 강제로
-	// 색 단일 진실원 유지. 사유 텍스트는 클릭 시 로그(아래 호버 로그에도 동반 — 셀 변경 시만이라 저빈도).
+	// F3.6-1(??: ?뗮봽由고듃 援ъ꽦 遺덇?(?먮룞 留욎땄 寃쎌궗 ?쒓퀎)???대┃??媛숈? ??bValid濡?嫄곕? ??鍮④컯 媛뺤젣濡?
+	// ???⑥씪 吏꾩떎???좎?. ?ъ쑀 ?띿뒪?몃뒗 ?대┃ ??濡쒓렇(?꾨옒 ?몃쾭 濡쒓렇?먮룄 ?숇컲 ??? 蹂寃??쒕쭔?대씪 ?鍮덈룄).
 	TargetGrid->OJJ_UpdateFoundationHoverPreview(Fit.Origin, Fit.EffSize, !Fit.bValid);
 
-	// 고스트 프리뷰(#187): 평판 전용. 색 판정원은 호버 타일과 동일(Fit.bValid AND CanPlaceFoundation)로 일치.
-	// 램프는 후속 범위라 고스트 미표시 — OJJ_HideGhost로 전환 잔존 방지(ClearHoverPreview도 숨기지만 명시적).
+	// 怨좎뒪???꾨━酉?#187): ?됲뙋 ?꾩슜. ???먯젙?먯? ?몃쾭 ??쇨낵 ?숈씪(Fit.bValid AND CanPlaceFoundation)濡??쇱튂.
+	// ?⑦봽???꾩냽 踰붿쐞??怨좎뒪??誘명몴????OJJ_HideGhost濡??꾪솚 ?붿〈 諛⑹?(ClearHoverPreview???④린吏留?紐낆떆??.
 	if (!bRampFoundationSelected)
 	{
 		FString GhostReason;
@@ -1295,14 +1294,14 @@ void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHi
 	{
 		TargetGrid->OJJ_HideGhost();
 	}
-	// ㊁ 보강: 방향 출처 표시 — 자동(이웃 낮→높) vs 수동(R) 이원화의 UX 방어. 평판은 출처가 비어
-	// 있어 무로그(스팸 0), 램프만 셀 변경 시 1줄.
+	// ??蹂닿컯: 諛⑺뼢 異쒖쿂 ?쒖떆 ???먮룞(?댁썐 ??넂?? vs ?섎룞(R) ?댁썝?붿쓽 UX 諛⑹뼱. ?됲뙋? 異쒖쿂媛 鍮꾩뼱
+	// ?덉뼱 臾대줈洹??ㅽ뙵 0), ?⑦봽留?? 蹂寃???1以?
 	if (!Fit.DirectionSource.IsEmpty())
 	{
 		const FString InvalidSuffix = Fit.bValid
 			? FString()
-			: FString::Printf(TEXT(" — 구성 불가: %s"), *Fit.FailReason);
-		UE_LOG(LogTemp, Log, TEXT("[BuildController] 램프 풋프린트 %s%s"), *Fit.DirectionSource, *InvalidSuffix);
+			: FString::Printf(TEXT(" ??援ъ꽦 遺덇?: %s"), *Fit.FailReason);
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] ?⑦봽 ?뗮봽由고듃 %s%s"), *Fit.DirectionSource, *InvalidSuffix);
 	}
 	CurrentHoverCell = CursorCell;
 }
@@ -1312,15 +1311,15 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 	const TSubclassOf<AOJJ_Foundation> ActiveClass = GetActiveFoundationClass();
 	if (!TargetGrid || !ActiveClass)
 	{
-		// F3-2.5 마이그레이션 안내: 구 FoundationClass 지정은 CoreRedirects가 FlatFoundationClass로
-		// 이관 — 그래도 비어 있으면 BP/레벨 인스턴스에서 재지정 필요.
+		// F3-2.5 留덉씠洹몃젅?댁뀡 ?덈궡: 援?FoundationClass 吏?뺤? CoreRedirects媛 FlatFoundationClass濡?
+		// ?닿? ??洹몃옒??鍮꾩뼱 ?덉쑝硫?BP/?덈꺼 ?몄뒪?댁뒪?먯꽌 ?ъ????꾩슂.
 		UE_LOG(LogTemp, Warning,
-			TEXT("[BuildController] TargetGrid 또는 %s 미설정 — BP/레벨 인스턴스에서 지정 확인(구 FoundationClass는 FlatFoundationClass로 개명됨)"),
+			TEXT("[BuildController] TargetGrid ?먮뒗 %s 誘몄꽕????BP/?덈꺼 ?몄뒪?댁뒪?먯꽌 吏???뺤씤(援?FoundationClass??FlatFoundationClass濡?媛쒕챸??"),
 			bRampFoundationSelected ? TEXT("RampFoundationClass") : TEXT("FlatFoundationClass"));
 		return;
 	}
 
-	// 마우스가 floor 밖이라 호버 갱신이 한 번도 안 됐으면 클릭 무시(머신 경로와 동일).
+	// 留덉슦?ㅺ? floor 諛뽰씠???몃쾭 媛깆떊????踰덈룄 ???먯쑝硫??대┃ 臾댁떆(癒몄떊 寃쎈줈? ?숈씪).
 	if (CurrentHoverCell.X == INT_MIN || CurrentHoverCell.Y == INT_MIN)
 	{
 		return;
@@ -1332,14 +1331,14 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 		return;
 	}
 
-	// 호버와 같은 풋프린트 훅을 사용해야 "미리보기 = 실제 배치" 정합(머신 경로의 핵심 계약과 동일 —
-	// F3.6-0 ㉽: CDO 정적 산출 → 훅. 같은 입력(셀·회전)이면 같은 결과 — 클릭 시 재산출이 진실원).
+	// ?몃쾭? 媛숈? ?뗮봽由고듃 ?낆쓣 ?ъ슜?댁빞 "誘몃━蹂닿린 = ?ㅼ젣 諛곗튂" ?뺥빀(癒몄떊 寃쎈줈???듭떖 怨꾩빟怨??숈씪 ??
+	// F3.6-0 ?? CDO ?뺤쟻 ?곗텧 ???? 媛숈? ?낅젰(?쨌?뚯쟾)?대㈃ 媛숈? 寃곌낵 ???대┃ ???ъ궛異쒖씠 吏꾩떎??.
 	const FOJJFoundationFitResult Fit = DefaultFoundation->OJJ_ComputeHoverFootprint(
 		*TargetGrid, CurrentHoverCell, HoverRotationSteps);
 	if (!Fit.bValid)
 	{
-		// 풋프린트 구성 불가(F3.6-1 자동 맞춤 경사 한계 미달 등 — 베이스/고정 램프는 항상 valid).
-		UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation 배치 거부(풋프린트): %s"), *Fit.FailReason);
+		// ?뗮봽由고듃 援ъ꽦 遺덇?(F3.6-1 ?먮룞 留욎땄 寃쎌궗 ?쒓퀎 誘몃떖 ????踰좎씠??怨좎젙 ?⑦봽????긽 valid).
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation 諛곗튂 嫄곕?(?뗮봽由고듃): %s"), *Fit.FailReason);
 		return;
 	}
 	const FIntPoint EffSize = Fit.EffSize;
@@ -1359,71 +1358,71 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 		ActiveClass, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
 	if (!NewFoundation)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[BuildController] Foundation SpawnActor 실패"));
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] Foundation SpawnActor ?ㅽ뙣"));
 		return;
 	}
 
-	// F3.6-1: 동적 풋프린트 확정값(자동 맞춤 길이/단수)을 액터에 통지 — 등록 전에 저장해
-	// 비주얼(OJJ_NotifyPlacedOnGrid → UpdateSlabVisual)이 등록 데이터와 같은 규격으로 그린다.
+	// F3.6-1: ?숈쟻 ?뗮봽由고듃 ?뺤젙媛??먮룞 留욎땄 湲몄씠/?⑥닔)???≫꽣???듭? ???깅줉 ?꾩뿉 ??ν빐
+	// 鍮꾩＜??OJJ_NotifyPlacedOnGrid ??UpdateSlabVisual)???깅줉 ?곗씠?곗? 媛숈? 洹쒓꺽?쇰줈 洹몃┛??
 	NewFoundation->OJJ_NotifyFitResult(Fit);
 
-	// SurfaceZ = 평면 + Thickness + 스냅 리프트(F2-4 §5-4 — 풋프린트 GroundZ 최고점의 N×100단, 평탄 N=0 =
-	// F1 동작). 좌표/리프트는 그리드 헬퍼(결정점 ② — 데이터/좌표는 그리드, 액터 이동은 컨트롤러).
-	// 액터는 통째로 리프트만큼 위 — 슬래브 상면(액터Z+Thickness)이 SurfaceZ와 자동 일치. 실패 시 즉시 파기.
+	// SurfaceZ = ?됰㈃ + Thickness + ?ㅻ깄 由ы봽??F2-4 짠5-4 ???뗮봽由고듃 GroundZ 理쒓퀬?먯쓽 N횞100?? ?됲깂 N=0 =
+	// F1 ?숈옉). 醫뚰몴/由ы봽?몃뒗 洹몃━???ы띁(寃곗젙???????곗씠??醫뚰몴??洹몃━?? ?≫꽣 ?대룞? 而⑦듃濡ㅻ윭).
+	// ?≫꽣???듭㎏濡?由ы봽?몃쭔???????щ옒釉??곷㈃(?≫꽣Z+Thickness)??SurfaceZ? ?먮룞 ?쇱튂. ?ㅽ뙣 ??利됱떆 ?뚭린.
 	const FVector PlaceLocation = TargetGrid->GetFoundationPlacementLocation(Origin, EffSize);
-	// 높이 결정은 클래스 훅(F3.5 우선순위: ① 이웃 상속 → ② 지형 씨앗 / 램프 ③ 엣지 스냅 → 폴백).
-	// HeightSource는 배치 로그용 출처(결정 ㉷ 보강 — 정책 동작 실측).
-	// F3.6-1(㊁): 회전은 훅이 확정한 유효 step — 자동 맞춤은 부호(낮→높)가 이웃에서 자동, 그 외는
-	// 입력 step 그대로. 스냅/퍼셀 산식/액터 yaw가 전부 같은 값을 써야 낮은 끝 판정이 안 어긋난다.
+	// ?믪씠 寃곗젙? ?대옒????F3.5 ?곗꽑?쒖쐞: ???댁썐 ?곸냽 ????吏???⑥븮 / ?⑦봽 ???ｌ? ?ㅻ깄 ???대갚).
+	// HeightSource??諛곗튂 濡쒓렇??異쒖쿂(寃곗젙 ??蹂닿컯 ???뺤콉 ?숈옉 ?ㅼ륫).
+	// F3.6-1(??: ?뚯쟾? ?낆씠 ?뺤젙???좏슚 step ???먮룞 留욎땄? 遺????넂??媛 ?댁썐?먯꽌 ?먮룞, 洹??몃뒗
+	// ?낅젰 step 洹몃?濡? ?ㅻ깄/?쇱? ?곗떇/?≫꽣 yaw媛 ?꾨? 媛숈? 媛믪쓣 ?⑥빞 ??? ???먯젙?????닿툔?쒕떎.
 	FString HeightSource;
 	const float SnapLift = NewFoundation->OJJ_ComputeSnapLift(
 		*TargetGrid, Origin, EffSize, Fit.EffectiveRotationSteps, &HeightSource);
 	const FVector SnappedLocation = PlaceLocation + FVector(0.0f, 0.0f, SnapLift);
 	const float BaseSurfaceZ = SnappedLocation.Z + NewFoundation->GetThickness();
 
-	// F3-2: 비평탄(램프) Foundation은 셀별 SurfaceZ — 산식은 클래스 책임(결정 ㉲), 등록은 PerCell 경유
-	// (그리드가 불변식 검증). 평탄은 기존 단일값 경로 그대로(배열 미생성).
+	// F3-2: 鍮꾪룊???⑦봽) Foundation? ?蹂?SurfaceZ ???곗떇? ?대옒??梨낆엫(寃곗젙 ??, ?깅줉? PerCell 寃쎌쑀
+	// (洹몃━?쒓? 遺덈???寃利?. ?됲깂? 湲곗〈 ?⑥씪媛?寃쎈줈 洹몃?濡?諛곗뿴 誘몄깮??.
 	FString OutReason;
 	TArray<float> CellZs;
-	// #261: 한쪽 지면 램프면 등록 장부의 지면-아래 셀을 지면으로 클램프(오버레이/클릭/컨베이어가 지면에서 만남).
-	// span 검증은 원본 CellZs로 그대로, 쐐기 메시는 별개 산출이라 무변경 — 일반/양쪽 램프엔 false라 영향 없음.
+	// #261: ?쒖そ 吏硫??⑦봽硫??깅줉 ?λ???吏硫??꾨옒 ???吏硫댁쑝濡??대옩???ㅻ쾭?덉씠/?대┃/而⑤쿋?댁뼱媛 吏硫댁뿉??留뚮궓).
+	// span 寃利앹? ?먮낯 CellZs濡?洹몃?濡? ?먭린 硫붿떆??蹂꾧컻 ?곗텧?대씪 臾대?寃????쇰컲/?묒そ ?⑦봽??false???곹뼢 ?놁쓬.
 	const bool bPlaced = NewFoundation->OJJ_BuildPerCellSurfaceZ(EffSize, Fit.EffectiveRotationSteps, BaseSurfaceZ, Fit.RiseSteps, CellZs)
 		? TargetGrid->OJJ_TryPlaceFoundationPerCell(NewFoundation, Origin, EffSize, CellZs, OutReason, Fit.bOneSideGroundRamp)
 		: TargetGrid->TryPlaceFoundation(NewFoundation, Origin, EffSize, BaseSurfaceZ, OutReason);
 	if (!bPlaced)
 	{
-		// OutReason에 사유별 셀 수(water/occupied/overlap 등) — F1-b 디버깅·waterZ 재검토 실측 데이터.
-		UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation 배치 불가: %s"), *OutReason);
+		// OutReason???ъ쑀蹂?? ??water/occupied/overlap ?? ??F1-b ?붾쾭源끒톣aterZ ?ш????ㅼ륫 ?곗씠??
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation 諛곗튂 遺덇?: %s"), *OutReason);
 		NewFoundation->Destroy();
 		return;
 	}
 
-	// F3-0(㉱): 액터 yaw = 90°×step — 로컬 Size 메시가 월드에서 EffSize 풋프린트와 정렬(머신 :873 패턴).
-	// 정사각 평판 큐브는 시각 동일(회귀 0). step은 훅 확정값(F3.6-1 ㊁ — 산식과 동일 회전 규약).
+	// F3-0(??: ?≫꽣 yaw = 90째횞step ??濡쒖뺄 Size 硫붿떆媛 ?붾뱶?먯꽌 EffSize ?뗮봽由고듃? ?뺣젹(癒몄떊 :873 ?⑦꽩).
+	// ?뺤궗媛??됲뙋 ?먮툕???쒓컖 ?숈씪(?뚭? 0). step? ???뺤젙媛?F3.6-1 ?????곗떇怨??숈씪 ?뚯쟾 洹쒖빟).
 	NewFoundation->SetActorLocationAndRotation(
 		SnappedLocation, FRotator(0.0f, 90.0f * Fit.EffectiveRotationSteps, 0.0f));
 	NewFoundation->OJJ_NotifyPlacedOnGrid(TargetGrid);
 
-	// N + 높이 출처(결정 ⑤·㉷ 보강) + 방향 출처(㊁ 보강 — 자동/수동) 기록 — 정책 동작 실측.
-	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s Foundation 배치 성공 (%dx%d, R=%d, N=%d단, %s%s%s)"),
+	// N + ?믪씠 異쒖쿂(寃곗젙 ?ㅒ룔돴 蹂닿컯) + 諛⑺뼢 異쒖쿂(??蹂닿컯 ???먮룞/?섎룞) 湲곕줉 ???뺤콉 ?숈옉 ?ㅼ륫.
+	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s Foundation 諛곗튂 ?깃났 (%dx%d, R=%d, N=%d?? %s%s%s)"),
 		*Origin.ToString(), EffSize.X, EffSize.Y, Fit.EffectiveRotationSteps,
 		FMath::RoundToInt(SnapLift / AOJJ_Grid::OJJ_FoundationSnapStep), *HeightSource,
 		Fit.DirectionSource.IsEmpty() ? TEXT("") : TEXT(", "), *Fit.DirectionSource);
 
-	// F2-4 후속 ①: 풋프린트에 깔린 Pawn을 상면으로 올려태움(F3-2부터 셀별 SurfaceZ — 등록 데이터를
-	// 그리드에서 읽음). 후속 ② 캐시도 리셋 — 셀은 그대로여도 비주얼 Z가 상면으로 바뀌므로 강제 재적재.
+	// F2-4 ?꾩냽 ?? ?뗮봽由고듃??源붾┛ Pawn???곷㈃?쇰줈 ?щ젮?쒖?(F3-2遺???蹂?SurfaceZ ???깅줉 ?곗씠?곕?
+	// 洹몃━?쒖뿉???쎌쓬). ?꾩냽 ??罹먯떆??由ъ뀑 ???? 洹몃?濡쒖뿬??鍮꾩＜??Z媛 ?곷㈃?쇰줈 諛붾뚮?濡?媛뺤젣 ?ъ쟻??
 	OJJ_LiftPawnsOntoFoundation(Origin, EffSize, NewFoundation->GetThickness());
 	CharacterOverlayCells.Reset();
 
-	// 직전 영역이 이제 커버됨(겹침 금지) → 다음 호버에서 빨강 재표시 강제(머신 경로와 동일).
+	// 吏곸쟾 ?곸뿭???댁젣 而ㅻ쾭??寃뱀묠 湲덉?) ???ㅼ쓬 ?몃쾭?먯꽌 鍮④컯 ?ы몴??媛뺤젣(癒몄떊 寃쎈줈? ?숈씪).
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 }
 
 void AOJJ_BuildController::OJJ_LiftPawnsOntoFoundation(FIntPoint Origin, FIntPoint Size, float SlabThickness)
 {
-	// 서버 권위 — 배치(TryPlaceFoundation의 HasAuthority)와 같은 흐름. 모든 Pawn 대상(멀티 대비).
-	// 배치 성공 직후 호출되므로 셀별 SurfaceZ는 그리드 등록 데이터(GetFoundationSurfaceZ)가 진실원 —
-	// 평판(전 셀 동일)과 램프(F3-2 계단)를 같은 코드로 처리(㉳).
+	// ?쒕쾭 沅뚯쐞 ??諛곗튂(TryPlaceFoundation??HasAuthority)? 媛숈? ?먮쫫. 紐⑤뱺 Pawn ???硫???鍮?.
+	// 諛곗튂 ?깃났 吏곹썑 ?몄텧?섎?濡??蹂?SurfaceZ??洹몃━???깅줉 ?곗씠??GetFoundationSurfaceZ)媛 吏꾩떎????
+	// ?됲뙋(??? ?숈씪)怨??⑦봽(F3-2 怨꾨떒)瑜?媛숈? 肄붾뱶濡?泥섎━(??.
 	if (!HasAuthority() || !TargetGrid)
 	{
 		return;
@@ -1448,7 +1447,7 @@ void AOJJ_BuildController::OJJ_LiftPawnsOntoFoundation(FIntPoint Origin, FIntPoi
 		const float Feet = Loc.Z - HalfHeight;
 		const float Head = Loc.Z + HalfHeight;
 
-		// 캡슐이 걸친 셀 범위(WorldToGrid — XY 전용, 셀 반올림 규칙 공유) ∩ 풋프린트.
+		// 罹≪뒓??嫄몄튇 ? 踰붿쐞(WorldToGrid ??XY ?꾩슜, ? 諛섏삱由?洹쒖튃 怨듭쑀) ???뗮봽由고듃.
 		const FIntPoint MinCell = TargetGrid->WorldToGrid(Loc - FVector(Radius, Radius, 0.0f));
 		const FIntPoint MaxCell = TargetGrid->WorldToGrid(Loc + FVector(Radius, Radius, 0.0f));
 		const int32 IterMinX = FMath::Max(MinCell.X, Origin.X);
@@ -1456,9 +1455,9 @@ void AOJJ_BuildController::OJJ_LiftPawnsOntoFoundation(FIntPoint Origin, FIntPoi
 		const int32 IterMinY = FMath::Max(MinCell.Y, Origin.Y);
 		const int32 IterMaxY = FMath::Min(MaxCell.Y, Origin.Y + Size.Y - 1);
 
-		// 셀별 판정: 캡슐이 그 셀 슬래브 구간 [상면−두께, 상면]과 겹칠 때만 — 발이 이미 상면 이상이면
-		// no-op, 머리가 슬래브 바닥 아래면(높은 단 밑 갭 보행 — 결정 ⑥) 간섭 없음. 올림 목표는
-		// 걸린 셀 상면의 max(램프 위면 더 높은 행 기준 — 재끼임 방지).
+		// ?蹂??먯젙: 罹≪뒓??洹?? ?щ옒釉?援ш컙 [?곷㈃?믩몢猿? ?곷㈃]怨?寃뱀튌 ?뚮쭔 ??諛쒖씠 ?대? ?곷㈃ ?댁긽?대㈃
+		// no-op, 癒몃━媛 ?щ옒釉?諛붾떏 ?꾨옒硫??믪? ??諛?媛?蹂댄뻾 ??寃곗젙 ?? 媛꾩꽠 ?놁쓬. ?щ┝ 紐⑺몴??
+		// 嫄몃┛ ? ?곷㈃??max(?⑦봽 ?꾨㈃ ???믪? ??湲곗? ???щ겮??諛⑹?).
 		float LiftToZ = 0.0f;
 		bool bLift = false;
 		for (int32 X = IterMinX; X <= IterMaxX; ++X)
@@ -1482,11 +1481,11 @@ void AOJJ_BuildController::OJJ_LiftPawnsOntoFoundation(FIntPoint Origin, FIntPoi
 			continue;
 		}
 
-		// 상면 + 캡슐 반높이(+2 초기 침투 방지 — 착지는 중력이 정리). XY 유지("깔면 올라탐").
-		// 위 공간이 다른 액터로 막힌 경우의 정교한 처리는 백로그 — 일단 올리고 로그로 추적.
+		// ?곷㈃ + 罹≪뒓 諛섎넂??+2 珥덇린 移⑦닾 諛⑹? ??李⑹???以묐젰???뺣━). XY ?좎?("源붾㈃ ?щ씪??).
+		// ??怨듦컙???ㅻⅨ ?≫꽣濡?留됲엺 寃쎌슦???뺢탳??泥섎━??諛깅줈洹????쇰떒 ?щ━怨?濡쒓렇濡?異붿쟻.
 		const FVector NewLoc(Loc.X, Loc.Y, LiftToZ + HalfHeight + 2.0f);
 		Pawn->SetActorLocation(NewLoc, /*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
-		UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation 배치 — Pawn 올려태움: %s Z %.1f→%.1f (상면 %.1f)"),
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] Foundation 諛곗튂 ??Pawn ?щ젮?쒖?: %s Z %.1f??.1f (?곷㈃ %.1f)"),
 			*Pawn->GetName(), Loc.Z, NewLoc.Z, LiftToZ);
 	}
 }
@@ -1498,7 +1497,7 @@ void AOJJ_BuildController::UpdateCharacterCellOverlay()
 		return;
 	}
 
-	// 로컬 플레이어만(F2-4 후속 ② — 타 플레이어 표시는 백로그). Pawn 없음(관전 등)이면 표시 제거 경로.
+	// 濡쒖뺄 ?뚮젅?댁뼱留?F2-4 ?꾩냽 ????? ?뚮젅?댁뼱 ?쒖떆??諛깅줈洹?. Pawn ?놁쓬(愿?????대㈃ ?쒖떆 ?쒓굅 寃쎈줈.
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
 
@@ -1509,7 +1508,7 @@ void AOJJ_BuildController::UpdateCharacterCellOverlay()
 		float HalfHeight = 0.0f;
 		Pawn->GetSimpleCollisionCylinder(Radius, HalfHeight);
 		const FVector Loc = Pawn->GetActorLocation();
-		// 캡슐 풋프린트가 걸친 셀(보통 1~2, 최대 4) — WorldToGrid가 XY만 쓰므로 Z 무관. off-grid는 제외.
+		// 罹≪뒓 ?뗮봽由고듃媛 嫄몄튇 ?(蹂댄넻 1~2, 理쒕? 4) ??WorldToGrid媛 XY留??곕?濡?Z 臾닿?. off-grid???쒖쇅.
 		const FIntPoint MinCell = TargetGrid->WorldToGrid(Loc - FVector(Radius, Radius, 0.0f));
 		const FIntPoint MaxCell = TargetGrid->WorldToGrid(Loc + FVector(Radius, Radius, 0.0f));
 		for (int32 X = MinCell.X; X <= MaxCell.X; ++X)
@@ -1525,7 +1524,7 @@ void AOJJ_BuildController::UpdateCharacterCellOverlay()
 		}
 	}
 
-	// 셀 좌표 변경 시에만 ISM 재빌드(계약 — 비교는 ≤4원소라 틱 비용 무시 가능).
+	// ? 醫뚰몴 蹂寃??쒖뿉留?ISM ?щ퉴??怨꾩빟 ??鍮꾧탳?????먯냼????鍮꾩슜 臾댁떆 媛??.
 	if (Cells != CharacterOverlayCells)
 	{
 		CharacterOverlayCells = Cells;
@@ -1533,7 +1532,7 @@ void AOJJ_BuildController::UpdateCharacterCellOverlay()
 	}
 }
 
-// === Conveyor 입력 (Step 6 — Dummy 원본 이식(parity)) ===
+// === Conveyor ?낅젰 (Step 6 ??Dummy ?먮낯 ?댁떇(parity)) ===
 
 void AOJJ_BuildController::OnLeftClickReleased()
 {
@@ -1559,11 +1558,11 @@ bool AOJJ_BuildController::ComputeLadderPlacement(
 		return false;
 	}
 
-	// 커서 셀을 덮는 Foundation을 찾는다(슬래브는 NoCollision이라 레이는 floor를 맞지만 XY 셀은 Foundation 위).
+	// 而ㅼ꽌 ?????뒗 Foundation??李얜뒗???щ옒釉뚮뒗 NoCollision?대씪 ?덉씠??floor瑜?留욎?留?XY ?? Foundation ??.
 	AActor* Foundation = TargetGrid->GetFoundationAtCell(CursorCell);
 	if (!Foundation)
 	{
-		return false; // Foundation 위가 아님 → 무효(호출자가 빨강/숨김 처리).
+		return false; // Foundation ?꾧? ?꾨떂 ??臾댄슚(?몄텧?먭? 鍮④컯/?④? 泥섎━).
 	}
 	const TArray<FIntPoint>* FootprintCells = TargetGrid->GetFoundationCells(Foundation);
 	if (!FootprintCells || FootprintCells->Num() == 0)
@@ -1571,18 +1570,18 @@ bool AOJJ_BuildController::ComputeLadderPlacement(
 		return false;
 	}
 
-	// 기준점 = 커서 셀 중심. 호버/클릭 모두 셀 단위라 같은 입력 → 같은 변(미리보기 = 배치 결정적 정합).
+	// 湲곗???= 而ㅼ꽌 ? 以묒떖. ?몃쾭/?대┃ 紐⑤몢 ? ?⑥쐞??媛숈? ?낅젰 ??媛숈? 蹂(誘몃━蹂닿린 = 諛곗튂 寃곗젙???뺥빀).
 	const FVector CursorRef = TargetGrid->GridToWorld(CursorCell);
 
-	// 4방향 — OJJ_Grid의 OJJ_NeighborSteps와 동일(그 배열은 파일 로컬이라 여기 동일 값 재선언).
+	// 4諛⑺뼢 ??OJJ_Grid??OJJ_NeighborSteps? ?숈씪(洹?諛곗뿴? ?뚯씪 濡쒖뺄?대씪 ?ш린 ?숈씪 媛??ъ꽑??.
 	static const FIntPoint Cardinals[4] = { FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1) };
 
-	// 경계 변 후보: 풋프린트 셀 중 이웃이 비-Foundation(지면)이고 그리드 안인 (변셀, 바깥방향, 바깥 지면셀).
-	// 커서 기준점에 XY 최근접인 변셀 선택 → "커서로 조준한 변".
+	// 寃쎄퀎 蹂 ?꾨낫: ?뗮봽由고듃 ? 以??댁썐??鍮?Foundation(吏硫??닿퀬 洹몃━???덉씤 (蹂?, 諛붽묑諛⑺뼢, 諛붽묑 吏硫댁?).
+	// 而ㅼ꽌 湲곗??먯뿉 XY 理쒓렐?묒씤 蹂? ?좏깮 ??"而ㅼ꽌濡?議곗???蹂".
 	bool bFound = false;
-	FIntPoint BestEdgeCell(0, 0);     // Foundation 상면 Z(변 셀)
-	FIntPoint BestGroundCell(0, 0);   // 사다리 바닥/지면 Z(바깥 인접 셀)
-	FIntPoint BestOutwardStep(0, 0);  // 바깥(지면) 방향
+	FIntPoint BestEdgeCell(0, 0);     // Foundation ?곷㈃ Z(蹂 ?)
+	FIntPoint BestGroundCell(0, 0);   // ?щ떎由?諛붾떏/吏硫?Z(諛붽묑 ?몄젒 ?)
+	FIntPoint BestOutwardStep(0, 0);  // 諛붽묑(吏硫? 諛⑺뼢
 	float BestDistSq = TNumericLimits<float>::Max();
 	for (const FIntPoint& Cell : *FootprintCells)
 	{
@@ -1591,11 +1590,11 @@ bool AOJJ_BuildController::ComputeLadderPlacement(
 			const FIntPoint Neighbor = Cell + Step;
 			if (TargetGrid->IsCellOnFoundation(Neighbor))
 			{
-				continue; // 이웃도 Foundation → 내부(변 아님).
+				continue; // ?댁썐??Foundation ???대?(蹂 ?꾨떂).
 			}
 			if (!TargetGrid->IsValidGridCell(Neighbor))
 			{
-				continue; // 그리드 밖 → 바깥 지면 셀 산출 불가.
+				continue; // 洹몃━??諛???諛붽묑 吏硫?? ?곗텧 遺덇?.
 			}
 			const FVector EdgeCenter = TargetGrid->GridToWorld(Cell);
 			const float dx = EdgeCenter.X - CursorRef.X;
@@ -1616,7 +1615,7 @@ bool AOJJ_BuildController::ComputeLadderPlacement(
 		return false;
 	}
 
-	// 높이 = Foundation 상면 Z(변 셀) − 지면 Z(바깥 인접 셀).
+	// ?믪씠 = Foundation ?곷㈃ Z(蹂 ?) ??吏硫?Z(諛붽묑 ?몄젒 ?).
 	float TopZ = 0.0f;
 	if (!TargetGrid->GetFoundationSurfaceZ(BestEdgeCell, TopZ))
 	{
@@ -1625,32 +1624,32 @@ bool AOJJ_BuildController::ComputeLadderPlacement(
 	float GroundZ = 0.0f;
 	if (!TargetGrid->OJJ_GetRawTerrainSurfaceZ(BestGroundCell, GroundZ))
 	{
-		// 베이크 지형 Z 없으면(미베이크) 그리드 평면 Z 폴백 — 평면 레벨에서도 동작.
+		// 踰좎씠??吏??Z ?놁쑝硫?誘몃쿋?댄겕) 洹몃━???됰㈃ Z ?대갚 ???됰㈃ ?덈꺼?먯꽌???숈옉.
 		GroundZ = TargetGrid->GridToWorld(BestGroundCell).Z;
 	}
 	const float Height = TopZ - GroundZ;
 	if (Height <= 1.0f)
 	{
-		return false; // 지면과 동일/역전 → 사다리 불필요(무효).
+		return false; // 吏硫닿낵 ?숈씪/??쟾 ???щ떎由?遺덊븘??臾댄슚).
 	}
 
-	// 바닥 XY = Foundation 벽면(edge 셀 ↔ 바깥 지면 셀 경계 라인)에 사다리 중심을 붙인다(#184 벽면 정렬).
-	// 바깥 지면 셀 "중앙"에 두면 벽에서 half-cell 떨어져 보이므로, 두 셀 중심의 중점(=정확히 벽면 라인)을 쓴다.
-	// 변마다 법선 방향이 달라도 중점이 자동으로 그 변의 벽면에 맞음(북/남/동/서 공통, CellSize 무의존). Z는 지면 유지.
-	// ⚠️ 메시 두께(placeholder Cube ~20uu) 보정은 PIE 후 미세조정 — 우선 벽면 라인에 중심 정렬.
+	// 諛붾떏 XY = Foundation 踰쎈㈃(edge ? ??諛붽묑 吏硫?? 寃쎄퀎 ?쇱씤)???щ떎由?以묒떖??遺숈씤??#184 踰쎈㈃ ?뺣젹).
+	// 諛붽묑 吏硫?? "以묒븰"???먮㈃ 踰쎌뿉??half-cell ?⑥뼱??蹂댁씠誘濡? ??? 以묒떖??以묒젏(=?뺥솗??踰쎈㈃ ?쇱씤)???대떎.
+	// 蹂留덈떎 踰뺤꽑 諛⑺뼢???щ씪??以묒젏???먮룞?쇰줈 洹?蹂??踰쎈㈃??留욎쓬(遺???????怨듯넻, CellSize 臾댁쓽議?. Z??吏硫??좎?.
+	// ?좑툘 硫붿떆 ?먭퍡(placeholder Cube ~20uu) 蹂댁젙? PIE ??誘몄꽭議곗젙 ???곗꽑 踰쎈㈃ ?쇱씤??以묒떖 ?뺣젹.
 	const FVector EdgeCenter = TargetGrid->GridToWorld(BestEdgeCell);
 	const FVector GroundCenter = TargetGrid->GridToWorld(BestGroundCell);
 	const FVector WallMid = (EdgeCenter + GroundCenter) * 0.5f;
 	OutBottomLocation = FVector(WallMid.X, WallMid.Y, GroundZ);
 	const FVector InwardDir(-(float)BestOutwardStep.X, -(float)BestOutwardStep.Y, 0.0f);
-	OutRotation = InwardDir.Rotation(); // cardinal → yaw 0/90/180/270 (전방 +X = Foundation 향함)
+	OutRotation = InwardDir.Rotation(); // cardinal ??yaw 0/90/180/270 (?꾨갑 +X = Foundation ?ν븿)
 	OutClimbHeight = Height;
 	return true;
 }
 
 void AOJJ_BuildController::UpdateLadderHover(FIntPoint CursorCell, const FHitResult& Hit)
 {
-	// 표면 게이트 — Foundation 호버와 동일(floor/머신/Foundation/Landscape 위에서만 유효, 그 외 off-grid).
+	// ?쒕㈃ 寃뚯씠????Foundation ?몃쾭? ?숈씪(floor/癒몄떊/Foundation/Landscape ?꾩뿉?쒕쭔 ?좏슚, 洹???off-grid).
 	UPrimitiveComponent* HitComp = Hit.GetComponent();
 	AActor* HitActor = Hit.GetActor();
 	const bool bHitFloor = (HitComp == TargetGrid->GetGridFloorMesh());
@@ -1659,25 +1658,25 @@ void AOJJ_BuildController::UpdateLadderHover(FIntPoint CursorCell, const FHitRes
 	const bool bHitLandscape = HitActor && HitActor->IsA<ALandscapeProxy>();
 	if (!bHitFloor && !bHitMachine && !bHitFoundation && !bHitLandscape)
 	{
-		// ClearHoverPreview = ISM 타일/화살표 클리어 + 고스트 숨김(OJJ_HideGhost만으론 ISM 잔존). off-grid 퇴장 정리.
+		// ClearHoverPreview = ISM ????붿궡???대━??+ 怨좎뒪???④?(OJJ_HideGhost留뚯쑝濡?ISM ?붿〈). off-grid ?댁옣 ?뺣━.
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 		return;
 	}
 
-	// 동일-셀 ISM/고스트 리빌드 스킵(Tick 비용 절감) — 머신/Foundation 경로와 동일.
+	// ?숈씪-? ISM/怨좎뒪??由щ퉴???ㅽ궢(Tick 鍮꾩슜 ?덇컧) ??癒몄떊/Foundation 寃쎈줈? ?숈씪.
 	if (CursorCell == CurrentHoverCell)
 	{
 		return;
 	}
 	CurrentHoverCell = CursorCell;
 
-	// [#184] 이전 모드(머신/Foundation)의 ISM 호버 타일/화살표 잔존 제거 — 사다리는 ISM 미사용(고스트만)이라
-	// 직접 안 지우면 모드 전환 시 스테일 타일이 사다리 고스트 밑에 남는다. ClearHoverPreview가 ISM+화살표 클리어
-	// 후 고스트도 숨기므로, 아래 OJJ_ShowGhostForLadder가 다시 표시(Foundation 호버의 Clear→Show 패턴과 동일).
+	// [#184] ?댁쟾 紐⑤뱶(癒몄떊/Foundation)??ISM ?몃쾭 ????붿궡???붿〈 ?쒓굅 ???щ떎由щ뒗 ISM 誘몄궗??怨좎뒪?몃쭔)?대씪
+	// 吏곸젒 ??吏?곕㈃ 紐⑤뱶 ?꾪솚 ???ㅽ뀒????쇱씠 ?щ떎由?怨좎뒪??諛묒뿉 ?⑤뒗?? ClearHoverPreview媛 ISM+?붿궡???대━??
+	// ??怨좎뒪?몃룄 ?④린誘濡? ?꾨옒 OJJ_ShowGhostForLadder媛 ?ㅼ떆 ?쒖떆(Foundation ?몃쾭??Clear?뭆how ?⑦꽩怨??숈씪).
 	TargetGrid->ClearHoverPreview();
 
-	// 고스트는 엔진 Cube 박스(그리드 내부에서 로드) — 실제 사다리 ISM 메시와 독립. 위치/높이만 전달.
+	// 怨좎뒪?몃뒗 ?붿쭊 Cube 諛뺤뒪(洹몃━???대??먯꽌 濡쒕뱶) ???ㅼ젣 ?щ떎由?ISM 硫붿떆? ?낅┰. ?꾩튂/?믪씠留??꾨떖.
 	FVector BottomLoc;
 	float ClimbHeight = 0.0f;
 	FRotator Rot = FRotator::ZeroRotator;
@@ -1687,7 +1686,7 @@ void AOJJ_BuildController::UpdateLadderHover(FIntPoint CursorCell, const FHitRes
 	}
 	else
 	{
-		// 유효 변 없음(Foundation 위 아님/끝 셀 등) → 빨강 고스트(커서 셀 지면에 기본 높이)로 "여기 불가" 신호.
+		// ?좏슚 蹂 ?놁쓬(Foundation ???꾨떂/??? ?? ??鍮④컯 怨좎뒪??而ㅼ꽌 ? 吏硫댁뿉 湲곕낯 ?믪씠)濡?"?ш린 遺덇?" ?좏샇.
 		const FVector CursorWorld = TargetGrid->GridToWorld(CursorCell);
 		float GroundZ = 0.0f;
 		if (!TargetGrid->OJJ_GetRawTerrainSurfaceZ(CursorCell, GroundZ))
@@ -1703,23 +1702,23 @@ void AOJJ_BuildController::PlaceLadderAtCursor()
 {
 	if (!TargetGrid || !LadderClass)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[BuildController] TargetGrid 또는 LadderClass 미설정"));
+        UE_LOG(LogTemp, Warning, TEXT("[BuildController] TargetGrid or LadderClass is missing."));
 		return;
 	}
 
-	// 마우스가 유효 표면 밖이라 호버 갱신이 한 번도 안 됐으면 클릭 무시(머신/Foundation 경로와 동일).
+	// 留덉슦?ㅺ? ?좏슚 ?쒕㈃ 諛뽰씠???몃쾭 媛깆떊????踰덈룄 ???먯쑝硫??대┃ 臾댁떆(癒몄떊/Foundation 寃쎈줈? ?숈씪).
 	if (CurrentHoverCell.X == INT_MIN || CurrentHoverCell.Y == INT_MIN)
 	{
 		return;
 	}
 
-	// 호버와 같은 입력(CurrentHoverCell)으로 재산출 → "미리보기 = 실제 배치" 정합(Foundation 경로 계약과 동일).
+	// ?몃쾭? 媛숈? ?낅젰(CurrentHoverCell)?쇰줈 ?ъ궛異???"誘몃━蹂닿린 = ?ㅼ젣 諛곗튂" ?뺥빀(Foundation 寃쎈줈 怨꾩빟怨??숈씪).
 	FVector BottomLoc;
 	float ClimbHeight = 0.0f;
 	FRotator Rot = FRotator::ZeroRotator;
 	if (!ComputeLadderPlacement(CurrentHoverCell, BottomLoc, ClimbHeight, Rot))
 	{
-		UE_LOG(LogTemp, Log, TEXT("[BuildController] 사다리 배치 거부 — 커서가 Foundation 변이 아님"));
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] ?щ떎由?諛곗튂 嫄곕? ??而ㅼ꽌媛 Foundation 蹂???꾨떂"));
 		return;
 	}
 
@@ -1729,20 +1728,20 @@ void AOJJ_BuildController::PlaceLadderAtCursor()
 		return;
 	}
 
-	// 자유 배치(그리드 장부 미등록) — TryPlaceMachine 미경유. SpawnActorDeferred로 FinishSpawning 전에
-	// ClimbHeight를 주입해 OnConstruction(ApplyDimensions)이 올바른 높이로 메시/트리거를 사이징하게 한다.
-	// ⚠️ 액터 스케일은 1 유지(끝점 산식이 스케일 미반영) — 높이는 ClimbHeight로만.
+	// ?먯쑀 諛곗튂(洹몃━???λ? 誘몃벑濡? ??TryPlaceMachine 誘멸꼍?? SpawnActorDeferred濡?FinishSpawning ?꾩뿉
+	// ClimbHeight瑜?二쇱엯??OnConstruction(ApplyDimensions)???щ컮瑜??믪씠濡?硫붿떆/?몃━嫄곕? ?ъ씠吏뺥븯寃??쒕떎.
+	// ?좑툘 ?≫꽣 ?ㅼ??쇱? 1 ?좎?(?앹젏 ?곗떇???ㅼ???誘몃컲?? ???믪씠??ClimbHeight濡쒕쭔.
 	const FTransform SpawnXf(Rot, BottomLoc);
 	AOJJ_Ladder* NewLadder = World->SpawnActorDeferred<AOJJ_Ladder>(
 		LadderClass, SpawnXf, this, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 	if (!NewLadder)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[BuildController] 사다리 SpawnActorDeferred 실패"));
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] ?щ떎由?SpawnActorDeferred ?ㅽ뙣"));
 		return;
 	}
 	NewLadder->OJJ_SetClimbHeight(ClimbHeight);
 	NewLadder->FinishSpawning(SpawnXf);
-	UE_LOG(LogTemp, Log, TEXT("[BuildController] 사다리 배치 — height=%.1f loc=%s"), ClimbHeight, *BottomLoc.ToString());
+	UE_LOG(LogTemp, Log, TEXT("[BuildController] ?щ떎由?諛곗튂 ??height=%.1f loc=%s"), ClimbHeight, *BottomLoc.ToString());
 }
 
 void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
@@ -1752,7 +1751,7 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 		return;
 	}
 
-	// 모드 전환 시 진행 중 드래그는 취소(잔여 상태 방지).
+	// 紐⑤뱶 ?꾪솚 ??吏꾪뻾 以??쒕옒洹몃뒗 痍⑥냼(?붿뿬 ?곹깭 諛⑹?).
 	CancelConveyorDrag();
 	CancelPowerLineDrag();
 	PlacementMode = NewMode;
@@ -1810,7 +1809,7 @@ bool AOJJ_BuildController::GetCursorCell(FIntPoint& OutCell) const
 		return false;
 	}
 
-	OutCell = ResolveCursorCellOverWater(Hit.Location); // #182 물 위 패럴랙스 보정(호버=클릭 동일 셀)
+	OutCell = ResolveCursorCellOverWater(Hit.Location); // #182 臾????⑤윺?숈뒪 蹂댁젙(?몃쾭=?대┃ ?숈씪 ?)
 	return true;
 }
 
@@ -1818,10 +1817,10 @@ FIntPoint AOJJ_BuildController::ResolveCursorCellOverWater(const FVector& Terrai
 {
 	const FIntPoint TerrainCell = TargetGrid->WorldToGrid(TerrainHitLocation);
 
-	// #182 패럴랙스: WaterArea가 Visibility Ignore라 커서 레이가 물을 통과해 물 밑 지형을 맞는다. 깊은 물에선
-	// 그 지형 히트가 보이는 수면 셀에서 십수 칸까지 빗나가(물 밖 육지로) 호버/클릭 셀이 어긋난다. 마우스 레이를
-	// 직접 각 WaterArea 수면 평면과 교차시켜, 지형 히트보다 가까운(=보이는) 수면 셀이 있으면 그 셀을 쓴다.
-	// 물 위가 아니면(육지/머신) 수면 교차가 없어 기존 지형 히트 XY 그대로 — 회귀 0.
+	// #182 ?⑤윺?숈뒪: WaterArea媛 Visibility Ignore??而ㅼ꽌 ?덉씠媛 臾쇱쓣 ?듦낵??臾?諛?吏?뺤쓣 留욌뒗?? 源딆? 臾쇱뿉??
+	// 洹?吏???덊듃媛 蹂댁씠???섎㈃ ??먯꽌 ??닔 移멸퉴吏 鍮쀫굹媛(臾?諛??≪?濡? ?몃쾭/?대┃ ????닿툔?쒕떎. 留덉슦???덉씠瑜?
+	// 吏곸젒 媛?WaterArea ?섎㈃ ?됰㈃怨?援먯감?쒖폒, 吏???덊듃蹂대떎 媛源뚯슫(=蹂댁씠?? ?섎㈃ ????덉쑝硫?洹?????대떎.
+	// 臾??꾧? ?꾨땲硫??≪?/癒몄떊) ?섎㈃ 援먯감媛 ?놁뼱 湲곗〈 吏???덊듃 XY 洹몃?濡????뚭? 0.
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	FVector RayOrigin = FVector::ZeroVector;
 	FVector RayDir = FVector::ZeroVector;
@@ -1840,8 +1839,8 @@ FIntPoint AOJJ_BuildController::ResolveCursorCellOverWater(const FVector& Terrai
 
 void AOJJ_BuildController::UpdatePathDragHoverPreview(const TArray<FIntPoint>& Cells)
 {
-	// F4-1: 컨베이어/파이프가 드래그 상태머신(bIsDraggingConveyor/ConveyorDragCells)을 공용 —
-	// 모드는 동시에 하나라 상태 충돌 없음(SetPlacementMode가 전환 시 드래그 취소). 프리뷰만 분기.
+	// F4-1: 而⑤쿋?댁뼱/?뚯씠?꾧? ?쒕옒洹??곹깭癒몄떊(bIsDraggingConveyor/ConveyorDragCells)??怨듭슜 ??
+	// 紐⑤뱶???숈떆???섎굹???곹깭 異⑸룎 ?놁쓬(SetPlacementMode媛 ?꾪솚 ???쒕옒洹?痍⑥냼). ?꾨━酉곕쭔 遺꾧린.
 	if (PlacementMode == EOJJ_BuildPlacementMode::Pipe)
 	{
 		TargetGrid->OJJ_UpdatePipePathHoverPreview(Cells);
@@ -1900,7 +1899,7 @@ void AOJJ_BuildController::CommitConveyorDrag()
 		return;
 	}
 
-	// F4-1: 파이프 모드는 클래스/정규화/배치만 분기 — 드래그 수집·정리 흐름은 공용.
+	// F4-1: ?뚯씠??紐⑤뱶???대옒???뺢퇋??諛곗튂留?遺꾧린 ???쒕옒洹??섏쭛쨌?뺣━ ?먮쫫? 怨듭슜.
 	const bool bPipeMode = PlacementMode == EOJJ_BuildPlacementMode::Pipe;
 	if (!TargetGrid || (bPipeMode ? !PipeClass : !ConveyorClass) || ConveyorDragCells.Num() == 0)
 	{
@@ -1937,7 +1936,7 @@ void AOJJ_BuildController::CommitConveyorDrag()
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	SpawnParams.Owner = this;
 
-	// F4-1: spawn-validate-destroy 패턴 공용 — 파이프는 클래스/TryPlace만 다름.
+	// F4-1: spawn-validate-destroy ?⑦꽩 怨듭슜 ???뚯씠?꾨뒗 ?대옒??TryPlace留??ㅻ쫫.
 	if (bPipeMode)
 	{
 		APipe* Pipe = World->SpawnActor<APipe>(
@@ -1954,7 +1953,7 @@ void AOJJ_BuildController::CommitConveyorDrag()
 			UE_LOG(LogTemp, Warning, TEXT("[BuildController] OJJ_TryPlacePipe failed: %s"), *OutReason);
 			Pipe->Destroy();
 		}
-		// 파이프는 퀘스트 배치 타깃 미등록(NotifyMainQuestMachinePlaced 비호출 — 컨베이어 전용 훅).
+		// ?뚯씠?꾨뒗 ?섏뒪??諛곗튂 ?源?誘몃벑濡?NotifyMainQuestMachinePlaced 鍮꾪샇異???而⑤쿋?댁뼱 ?꾩슜 ??.
 		ConveyorDragCells.Reset();
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
