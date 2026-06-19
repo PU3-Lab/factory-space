@@ -5,23 +5,23 @@ Smelter_Lv3,Smelter,제련기,3,iron_ingot,10,1000,10,1,1,1,1,5,5,/Game/Assets/U
 Grinder_Lv1,Grinder,분쇄기,1,iron_ingot,10,1000,10,1,1,1,1,5,5,/Game/Assets/UIImg/Machine/Grinder_Lv1.Grinder_Lv1,/Game/SSR/Machine/Grinder/Lv1/SM_Grinder_Lv1.SM_Grinder_Lv1,/Game/SSR/Machine/Grinder/Lv1/M_Grinder_Lv1.M_Grinder_Lv1
 Grinder_Lv2,Grinder,분쇄기,2,iron_ingot,10,1000,10,1,1,1,1,5,5,/Game/Assets/UIImg/Machine/Grinder_Lv2.Grinder_Lv2,/Game/SSR/Machine/Grinder/Lv2/SM_Grinder_Lv2.SM_Grinder_Lv2,/Game/SSR/Machine/Grinder/Lv2/M_Grinder_Lv2.M_Grinder_Lv2
 Grinder_Lv3,Grinder,분쇄기,3,iron_ingot,10,1000,10,1,1,1,1,5,5,/Game/Assets/UIImg/Machine/Grinder_Lv3.Grinder_Lv3,/Game/SSR/Machine/Grinder/Lv3/SM_Grinder_Lv3.SM_Grinder_Lv3,/Game/SSR/Machine/Grinder/Lv3/M_Grinder_Lv3.M_Grinder_Lv3
-MinerMachine_Lv1,MinerMachine,채광기,1,iron_ingot,10,1000,10,1,1,1,1,3,3,/Game/Assets/UIImg/Machine/MinerMachine_Lv1.MinerMachine_Lv1,/Game/SSR/Machine/MinerMachine/Lv1/SM_MinerMachine_Lv1.SM_MinerMachine_Lv1,/Game/SSR/Machine/MinerMachine/Lv1/M_MinerMachine_Lv1.M_MinerMachine_Lv1
-MinerMachine_Lv2,MinerMachine,채광기,2,iron_ingot,10,1000,10,1,1,1,1,3,3,/Game/Assets/UIImg/Machine/MinerMachine_Lv2.MinerMachine_Lv2,/Game/SSR/Machine/MinerMachine/Lv2/SM_MinerMachine_Lv2.SM_MinerMachine_Lv2,/Game/SSR/Machine/MinerMachine/Lv2/M_MinerMachine_Lv2.M_MinerMachine_Lv2
-MinerMachine_Lv3,MinerMachine,채광기,3,iron_ingot,10,1000,10,1,1,1,1,3,3,/Game/Assets/UIImg/Machine/MinerMachine_Lv3.MinerMachine_Lv3,/Game/SSR/Machine/MinerMachine/Lv3/SM_MinerMachine_Lv3.SM_MinerMachine_Lv3,/Game/SSR/Machine/MinerMachine/Lv3/M_MinerMachine_Lv3.M_MinerMachine_Lv3
+MinerMachine_Lv1,MinerMachine,채굴기,1,iron_ingot,10,1000,10,1,1,1,1,3,3,/Game/Assets/UIImg/Machine/MinerMachine_Lv1.MinerMachine_Lv1,/Game/SSR/Machine/MinerMachine/Lv1/SM_MinerMachine_Lv1.SM_MinerMachine_Lv1,/Game/SSR/Machine/MinerMachine/Lv1/M_MinerMachine_Lv1.M_MinerMachine_Lv1
+MinerMachine_Lv2,MinerMachine,채굴기,2,iron_ingot,10,1000,10,1,1,1,1,3,3,/Game/Assets/UIImg/Machine/MinerMachine_Lv2.MinerMachine_Lv2,/Game/SSR/Machine/MinerMachine/Lv2/SM_MinerMachine_Lv2.SM_MinerMachine_Lv2,/Game/SSR/Machine/MinerMachine/Lv2/M_MinerMachine_Lv2.M_MinerMachine_Lv2
+MinerMachine_Lv3,MinerMachine,채굴기,3,iron_ingot,10,1000,10,1,1,1,1,3,3,/Game/Assets/UIImg/Machine/MinerMachine_Lv3.MinerMachine_Lv3,/Game/SSR/Machine/MinerMachine/Lv3/SM_MinerMachine_Lv3.SM_MinerMachine_Lv3,/Game/SSR/Machine/MinerMachine/Lv3/M_MinerMachine_Lv3.M_MinerMachine_Lv3
 Pump_Lv1,Pump,펌프,1,iron_ingot,10,1000,10,1,1,1,1,3,3,/Game/Assets/UIImg/Machine/Pump_Lv1.Pump_Lv1,/Game/SSR/Machine/Pump/Lv1/SM_Pump_Lv1.SM_Pump_Lv1,/Game/SSR/Machine/Pump/Lv1/M_Pump_Lv1.M_Pump_Lv1
 Pump_Lv2,Pump,펌프,2,iron_ingot,10,1000,10,1,1,1,1,3,3,/Game/Assets/UIImg/Machine/Pump_Lv2.Pump_Lv2,/Game/SSR/Machine/Pump/Lv2/SM_Pump_Lv2.SM_Pump_Lv2,/Game/SSR/Machine/Pump/Lv2/M_Pump_Lv2.M_Pump_Lv2
 Pump_Lv3,Pump,펌프,3,iron_ingot,10,1000,10,1,1,1,1,3,3,/Game/Assets/UIImg/Machine/Pump_Lv3.Pump_Lv3,/Game/SSR/Machine/Pump/Lv3/SM_Pump_Lv3.SM_Pump_Lv3,/Game/SSR/Machine/Pump/Lv3/M_Pump_Lv3.M_Pump_Lv3
 AirCompressor_Lv1,AirCompressor,공기 압축기,1,iron_ingot,10,1000,10,1,1,1,1,3,3,/Game/Assets/UIImg/Machine/AirCompressor_Lv1.AirCompressor_Lv1,/Game/SSR/Machine/AirCompressor/Lv1/SM_AirCompressor_Lv1.SM_AirCompressor_Lv1,/Game/SSR/Machine/AirCompressor/Lv1/M_AirCompressor_Lv1.M_AirCompressor_Lv1
 AirCompressor_Lv2,AirCompressor,공기 압축기,2,iron_ingot,10,1000,10,1,1,1,1,3,3,/Game/Assets/UIImg/Machine/AirCompressor_Lv2.AirCompressor_Lv2,/Game/SSR/Machine/AirCompressor/Lv2/SM_AirCompressor_Lv2.SM_AirCompressor_Lv2,/Game/SSR/Machine/AirCompressor/Lv2/M_AirCompressor_Lv2.M_AirCompressor_Lv2
 AirCompressor_Lv3,AirCompressor,공기 압축기,3,iron_ingot,10,1000,10,1,1,1,1,3,3,/Game/Assets/UIImg/Machine/AirCompressor_Lv3.AirCompressor_Lv3,/Game/SSR/Machine/AirCompressor/Lv3/SM_AirCompressor_Lv3.SM_AirCompressor_Lv3,/Game/SSR/Machine/AirCompressor/Lv3/M_AirCompressor_Lv3.M_AirCompressor_Lv3
-PowerPlant,PowerPlant,발전기,1,iron_ingot,10,1000,30,0,0,0,0,4,4,/Game/Assets/UIImg/Machine/PowerPlant.PowerPlant,,
-PowerGridNode,PowerGridNode,전력 노드,1,iron_ingot,10,1000,40,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/PowerGridNode.PowerGridNode,,
-MagneticShield,MagneticShield,자기장 보호막,1,iron_ingot,100,10000,100,0,0,0,0,3,3,/Game/Assets/UIImg/Machine/MagneticShield.MagneticShield,,
+PowerPlant,PowerPlant,발전기,1,iron_ingot,10,1000,30,0,0,0,0,4,4,/Game/Assets/UIImg/Machine/PowerPlant.PowerPlant,/Game/OJJ/MeshyMachines/Meshes/power_plant/StaticMeshes/power_plant.power_plant,/Game/OJJ/MeshyMachines/Meshes/power_plant/Materials/power_plant_material_0.power_plant_material_0
+PowerGridNode,PowerGridNode,송전탑,1,iron_ingot,10,1000,40,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/PowerGridNode.PowerGridNode,/Game/OJJ/MeshyMachines/Meshes/PowerGridNode/StaticMeshes/transmission_tower.transmission_tower,/Game/OJJ/MeshyMachines/Meshes/PowerGridNode/Materials/Material_0_020.Material_0_020
+MagneticShield,MagneticShield,자기장 차폐막,1,iron_ingot,100,10000,100,0,0,0,0,3,3,/Game/Assets/UIImg/Machine/MagneticShield.MagneticShield,/Game/OJJ/MeshyMachines/Meshes/MagneticShield/StaticMeshes/ProtectionTower.ProtectionTower,/Game/OJJ/MeshyMachines/Meshes/MagneticShield/Materials/ProtectionTower_material_0.ProtectionTower_material_0
 Conveyor_Lv1,Conveyor,컨베이어,1,iron_ingot,10,1000,0,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/Conveyor.Conveyor,,
 Conveyor_Lv2,Conveyor,컨베이어,2,iron_ingot,10,1000,0,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/Conveyor.Conveyor,,
 Conveyor_Lv3,Conveyor,컨베이어,3,iron_ingot,10,1000,0,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/Conveyor.Conveyor,,
-WarehousePort,WarehousePort,창고 포트,1,iron_ingot,10,99999,0,1,1,1,1,6,5,,,
-LiquidTank,LiquidTank,액체 탱크,1,iron_ingot,10,99999,0,1,1,1,1,5,5,,,
+WarehousePort,WarehousePort,창고 포트,1,iron_ingot,10,99999,0,1,1,1,1,6,5,/Game/Assets/UIImg/Machine/WarehousePort.WarehousePort,/Game/OJJ/MeshyMachines/Meshes/Storage/StaticMeshes/Storage.Storage,/Game/OJJ/MeshyMachines/Meshes/Storage/Materials/Storage_material_0.Storage_material_0
+LiquidTank,LiquidTank,액체 탱크,1,iron_ingot,10,99999,0,1,1,1,1,5,5,/Game/Assets/UIImg/etc/LiquidTank.LiquidTank,/Game/Assets/Machine/LiquidTank/SM_LiquidTank.SM_LiquidTank,/Game/Assets/Machine/LiquidTank/M_LiquidTank.M_LiquidTank
 Pipe_Lv1,Pipe,파이프,1,iron_ingot,10,1000,0,0,0,0,0,1,1,,,
 Pipe_Lv2,Pipe,파이프,2,iron_ingot,10,1000,0,0,0,0,0,1,1,,,
 Pipe_Lv3,Pipe,파이프,3,iron_ingot,10,1000,0,0,0,0,0,1,1,,,
@@ -32,4 +32,5 @@ MoldingMachine_Lv1,MoldingMachine,성형기,1,iron_ingot,10,1000,10,1,1,1,1,3,4,
 MoldingMachine_Lv2,MoldingMachine,성형기,2,iron_ingot,10,1000,10,1,1,1,1,3,4,/Game/Assets/UIImg/Machine/MoldingMachine_Lv2.MoldingMachine_Lv2,/Game/SSR/Machine/MoldingMachine/Lv2/SM_MoldingMachine_Lv2.SM_MoldingMachine_Lv2,/Game/SSR/Machine/MoldingMachine/Lv2/M_MoldingMachine_Lv2.M_MoldingMachine_Lv2
 MoldingMachine_Lv3,MoldingMachine,성형기,3,iron_ingot,10,1000,10,1,1,1,1,3,4,/Game/Assets/UIImg/Machine/MoldingMachine_Lv3.MoldingMachine_Lv3,/Game/SSR/Machine/MoldingMachine/Lv3/SM_MoldingMachine_Lv3.SM_MoldingMachine_Lv3,/Game/SSR/Machine/MoldingMachine/Lv3/M_MoldingMachine_Lv3.M_MoldingMachine_Lv3
 TeleCommunicationTower,TeleCommunicationTower,통신탑,1,iron_ingot,1,1000,10,0,0,0,0,3,3,/Game/Assets/UIImg/etc/telecommunicationtower.telecommunicationtower,/Game/Assets/TeleCommunication_Tower/SM_TeleCommunication_Tower.SM_TeleCommunication_Tower,/Game/Assets/TeleCommunication_Tower/M_Telecommunication_Tower.M_Telecommunication_Tower
-EscapePod,EscapePod,탈출 포드,1,,0,1000,0,0,0,0,0,4,4,,,
+EscapePod,EscapePid,탈출 포드,1,,0,1000,0,0,0,0,0,4,4,/Game/Assets/UIImg/etc/Cable.Cable,,
+Cable,Cable,전선,1,,,,,,,,,,,,,
