@@ -5,6 +5,7 @@
 
 #include "Camera/CameraComponent.h"
 #include "FactoryAgentClientSubsystem.h"
+#include "FactorySaveSubsystem.h"
 #include "QuestManagerSubsystem.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -28,6 +29,7 @@
 #include "Blueprint/UserWidget.h"
 #include "MachineBase.h"
 #include "UI/UI_MachineInteract.h"
+#include "UI/UI_BuildModeMain.h"
 #include "UI/UI_MainHUD.h"
 #include "UI/UI_Inventory.h"
 #include "UI/UI_WarehouseInteract.h"
@@ -149,6 +151,11 @@ void AOJJ_Player::BeginPlay()
 		{
 			QuestManager->StartTutorialQuestTest();
 		}
+
+		if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+		{
+			SaveSubsystem->HandlePlayerReady(this);
+		}
 	}
 	
 	ConnectFactoryAgentClient();
@@ -164,6 +171,14 @@ void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	// 등반/step-off 중 폰 파괴·언포제스 시 비행/중력0 상태가 남지 않도록 청산(폰 재사용 안전).
 	AbortClimb();
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+		{
+			SaveSubsystem->SaveCurrentGame();
+		}
+	}
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -268,14 +283,6 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	{
 		EnhancedInput->BindAction(IA_SetTankMode, ETriggerEvent::Started, this, &AOJJ_Player::SetTankMode);
 	}
-	if (IA_SetFoundationMode)
-	{
-		EnhancedInput->BindAction(IA_SetFoundationMode, ETriggerEvent::Started, this, &AOJJ_Player::SetFoundationMode);
-	}
-	if (IA_SetRampMode)
-	{
-		EnhancedInput->BindAction(IA_SetRampMode, ETriggerEvent::Started, this, &AOJJ_Player::SetRampFoundationMode);
-	}
 	if (IA_SetPowerNodeMode)
 	{
 		EnhancedInput->BindAction(IA_SetPowerNodeMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerNodeMode);
@@ -346,10 +353,27 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::P, IE_Pressed, this, &AOJJ_Player::SetSynthesizerModeShortcut);
 	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &AOJJ_Player::SetTeleCommunicationTowerModeShortcut);
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AOJJ_Player::SetDemolishModeShortcut);
-	// [#184] C — 사다리 빌드 서브모드(레거시 BindKey, 핸들러에서 IsInBuildMode 가드. IMC 정석 전환은 후속 IMC 정리 때).
-	PlayerInputComponent->BindKey(EKeys::C, IE_Pressed, this, &AOJJ_Player::SetLadderModeShortcut);
-	// Foundation G/H는 #196에서 Enhanced Input(IA_SetFoundationMode/IA_SetRampMode)로 전환 —
-	// 레거시 BindKey 제거(이중발화 차단). 바인딩은 위 BindAction 블록 + IMC_Build/BP 매핑(에디터).
+	// [공용키] 카테고리 무관 — 빌드모드 중 항상 동작. 전부 레거시 BindKey + 핸들러 IsInBuildMode 가드.
+	// 옛 IA_SetFoundationMode(G)/IA_SetRampMode(H) IMC 매핑·IA 에셋은 폐기됨(F/G로 환원).
+	// ⚠️ F는 IA_Interact(머신 상호작용)와 공유 — 빌드모드 중=Foundation, 밖=Interact. 상호배타는
+	// SetFoundationModeShortcut(IsInBuildMode 요구)와 OnInteract(IsInBuildMode면 early-return)의 역가드에 의존.
+	PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AOJJ_Player::SetFoundationModeShortcut);     // 평면 플랫폼
+	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AOJJ_Player::SetRampFoundationModeShortcut); // 경사면
+	PlayerInputComponent->BindKey(EKeys::H, IE_Pressed, this, &AOJJ_Player::SetLadderModeShortcut);         // 사다리(기존 C에서 이동)
+	PlayerInputComponent->BindKey(EKeys::Z, IE_Pressed, this, &AOJJ_Player::CancelPlacementShortcut);       // 마우스 초기화(취소)
+
+	// [카테고리 숫자키] 1~9,0 → 현재 카테고리(LDJ UI_BuildModeMain)의 N번 슬롯 실행. 0키=10번 슬롯.
+	// ⚠️ 옛 IMC_Build 1~0 플랫 매핑(1→IA_SetMachineMode 등)을 에디터에서 제거해야 이중 발화 안 됨.
+	PlayerInputComponent->BindKey(EKeys::One,   IE_Pressed, this, &AOJJ_Player::SetHotbarSlot1);
+	PlayerInputComponent->BindKey(EKeys::Two,   IE_Pressed, this, &AOJJ_Player::SetHotbarSlot2);
+	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &AOJJ_Player::SetHotbarSlot3);
+	PlayerInputComponent->BindKey(EKeys::Four,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot4);
+	PlayerInputComponent->BindKey(EKeys::Five,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot5);
+	PlayerInputComponent->BindKey(EKeys::Six,   IE_Pressed, this, &AOJJ_Player::SetHotbarSlot6);
+	PlayerInputComponent->BindKey(EKeys::Seven, IE_Pressed, this, &AOJJ_Player::SetHotbarSlot7);
+	PlayerInputComponent->BindKey(EKeys::Eight, IE_Pressed, this, &AOJJ_Player::SetHotbarSlot8);
+	PlayerInputComponent->BindKey(EKeys::Nine,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot9);
+	PlayerInputComponent->BindKey(EKeys::Zero,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot10); // 0키 = 10번 슬롯
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -1077,6 +1101,68 @@ void AOJJ_Player::SetLadderModeShortcut()
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Ladder);
 }
 
+// [공용키 F] 평면 Foundation 직행. 레거시 BindKey라 IMC 게이팅 없음 → 빌드모드 가드 필수(Ladder/Demolish 패턴).
+void AOJJ_Player::SetFoundationModeShortcut()
+{
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+	BuildController->OJJ_SelectFoundationKind(false);
+}
+
+// [공용키 G] 경사 RampFoundation 직행.
+void AOJJ_Player::SetRampFoundationModeShortcut()
+{
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+	BuildController->OJJ_SelectFoundationKind(true);
+}
+
+// [공용키 Z] 마우스 초기화 — 들고 있던 placement 고스트 취소(None 모드), 빌드모드/배치된 액터는 그대로.
+void AOJJ_Player::CancelPlacementShortcut()
+{
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::None);
+}
+
+// [카테고리 숫자키] 현재 카테고리의 SlotIndex(1~10)번 슬롯 실행 — LDJ UI_BuildModeMain에 위임(슬롯 클릭과 동일 경로).
+// 카테고리 상태(CurrentSubMode)는 위젯이 보유 → 슬롯 번호만 넘기면 위젯이 현재 카테고리 기준 해석.
+void AOJJ_Player::ExecuteHotbarSlot(int32 SlotIndex)
+{
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+	// BuildModeWidgetClass = WBP_BuildModeMain(UI_BuildModeMain) 전제(에디터 확인됨). 안전망: 아니면 무동작+경고.
+	if (UUI_BuildModeMain* BuildMenu = Cast<UUI_BuildModeMain>(BuildModeWidgetInstance))
+	{
+		BuildMenu->ExecutePlacementMode(SlotIndex);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] 핫바 슬롯 %d 무시 — BuildModeWidgetInstance가 UUI_BuildModeMain 아님/없음(BuildModeWidgetClass 확인)"),
+			SlotIndex);
+	}
+}
+
+void AOJJ_Player::SetHotbarSlot1()  { ExecuteHotbarSlot(1); }
+void AOJJ_Player::SetHotbarSlot2()  { ExecuteHotbarSlot(2); }
+void AOJJ_Player::SetHotbarSlot3()  { ExecuteHotbarSlot(3); }
+void AOJJ_Player::SetHotbarSlot4()  { ExecuteHotbarSlot(4); }
+void AOJJ_Player::SetHotbarSlot5()  { ExecuteHotbarSlot(5); }
+void AOJJ_Player::SetHotbarSlot6()  { ExecuteHotbarSlot(6); }
+void AOJJ_Player::SetHotbarSlot7()  { ExecuteHotbarSlot(7); }
+void AOJJ_Player::SetHotbarSlot8()  { ExecuteHotbarSlot(8); }
+void AOJJ_Player::SetHotbarSlot9()  { ExecuteHotbarSlot(9); }
+void AOJJ_Player::SetHotbarSlot10() { ExecuteHotbarSlot(10); }
+
 void AOJJ_Player::SetWarehouseMode(const FInputActionValue& Value)
 {
 	if (!BuildController)
@@ -1110,27 +1196,6 @@ void AOJJ_Player::SetDemolishMode(const FInputActionValue& Value)
 			QuestManager->NotifyTutorialEvent(TEXT("DemolishMode"));
 		}
 	}
-}
-
-// 평판 Foundation 모드 진입(G키 — #196 IA 전환). 다른 모드 핸들러(탱크/파이프)와 동일 구조 —
-// BuildController 위임만. 모드 진입/호버 갱신/빌드모드 밖 무해성은 컨트롤러 소관.
-void AOJJ_Player::SetFoundationMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->OJJ_SelectFoundationKind(false);
-}
-
-// 램프 Foundation 모드 진입(H키 — #196 IA 전환, F3-2.5 T 토글 대체).
-void AOJJ_Player::SetRampFoundationMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->OJJ_SelectFoundationKind(true);
 }
 
 void AOJJ_Player::StartSprint(const FInputActionValue& Value)
@@ -1239,23 +1304,21 @@ void AOJJ_Player::SendOperatorGuideRequest()
 
 void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 {
-	if (!IsLocallyControlled()) return;
+    if (!IsLocallyControlled()) return;
 
-	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC) return;
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    if (!PC) return;
 
-	if (BuildController && BuildController->IsInBuildMode()) return;
-	
-	FInputModeGameAndUI QuickFixMode;
-	QuickFixMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	// 현재 포커스를 강제로 게임 뷰포트로 지정하여 굳어버린 키보드 입력을 깨웁니다.
-	QuickFixMode.SetWidgetToFocus(nullptr); 
-	PC->SetInputMode(QuickFixMode);
+    if (BuildController && BuildController->IsInBuildMode()) return;
+    
+    FInputModeGameAndUI QuickFixMode;
+    QuickFixMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+    QuickFixMode.SetWidgetToFocus(nullptr); 
+    PC->SetInputMode(QuickFixMode);
 
-    // 일반 기계창, 창고창, 가방창 중 하나라도 열려 있으면 무조건 전부 다 닫습니다.
     if (bIsInventoryOpen || 
         (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()) ||
-        (WarehouseInteractWidgetInstance && WarehouseInteractWidgetInstance->IsInViewport())) // 창고 닫기 가드 추가
+        (WarehouseInteractWidgetInstance && WarehouseInteractWidgetInstance->IsInViewport()))
     {
        if (MachineInteractWidgetInstance.IsValid())
        {
@@ -1263,7 +1326,6 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
           MachineInteractWidgetInstance = nullptr;
        }
 
-       // 띄워져 있던 창고 창을 부모로부터 제거하고 메모리 초기화
        if (WarehouseInteractWidgetInstance)
        {
           WarehouseInteractWidgetInstance->RemoveFromParent();
@@ -1294,9 +1356,8 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 
     AMachineBase* Machine = Cast<AMachineBase>(Hit.GetActor());
     if (!Machine) return;
-
-    // 바라본 기계가 '창고' 계열인지 검사합니다
-    if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
+    // 바라본 기계가 창고포트 클래스이거나, '액체 탱크(ALiquidTank)' 클래스이거나, 이름에 Warehouse가 들어간다면
+    if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
     {
        if (!WarehouseInteractWidgetClass)
        {
@@ -1304,7 +1365,7 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
           return;
        }
 
-       // 창고 전용 UI 창
+       // 이제 액체 탱크도 여기로 안전하게 들어와 UI_WarehouseInteract 창을 소환합니다
        UUI_WarehouseInteract* WHWidget = CreateWidget<UUI_WarehouseInteract>(PC, WarehouseInteractWidgetClass);
        if (WHWidget)
        {
@@ -1328,33 +1389,32 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
           Widget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
        }
     }
-
-    // 창고 포트 계열일 때 우측에 유저 가방 창 세트로 동시 소환하는 로직 (기존 유지)
-    if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
+    // 창고 포트뿐만 아니라 '액체 탱크' 계열 상호작용 시에도 우측에 인벤토리 생성
+    if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
     {
        if (!InventoryWidgetInstance && InventoryWidgetClass)
        {
           InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
        }
 
-    	if (InventoryWidgetInstance)
-    	{
-    		InventoryWidgetInstance->AdjustInventoryLayout(true); 
+        if (InventoryWidgetInstance)
+        {
+           InventoryWidgetInstance->AdjustInventoryLayout(true); 
 
-    		InventoryWidgetInstance->AddToViewport();
-    		InventoryWidgetInstance->RefreshInventoryWindow();
-    		bIsInventoryOpen = true;
+           InventoryWidgetInstance->AddToViewport();
+           InventoryWidgetInstance->RefreshInventoryWindow();
+           bIsInventoryOpen = true;
 
-    		GetWorldTimerManager().SetTimer(
-			   InventoryRefreshTimerHandle, 
-			   this, 
-			   &AOJJ_Player::UpdateInventoryRealtime, 
-			   0.1f, 
-			   true
-			);
+           GetWorldTimerManager().SetTimer(
+             InventoryRefreshTimerHandle, 
+             this, 
+             &AOJJ_Player::UpdateInventoryRealtime, 
+             0.1f, 
+             true
+          );
             
-    		UE_LOG(LogTemp, Log, TEXT("[창고 F키 성공] 창고 전용 창과 가방 창을 완벽하게 동시 활성화했습니다!"));
-    	}
+           UE_LOG(LogTemp, Log, TEXT("[물류 상호작용 성공] 창고형 기계 연동 모드로 가방 창 동시 활성화 완료!"));
+        }
     }
 
     FInputModeGameAndUI InputModeData;
@@ -1704,6 +1764,38 @@ void AOJJ_Player::OJJ_UpgradeMachineLevel(const FString& MachineTypeName, int32 
 		*MachineTypeName,
 		SuccessCount,
 		MachineSubsystem->GetMachineLevel(MachineType));
+}
+
+void AOJJ_Player::OJJ_ResetGame()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UFactorySaveSubsystem* SaveSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UFactorySaveSubsystem>()
+		: nullptr;
+	if (!SaveSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_ResetGame] FactorySaveSubsystem not found."));
+		return;
+	}
+
+	const bool bDeletedSave = SaveSubsystem->ResetToNewGame();
+	UE_LOG(LogTemp, Log, TEXT("[OJJ_ResetGame] Save reset requested. DeletedExistingSave=%s"),
+		bDeletedSave ? TEXT("true") : TEXT("false"));
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FString LevelName = World->GetOutermost()->GetName();
+	if (LevelName.IsEmpty())
+	{
+		LevelName = UWorld::RemovePIEPrefix(World->GetMapName());
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[OJJ_ResetGame] Reopening level: %s"), *LevelName);
+	UGameplayStatics::OpenLevel(this, FName(*LevelName));
 }
 
 void AOJJ_Player::UpdateInventoryRealtime()

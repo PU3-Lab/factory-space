@@ -204,14 +204,8 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_SetTankMode;
 
-	// 평판 Foundation 모드(G키 — #196 레거시 BindKey→IA 전환). IMC_Build의 G 매핑/에셋 연결은 에디터 작업.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetFoundationMode;
-
-	// 램프 Foundation 모드(H키 — #196 레거시 BindKey→IA 전환). IMC_Build의 H 매핑/에셋 연결은 에디터 작업.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetRampMode;
-
+	// Foundation(평판)/Ramp(경사)는 공용키 개편서 레거시 BindKey(F/G)로 환원 — IA_SetFoundationMode/RampMode
+	// 및 그 IMC 매핑·IA 에셋 폐기. F/G 핸들러는 OJJ_SelectFoundationKind 직접 호출.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_SetPowerNodeMode;
 
@@ -412,6 +406,9 @@ public:
 	UFUNCTION(Exec)
 	void OJJ_UpgradeMachineLevel(const FString& MachineTypeName, int32 UpgradeCount = 1);
 
+	UFUNCTION(Exec)
+	void OJJ_ResetGame();
+
 protected:
 	void SetPowerNodeMode(const FInputActionValue& Value);
 	void SetShieldMode(const FInputActionValue& Value);
@@ -425,15 +422,27 @@ protected:
 	void SetSynthesizerModeShortcut();
 	void SetTeleCommunicationTowerModeShortcut();
 	void SetDemolishModeShortcut();
-	// [#184] C키 — 사다리 빌드 서브모드 진입(빌드모드 중에만, SetDemolishModeShortcut 패턴).
+	// [#184] C키 — 사다리 빌드 서브모드 진입(빌드모드 중에만, SetDemolishModeShortcut 패턴). 공용키 개편서 H로 이동.
 	void SetLadderModeShortcut();
+	// [공용키] F=평면 Foundation, G=경사 RampFoundation, Z=마우스 초기화(취소). 전부 레거시 BindKey + IsInBuildMode 가드.
+	void SetFoundationModeShortcut();
+	void SetRampFoundationModeShortcut();
+	void CancelPlacementShortcut();
+	// [카테고리 숫자키] 1~9,0 → 현재 카테고리(LDJ UI_BuildModeMain)의 N번 슬롯 실행. 0키=10번 슬롯(1-base).
+	// ExecuteHotbarSlot: IsInBuildMode 가드 + BuildModeWidgetInstance Cast(null이면 무동작+로그). 10개 thin BindKey 래퍼.
+	void ExecuteHotbarSlot(int32 SlotIndex);
+	void SetHotbarSlot1();
+	void SetHotbarSlot2();
+	void SetHotbarSlot3();
+	void SetHotbarSlot4();
+	void SetHotbarSlot5();
+	void SetHotbarSlot6();
+	void SetHotbarSlot7();
+	void SetHotbarSlot8();
+	void SetHotbarSlot9();
+	void SetHotbarSlot10();
 	void SetWarehouseMode(const FInputActionValue& Value);
 	void SetDemolishMode(const FInputActionValue& Value);
-
-	// 평판/램프 Foundation 모드 진입(G/H — #196 Enhanced Input IA 전환, 탱크/파이프와 동일 구조).
-	// 이중발화 차단 위해 레거시 BindKey 제거 + IA 단일 경로로 통일.
-	void SetFoundationMode(const FInputActionValue& Value);
-	void SetRampFoundationMode(const FInputActionValue& Value);
 
 	// 스프린트 — Started=달리기 속도, Completed=걷기 속도로 복귀.
 	void StartSprint(const FInputActionValue& Value);

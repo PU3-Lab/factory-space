@@ -294,6 +294,20 @@ FText UMachineSubsystem::GetMachineDisplayName(FName MachineType) const
 	return FText::FromName(MachineType);
 }
 
+void UMachineSubsystem::RestoreMachineLevels(const TMap<FName, int32>& Levels)
+{
+	MachineTypeToCurrentLevel.Reset();
+
+	for (const TPair<FName, int32>& Pair : Levels)
+	{
+		FMachineTableRow MachineData;
+		if (FindMachineDataForLevel(Pair.Key, Pair.Value, MachineData))
+		{
+			MachineTypeToCurrentLevel.Add(Pair.Key, Pair.Value);
+		}
+	}
+}
+
 void UMachineSubsystem::ApplyMachineDataToExistingMachines(FName MachineType, const FMachineTableRow& MachineData) const
 {
 	UWorld* World = GetWorld();

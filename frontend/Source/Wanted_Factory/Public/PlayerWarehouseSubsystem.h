@@ -50,6 +50,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Player Warehouse")
 	void GrantInitialItems(const TArray<FWarehouseItemStack>& Items);
 
+	void SetStoredItemsForSave(const TMap<FName, int32>& Items);
+
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Player Warehouse")
 	TMap<FName, int32> StoredItems;

@@ -178,6 +178,24 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Quest|Main")
 	int32 GetCurrentMainQuestIndex() const { return CurrentMainQuestIndex; }
 
+	const TArray<FQuestState>& GetMainQuestSequenceForSave() const { return MainQuestSequence; }
+	void SetMainQuestSequenceForSave(const TArray<FQuestState>& InMainQuestSequence, int32 InCurrentMainQuestIndex);
+	void SetSubQuestsForSave(const TArray<FQuestState>& InSubQuests, const TArray<FString>& InSubQuestTitles);
+	void GetTutorialSaveState(
+		bool& bOutTutorialQuestTestActive,
+		FString& OutCurrentTutorialQuestId,
+		bool& bOutPendingTutorialStartDialogueReveal,
+		FString& OutLastTutorialDialogueQuestId,
+		FString& OutLastTutorialDialogueTriggerType,
+		TArray<FTutorialQuestDialogueLine>& OutLastTutorialDialogueLines) const;
+	void RestoreTutorialSaveState(
+		bool bInTutorialQuestTestActive,
+		const FString& InCurrentTutorialQuestId,
+		bool bInPendingTutorialStartDialogueReveal,
+		const FString& InLastTutorialDialogueQuestId,
+		const FString& InLastTutorialDialogueTriggerType,
+		const TArray<FTutorialQuestDialogueLine>& InLastTutorialDialogueLines);
+
 	UFUNCTION(BlueprintCallable, Category = "Quest|Main")
 	bool SetCurrentMainQuestIndex(int32 NewIndex);
 

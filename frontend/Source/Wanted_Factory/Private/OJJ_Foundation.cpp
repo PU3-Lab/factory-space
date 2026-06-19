@@ -82,6 +82,26 @@ void AOJJ_Foundation::OnConstruction(const FTransform& Transform)
 	UpdateLegVisual();
 }
 
+void AOJJ_Foundation::GetSaveState(
+	int32& OutRiseSteps,
+	bool& bOutOneSideGroundRamp,
+	float& OutLoEndLowestGroundRaw,
+	bool& bOutLoEndLowestValid) const
+{
+	OutRiseSteps = 0;
+	bOutOneSideGroundRamp = false;
+	OutLoEndLowestGroundRaw = 0.0f;
+	bOutLoEndLowestValid = false;
+}
+
+void AOJJ_Foundation::ApplySaveState(
+	int32 InRiseSteps,
+	bool bInOneSideGroundRamp,
+	float InLoEndLowestGroundRaw,
+	bool bInLoEndLowestValid)
+{
+}
+
 float AOJJ_Foundation::OJJ_ResolveCellSize() const
 {
 	// 그리드 CellSize는 protected — WaterArea와 동일하게 public GridToWorld로 역산. 단 등록된 그리드를

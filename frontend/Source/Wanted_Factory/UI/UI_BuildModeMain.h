@@ -46,6 +46,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Build Mode")
     void SwitchBuildSubMode(EBuildSubMode NewMode);
 
+    // 현재 카테고리(CurrentSubMode)의 SlotIndex(1~10)번 슬롯을 실행 — 슬롯 버튼 클릭(OnSlotNClicked)과 동일 경로.
+    // 키보드 숫자키 연동을 위해 노출(OJJ_Player가 호출). 로직은 내부 CurrentSubMode/레지스트리 기준.
+    UFUNCTION(BlueprintCallable, Category = "Build Mode")
+    void ExecutePlacementMode(int32 SlotIndex);
+
 protected:
     UPROPERTY(meta = (BindWidget)) UButton* BTN_SubMode_Machine;
     UPROPERTY(meta = (BindWidget)) UButton* BTN_SubMode_Power;
@@ -56,6 +61,10 @@ protected:
     UPROPERTY(meta = (BindWidgetAnim), Transient) UWidgetAnimation* Anim_HotbarOut;
     UPROPERTY(meta = (BindWidgetAnim), Transient) UWidgetAnimation* Anim_HotbarIn;
 
+    UPROPERTY(meta = (BindWidget))
+    UImage* IMG_SelectedPreview;
+    UPROPERTY(meta = (BindWidget))
+    UTextBlock* TXT_SelectedName;
 private:
     EBuildSubMode CurrentSubMode = EBuildSubMode::Machine;
     EBuildSubMode PendingSubMode = EBuildSubMode::Machine;
@@ -86,7 +95,6 @@ private:
 
     void InitializeHotbarRegistry();
     void RefreshHotbarSlotsVisual();
-    void ExecutePlacementMode(int32 SlotIndex);
-
+    void UpdateSelectedPreview();
     TMap<FName, int32> CachedMachineLevels;
 };
