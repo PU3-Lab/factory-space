@@ -1239,23 +1239,21 @@ void AOJJ_Player::SendOperatorGuideRequest()
 
 void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 {
-	if (!IsLocallyControlled()) return;
+    if (!IsLocallyControlled()) return;
 
-	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC) return;
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    if (!PC) return;
 
-	if (BuildController && BuildController->IsInBuildMode()) return;
-	
-	FInputModeGameAndUI QuickFixMode;
-	QuickFixMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	// 현재 포커스를 강제로 게임 뷰포트로 지정하여 굳어버린 키보드 입력을 깨웁니다.
-	QuickFixMode.SetWidgetToFocus(nullptr); 
-	PC->SetInputMode(QuickFixMode);
+    if (BuildController && BuildController->IsInBuildMode()) return;
+    
+    FInputModeGameAndUI QuickFixMode;
+    QuickFixMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+    QuickFixMode.SetWidgetToFocus(nullptr); 
+    PC->SetInputMode(QuickFixMode);
 
-    // 일반 기계창, 창고창, 가방창 중 하나라도 열려 있으면 무조건 전부 다 닫습니다.
     if (bIsInventoryOpen || 
         (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()) ||
-        (WarehouseInteractWidgetInstance && WarehouseInteractWidgetInstance->IsInViewport())) // 창고 닫기 가드 추가
+        (WarehouseInteractWidgetInstance && WarehouseInteractWidgetInstance->IsInViewport()))
     {
        if (MachineInteractWidgetInstance.IsValid())
        {
@@ -1263,7 +1261,6 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
           MachineInteractWidgetInstance = nullptr;
        }
 
-       // 띄워져 있던 창고 창을 부모로부터 제거하고 메모리 초기화
        if (WarehouseInteractWidgetInstance)
        {
           WarehouseInteractWidgetInstance->RemoveFromParent();
@@ -1294,9 +1291,8 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 
     AMachineBase* Machine = Cast<AMachineBase>(Hit.GetActor());
     if (!Machine) return;
-
-    // 바라본 기계가 '창고' 계열인지 검사합니다
-    if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
+    // 바라본 기계가 창고포트 클래스이거나, '액체 탱크(ALiquidTank)' 클래스이거나, 이름에 Warehouse가 들어간다면
+    if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
     {
        if (!WarehouseInteractWidgetClass)
        {
@@ -1304,7 +1300,7 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
           return;
        }
 
-       // 창고 전용 UI 창
+       // 이제 액체 탱크도 여기로 안전하게 들어와 UI_WarehouseInteract 창을 소환합니다
        UUI_WarehouseInteract* WHWidget = CreateWidget<UUI_WarehouseInteract>(PC, WarehouseInteractWidgetClass);
        if (WHWidget)
        {
@@ -1328,33 +1324,32 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
           Widget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
        }
     }
-
-    // 창고 포트 계열일 때 우측에 유저 가방 창 세트로 동시 소환하는 로직 (기존 유지)
-    if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
+    // 창고 포트뿐만 아니라 '액체 탱크' 계열 상호작용 시에도 우측에 인벤토리 생성
+    if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
     {
        if (!InventoryWidgetInstance && InventoryWidgetClass)
        {
           InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
        }
 
-    	if (InventoryWidgetInstance)
-    	{
-    		InventoryWidgetInstance->AdjustInventoryLayout(true); 
+        if (InventoryWidgetInstance)
+        {
+           InventoryWidgetInstance->AdjustInventoryLayout(true); 
 
-    		InventoryWidgetInstance->AddToViewport();
-    		InventoryWidgetInstance->RefreshInventoryWindow();
-    		bIsInventoryOpen = true;
+           InventoryWidgetInstance->AddToViewport();
+           InventoryWidgetInstance->RefreshInventoryWindow();
+           bIsInventoryOpen = true;
 
-    		GetWorldTimerManager().SetTimer(
-			   InventoryRefreshTimerHandle, 
-			   this, 
-			   &AOJJ_Player::UpdateInventoryRealtime, 
-			   0.1f, 
-			   true
-			);
+           GetWorldTimerManager().SetTimer(
+             InventoryRefreshTimerHandle, 
+             this, 
+             &AOJJ_Player::UpdateInventoryRealtime, 
+             0.1f, 
+             true
+          );
             
-    		UE_LOG(LogTemp, Log, TEXT("[창고 F키 성공] 창고 전용 창과 가방 창을 완벽하게 동시 활성화했습니다!"));
-    	}
+           UE_LOG(LogTemp, Log, TEXT("[물류 상호작용 성공] 창고형 기계 연동 모드로 가방 창 동시 활성화 완료!"));
+        }
     }
 
     FInputModeGameAndUI InputModeData;
