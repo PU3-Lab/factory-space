@@ -56,6 +56,10 @@ protected:
     UPROPERTY(meta = (BindWidgetAnim), Transient) UWidgetAnimation* Anim_HotbarOut;
     UPROPERTY(meta = (BindWidgetAnim), Transient) UWidgetAnimation* Anim_HotbarIn;
 
+    UPROPERTY(meta = (BindWidget))
+    UImage* IMG_SelectedPreview;
+    UPROPERTY(meta = (BindWidget))
+    UTextBlock* TXT_SelectedName;
 private:
     EBuildSubMode CurrentSubMode = EBuildSubMode::Machine;
     EBuildSubMode PendingSubMode = EBuildSubMode::Machine;
@@ -87,6 +91,6 @@ private:
     void InitializeHotbarRegistry();
     void RefreshHotbarSlotsVisual();
     void ExecutePlacementMode(int32 SlotIndex);
-
+    void UpdateSelectedPreview();
     TMap<FName, int32> CachedMachineLevels;
 };
