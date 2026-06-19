@@ -138,6 +138,7 @@ void APipe::SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize)
 			PathCells.Add(Cell);
 		}
 	}
+	PathCellEdgeRiser.Reset(); // 경로 바뀌면 stale 플래그 폐기 — 그리드가 OJJ_SetPathCellEdgeRisers로 재주입.
 
 	RebuildVisuals();
 	UpdateMaterialState();
@@ -287,15 +288,43 @@ void APipe::RebuildVisuals()
 		const float Lift = CellLift(Index);
 		const float PrevLift = (Index > 0) ? CellLift(Index - 1) : Lift;
 		const float NextLift = (Index + 1 < NumCells) ? CellLift(Index + 1) : Lift;
+		// 솔리드 데크 셀이면 수직 라이저를 셀 중심 대신 셀 엣지 밖(이웃 방향 HalfCell + 마진)에 둬 관통/모서리 스침 방지.
+		// 마진은 파이프 반지름만큼 안쪽 몸체가 데크 모서리를 스치는 것까지 막는 여유(OJJ_PipeEdgeDropMargin).
+		const bool bEdgeRiser = PathCellEdgeRiser.IsValidIndex(Index) && PathCellEdgeRiser[Index];
+		const float EdgeOffset = (CellSize * 0.5f) + OJJ_PipeEdgeDropMargin;
 
+		// 진입 라이저(낮은 prev → 높은 현재). 솔리드면 진입 엣지 밖(prev 방향)서 수직 상승 후 데크 위로 수평.
 		if (Lift > PrevLift)
 		{
-			Nodes.Add(FVector(LocalX, LocalY, ZOffset + PrevLift));
+			if (bEdgeRiser && Index > 0)
+			{
+				const FIntPoint StepToPrev = PathCells[Index - 1] - Cell;
+				const float EdgeX = LocalX + StepToPrev.X * EdgeOffset;
+				const float EdgeY = LocalY + StepToPrev.Y * EdgeOffset;
+				Nodes.Add(FVector(EdgeX, EdgeY, ZOffset + PrevLift)); // 엣지 밖, 낮은 Z(라이저 base)
+				Nodes.Add(FVector(EdgeX, EdgeY, ZOffset + Lift));     // 엣지 밖서 수직 상승
+			}
+			else
+			{
+				Nodes.Add(FVector(LocalX, LocalY, ZOffset + PrevLift)); // 기존: 셀 중심(오버패스/일반)
+			}
 		}
 		Nodes.Add(FVector(LocalX, LocalY, ZOffset + Lift));
+		// 이탈 라이저(높은 현재 → 낮은 next). 솔리드면 이탈 엣지 밖(next 방향)서 수직 하강 후 지면으로 수평.
 		if (Lift > NextLift)
 		{
-			Nodes.Add(FVector(LocalX, LocalY, ZOffset + NextLift));
+			if (bEdgeRiser && Index + 1 < NumCells)
+			{
+				const FIntPoint StepToNext = PathCells[Index + 1] - Cell;
+				const float EdgeX = LocalX + StepToNext.X * EdgeOffset;
+				const float EdgeY = LocalY + StepToNext.Y * EdgeOffset;
+				Nodes.Add(FVector(EdgeX, EdgeY, ZOffset + Lift));     // 엣지 밖까지 데크높이 수평
+				Nodes.Add(FVector(EdgeX, EdgeY, ZOffset + NextLift)); // 엣지 밖서 수직 하강
+			}
+			else
+			{
+				Nodes.Add(FVector(LocalX, LocalY, ZOffset + NextLift)); // 기존: 셀 중심(오버패스/일반)
+			}
 		}
 	}
 
