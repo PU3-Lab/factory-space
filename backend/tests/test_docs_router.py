@@ -36,6 +36,16 @@ def test_quest_agent_architecture_page_returns_code_mapping_html() -> None:
     assert "quest_generator.exploration_quest" not in response.text
 
 
+def test_agent_test_page_has_random_inputs_button() -> None:
+    with TestClient(create_app()) as client:
+        response = client.get("/agent-test")
+
+    assert response.status_code == 200
+    assert "랜덤 조합" in response.text
+    assert "function randomInputs()" in response.text
+    assert 'onclick="randomInputs()"' in response.text
+
+
 def test_agent_test_response_log_has_independent_scroll_area() -> None:
     with TestClient(create_app()) as client:
         response = client.get("/agent-test")

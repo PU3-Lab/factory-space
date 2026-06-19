@@ -44,6 +44,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Machine")
 	bool UpgradeMachineType(FName MachineType);
 
+	UFUNCTION(BlueprintPure, Category = "Machine")
+	FText GetMachineDisplayName(FName MachineType) const;
+
 private:
 	TMap<FName, FName> MachineNameToRowMap;
 	TMap<FName, TMap<int32, FName>> MachineTypeLevelToRowMap;

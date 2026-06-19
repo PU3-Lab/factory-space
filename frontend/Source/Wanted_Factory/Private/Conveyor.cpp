@@ -13,6 +13,8 @@
 #include "GameFramework/PlayerController.h"
 #include "MachineBase.h"
 #include "Materials/MaterialInterface.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Resource/ResourceData.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
@@ -121,6 +123,12 @@ AConveyor::AConveyor()
 		ItemVisualInstances->SetStaticMesh(CubeMesh.Object);
 	}
 
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> ConeMesh(TEXT("/Engine/BasicShapes/Cone.Cone"));
+	if (ConeMesh.Succeeded())
+	{
+		PowderVisualMesh = ConeMesh.Object;
+	}
+
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> MaterialAsset(
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	if (MaterialAsset.Succeeded())
@@ -128,6 +136,7 @@ AConveyor::AConveyor()
 		StraightSegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		CornerSegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		ItemVisualInstances->SetMaterial(0, MaterialAsset.Object);
+		PowderVisualMaterialBase = MaterialAsset.Object;
 	}
 
 	static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
@@ -673,8 +682,7 @@ void AConveyor::RefreshItemVisualInstances()
 	}
 
 	const float MoveAlpha = GetCurrentMoveAlpha();
-	const float ItemScale = FMath::Max(0.01f, CellSize * ItemVisualScaleRatio / 100.0f);
-	const FVector ItemVisualScale(ItemScale, ItemScale, ItemScale);
+	const float BaseItemScale = FMath::Max(0.01f, CellSize * ItemVisualScaleRatio / 100.0f);
 	TArray<FConveyorDesiredVisual> DesiredVisuals;
 	DesiredVisuals.Reserve(ItemSlots.Num() + DepartingVisuals.Num());
 
@@ -692,7 +700,7 @@ void AConveyor::RefreshItemVisualInstances()
 		FConveyorDesiredVisual& DesiredVisual = DesiredVisuals.AddDefaulted_GetRef();
 		DesiredVisual.VisualId = ItemVisualIds[SlotIndex];
 		DesiredVisual.ItemId = ItemId;
-		DesiredVisual.Transform = FTransform(FRotator::ZeroRotator, ItemLocation, ItemVisualScale);
+		DesiredVisual.Transform = BuildItemVisualTransform(ItemId, ItemLocation, BaseItemScale);
 	}
 
 	const UWorld* World = GetWorld();
@@ -709,7 +717,7 @@ void AConveyor::RefreshItemVisualInstances()
 		FConveyorDesiredVisual& DesiredVisual = DesiredVisuals.AddDefaulted_GetRef();
 		DesiredVisual.VisualId = DepartingVisual.VisualId;
 		DesiredVisual.ItemId = DepartingVisual.ItemId;
-		DesiredVisual.Transform = FTransform(FRotator::ZeroRotator, ItemLocation, ItemVisualScale);
+		DesiredVisual.Transform = BuildItemVisualTransform(DepartingVisual.ItemId, ItemLocation, BaseItemScale);
 	}
 
 	TSet<int32> DesiredVisualIds;
@@ -852,7 +860,9 @@ UStaticMeshComponent* AConveyor::CreateVisualComponentForItem(int32 VisualId, FN
 		VisualInstanceStates.Remove(VisualId);
 	}
 
-	UStaticMesh* ItemMesh = ResolveItemStaticMesh(ItemId);
+	const FResourceData* ResourceData = FindResourceData(ItemId);
+	const bool bUsePowderVisual = ResourceData && ResourceData->shape == EResourceShape::Powder;
+	UStaticMesh* ItemMesh = bUsePowderVisual ? PowderVisualMesh.Get() : ResolveItemStaticMesh(ItemId);
 	UStaticMesh* FallbackMesh = ItemVisualInstances ? ItemVisualInstances->GetStaticMesh() : nullptr;
 	UStaticMesh* MeshToUse = ItemMesh ? ItemMesh : FallbackMesh;
 	if (!MeshToUse)
@@ -875,22 +885,43 @@ UStaticMeshComponent* AConveyor::CreateVisualComponentForItem(int32 VisualId, FN
 	NewComponent->SetVisibleInRayTracing(false);
 	NewComponent->SetStaticMesh(MeshToUse);
 	NewComponent->SetCanEverAffectNavigation(false);
-	const int32 MaterialCount = MeshToUse->GetStaticMaterials().Num();
-	for (int32 MaterialIndex = 0; MaterialIndex < MaterialCount; ++MaterialIndex)
+	if (bUsePowderVisual)
 	{
-		UMaterialInterface* MaterialInterface = nullptr;
-		if (ItemMesh)
+		UMaterialInterface* BaseMaterial = PowderVisualMaterialBase
+			? PowderVisualMaterialBase.Get()
+			: UMaterial::GetDefaultMaterial(MD_Surface);
+		if (UMaterialInstanceDynamic* MaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this))
 		{
-			MaterialInterface = ItemMesh->GetMaterial(MaterialIndex);
+			MaterialInstance->SetFlags(RF_Transient);
+			const FLinearColor PowderColor = ResourceData ? ResourceData->VisualColor : FLinearColor::White;
+			MaterialInstance->SetVectorParameterValue(TEXT("Color"), PowderColor);
+			MaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), PowderColor);
+			MaterialInstance->SetVectorParameterValue(TEXT("Tint"), PowderColor);
+			MaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor::Black);
+			MaterialInstance->SetScalarParameterValue(TEXT("Opacity"), PowderColor.A);
+			MaterialInstance->SetScalarParameterValue(TEXT("Alpha"), PowderColor.A);
+			NewComponent->SetMaterial(0, MaterialInstance);
 		}
-		else if (ItemVisualInstances)
+	}
+	else
+	{
+		const int32 MaterialCount = MeshToUse->GetStaticMaterials().Num();
+		for (int32 MaterialIndex = 0; MaterialIndex < MaterialCount; ++MaterialIndex)
 		{
-			MaterialInterface = ItemVisualInstances->GetMaterial(MaterialIndex);
-		}
+			UMaterialInterface* MaterialInterface = nullptr;
+			if (ItemMesh)
+			{
+				MaterialInterface = ItemMesh->GetMaterial(MaterialIndex);
+			}
+			else if (ItemVisualInstances)
+			{
+				MaterialInterface = ItemVisualInstances->GetMaterial(MaterialIndex);
+			}
 
-		if (MaterialInterface)
-		{
-			NewComponent->SetMaterial(MaterialIndex, MaterialInterface);
+			if (MaterialInterface)
+			{
+				NewComponent->SetMaterial(MaterialIndex, MaterialInterface);
+			}
 		}
 	}
 	NewComponent->RegisterComponent();
@@ -898,14 +929,25 @@ UStaticMeshComponent* AConveyor::CreateVisualComponentForItem(int32 VisualId, FN
 	return NewComponent;
 }
 
-UStaticMesh* AConveyor::ResolveItemStaticMesh(FName ItemId) const
+const FResourceData* AConveyor::FindResourceData(FName ItemId) const
 {
 	if (!ResourceTable || ItemId.IsNone())
 	{
 		return nullptr;
 	}
 
-	const FResourceData* Resource = ResourceTable->FindRow<FResourceData>(ItemId, TEXT("Conveyor.ResolveItemStaticMesh"));
+	return ResourceTable->FindRow<FResourceData>(ItemId, TEXT("Conveyor.FindResourceData"));
+}
+
+bool AConveyor::IsPowderItem(FName ItemId) const
+{
+	const FResourceData* Resource = FindResourceData(ItemId);
+	return Resource && Resource->shape == EResourceShape::Powder;
+}
+
+UStaticMesh* AConveyor::ResolveItemStaticMesh(FName ItemId) const
+{
+	const FResourceData* Resource = FindResourceData(ItemId);
 	if (!Resource)
 	{
 		return nullptr;
@@ -919,6 +961,22 @@ UStaticMesh* AConveyor::ResolveItemStaticMesh(FName ItemId) const
 	return Resource->StaticMeshAsset.IsValid()
 		? Resource->StaticMeshAsset.Get()
 		: Resource->StaticMeshAsset.LoadSynchronous();
+}
+
+FTransform AConveyor::BuildItemVisualTransform(FName ItemId, const FVector& ItemLocation, float BaseItemScale) const
+{
+	FVector AdjustedLocation = ItemLocation;
+	FVector ItemScale(BaseItemScale, BaseItemScale, BaseItemScale);
+
+	if (IsPowderItem(ItemId))
+	{
+		ItemScale.X *= PowderVisualWidthMultiplier;
+		ItemScale.Y *= PowderVisualWidthMultiplier;
+		ItemScale.Z *= PowderVisualHeightMultiplier;
+		AdjustedLocation.Z += PowderVisualZOffsetAdjustment;
+	}
+
+	return FTransform(FRotator::ZeroRotator, AdjustedLocation, ItemScale);
 }
 
 float AConveyor::GetCurrentMoveAlpha() const

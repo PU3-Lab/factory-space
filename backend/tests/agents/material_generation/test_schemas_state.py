@@ -43,4 +43,3 @@ def test_response_visual_asset_key_fields_optional() -> None:
     assert resp.visual_asset_key is None
     assert resp.texture_asset_key is None
     assert resp.thumbnail_asset_key is None
-

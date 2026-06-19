@@ -88,6 +88,48 @@ def _clean_routing_decision(raw: str | None) -> str:
     return cleaned.strip()
 
 
+def _routing_failure_reason(raw: str | None) -> str:
+    return "invalid_model_decision" if raw else "missing_model_decision"
+
+
+def _allowed_leaf_agent_ids(selected_agent: str | None) -> list[str]:
+    if selected_agent == "operator_guide":
+        return list(OPERATOR_GUIDE_LEAF_AGENT_IDS)
+    if selected_agent == "quest_generator":
+        return list(QUEST_SUB_AGENT_IDS)
+    if selected_agent in {"material_generation", "process_optimizer"}:
+        return [selected_agent]
+    return []
+
+
+def _build_routing_error_details(
+    state: AgentGraphState,
+    envelope: AgentRequestEnvelope,
+) -> dict[str, Any]:
+    selected_agent = state.get("selectedAgent")
+    routing_raw = state.get("routingRaw")
+    if selected_agent not in TOP_LEVEL_AGENT_IDS:
+        return {
+            "scope": "top_level",
+            "reason": _routing_failure_reason(routing_raw),
+            "requestedAgent": envelope.agent,
+            "routingRawPresent": bool(routing_raw),
+            "allowedAgentIds": list(TOP_LEVEL_AGENT_IDS),
+        }
+
+    selected_leaf_agent = state.get("selectedLeafAgent")
+    allowed_leaf_agent_ids = _allowed_leaf_agent_ids(selected_agent)
+    return {
+        "scope": "leaf",
+        "reason": _routing_failure_reason(routing_raw),
+        "requestedAgent": envelope.agent,
+        "selectedAgent": selected_agent,
+        "selectedLeafAgentPresent": bool(selected_leaf_agent),
+        "routingRawPresent": bool(routing_raw),
+        "allowedLeafAgentIds": allowed_leaf_agent_ids,
+    }
+
+
 def build_context(
     state: AgentGraphState,
     config: RunnableConfig,
@@ -239,6 +281,21 @@ class AgentPipeline:
                     )
                 }
             return {"selectedLeafAgent": "process_optimizer"}
+
+        def route_new_material_sub_agent(state: AgentGraphState) -> AgentGraphState:
+            explicit_sub_agent = state["typedPayload"].get("sub_agent")
+            if (
+                explicit_sub_agent is not None
+                and explicit_sub_agent != "new_material_generator"
+            ):
+                return {
+                    "error": build_error_payload(
+                        "INVALID_SUB_AGENT",
+                        "Explicit sub_agent is not valid for new_material_generator.",
+                        details={"sub_agent": explicit_sub_agent},
+                    )
+                }
+            return {"selectedLeafAgent": "new_material_generator"}
 
         def synthesize_material(state: AgentGraphState) -> AgentGraphState:
             if state.get("error"):
@@ -659,6 +716,7 @@ class AgentPipeline:
             default_error = build_error_payload(
                 "ROUTING_UNAVAILABLE",
                 "Agent routing requires a valid orchestrator model decision.",
+                details=_build_routing_error_details(state, envelope),
             )
             response = AgentErrorEnvelope(
                 request_id=envelope.request_id,
@@ -677,6 +735,9 @@ class AgentPipeline:
         graph.add_node("validate_process_payload", validate_process_payload)
         graph.add_node("operator_guide.route_sub_agent", route_operator_guide_sub_agent)
         graph.add_node("quest_generator.route_sub_agent", route_quest_sub_agent)
+        graph.add_node(
+            "new_material_generator.route_sub_agent", route_new_material_sub_agent
+        )
         graph.add_node("synthesize_material", synthesize_material)
         graph.add_node("cache_lookup", cache_lookup)
         graph.add_node("build_cached_response", build_cached_response)

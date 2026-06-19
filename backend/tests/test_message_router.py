@@ -104,6 +104,39 @@ def test_pipeline_routes_empty_quest_request_through_llm() -> None:
     assert "[TOOL_RESULT]" in llm.prompts[-1]
 
 
+def test_pipeline_accepts_tool_call_with_missing_outer_closing_brace() -> None:
+    malformed_tool_call = (
+        '{"tool_call":{"name":"quest_generator.select_production_quests",'
+        '"args":{"selected_quest_ids":[10,9,8,7,6]}}'
+    )
+    llm = StubLLM(
+        [
+            top_agent_decision("quest_generator"),
+            malformed_tool_call,
+            QUEST_TOOL_RESPONSE,
+        ]
+    )
+    pipeline = AgentPipeline(llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-missing-tool-brace",
+            "agent": "quest_generator",
+            "payload": {"sub_agent": "quest_generator.production_quest"},
+        }
+    )
+
+    assert_agent_response(
+        response,
+        agent="quest_generator",
+        sub_agent="quest_generator.production_quest",
+    )
+    assert response["payload"]["metadata"]["toolCalls"] == [
+        {"name": PRODUCTION_QUEST_SELECTION_TOOL_NAME, "ok": True},
+    ]
+
+
 def test_pipeline_rejects_generated_quest_payload_for_production_quest() -> None:
     pipeline = AgentPipeline(
         llm=StubLLM(
@@ -262,6 +295,35 @@ def test_pipeline_rejects_json_top_level_routing_output() -> None:
     assert response["agent"] == "process_optimizer"
 
 
+def test_pipeline_includes_safe_details_for_invalid_top_level_routing_output() -> None:
+    pipeline = AgentPipeline(llm=StubLLM(["not-a-real-agent"]))
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-invalid-routing-details",
+            "agent": "material_generation",
+            "payload": {"prompt": "make a material"},
+        }
+    )
+
+    assert_agent_error(response, code="ROUTING_UNAVAILABLE")
+    assert response["agent"] == "material_generation"
+    assert response["error"]["details"] == {
+        "scope": "top_level",
+        "reason": "invalid_model_decision",
+        "requestedAgent": "material_generation",
+        "routingRawPresent": True,
+        "allowedAgentIds": [
+            "process_optimizer",
+            "operator_guide",
+            "quest_generator",
+            "material_generation",
+            "new_material_generator",
+        ],
+    }
+
+
 def test_pipeline_rejects_json_sub_agent_routing_output() -> None:
     pipeline = AgentPipeline(
         llm=StubLLM(
@@ -296,6 +358,7 @@ def test_pipeline_returns_error_when_agent_routing_model_is_unavailable() -> Non
     )
 
     assert_agent_error(response, code="ROUTING_UNAVAILABLE")
+    assert response["error"]["details"]["reason"] == "missing_model_decision"
 
 
 def test_pipeline_rejects_invalid_explicit_operator_guide_sub_agent() -> None:

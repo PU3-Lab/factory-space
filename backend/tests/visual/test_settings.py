@@ -37,6 +37,34 @@ def test_openai_slot_api_key_overrides_global() -> None:
     assert settings.api_key == "sk-slot"
 
 
+def test_local_provider_from_env() -> None:
+    env = {
+        "FACTORY_IMAGE_GEN_PROVIDER": "local",
+        "FACTORY_IMAGE_GEN_MODEL": "stabilityai/sdxl-turbo",
+    }
+    settings = ImageGenSettings.from_env(env)
+    assert settings.provider == "local"
+    assert settings.model == "stabilityai/sdxl-turbo"
+    assert settings.api_key is None
+    assert settings.device is None
+
+
+def test_local_provider_reads_optional_device() -> None:
+    env = {
+        "FACTORY_IMAGE_GEN_PROVIDER": "local",
+        "FACTORY_IMAGE_GEN_MODEL": "stabilityai/sdxl-turbo",
+        "FACTORY_IMAGE_GEN_DEVICE": "mps",
+    }
+    settings = ImageGenSettings.from_env(env)
+    assert settings.device == "mps"
+
+
+def test_local_without_model_raises() -> None:
+    env = {"FACTORY_IMAGE_GEN_PROVIDER": "local"}
+    with pytest.raises(ValueError, match="FACTORY_IMAGE_GEN_MODEL"):
+        ImageGenSettings.from_env(env)
+
+
 def test_unsupported_provider_raises() -> None:
     env = {"FACTORY_IMAGE_GEN_PROVIDER": "unknown"}
     with pytest.raises(ValueError, match="Unsupported image generation provider"):
