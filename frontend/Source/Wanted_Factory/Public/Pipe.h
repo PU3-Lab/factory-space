@@ -81,12 +81,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.0"))
 	float OJJ_PipeEdgeDropMargin = 40.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.01"))
-	float LiquidVisualScaleRatio = 0.2f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
-	float LiquidVisualZOffset = 0.0f;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Material")
 	TObjectPtr<UMaterialInterface> PipeMaterialBase;
 
@@ -160,6 +154,7 @@ protected:
 	TObjectPtr<UDataTable> ResourceTable;
 
 	FTimerHandle LiquidMoveTimerHandle;
+	float LastLiquidMoveWorldTime = 0.0f;
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Pipe|Path")
@@ -218,8 +213,11 @@ private:
 	void StopLiquidMoveTimer();
 	void MoveLiquidsOneSegment();
 	void RefreshLiquidVisualInstances();
+	void RefreshShellVisualInstances();
+	void ApplySlotVisualCustomData(UInstancedStaticMeshComponent* Instances, int32 InstanceIndex, int32 SlotIndex) const;
 	void UpdateDebugTextFacingPlayer();
 	void UpdateMaterialState();
+	float GetCurrentLiquidMoveAlpha() const;
 	bool TryPullLiquidFromSource(FPipeLiquidSlot& OutSlot);
 	bool IsLiquidItem(FName ItemID) const;
 	bool HasAnyLiquid() const;
@@ -228,6 +226,7 @@ private:
 	FLinearColor GetSlotVisualColor(const FPipeLiquidSlot& Slot) const;
 	float GetSlotFillRatio(const FPipeLiquidSlot& Slot) const;
 	FVector GetSlotFlowDirection(int32 SlotIndex) const;
+	int32 FindClosestSlotIndexFromLocalLocation(const FVector& LocalLocation) const;
 	UMaterialInterface* GetPipeMaterial(bool bHasLiquid);
 	void ConfigureMaterialInstance(UMaterialInstanceDynamic* MaterialInstance, bool bHasLiquid) const;
 	FVector GetPathCentroidLocal() const;
