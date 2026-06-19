@@ -29,6 +29,7 @@
 #include "Blueprint/UserWidget.h"
 #include "MachineBase.h"
 #include "UI/UI_MachineInteract.h"
+#include "UI/UI_BuildModeMain.h"
 #include "UI/UI_MainHUD.h"
 #include "UI/UI_Inventory.h"
 #include "UI/UI_WarehouseInteract.h"
@@ -360,6 +361,19 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AOJJ_Player::SetRampFoundationModeShortcut); // 경사면
 	PlayerInputComponent->BindKey(EKeys::H, IE_Pressed, this, &AOJJ_Player::SetLadderModeShortcut);         // 사다리(기존 C에서 이동)
 	PlayerInputComponent->BindKey(EKeys::Z, IE_Pressed, this, &AOJJ_Player::CancelPlacementShortcut);       // 마우스 초기화(취소)
+
+	// [카테고리 숫자키] 1~9,0 → 현재 카테고리(LDJ UI_BuildModeMain)의 N번 슬롯 실행. 0키=10번 슬롯.
+	// ⚠️ 옛 IMC_Build 1~0 플랫 매핑(1→IA_SetMachineMode 등)을 에디터에서 제거해야 이중 발화 안 됨.
+	PlayerInputComponent->BindKey(EKeys::One,   IE_Pressed, this, &AOJJ_Player::SetHotbarSlot1);
+	PlayerInputComponent->BindKey(EKeys::Two,   IE_Pressed, this, &AOJJ_Player::SetHotbarSlot2);
+	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &AOJJ_Player::SetHotbarSlot3);
+	PlayerInputComponent->BindKey(EKeys::Four,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot4);
+	PlayerInputComponent->BindKey(EKeys::Five,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot5);
+	PlayerInputComponent->BindKey(EKeys::Six,   IE_Pressed, this, &AOJJ_Player::SetHotbarSlot6);
+	PlayerInputComponent->BindKey(EKeys::Seven, IE_Pressed, this, &AOJJ_Player::SetHotbarSlot7);
+	PlayerInputComponent->BindKey(EKeys::Eight, IE_Pressed, this, &AOJJ_Player::SetHotbarSlot8);
+	PlayerInputComponent->BindKey(EKeys::Nine,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot9);
+	PlayerInputComponent->BindKey(EKeys::Zero,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot10); // 0키 = 10번 슬롯
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -1116,6 +1130,38 @@ void AOJJ_Player::CancelPlacementShortcut()
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::None);
 }
+
+// [카테고리 숫자키] 현재 카테고리의 SlotIndex(1~10)번 슬롯 실행 — LDJ UI_BuildModeMain에 위임(슬롯 클릭과 동일 경로).
+// 카테고리 상태(CurrentSubMode)는 위젯이 보유 → 슬롯 번호만 넘기면 위젯이 현재 카테고리 기준 해석.
+void AOJJ_Player::ExecuteHotbarSlot(int32 SlotIndex)
+{
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+	// BuildModeWidgetClass = WBP_BuildModeMain(UI_BuildModeMain) 전제(에디터 확인됨). 안전망: 아니면 무동작+경고.
+	if (UUI_BuildModeMain* BuildMenu = Cast<UUI_BuildModeMain>(BuildModeWidgetInstance))
+	{
+		BuildMenu->ExecutePlacementMode(SlotIndex);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] 핫바 슬롯 %d 무시 — BuildModeWidgetInstance가 UUI_BuildModeMain 아님/없음(BuildModeWidgetClass 확인)"),
+			SlotIndex);
+	}
+}
+
+void AOJJ_Player::SetHotbarSlot1()  { ExecuteHotbarSlot(1); }
+void AOJJ_Player::SetHotbarSlot2()  { ExecuteHotbarSlot(2); }
+void AOJJ_Player::SetHotbarSlot3()  { ExecuteHotbarSlot(3); }
+void AOJJ_Player::SetHotbarSlot4()  { ExecuteHotbarSlot(4); }
+void AOJJ_Player::SetHotbarSlot5()  { ExecuteHotbarSlot(5); }
+void AOJJ_Player::SetHotbarSlot6()  { ExecuteHotbarSlot(6); }
+void AOJJ_Player::SetHotbarSlot7()  { ExecuteHotbarSlot(7); }
+void AOJJ_Player::SetHotbarSlot8()  { ExecuteHotbarSlot(8); }
+void AOJJ_Player::SetHotbarSlot9()  { ExecuteHotbarSlot(9); }
+void AOJJ_Player::SetHotbarSlot10() { ExecuteHotbarSlot(10); }
 
 void AOJJ_Player::SetWarehouseMode(const FInputActionValue& Value)
 {
