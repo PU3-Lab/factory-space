@@ -15,6 +15,7 @@
 #include "Materials/MaterialInterface.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "PlayerWarehouseSubsystem.h"
 #include "Resource/ResourceData.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
@@ -562,6 +563,68 @@ void AConveyor::ResetItemSlots()
 	LastItemMoveWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
 	NextItemVisualId = 1;
 	DepartingVisuals.Reset();
+}
+
+void AConveyor::ApplyItemSlotsForSave(const TArray<FName>& SavedItemSlots)
+{
+	ItemSlots = SavedItemSlots;
+	PreviousItemSlots = ItemSlots;
+	ItemVisualIds.SetNum(ItemSlots.Num());
+	PreviousItemVisualIds.SetNum(ItemSlots.Num());
+
+	for (int32 Index = 0; Index < ItemSlots.Num(); ++Index)
+	{
+		ItemVisualIds[Index] = ItemSlots[Index].IsNone() ? INDEX_NONE : NextItemVisualId++;
+		PreviousItemVisualIds[Index] = ItemVisualIds[Index];
+	}
+
+	DepartingVisuals.Reset();
+	LastItemMoveWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastItemMoveWorldTime;
+	RefreshItemVisualInstances();
+	UpdateDebugStateText();
+}
+
+bool AConveyor::RefundItemsToWarehouse()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>()
+		: nullptr;
+	if (!WarehouseSubsystem)
+	{
+		return false;
+	}
+
+	TMap<FName, int32> RefundedItems;
+	for (const FName& ItemId : ItemSlots)
+	{
+		if (!ItemId.IsNone())
+		{
+			RefundedItems.FindOrAdd(ItemId)++;
+		}
+	}
+
+	if (RefundedItems.Num() == 0)
+	{
+		return true;
+	}
+
+	for (const TPair<FName, int32>& Item : RefundedItems)
+	{
+		WarehouseSubsystem->AddItem(Item.Key, Item.Value);
+	}
+
+	for (FName& ItemSlot : ItemSlots)
+	{
+		ItemSlot = NAME_None;
+	}
+	PreviousItemSlots = ItemSlots;
+	ItemVisualIds.Init(INDEX_NONE, ItemSlots.Num());
+	PreviousItemVisualIds = ItemVisualIds;
+	DepartingVisuals.Reset();
+	RefreshItemVisualInstances();
+	UpdateDebugStateText();
+	return true;
 }
 
 void AConveyor::RestartItemMoveTimer()

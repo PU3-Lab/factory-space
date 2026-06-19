@@ -31,6 +31,8 @@ public:
 	virtual bool TryTakeFirstOutputItem(FName& OutItemID) override;
 
 protected:
+	virtual bool ShouldRefundBuffersToWarehouseOnRemoval() const override { return false; }
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Warehouse Port")
 	FName SelectedOutputItemID = NAME_None;
 

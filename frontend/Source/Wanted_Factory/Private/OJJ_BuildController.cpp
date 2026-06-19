@@ -846,6 +846,7 @@ void AOJJ_BuildController::DemolishUnderCursor()
 					TargetGrid->OJJ_RemoveActorAt((*ConvCells)[0]); // 라인 전체 그리드 점유 해제.
 				}
 			}
+			Conveyor->RefundItemsToWarehouse();
 			Conveyor->Destroy(); // 액터/비주얼 실제 제거 — 그리드 함수는 점유 해제만, Destroy는 호출자 책임(기존 854 패턴).
 		}
 
@@ -867,6 +868,7 @@ void AOJJ_BuildController::DemolishUnderCursor()
 		{
 			FString PipeReason;
 			TargetGrid->OJJ_UnregisterPipeCells(Pipe, PipeReason);
+			Pipe->RefundLiquidsToWarehouse();
 			Pipe->Destroy();
 		}
 
@@ -883,6 +885,7 @@ void AOJJ_BuildController::DemolishUnderCursor()
 		// 컨베이어 직접 철거: 라인 단위(액터 다중셀) 전체 그리드 해제 + Destroy. 반대편 머신 화살표는 내부 RefreshArrows로 복귀.
 		if (TargetGrid->OJJ_RemoveActorAt(CursorCell))
 		{
+			Conveyor->RefundItemsToWarehouse();
 			Conveyor->Destroy();
 			bRemoved = true;
 		}
@@ -894,6 +897,7 @@ void AOJJ_BuildController::DemolishUnderCursor()
 		FString PipeReason;
 		if (TargetGrid->OJJ_UnregisterPipeCells(Pipe, PipeReason))
 		{
+			Pipe->RefundLiquidsToWarehouse();
 			Pipe->Destroy();
 			bRemoved = true;
 		}

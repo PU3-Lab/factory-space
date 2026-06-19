@@ -207,6 +207,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pipe|Debug")
 	void UpdateDebugStateText();
 
+	const TArray<FPipeLiquidSlot>& GetLiquidSlotsForSave() const { return LiquidSlots; }
+	void ApplyLiquidSlotsForSave(const TArray<FPipeLiquidSlot>& SavedLiquidSlots);
+	bool RefundLiquidsToWarehouse();
+
 private:
 	void RebuildVisuals();
 	void ResetLiquidSlots();

@@ -412,6 +412,9 @@ public:
 	UFUNCTION(Exec)
 	void OJJ_UpgradeMachineLevel(const FString& MachineTypeName, int32 UpgradeCount = 1);
 
+	UFUNCTION(Exec)
+	void OJJ_ResetGame();
+
 protected:
 	void SetPowerNodeMode(const FInputActionValue& Value);
 	void SetShieldMode(const FInputActionValue& Value);

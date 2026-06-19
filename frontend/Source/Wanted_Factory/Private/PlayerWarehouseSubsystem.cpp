@@ -62,3 +62,8 @@ void UPlayerWarehouseSubsystem::GrantInitialItems(const TArray<FWarehouseItemSta
 		AddItem(Item.ItemID, Item.Count);
 	}
 }
+
+void UPlayerWarehouseSubsystem::SetStoredItemsForSave(const TMap<FName, int32>& Items)
+{
+	StoredItems = Items;
+}

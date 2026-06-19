@@ -211,6 +211,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Planet Event|Event")
 	void EndActiveEvent();
 
+	void RestoreSaveState(
+		const FPlanetTimeState& InTimeState,
+		const FPlanetWeatherState& InWeatherState,
+		const FPlanetEventState& InEventState);
+
 private:
 	FPlanetTimeState TimeState;
 	FPlanetWeatherState WeatherState;

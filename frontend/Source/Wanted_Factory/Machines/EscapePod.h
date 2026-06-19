@@ -15,6 +15,7 @@ public:
 	AEscapePod();
 
 	virtual void OnRemovedFromGrid() override;
+	virtual bool OJJ_RequiresOccupancyOnlyRegistration() const override { return true; }
 
 protected:
 	virtual void BeginPlay() override;
