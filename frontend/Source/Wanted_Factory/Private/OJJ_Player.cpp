@@ -5,6 +5,7 @@
 
 #include "Camera/CameraComponent.h"
 #include "FactoryAgentClientSubsystem.h"
+#include "FactorySaveSubsystem.h"
 #include "QuestManagerSubsystem.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -149,6 +150,11 @@ void AOJJ_Player::BeginPlay()
 		{
 			QuestManager->StartTutorialQuestTest();
 		}
+
+		if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+		{
+			SaveSubsystem->HandlePlayerReady(this);
+		}
 	}
 	
 	ConnectFactoryAgentClient();
@@ -164,6 +170,14 @@ void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	// 등반/step-off 중 폰 파괴·언포제스 시 비행/중력0 상태가 남지 않도록 청산(폰 재사용 안전).
 	AbortClimb();
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+		{
+			SaveSubsystem->SaveCurrentGame();
+		}
+	}
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -1704,6 +1718,30 @@ void AOJJ_Player::OJJ_UpgradeMachineLevel(const FString& MachineTypeName, int32 
 		*MachineTypeName,
 		SuccessCount,
 		MachineSubsystem->GetMachineLevel(MachineType));
+}
+
+void AOJJ_Player::OJJ_ResetGame()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UFactorySaveSubsystem* SaveSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UFactorySaveSubsystem>()
+		: nullptr;
+	if (!SaveSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_ResetGame] FactorySaveSubsystem not found."));
+		return;
+	}
+
+	SaveSubsystem->ResetToNewGame();
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const FString CurrentMapName = UWorld::RemovePIEPrefix(World->GetMapName());
+	UGameplayStatics::OpenLevel(this, FName(*CurrentMapName));
 }
 
 void AOJJ_Player::UpdateInventoryRealtime()

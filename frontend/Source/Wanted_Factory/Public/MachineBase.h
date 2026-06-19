@@ -305,12 +305,13 @@ public:
 	// GetMachinePlacementLocation의 수면 Z 안착 스위치. 교집합(IsCellWater AND GetWaterSurfaceZAtCell)은
 	// 그리드 측이 셀별로 보장하므로, 머신은 "물 위에 설 수 있는가"만 선언한다(CDO-safe — 인스턴스 상태 미사용).
 	virtual bool CanStandOnWater() const { return false; }
+	virtual bool OJJ_RequiresOccupancyOnlyRegistration() const { return false; }
 
 	// 그리드 등록 성공 직후(배치 확정) 호출 — 자원 선점 등. 실제 인스턴스에서만 호출(CDO 아님).
 	virtual void OnPlacedOnGrid(AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps) {}
 
 	// 그리드에서 제거되기 직전 호출 — 자원 선점 해제 등. 실제 인스턴스에서만 호출.
-	virtual void OnRemovedFromGrid() {}
+	virtual void OnRemovedFromGrid();
 
 	// 임시 테스트 용 : 아이템 투입
 	UFUNCTION(BlueprintCallable, Category = "Machine | Inventory")
@@ -419,6 +420,15 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Machine | Durability")
 	float GetCurrentDurability() const { return CurrentDurability; }
+	bool RefundBufferedItemsToWarehouse();
+	void GetSaveState(
+		TMap<FName, int32>& OutInputInventory,
+		TMap<FName, int32>& OutOutputBuffer,
+		float& OutCurrentDurability) const;
+	void ApplySaveState(
+		const TMap<FName, int32>& InInputInventory,
+		const TMap<FName, int32>& InOutputBuffer,
+		float InCurrentDurability);
 	
 	// 파워 (전력)
 	UFUNCTION(BlueprintCallable, Category = "Machine | Power")
@@ -461,6 +471,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Machine | Planet Event")
 	float GetEffectiveProcessTime(float BaseProcessTime) const;
-	
-	
+
+protected:
+	virtual bool ShouldRefundBuffersToWarehouseOnRemoval() const { return true; }
 };

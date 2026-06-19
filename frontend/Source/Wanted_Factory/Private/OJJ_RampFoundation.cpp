@@ -368,6 +368,34 @@ void AOJJ_RampFoundation::OJJ_NotifyFitResult(const FOJJFoundationFitResult& Fit
 	bPlacedLoEndLowestValid = Fit.bOneSideGroundRamp && Fit.bLoEndLowestValid;
 }
 
+void AOJJ_RampFoundation::GetSaveState(
+	int32& OutRiseSteps,
+	bool& bOutOneSideGroundRamp,
+	float& OutLoEndLowestGroundRaw,
+	bool& bOutLoEndLowestValid) const
+{
+	OutRiseSteps = PlacedRiseSteps;
+	bOutOneSideGroundRamp = bPlacedOneSideGroundRamp;
+	OutLoEndLowestGroundRaw = PlacedLoEndLowestGroundZ;
+	bOutLoEndLowestValid = bPlacedLoEndLowestValid;
+}
+
+void AOJJ_RampFoundation::ApplySaveState(
+	int32 InRiseSteps,
+	bool bInOneSideGroundRamp,
+	float InLoEndLowestGroundRaw,
+	bool bInLoEndLowestValid)
+{
+	PlacedRiseSteps = InRiseSteps;
+	bPlacedOneSideGroundRamp = bInOneSideGroundRamp;
+	PlacedLoEndLowestGroundZ = InLoEndLowestGroundRaw;
+	bPlacedLoEndLowestValid = bInLoEndLowestValid;
+	PlacedRotationSteps = ((FMath::RoundToInt(GetActorRotation().Yaw / 90.0f) % 4) + 4) % 4;
+	PlacedClimbLengthCells = (PlacedRotationSteps % 2 == 0)
+		? FMath::Max(1, FoundationSize.X)
+		: FMath::Max(1, FoundationSize.Y);
+}
+
 bool AOJJ_RampFoundation::OJJ_BuildPerCellSurfaceZ(FIntPoint EffSize, int32 RotationSteps, float BaseSurfaceZ,
 	int32 RiseSteps, TArray<float>& OutCellZs) const
 {

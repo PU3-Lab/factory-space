@@ -47,6 +47,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Machine")
 	FText GetMachineDisplayName(FName MachineType) const;
 
+	const TMap<FName, int32>& GetMachineLevels() const { return MachineTypeToCurrentLevel; }
+	void RestoreMachineLevels(const TMap<FName, int32>& Levels);
+
 private:
 	TMap<FName, FName> MachineNameToRowMap;
 	TMap<FName, TMap<int32, FName>> MachineTypeLevelToRowMap;

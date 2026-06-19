@@ -333,6 +333,18 @@ bool AMachineBase::CanPlace()
 	return true;
 }
 
+void AMachineBase::OnRemovedFromGrid()
+{
+	StopProcess();
+
+	if (!ShouldRefundBuffersToWarehouseOnRemoval())
+	{
+		return;
+	}
+
+	RefundBufferedItemsToWarehouse();
+}
+
 bool AMachineBase::AddItem(FName ItemID, int32 Count)
 {
 	if (isBroken() && bDisableWhenBroken)
@@ -721,6 +733,33 @@ bool AMachineBase::TryTakeFirstOutputItem(FName& OutItemID)
 bool AMachineBase::CanReceiveConveyorItem(FName ItemID, int32 Count) const
 {
 	return CanAddInputItem(ItemID, Count);
+}
+
+void AMachineBase::GetSaveState(
+	TMap<FName, int32>& OutInputInventory,
+	TMap<FName, int32>& OutOutputBuffer,
+	float& OutCurrentDurability) const
+{
+	OutInputInventory = InputInventory;
+	OutOutputBuffer = OutputBuffer;
+	OutCurrentDurability = CurrentDurability;
+}
+
+void AMachineBase::ApplySaveState(
+	const TMap<FName, int32>& InInputInventory,
+	const TMap<FName, int32>& InOutputBuffer,
+	float InCurrentDurability)
+{
+	StopProcess();
+	InputInventory = InInputInventory;
+	OutputBuffer = InOutputBuffer;
+	CurrentDurability = FMath::Clamp(InCurrentDurability, 0.0f, MaxDurability);
+	UpdateDebugBufferText();
+	RefreshMachineState();
+	if (MachineState == EMachineState::Idle)
+	{
+		TryStartProcess();
+	}
 }
 
 bool AMachineBase::ReceiveConveyorItem(FName ItemID, int32 Count)
@@ -1145,6 +1184,46 @@ bool AMachineBase::HasEnoughPower() const
 	}
 	
 	return CurrentProvidedPower >= PowerConsumption;
+}
+
+bool AMachineBase::RefundBufferedItemsToWarehouse()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UPlayerWarehouseSubsystem* Warehouse = GameInstance
+		? GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>()
+		: nullptr;
+	if (!Warehouse)
+	{
+		return false;
+	}
+
+	bool bRefundedAny = false;
+
+	for (const TPair<FName, int32>& Input : InputInventory)
+	{
+		if (!Input.Key.IsNone() && Input.Value > 0)
+		{
+			Warehouse->AddItem(Input.Key, Input.Value);
+			bRefundedAny = true;
+		}
+	}
+
+	for (const TPair<FName, int32>& Output : OutputBuffer)
+	{
+		if (!Output.Key.IsNone() && Output.Value > 0)
+		{
+			Warehouse->AddItem(Output.Key, Output.Value);
+			bRefundedAny = true;
+		}
+	}
+
+	InputInventory.Reset();
+	OutputBuffer.Reset();
+	OutputInventory.Reset();
+	CurrentRecipe = FRecipeTable();
+	UpdateDebugBufferText();
+	RefreshMachineState();
+	return bRefundedAny;
 }
 
 void AMachineBase::RefreshMachineState()

@@ -252,6 +252,34 @@ void UPlanetEventManagerSubsystem::EndActiveEvent()
 	LOG_SSR_W(TEXT("Planet event ended: %s"), *UEnum::GetValueAsString(EndedEventType));
 }
 
+void UPlanetEventManagerSubsystem::RestoreSaveState(
+	const FPlanetTimeState& InTimeState,
+	const FPlanetWeatherState& InWeatherState,
+	const FPlanetEventState& InEventState)
+{
+	RestoreMachineEfficiencies();
+
+	TimeState = InTimeState;
+	WeatherState = InWeatherState;
+	WeatherStartState = InWeatherState;
+	WeatherTargetState = InWeatherState;
+	EventState = InEventState;
+	WeatherBlendElapsedSeconds = 0.0f;
+	LastSimulationUpdateWorldTimeSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+
+	if (EventState.Type == EPlanetEventType::MagneticStorm)
+	{
+		ApplyActiveEventToMachines();
+	}
+
+	OnDayPhaseChanged.Broadcast(TimeState.Phase);
+	OnWeatherChanged.Broadcast(WeatherState);
+	if (EventState.Type != EPlanetEventType::None)
+	{
+		OnPlanetEventStarted.Broadcast(EventState.Type, EventState.Severity);
+	}
+}
+
 void UPlanetEventManagerSubsystem::StartSimulation(UWorld& InWorld)
 {
 	StopSimulation();

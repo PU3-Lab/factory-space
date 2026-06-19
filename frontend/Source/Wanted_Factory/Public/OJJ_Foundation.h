@@ -76,6 +76,9 @@ public:
 
 	FIntPoint GetFoundationSize() const { return FoundationSize; }
 	float GetThickness() const { return Thickness; }
+	void SetFoundationSizeForSave(FIntPoint InFoundationSize) { FoundationSize = InFoundationSize; }
+	virtual void GetSaveState(int32& OutRiseSteps, bool& bOutOneSideGroundRamp, float& OutLoEndLowestGroundRaw, bool& bOutLoEndLowestValid) const;
+	virtual void ApplySaveState(int32 InRiseSteps, bool bInOneSideGroundRamp, float InLoEndLowestGroundRaw, bool bInLoEndLowestValid);
 
 	// 고스트 프리뷰(#187)가 슬래브 메시를 액터 spawn 없이 그리기 위한 접근자(CDO에서 StaticMesh 취득).
 	UStaticMeshComponent* GetSlabMesh() const { return SlabMesh; }

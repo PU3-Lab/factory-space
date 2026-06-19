@@ -42,6 +42,8 @@ public:
 
 	// 배치 확정 풋프린트 저장(F3.6-1) — 자동 맞춤의 동적 길이/상승 단수를 계단 비주얼이 쓰도록.
 	virtual void OJJ_NotifyFitResult(const FOJJFoundationFitResult& Fit) override;
+	virtual void GetSaveState(int32& OutRiseSteps, bool& bOutOneSideGroundRamp, float& OutLoEndLowestGroundRaw, bool& bOutLoEndLowestValid) const override;
+	virtual void ApplySaveState(int32 InRiseSteps, bool bInOneSideGroundRamp, float InLoEndLowestGroundRaw, bool bInLoEndLowestValid) override;
 
 	// 쐐기 빗변 면의 보간 Z(F3.8'' — 벨트 반행 편차 해소): 쐐기 꼭짓점과 같은 프레임/수식
 	// (OJJ_ClimbDirForStep + L/Rise/Thickness — 단일원). 평지 브리지(Rise 0)는 false(면=장부 평탄).

@@ -11,6 +11,7 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "PlayerWarehouseSubsystem.h"
 #include "Resource/ResourceData.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
@@ -380,6 +381,55 @@ void APipe::ResetLiquidSlots()
 		Slot.Reset();
 	}
 	UpdateMaterialState();
+}
+
+void APipe::ApplyLiquidSlotsForSave(const TArray<FPipeLiquidSlot>& SavedLiquidSlots)
+{
+	LiquidSlots = SavedLiquidSlots;
+	UpdateMaterialState();
+	RefreshLiquidVisualInstances();
+	UpdateDebugStateText();
+}
+
+bool APipe::RefundLiquidsToWarehouse()
+{
+	const UGameInstance* GameInstance = GetGameInstance();
+	UPlayerWarehouseSubsystem* Warehouse = GameInstance
+		? GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>()
+		: nullptr;
+	if (!Warehouse)
+	{
+		return false;
+	}
+
+	TMap<FName, int32> RefundedLiquids;
+	for (const FPipeLiquidSlot& Slot : LiquidSlots)
+	{
+		if (!Slot.IsEmpty())
+		{
+			RefundedLiquids.FindOrAdd(Slot.LiquidID) += Slot.Amount;
+		}
+	}
+
+	if (RefundedLiquids.Num() == 0)
+	{
+		return true;
+	}
+
+	for (const TPair<FName, int32>& Liquid : RefundedLiquids)
+	{
+		Warehouse->AddItem(Liquid.Key, Liquid.Value);
+	}
+
+	for (FPipeLiquidSlot& Slot : LiquidSlots)
+	{
+		Slot.Reset();
+	}
+
+	UpdateMaterialState();
+	RefreshLiquidVisualInstances();
+	UpdateDebugStateText();
+	return true;
 }
 
 void APipe::RestartLiquidMoveTimer()

@@ -248,6 +248,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Conveyor|Items")
 	AMachineBase* GetTargetMachine() const { return TargetMachine.Get(); }
 
+	const TArray<FName>& GetItemSlotsForSave() const { return ItemSlots; }
+	void ApplyItemSlotsForSave(const TArray<FName>& SavedItemSlots);
+	bool RefundItemsToWarehouse();
+
 private:
 	void RebuildVisuals();
 	void ResetItemSlots();
