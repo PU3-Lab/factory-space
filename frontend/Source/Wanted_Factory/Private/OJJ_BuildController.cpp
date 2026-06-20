@@ -1216,7 +1216,11 @@ void AOJJ_BuildController::OnLeftClickPressed()
 		return;
 	}
 
-	NewMachine->SetActorRotation(FRotator(0.f, 90.f * HoverRotationSteps, 0.f));
+	// [2단계] 위치+회전 결합 적용 — 평지/비채굴기는 기존(위치=Flat, yaw만)과 동일, 채굴기-경사면 지형 틸트 합성.
+	// TryPlaceMachine이 이미 Flat 위치를 set했으나, 채굴기-경사는 여기서 틸트 안착 위치+회전으로 덮어쓴다(scale 불변).
+	const FTransform PlaceXform =
+		TargetGrid->OJJ_GetMachinePlacementTransform(NewMachine, Origin, HoverRotationSteps);
+	NewMachine->SetActorLocationAndRotation(PlaceXform.GetLocation(), PlaceXform.GetRotation());
 	NotifyMainQuestMachinePlaced(this, GetQuestPlacementTargetId(PlacementMode));
 
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s 머신 배치 성공"),
