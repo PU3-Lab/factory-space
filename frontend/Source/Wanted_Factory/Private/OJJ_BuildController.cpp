@@ -284,6 +284,10 @@ void AOJJ_BuildController::EnterBuildMode()
 		return;
 	}
 
+	// [그리드 색상 2단계] 현재 모드 색상 규칙을 먼저 주입(bVisualizationActive 아직 false → paint 없이 멤버만 저장),
+	// 직후 SetVisualizationVisible(true)가 그 규칙으로 1회 paint(중복 repaint 회피).
+	UpdateGridColorForCurrentMode();
+
 	TargetGrid->SetVisualizationVisible(true);
 
 	// 진입 즉시 배치 머신 포트 화살표 표시(첫 호버 전이라도 보이도록). 호버 화살표는 첫 UpdateMouseHover에서.
@@ -539,6 +543,51 @@ TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
 	}
 
 	return MachineClass;
+}
+
+void AOJJ_BuildController::UpdateGridColorForCurrentMode()
+{
+	if (!TargetGrid)
+	{
+		return;
+	}
+
+	EOJJGridColorMode ColorMode = EOJJGridColorMode::Machine;
+	bool bRaw = false;
+	bool bWater = false;
+
+	switch (PlacementMode)
+	{
+	case EOJJ_BuildPlacementMode::Foundation:
+		// Foundation/Ramp(bRampFoundationSelected는 종류만 다름) — CanPlaceFoundation 기준(경사 포함, 물·이미foundation 제외).
+		ColorMode = EOJJGridColorMode::Foundation;
+		break;
+	case EOJJ_BuildPlacementMode::Miner:
+		// 채굴기 — 광맥 4방향 인접 셀만 placeable(평지·경사 무관).
+		ColorMode = EOJJGridColorMode::Miner;
+		break;
+	case EOJJ_BuildPlacementMode::Conveyor:
+	case EOJJ_BuildPlacementMode::Pipe:
+	case EOJJ_BuildPlacementMode::PowerLine:
+	case EOJJ_BuildPlacementMode::Demolish:
+	case EOJJ_BuildPlacementMode::None:
+		// 별도 액터/중립 — constructible(buildable OR Foundation) 위에 동작 → raw 평지·Foundation 초록.
+		bRaw = true;
+		break;
+	default:
+		// 일반 머신 모드 — CDO 지형규칙(CanPlaceOnRawGround/CanStandOnWater). 일반 머신은 둘 다 false = Foundation 위만.
+		if (TSubclassOf<AMachineBase> ActiveClass = GetActiveMachineClass())
+		{
+			if (const AMachineBase* CDO = ActiveClass.GetDefaultObject())
+			{
+				bRaw = CDO->CanPlaceOnRawGround();
+				bWater = CDO->CanStandOnWater();
+			}
+		}
+		break;
+	}
+
+	TargetGrid->OJJ_UpdateGridColorRule(ColorMode, bRaw, bWater);
 }
 
 void AOJJ_BuildController::UpdateMouseHover()
@@ -1785,6 +1834,9 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::None:      ModeName = TEXT("None");       break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
+
+	// [그리드 색상 2단계] 든 머신/모드 바뀜 → 필드 색상 규칙 갱신(시그니처 동일하면 그리드가 스킵).
+	UpdateGridColorForCurrentMode();
 
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 	UpdateMouseHover();
