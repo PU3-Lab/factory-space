@@ -8,6 +8,8 @@
 #include "FactoryManagerSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "Machines/MachineSubsystem.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "PlanetEventManagerSubsystem.h"
 #include "PlayerWarehouseSubsystem.h"
@@ -139,6 +141,14 @@ AMachineBase::AMachineBase()
 
 	MeshComponent->SetupAttachment(Root);
 
+	StateIndicatorComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("StateIndicator"));
+	StateIndicatorComponent->SetupAttachment(Root);
+	StateIndicatorComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	StateIndicatorComponent->SetCastShadow(false);
+	StateIndicatorComponent->SetVisibleInRayTracing(false);
+	StateIndicatorComponent->SetRelativeLocation(StateIndicatorOffset);
+	StateIndicatorComponent->SetRelativeScale3D(StateIndicatorScale);
+
 	// 메쉬 방향 보정: 머신 메쉬의 시각적 입출력부가 논리 포트 방향(액터 forward 기반)과 -90° Yaw
 	// 어긋나는 문제(전 머신 균일, PIE 관찰 확정)를 +90° 회전으로 상쇄. RelativeRotation은 자식 메쉬만
 	// 회전시키므로 액터 forward/footprint/포트 셀 계산(GetActorForwardVector 기반)에는 무영향 —
@@ -160,11 +170,20 @@ AMachineBase::AMachineBase()
 	{
 		MeshComponent->SetStaticMesh(CubeMesh.Object);
 	}
+	ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	if (SphereMesh.Succeeded())
+	{
+		StateIndicatorComponent->SetStaticMesh(SphereMesh.Object);
+	}
 	ConstructorHelpers::FObjectFinder<UMaterial> MaterialAsset(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	if (MaterialAsset.Succeeded())
 	{
 		MeshComponent->SetMaterial(0, MaterialAsset.Object);
+		StateIndicatorMaterialInstance = UMaterialInstanceDynamic::Create(MaterialAsset.Object, this);
+		StateIndicatorComponent->SetMaterial(0, StateIndicatorMaterialInstance);
 	}
+
+	UpdateStateIndicator();
 }
 
 void AMachineBase::ApplyMachineData(const FMachineTableRow& MachineData)
@@ -314,6 +333,7 @@ void AMachineBase::OnConstruction(const FTransform& Transform)
 
 	CurrentDurability = FMath::Clamp(CurrentDurability, 0.f, MaxDurability);
 	UpdateDebugBufferText();
+	UpdateStateIndicator();
 	UpdateDebugTextFacingPlayer();
 }
 
@@ -344,6 +364,8 @@ void AMachineBase::Tick(float DeltaTime)
 	{
 		UpdateDebugTextFacingPlayer();
 	}
+
+	UpdateStateIndicator();
 }
 
 bool AMachineBase::CanPlace()
@@ -813,6 +835,61 @@ void AMachineBase::UpdateDebugBufferText()
 	DebugBufferText->SetText(FText::FromString(DebugText));
 }
 
+void AMachineBase::UpdateStateIndicator()
+{
+	if (!StateIndicatorComponent)
+	{
+		return;
+	}
+
+	StateIndicatorComponent->SetVisibility(bShowStateIndicator);
+	StateIndicatorComponent->SetRelativeLocation(StateIndicatorOffset);
+	StateIndicatorComponent->SetRelativeScale3D(StateIndicatorScale);
+	if (!bShowStateIndicator)
+	{
+		return;
+	}
+
+	FLinearColor IndicatorColor = IdleIndicatorColor;
+	switch (MachineState)
+	{
+	case EMachineState::Working:
+		IndicatorColor = WorkingIndicatorColor;
+		break;
+	case EMachineState::NoPower:
+		IndicatorColor = NoPowerIndicatorColor;
+		break;
+	case EMachineState::Blocked:
+		IndicatorColor = BlockedIndicatorColor;
+		break;
+	case EMachineState::Disabled:
+		IndicatorColor = DisabledIndicatorColor;
+		break;
+	case EMachineState::Idle:
+	default:
+		break;
+	}
+
+	if (!StateIndicatorMaterialInstance)
+	{
+		UMaterialInterface* BaseMaterial = StateIndicatorComponent->GetMaterial(0);
+		if (!BaseMaterial)
+		{
+			BaseMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
+		}
+		StateIndicatorMaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
+		StateIndicatorComponent->SetMaterial(0, StateIndicatorMaterialInstance);
+	}
+
+	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("Color"), IndicatorColor);
+	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), IndicatorColor);
+	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("Tint"), IndicatorColor);
+	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), IndicatorColor);
+	StateIndicatorMaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), 8.0f);
+	StateIndicatorMaterialInstance->SetScalarParameterValue(TEXT("Opacity"), IndicatorColor.A);
+	StateIndicatorMaterialInstance->SetScalarParameterValue(TEXT("Alpha"), IndicatorColor.A);
+}
+
 void AMachineBase::UpdateDebugTextFacingPlayer()
 {
 	if (!bShowDebugBufferText || !DebugBufferText)
@@ -1254,6 +1331,7 @@ void AMachineBase::RefreshMachineState()
 	{
 		MachineState = EMachineState::Disabled;
 		StopProcess();
+		UpdateStateIndicator();
 		return;
 	}
 
@@ -1261,6 +1339,7 @@ void AMachineBase::RefreshMachineState()
 	{
 		MachineState = EMachineState::NoPower;
 		StopProcess();
+		UpdateStateIndicator();
 		return;
 	}
 	
@@ -1268,6 +1347,8 @@ void AMachineBase::RefreshMachineState()
 	{
 		MachineState = EMachineState::Idle;
 	}
+
+	UpdateStateIndicator();
 }
 
 namespace EfficiencyKeys
