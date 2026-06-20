@@ -600,6 +600,12 @@ private:
 	// [그리드 색상 2단계] Miner 모드 color용 광맥 인접 셀 집합 재구축(RefreshGridVisual paint 직전 호출).
 	void OJJ_RebuildOreAdjacentCells();
 
+	// [WaterArea 재정의] "안 가려진 WaterArea" = 셀이 WaterArea에 덮이고(GetWaterSurfaceZAtCell) 지형 GroundZ가 면 Z보다
+	// 낮아 면이 드러난 셀(드러난 웅덩이)만 실제 물. 묻힌 땅(지형≥면)·WaterArea 없는 깊은 구덩이는 물 아님.
+	// ⚠️ Foundation 경로(OJJ_ClassifyCellColor·CanPlaceFoundation)에서만 사용. 전역 IsCellWater(펌프/파이프)는 −20 유지
+	// (의도적 공존 — 블래스트 회피). GroundZ 무효 시 옛 baked WaterCells(−20)로 안전 폴백.
+	bool OJJ_IsUncoveredWaterCell(FIntPoint Cell) const;
+
 	// 장부 동반 표시/숨김(F3.5' 부분 갱신). 숨김 = zero-scale 트랜스폼(UpdateInstanceTransform, O(1)) —
 	// 인덱스가 불변이라 RemoveInstance의 시프트/스왑 시맨틱에 비의존(Codex F3.5' ① 해소). 표시는
 	// 장부에 있으면 트랜스폼 복원, 없으면 append(인덱스 안정). 숨김 잔존분은 다음 RefreshGridVisual의

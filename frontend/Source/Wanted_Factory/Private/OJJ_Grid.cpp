@@ -1982,6 +1982,25 @@ void AOJJ_Grid::OJJ_RebuildOreAdjacentCells()
 	}
 }
 
+bool AOJJ_Grid::OJJ_IsUncoveredWaterCell(FIntPoint Cell) const
+{
+	// GroundZ 무효(미Rebake/시그니처 불일치) → 옛 baked WaterCells(−20)로 폴백(안전 degrade, 회귀 0).
+	// GetCellGroundZ는 OJJ_HasValidGroundZData 가드 내장 — 무효면 false 반환.
+	float GroundDelta = 0.0f;
+	if (!GetCellGroundZ(Cell, GroundDelta))
+	{
+		return WaterCells.Contains(Cell);
+	}
+	// WaterArea가 안 덮으면 물 아님(WaterArea 없는 깊은 구덩이는 땅).
+	float FaceZ = 0.0f;
+	if (!GetWaterSurfaceZAtCell(Cell, FaceZ))
+	{
+		return false;
+	}
+	// 지형(절대 Z)이 WaterArea 면보다 낮음 = 면이 드러난 웅덩이(실제 물). 묻힌 땅(지형≥면)은 false.
+	return (GetActorLocation().Z + GroundDelta) < FaceZ;
+}
+
 EOJJCellClass AOJJ_Grid::OJJ_ClassifyCellColor(FIntPoint Cell) const
 {
 	if (VoidCells.Contains(Cell))
@@ -1992,7 +2011,7 @@ EOJJCellClass AOJJ_Grid::OJJ_ClassifyCellColor(FIntPoint Cell) const
 	// --- Foundation/Ramp 모드: CanPlaceFoundation 기준 — 경사(blocked) 포함 전부 placeable, 물·이미foundation 제외. ---
 	if (bGridColorRuleSet && GridColorMode == EOJJGridColorMode::Foundation)
 	{
-		if (WaterCells.Contains(Cell)) { return EOJJCellClass::Water; }          // 물 = 파랑(못놓음)
+		if (OJJ_IsUncoveredWaterCell(Cell)) { return EOJJCellClass::Water; }      // 안 가려진 물 = 파랑(못놓음)
 		if (IsCellOnFoundation(Cell)) { return EOJJCellClass::Blocked; }         // 이미 Foundation = 빨강(겹침)
 		return EOJJCellClass::Buildable;                                          // 평지·경사 모두 초록(평지화 가능)
 	}
@@ -2000,7 +2019,7 @@ EOJJCellClass AOJJ_Grid::OJJ_ClassifyCellColor(FIntPoint Cell) const
 	// --- Miner 모드: 광맥 4방향 인접 셀만 placeable(평지·경사 무관). ---
 	if (bGridColorRuleSet && GridColorMode == EOJJGridColorMode::Miner)
 	{
-		if (WaterCells.Contains(Cell)) { return EOJJCellClass::Water; }          // 물 = 파랑(채굴기 못 섬)
+		if (OJJ_IsUncoveredWaterCell(Cell)) { return EOJJCellClass::Water; }      // 안 가려진 물 = 파랑(채굴기 못 섬)
 		// 인접 미선점 광맥이 있고, 셀 자체가 지상(buildable 또는 경사)이면 초록. 아니면 빨강(평지여도 광맥 없으면 X).
 		const bool bStandable = IsCellBuildable(Cell) || UnbuildableCells.Contains(Cell) || IsCellOnFoundation(Cell);
 		return (bStandable && GridColorOreAdjacentCells.Contains(Cell))
@@ -2011,7 +2030,7 @@ EOJJCellClass AOJJ_Grid::OJJ_ClassifyCellColor(FIntPoint Cell) const
 	const bool bRuleRaw = !bGridColorRuleSet || bGridColorAllowRawGround;
 	const bool bRuleWater = bGridColorRuleSet && bGridColorAllowWater;
 
-	if (WaterCells.Contains(Cell))
+	if (OJJ_IsUncoveredWaterCell(Cell))
 	{
 		return bRuleWater ? EOJJCellClass::Buildable : EOJJCellClass::Water; // 펌프=초록 / 그 외=파랑(정보색)
 	}
@@ -2164,8 +2183,14 @@ bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& Ou
 			const FIntPoint Cell(X, Y);  // 교집합 내부 — IsValidGridCell 보장
 			if (IsCellOnFoundation(Cell)) { ++Overlap; }
 			if (IsCellVoid(Cell)) { ++VoidCount; }
-			if (IsCellWater(Cell)) { ++WaterCount; }   // §5-3(물 위 Foundation) 허용 결정 시 이 게이트만 제거
-			if (IsCellOccupied(Cell)) { ++Occupied; }  // 머신/컨베이어/자원 점유 — 기존 건물과의 Z 충돌 방지
+			// [WaterArea 재정의] 물 거부를 "안 가려진 WaterArea"(드러난 웅덩이)로 한정 — 묻힌 땅·깊은 구덩이(−20 오판정)는
+			// Foundation 허용. 색상(OJJ_ClassifyCellColor)과 같은 헬퍼라 색=배치 정합. 전역 IsCellWater(펌프/파이프)는 −20 유지.
+			if (OJJ_IsUncoveredWaterCell(Cell)) { ++WaterCount; }
+			// WaterArea(액체 자원) 점유는 Foundation 차단 면제 — 큰 WaterArea 박스가 묻힌 땅까지 OccupiedCells로 점유하므로,
+			// 안 하면 박스 아래 땅에 Foundation 못 놓음. 실제 물(드러난 웅덩이) 제외는 위 uncoveredWater 게이트가 담당.
+			// 머신/컨베이어/기타 자원 점유는 그대로 거부. (파이프 bWaterResourceOccupant 면제와 동일 패턴.)
+			const TWeakObjectPtr<AActor>* Occ = OccupiedCells.Find(Cell);
+			if (Occ && Occ->IsValid() && !OJJ_IsLiquidResourceOccupant(Occ)) { ++Occupied; }
 		}
 	}
 
@@ -2456,7 +2481,11 @@ int32 AOJJ_Grid::OJJ_CountOccupiedFoundationCells(AActor* Foundation) const
 	int32 Occupied = 0;
 	for (const FIntPoint& Cell : *Cells)
 	{
-		if (IsCellOccupied(Cell) || OJJ_GetPipeAtCell(Cell)) { ++Occupied; }
+		// WaterArea(액체 자원) 점유는 "위 건물"로 안 셈 — 묻힌 땅 Foundation 위 WaterArea가 철거를 막지 않도록
+		// (CanPlaceFoundation occupancy 면제와 동일 기준). 머신/컨베이어/기타 자원·파이프는 그대로 카운트.
+		const TWeakObjectPtr<AActor>* Occ = OccupiedCells.Find(Cell);
+		const bool bRealOccupant = Occ && Occ->IsValid() && !OJJ_IsLiquidResourceOccupant(Occ);
+		if (bRealOccupant || OJJ_GetPipeAtCell(Cell)) { ++Occupied; }
 	}
 	return Occupied;
 }
@@ -2565,11 +2594,12 @@ float AOJJ_Grid::OJJ_GetCellVisualBaseZ(FIntPoint Cell) const
 
 float AOJJ_Grid::OJJ_GetCellVisualBaseZInternal(FIntPoint Cell, bool bGroundZValid) const
 {
-	// #182 ⭐ 물 위 가시성: water 셀이면 수면 Z + 리프트로 — 오버레이/호버/포트 화살표가 WaterArea 수면 메시
-	// 위에 렌더돼 보인다(지형바닥 −997에 깔려 수면 메시 −980에 가리던 문제 해소 → 물 위 정확한 클릭 가능).
-	// 시각 전용 단일원이라 오버레이·호버·화살표가 한 번에 수면 위로 올라온다. 판정 Z는 별도(영향 없음).
+	// #182 물 위 가시성: 드러난 물(안 가려진 WaterArea)만 수면 Z + 리프트로 — 오버레이/호버/포트 화살표가 수면 메시 위에 렌더.
+	// ⚠️ [WaterArea 재정의 버그픽스] 예전엔 "WaterArea 덮이면 무조건 수면 Z" → 묻힌 셀(덮였으나 지형>면=땅)의 타일이
+	// 수면(낮음)에 박혀 지형/물메시에 가려 안 보였다. OJJ_IsUncoveredWaterCell(진짜 물)일 때만 수면 Z, 묻힌 셀은
+	// fall-through → 아래 지형 GroundZ로 안착(타일이 땅 위에 보임). GroundZ 무효 시 헬퍼가 baked WaterCells로 폴백(회귀 0).
 	float WaterZ = 0.0f;
-	if (GetWaterSurfaceZAtCell(Cell, WaterZ))
+	if (OJJ_IsUncoveredWaterCell(Cell) && GetWaterSurfaceZAtCell(Cell, WaterZ))
 	{
 		return WaterZ + VisualZLift;
 	}
@@ -4252,9 +4282,11 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 R
 			return false;
 		}
 
-		// 게이트 B 점유 — WaterArea(수원) 점유 셀은 물 위 배치 머신만 통과(bWaterCellOk가 해당 액터 존재를 보장).
+		// 게이트 B 점유 — WaterArea(액체 자원) 점유는 차단 면제(묻힌 땅 위 Foundation 데크에 머신 배치 허용 —
+		// CanPlaceFoundation/철거 면제와 동일 기준, WaterArea-occupancy 그림자 통일). 물 위 배치 머신(펌프)은 bWaterCellOk로 통과.
+		// bare WaterArea(Foundation 없음)에 일반 머신은 위 게이트 A(IsCellConstructible false)가 이미 거부 → 이 면제로 새로 허용 안 됨.
 		const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell);
-		if (Found && Found->IsValid() && !bWaterCellOk)
+		if (Found && Found->IsValid() && !bWaterCellOk && !OJJ_IsLiquidResourceOccupant(Found))
 		{
 			return false;
 		}

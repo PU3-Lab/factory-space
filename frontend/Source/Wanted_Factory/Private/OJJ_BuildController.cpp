@@ -791,6 +791,12 @@ void AOJJ_BuildController::UpdateDemolishHover()
 	CurrentHoverCell = CursorCell;
 
 	AActor* Target = TargetGrid->GetActorAtCell(CursorCell);
+	// [WaterArea 철거 통과] GetActorAtCell이 묻힌 Foundation 위 WaterArea(액체 자원, OccupiedCells 점유)를 먼저 잡으면
+	// 그 아래 Foundation 철거 타깃 조회가 가려진다. WaterArea는 철거 대상이 아니므로 무시 → 아래 파이프/Foundation 폴백 진행.
+	if (Target && Target == TargetGrid->GetLiquidResourceAtCell(CursorCell))
+	{
+		Target = nullptr;
+	}
 
 	// F4-1(Codex ??: ?뚯씠????Foundation ?쒖꽌 ???대┃(DemolishUnderCursor)怨??숈씪 ?곗꽑?쒖쐞(?⑥씪 吏꾩떎??.
 	// ?꾟넂?꾨옒(嫄대Ъ?믫뙆?댄봽?믨린珥?: Foundation ???뚯씠?꾨? ?몃쾭/?대┃ 紐⑤몢 ?뚯씠?꾨줈 ?〓뒗??
@@ -853,6 +859,12 @@ void AOJJ_BuildController::DemolishUnderCursor()
 	}
 
 	AActor* Target = TargetGrid->GetActorAtCell(CursorCell);
+	// [WaterArea 철거 통과] GetActorAtCell이 묻힌 Foundation 위 WaterArea(액체 자원, OccupiedCells 점유)를 먼저 잡으면
+	// 그 아래 Foundation 철거 타깃 조회가 가려진다. WaterArea는 철거 대상이 아니므로 무시 → 아래 파이프/Foundation 폴백 진행.
+	if (Target && Target == TargetGrid->GetLiquidResourceAtCell(CursorCell))
+	{
+		Target = nullptr;
+	}
 	// F4-1(Codex ??: ?뚯씠?꾧? Foundation蹂대떎 癒쇱? ???꾟넂?꾨옒(嫄대Ъ?믫뙆?댄봽?믨린珥? 泥좉굅 ?쒖꽌. Foundation
 	// ?곗꽑?대㈃ 洹????뚯씠?꾨? 吏곸젒 泥좉굅?????녾퀬(?뚯씠??遺꾧린 ?꾨떖 遺덇?), Foundation 寃뚯씠?몃뒗
 	// OJJ_CountOccupiedFoundationCells???뚯씠???⑹궛??留됰뒗??嫄곕? + ?ъ쑀).
