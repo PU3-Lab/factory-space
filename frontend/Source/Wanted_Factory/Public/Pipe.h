@@ -128,7 +128,7 @@ protected:
 	bool bAutoMoveLiquids = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Debug")
-	bool bShowDebugStateText = true;
+	bool bShowDebugStateText = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Debug")
 	FVector DebugTextOffset = FVector(0.0f, 0.0f, 90.0f);

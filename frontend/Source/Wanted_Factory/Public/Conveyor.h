@@ -181,7 +181,7 @@ protected:
 	bool bAutoMoveItems = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Debug")
-	bool bShowDebugStateText = true;
+	bool bShowDebugStateText = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Debug")
 	FVector DebugTextOffset = FVector(0.0f, 0.0f, 90.0f);
