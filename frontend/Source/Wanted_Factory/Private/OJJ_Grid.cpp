@@ -3984,6 +3984,15 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 R
 	// bounds + 점유를 동시에 검사 (단일 패스).
 	const bool bMachineWater = Machine->CanStandOnWater();
 	const TArray<FIntPoint> Footprint = CalculateFootprint(Machine, Origin, RotationSteps);
+
+	// [1단계: 채굴기 광맥인접 경사 면제] 채굴기가 미선점 광맥에 인접하면 경사(Blocked) 셀에도 배치 허용.
+	// 광맥 인접 판정(CanPlaceAdditional=FindAdjacentUnclaimedOre)을 루프 앞으로 당겨, 아래 셀별 건설 게이트에서
+	// "경사(IsCellBlocked)만" 면제한다(채굴기 전용 — 다른 머신·다른 추출기는 기존 게이트 그대로). Void(바닥없음)/
+	// Water/점유/범위/단일건설면 게이트는 면제하지 않음(경사 기울기 정렬은 2단계 별도).
+	const bool bMinerOreAdjacent =
+		Machine->GetMachineType() == TEXT("MinerMachine")
+		&& Machine->CanPlaceAdditional(this, Origin, RotationSteps);
+
 	for (const FIntPoint& Cell : Footprint)
 	{
 		if (!IsValidGridCell(Cell))
@@ -3997,8 +4006,11 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 R
 		float UnusedWaterZ = 0.0f;
 		const bool bWaterCellOk = bMachineWater && IsCellWater(Cell) && GetWaterSurfaceZAtCell(Cell, UnusedWaterZ);
 
+		// [1단계 면제] 경사(Blocked)만 면제 — IsCellBlocked는 UnbuildableCells(경사 전용, Void/Water와 배타).
+		const bool bSlopeExemptCell = bMinerOreAdjacent && IsCellBlocked(Cell);
+
 		// 게이트 A 건설(F1-c: buildable OR Foundation 커버) — 호버도 같은 함수라 자동 빨강. 물 위는 예외 허용.
-		if (!IsCellConstructible(Cell) && !bWaterCellOk)
+		if (!IsCellConstructible(Cell) && !bWaterCellOk && !bSlopeExemptCell)
 		{
 			return false;
 		}
