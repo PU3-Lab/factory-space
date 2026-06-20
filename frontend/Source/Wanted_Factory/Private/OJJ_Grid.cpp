@@ -1304,6 +1304,42 @@ bool AOJJ_Grid::OJJ_GetRawTerrainSurfaceZ(FIntPoint Cell, float& OutSurfaceZ) co
 	return true;
 }
 
+void AOJJ_Grid::OJJ_TraceTerrainZAtWorldXY(const TArray<FVector2D>& WorldXYs, TArray<float>& OutZ, TArray<bool>& OutHit) const
+{
+	OutZ.Reset();
+	OutHit.Reset();
+	OutZ.SetNumZeroed(WorldXYs.Num());
+	OutHit.Init(false, WorldXYs.Num());
+
+	UWorld* World = GetWorld();
+	if (!World || WorldXYs.Num() == 0)
+	{
+		return;
+	}
+	// BakeBuildableCells와 동일한 채널·시작높이·깊이 + ignore 목록(머신/컨베이어/자원(WaterArea)/Foundation) — 다리가
+	// WaterArea 박스 콜리전이나 다른 건물에 안 걸리고 지형까지 내려가게. 라이브 트레이스라 GroundZ 베이크 유효성과 무관.
+	// ⚠️ ignore 목록(TActorIterator)은 N점 트레이스 전에 1회만 구축 — 코너 4점이 재사용(중복 순회 회피).
+	const float PlaneZ = GetActorLocation().Z;
+	FCollisionQueryParams Params(FName(TEXT("FoundationLegTerrain")), /*bTraceComplex=*/false, this);
+	for (TActorIterator<AMachineBase> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
+	for (TActorIterator<AConveyor> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
+	for (TActorIterator<AResourceBase> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
+	for (TActorIterator<AOJJ_Foundation> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
+
+	for (int32 i = 0; i < WorldXYs.Num(); ++i)
+	{
+		const FVector Start(WorldXYs[i].X, WorldXYs[i].Y, PlaneZ + BuildableTraceStartHeight);
+		const FVector End(WorldXYs[i].X, WorldXYs[i].Y, PlaneZ - BuildableTraceDepth);
+		FHitResult Hit;
+		if (World->LineTraceSingleByChannel(Hit, Start, End, BuildableTraceChannel, Params))
+		{
+			OutZ[i] = Hit.ImpactPoint.Z;
+			OutHit[i] = true;
+		}
+		// 미스(void)면 OutHit[i]=false 유지 — 호출자 폴백.
+	}
+}
+
 bool AOJJ_Grid::OJJ_IsRawTerrainFollowPath(const TArray<FIntPoint>& PathCells) const
 {
 	// #249 raw-terrain 지형추종 경로 판정 — 검증(OJJ_CollectConveyorReservedCells)과 배치(OJJ_TryPlaceConveyor)가
