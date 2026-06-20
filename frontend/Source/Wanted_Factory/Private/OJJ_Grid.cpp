@@ -1077,6 +1077,132 @@ FVector AOJJ_Grid::GetMachinePlacementLocation(AMachineBase* Machine, FIntPoint 
 	return FVector(LowerLeftCenter.X + OffsetX, LowerLeftCenter.Y + OffsetY, BaseZ + ZOffset);
 }
 
+bool AOJJ_Grid::OJJ_ComputeFootprintTerrainPlane(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps,
+	FVector& OutNormal, float& OutCenterZ) const
+{
+	OutNormal = FVector::UpVector;
+	OutCenterZ = GetActorLocation().Z;
+	UWorld* World = GetWorld();
+	if (!Machine || !World)
+	{
+		return false;
+	}
+
+	// 풋프린트 월드 중심 + 절반범위(회전 반영 EffectiveSize). 코너는 경계 안쪽으로 약간 들여(인접 셀 절벽 회피)
+	// — BakeBuildableCells 5점(±0.4셀)과 같은 결. 1×1이면 중심에서 ±0.4셀.
+	const FIntPoint Size = EffectiveSize(Machine->GetMachineSize(), RotationSteps);
+	const FVector LowerLeftCenter = GridToWorld(Origin);
+	const float CenterX = LowerLeftCenter.X + (Size.X - 1) * CellSize * 0.5f;
+	const float CenterY = LowerLeftCenter.Y + (Size.Y - 1) * CellSize * 0.5f;
+	const float OffX = FMath::Max(1.0f, Size.X * CellSize * 0.5f - CellSize * 0.1f);
+	const float OffY = FMath::Max(1.0f, Size.Y * CellSize * 0.5f - CellSize * 0.1f);
+
+	const float PlaneZ = GetActorLocation().Z;
+	FCollisionQueryParams Params(FName(TEXT("GridMinerTilt")), /*bTraceComplex=*/false, this);
+	for (TActorIterator<AMachineBase> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
+	for (TActorIterator<AConveyor> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
+	for (TActorIterator<AResourceBase> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
+	for (TActorIterator<AOJJ_Foundation> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
+
+	// 코너 순서: 0:(+x,+y) 1:(+x,-y) 2:(-x,+y) 3:(-x,-y)
+	const FVector2D Corners[4] = {
+		FVector2D(CenterX + OffX, CenterY + OffY), FVector2D(CenterX + OffX, CenterY - OffY),
+		FVector2D(CenterX - OffX, CenterY + OffY), FVector2D(CenterX - OffX, CenterY - OffY) };
+
+	float Z[4];
+	float SumZ = 0.0f;
+	for (int32 i = 0; i < 4; ++i)
+	{
+		const FVector Start(Corners[i].X, Corners[i].Y, PlaneZ + BuildableTraceStartHeight);
+		const FVector End(Corners[i].X, Corners[i].Y, PlaneZ - BuildableTraceDepth);
+		FHitResult Hit;
+		if (!World->LineTraceSingleByChannel(Hit, Start, End, BuildableTraceChannel, Params))
+		{
+			return false; // 코너 중 하나라도 void(바닥없음) → 틸트 미적용(평면 폴백)
+		}
+		Z[i] = Hit.ImpactPoint.Z;
+		SumZ += Z[i];
+	}
+	OutCenterZ = SumZ * 0.25f;
+
+	// 평면 기울기: X/Y축 ΔZ gradient → 법선(-dZdX, -dZdY, 1).
+	const float dZdX = ((Z[0] + Z[1]) - (Z[2] + Z[3])) / (4.0f * OffX);
+	const float dZdY = ((Z[0] + Z[2]) - (Z[1] + Z[3])) / (4.0f * OffY);
+	OutNormal = FVector(-dZdX, -dZdY, 1.0f).GetSafeNormal();
+	return true;
+}
+
+FRotator AOJJ_Grid::OJJ_GetMachineTiltRotation(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps) const
+{
+	// 채굴기 전용(회귀 0). 그 외 머신은 틸트 없음.
+	if (!Machine || Machine->GetMachineType() != TEXT("MinerMachine"))
+	{
+		return FRotator::ZeroRotator;
+	}
+	// Foundation 위(평면 슬래브)면 틸트 없음 — raw 경사일 때만.
+	for (const FIntPoint& Cell : CalculateFootprint(Machine, Origin, RotationSteps))
+	{
+		if (IsCellOnFoundation(Cell))
+		{
+			return FRotator::ZeroRotator;
+		}
+	}
+
+	FVector Normal = FVector::UpVector;
+	float CenterZ = 0.0f;
+	if (!OJJ_ComputeFootprintTerrainPlane(Machine, Origin, RotationSteps, Normal, CenterZ))
+	{
+		return FRotator::ZeroRotator;
+	}
+	// 평지(법선≈up)면 틸트 0 (요건 b) — 미세 노이즈는 틸트로 안 침.
+	if (Normal.Z > 0.9999f)
+	{
+		return FRotator::ZeroRotator;
+	}
+	return FQuat::FindBetweenNormals(FVector::UpVector, Normal).Rotator();
+}
+
+FTransform AOJJ_Grid::OJJ_GetMachinePlacementTransform(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps) const
+{
+	const FVector FlatLoc = GetMachinePlacementLocation(Machine, Origin, RotationSteps);
+	const FRotator Yaw(0.0f, 90.0f * RotationSteps, 0.0f);
+	const FVector Scale = Machine ? Machine->GetActorScale3D() : FVector::OneVector;
+
+	const FRotator Tilt = OJJ_GetMachineTiltRotation(Machine, Origin, RotationSteps);
+	if (Tilt.IsNearlyZero())
+	{
+		// 비채굴기/평지/Foundation — 기존 동작 그대로(위치=Flat, 회전=yaw만). 회귀 0.
+		return FTransform(Yaw, FlatLoc, Scale);
+	}
+
+	// 채굴기-경사: 메시 바닥-중심을 지형 평면 중심(CenterZ)에 안착 → 바닥면 ∥ 지형면이라 전체 안착(묻힘/뜸 0).
+	FVector Normal = FVector::UpVector;
+	float CenterZ = FlatLoc.Z;
+	if (!OJJ_ComputeFootprintTerrainPlane(Machine, Origin, RotationSteps, Normal, CenterZ))
+	{
+		return FTransform(Yaw, FlatLoc, Scale); // 방어(여기 도달 시 Tilt도 zero였어야)
+	}
+
+	// yaw 먼저(오브젝트 정렬) → 지형 틸트 합성. (A*B).Rotate = A.Rotate(B.Rotate) 규약.
+	const FQuat Full = Tilt.Quaternion() * Yaw.Quaternion();
+
+	// 메시 바닥-중심(액터 로컬) — GetMachinePlacementLocation의 AABB 보정과 동형.
+	FVector BottomCenterLocal = FVector::ZeroVector;
+	if (const UStaticMeshComponent* Mesh = Machine->GetMeshComponent())
+	{
+		if (const UStaticMesh* MeshAsset = Mesh->GetStaticMesh())
+		{
+			const FTransform CompToActor =
+				Mesh->GetComponentTransform().GetRelativeTransform(Machine->GetActorTransform());
+			const FBox Box = MeshAsset->GetBoundingBox().TransformBy(CompToActor);
+			BottomCenterLocal = FVector(Box.GetCenter().X, Box.GetCenter().Y, Box.Min.Z);
+		}
+	}
+	// 회전 적용 후 바닥-중심의 액터원점 기준 Z만큼 보정 → 바닥중심을 CenterZ에 안착.
+	const float ActorZ = CenterZ - Full.RotateVector(BottomCenterLocal).Z;
+	return FTransform(Full, FVector(FlatLoc.X, FlatLoc.Y, ActorZ), Scale);
+}
+
 bool AOJJ_Grid::IsValidGridCell(FIntPoint Cell) const
 {
 	return Cell.X >= 0 && Cell.X < GridSize.X

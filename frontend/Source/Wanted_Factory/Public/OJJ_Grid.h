@@ -677,6 +677,24 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
 	FVector GetMachinePlacementLocation(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
 
+	// [2단계] 채굴기 경사 틸트 — 풋프린트 코너 라인트레이스로 지형 법선을 산출해 pitch/roll(yaw 없음) 반환.
+	// 채굴기(MinerMachine)이고 풋프린트가 raw 경사일 때만 비영(非零). 평지·Foundation·다른 머신·미베이크면
+	// ZeroRotator(=틸트 없음, 회귀 0). yaw는 호출자가 별도 합성(OJJ_GetMachinePlacementTransform).
+	FRotator OJJ_GetMachineTiltRotation(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
+
+	// [2단계] 배치 트랜스폼(위치+회전 일관 산출). 회전 = yaw(90°×step) ∘ 지형 틸트(채굴기-경사만).
+	// 위치 = GetMachinePlacementLocation(틸트 적용 AABB로 Z 재안착). 라이브 배치(BuildController)가 단일 적용.
+	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
+	FTransform OJJ_GetMachinePlacementTransform(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
+
+private:
+	// [2단계 내부] 풋프린트 4코너 하향 라인트레이스(BakeBuildableCells 동일 채널·머신/자원/Foundation 무시)로
+	// 지형 평면 법선 + 중심 높이 산출. 4코너 전부 히트해야 true(void면 false → 틸트 미적용). yaw 무관(월드 XY 코너).
+	bool OJJ_ComputeFootprintTerrainPlane(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps,
+		FVector& OutNormal, float& OutCenterZ) const;
+
+public:
+
 	// 셀이 그리드 유효 범위 ([0, GridSize.X) × [0, GridSize.Y)) 내인지 검사
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
 	bool IsValidGridCell(FIntPoint Cell) const;
