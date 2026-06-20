@@ -404,10 +404,21 @@ void UFactoryManagerSubsystem::RebuildCachedData()
 void UFactoryManagerSubsystem::UpdatePowerGrid()
 {
 	EnsureCachedData();
-	ResetConsumerPower();
 
 	LastTotalGeneratedPower = 0.0f;
 	LastTotalDemandPower = 0.0f;
+
+	TMap<AMachineBase*, float> DesiredConsumerPower;
+	for (const TWeakObjectPtr<AMachineBase>& WeakMachine : RegisteredMachines)
+	{
+		AMachineBase* Machine = WeakMachine.Get();
+		if (!Machine || !Machine->NeedsPower())
+		{
+			continue;
+		}
+
+		DesiredConsumerPower.Add(Machine, 0.0f);
+	}
 
 	TSet<APowerGridNode*> VisitedNodes;
 	TSet<AMachineBase*> SuppliedConsumers;
@@ -423,7 +434,12 @@ void UFactoryManagerSubsystem::UpdatePowerGrid()
 
 		TArray<APowerGridNode*> ComponentNodes;
 		BuildPowerGridComponent(Node, VisitedNodes, ComponentNodes);
-		SupplyPowerToComponent(ComponentNodes, SuppliedConsumers, UsedGenerators);
+		SupplyPowerToComponent(ComponentNodes, DesiredConsumerPower, SuppliedConsumers, UsedGenerators);
+	}
+
+	for (const TPair<AMachineBase*, float>& Pair : DesiredConsumerPower)
+	{
+		SetMachinePowerIfChanged(Pair.Key, Pair.Value);
 	}
 
 	for (const TWeakObjectPtr<APowerLine>& WeakPowerLine : RegisteredPowerLines)
@@ -435,6 +451,20 @@ void UFactoryManagerSubsystem::UpdatePowerGrid()
 	}
 
 	bPowerDirty = false;
+}
+
+void UFactoryManagerSubsystem::ResetConsumerPower()
+{
+	for (const TWeakObjectPtr<AMachineBase>& WeakMachine : RegisteredMachines)
+	{
+		AMachineBase* Machine = WeakMachine.Get();
+		if (!Machine || !Machine->NeedsPower())
+		{
+			continue;
+		}
+
+		SetMachinePowerIfChanged(Machine, 0.0f);
+	}
 }
 
 TArray<AMachineBase*> UFactoryManagerSubsystem::GetConnectedMachines(AMachineBase* Machine)
@@ -837,20 +867,6 @@ void UFactoryManagerSubsystem::RemovePowerConnectionsForLine(APowerLine* PowerLi
 	}
 }
 
-void UFactoryManagerSubsystem::ResetConsumerPower()
-{
-	for (const TWeakObjectPtr<AMachineBase>& WeakMachine : RegisteredMachines)
-	{
-		AMachineBase* Machine = WeakMachine.Get();
-		if (!Machine || !Machine->NeedsPower())
-		{
-			continue;
-		}
-
-		SetMachinePowerIfChanged(Machine, 0.0f);
-	}
-}
-
 void UFactoryManagerSubsystem::BuildPowerGridComponent(
 	APowerGridNode* StartNode,
 	TSet<APowerGridNode*>& VisitedNodes,
@@ -886,6 +902,7 @@ void UFactoryManagerSubsystem::BuildPowerGridComponent(
 
 void UFactoryManagerSubsystem::SupplyPowerToComponent(
 	const TArray<APowerGridNode*>& ComponentNodes,
+	TMap<AMachineBase*, float>& DesiredConsumerPower,
 	TSet<AMachineBase*>& SuppliedConsumers,
 	TSet<AMachineBase*>& UsedGenerators)
 {
@@ -954,7 +971,7 @@ void UFactoryManagerSubsystem::SupplyPowerToComponent(
 
 		if (RemainingPower + 0.01f >= RequiredPower)
 		{
-			SetMachinePowerIfChanged(Consumer, RequiredPower);
+			DesiredConsumerPower.FindOrAdd(Consumer) = RequiredPower;
 			RemainingPower -= RequiredPower;
 		}
 	}

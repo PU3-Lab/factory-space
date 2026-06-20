@@ -11,6 +11,7 @@
 class UTextRenderComponent;
 class AOJJ_Grid;
 class UStaticMesh;
+class UMaterialInstanceDynamic;
 
 // 효율 modifier 키 모음 (요인별). 새 효율 요인은 여기에 한 줄 추가 — 머신/이벤트 매니저 등
 // 양쪽 파일의 문자열 중복을 방지하는 단일 정의 지점. 정의는 MachineBase.cpp.
@@ -160,6 +161,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Components")
 	UStaticMeshComponent* MeshComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Components")
+	UStaticMeshComponent* StateIndicatorComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Debug")
 	UTextRenderComponent* DebugBufferText;
 
@@ -191,13 +195,40 @@ protected:
 	TMap<FName, int32> OutputInventory;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Debug")
-	bool bShowDebugBufferText = true;
+	bool bShowDebugBufferText = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Debug")
 	FVector DebugTextOffset = FVector(0.0f, 0.0f, 180.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Debug", meta = (ClampMin = "1.0"))
 	float DebugTextWorldSize = 24.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
+	bool bShowStateIndicator = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
+	FVector StateIndicatorOffset = FVector(0.0f, 0.0f, 120.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "0.01"))
+	FVector StateIndicatorScale = FVector(0.30f, 0.30f, 0.30f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
+	FLinearColor IdleIndicatorColor = FLinearColor(0.65f, 0.65f, 0.65f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
+	FLinearColor WorkingIndicatorColor = FLinearColor(0.1f, 1.0f, 0.2f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
+	FLinearColor NoPowerIndicatorColor = FLinearColor(1.0f, 0.75f, 0.1f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
+	FLinearColor BlockedIndicatorColor = FLinearColor(1.0f, 0.15f, 0.1f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
+	FLinearColor DisabledIndicatorColor = FLinearColor(0.2f, 0.2f, 0.2f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "0.0"))
+	float StateIndicatorEmissiveStrength = 40.0f;
 
 	// 현재 사용 중인 레시피
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
@@ -252,6 +283,9 @@ protected:
 	// 같은 키를 두 호출자가 쓰면 서로 덮어쓰므로 키 소유를 분리할 것.
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Machine | Planet Event")
 	TMap<FName, float> EfficiencyModifiers;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> StateIndicatorMaterialInstance;
 
 public:
 	// 기능들
@@ -376,6 +410,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Machine | Debug")
 	void UpdateDebugBufferText();
+
+	UFUNCTION(BlueprintCallable, Category = "Machine | State Indicator")
+	void UpdateStateIndicator();
 
 	void UpdateDebugTextFacingPlayer();
 	
