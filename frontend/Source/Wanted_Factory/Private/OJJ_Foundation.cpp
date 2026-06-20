@@ -172,37 +172,42 @@ void AOJJ_Foundation::UpdateLegVisual()
 
 	// 3단계: 모서리별 지형까지 타일링(사다리 Overshoot 패턴). DeckBottom(액터 Z)에서 각 모서리 지형Z까지 N세그 —
 	// 위(상대 0=DeckBottom)는 딱, 남는 건 지형 아래로 박힘(맵 박힘 OK). 4모서리 독립(울퉁불퉁 대응).
-	// 지형Z는 RegisteredGrid->OJJ_GetRawTerrainSurfaceZ — false(미베이크/off-grid)면 폴백 1세그 + 경고.
+	// 코너 깊이 = 다리 실제 월드 XY의 라이브 하향 트레이스(OJJ_TraceTerrainZAtWorldXY, 베이크 ignore: 머신/컨베이어/
+	// WaterArea/Foundation). ⚠️ 셀 대표값(baked 5점 최고점)은 급경사 벽 코너를 못 잡아 얕게 걸침 → 실제 XY 트레이스.
 	const AOJJ_Grid* Grid = RegisteredGrid.Get();
 	const FVector ActorLoc = GetActorLocation();
-	const float CellHalfX = (SizeX - 1) * 0.5f * CellSize; // 모서리 '셀 중심' 거리(지형Z 조회 셀, ±350)
-	const float CellHalfY = (SizeY - 1) * 0.5f * CellSize;
 	bool bAnyUnbaked = false;
 
 	LegISM->ClearInstances();
 	const float SignX[4] = { -1.0f, +1.0f, -1.0f, +1.0f };
 	const float SignY[4] = { -1.0f, -1.0f, +1.0f, +1.0f };
+
+	// 4코너 로컬 XY(굵기만큼 안으로, 바깥면=꼭짓점) + 월드 XY 선산출 → 1회 일괄 트레이스(ignore 목록 중복 구축 회피).
+	float PosX[4], PosY[4];
+	TArray<FVector2D> CornerWorldXYs;
+	CornerWorldXYs.Reserve(4);
 	for (int32 i = 0; i < 4; ++i)
 	{
-		// XY 바깥면을 footprint 꼭짓점(±FootHalf)에 정렬(굵기만큼 안으로).
-		const float PosX = (SignX[i] > 0.0f) ? (FootHalfX - Eff.Max.X) : (-FootHalfX - Eff.Min.X);
-		const float PosY = (SignY[i] > 0.0f) ? (FootHalfY - Eff.Max.Y) : (-FootHalfY - Eff.Min.Y);
+		PosX[i] = (SignX[i] > 0.0f) ? (FootHalfX - Eff.Max.X) : (-FootHalfX - Eff.Min.X);
+		PosY[i] = (SignY[i] > 0.0f) ? (FootHalfY - Eff.Max.Y) : (-FootHalfY - Eff.Min.Y);
+		const FVector LegWorld = GetActorTransform().TransformPosition(FVector(PosX[i], PosY[i], 0.0f));
+		CornerWorldXYs.Add(FVector2D(LegWorld.X, LegWorld.Y));
+	}
 
-		// 이 모서리 다리 높이 = DeckBottom(ActorZ) − 모서리 지형Z. 베이크 없거나 off-grid면 false → 폴백 1세그.
+	TArray<float> CornerTerrainZ;
+	TArray<bool> CornerHit;
+	if (Grid)
+	{
+		Grid->OJJ_TraceTerrainZAtWorldXY(CornerWorldXYs, CornerTerrainZ, CornerHit);
+	}
+
+	for (int32 i = 0; i < 4; ++i)
+	{
+		// 이 모서리 다리 높이 = DeckBottom(ActorZ) − 코너 지형Z. 미등록·트레이스 미스(void)면 폴백 1세그.
 		float Height = SegZ;
-		if (Grid)
+		if (Grid && CornerHit.IsValidIndex(i) && CornerHit[i])
 		{
-			const FIntPoint CornerCell = Grid->WorldToGrid(
-				FVector(ActorLoc.X + SignX[i] * CellHalfX, ActorLoc.Y + SignY[i] * CellHalfY, ActorLoc.Z));
-			float TerrainZ = 0.0f;
-			if (Grid->OJJ_GetRawTerrainSurfaceZ(CornerCell, TerrainZ))
-			{
-				Height = FMath::Max(ActorLoc.Z - TerrainZ, SegZ);
-			}
-			else
-			{
-				bAnyUnbaked = true;
-			}
+			Height = FMath::Max(ActorLoc.Z - CornerTerrainZ[i], SegZ);
 		}
 		else
 		{
@@ -215,14 +220,14 @@ void AOJJ_Foundation::UpdateLegVisual()
 		{
 			// 세그 j 윗면 = 상대 −j*SegZ → 인스턴스 Z = −j*SegZ − Eff.Max.Z. j=0 윗면 = DeckBottom.
 			const float InstZ = -static_cast<float>(j) * SegZ - Eff.Max.Z;
-			LegISM->AddInstance(FTransform(LegMeshLocalRotation, FVector(PosX, PosY, InstZ), LegScale));
+			LegISM->AddInstance(FTransform(LegMeshLocalRotation, FVector(PosX[i], PosY[i], InstZ), LegScale));
 		}
 	}
 
 	if (bAnyUnbaked)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[Leg] 베이크 GroundZ 없음/off-grid — 일부 다리 폴백 1세그(공중 가능). 맵 RebakeAndCache 후 재배치 필요."));
+			TEXT("[Leg] 지형 트레이스 미스(void/바닥 없음) — 일부 다리 폴백 1세그(공중 가능). 그리드 미등록 또는 다리 아래 지형 없음."));
 	}
 }
 

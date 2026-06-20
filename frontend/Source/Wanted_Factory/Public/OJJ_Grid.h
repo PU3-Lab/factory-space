@@ -787,6 +787,12 @@ public:
 	// 검증·배치가 "유효 지형 높이 없으면 거부"를 단일원으로 공유(회귀가드: 장부/평면 의미 불변).
 	bool OJJ_GetRawTerrainSurfaceZ(FIntPoint Cell, float& OutSurfaceZ) const;
 
+	// [절벽 다리] 여러 월드 XY에서 지형 표면 Z를 하향 라인트레이스 — 베이크와 동일 채널 + ignore(머신/컨베이어/
+	// 자원(WaterArea)/Foundation). 셀 대표값(OJJ_GetRawTerrainSurfaceZ=baked 5점 최고점)과 달리 다리 실제 XY의 벽면
+	// 깊이를 반영(급경사 코너별 정확), WaterArea 박스에 안 걸림. ignore 목록 1회 구축 후 N점 재사용(코너 4점 — 성능).
+	// 각 점: 히트면 OutZ[i]=지형Z·OutHit[i]=true, 미스(void)면 OutHit[i]=false.
+	void OJJ_TraceTerrainZAtWorldXY(const TArray<FVector2D>& WorldXYs, TArray<float>& OutZ, TArray<bool>& OutHit) const;
+
 	// #249 경로가 raw-terrain 지형추종 대상인지 판정(검증 OJJ_CollectConveyorReservedCells와 배치 OJJ_TryPlaceConveyor가
 	// 동일 소스 참조 → 분기 불일치 방지). 조건: ① 베이크 GroundZ 유효 ② 전 셀 valid grid ③ Foundation 셀 0개
 	// (all-raw — 혼합은 이번 패스 거부) ④ 셀 간 GroundZ 변화 존재(평탄 raw는 기존 uniform 평면 경로 유지 → 회귀 0).
