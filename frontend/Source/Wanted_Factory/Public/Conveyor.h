@@ -92,11 +92,29 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual", meta = (ClampMin = "0.0"))
 	float FlowArrowHeightOffset = 18.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual", meta = (ClampMin = "1"))
+	int32 FlowArrowSpacing = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual", meta = (ClampMin = "0.01"))
+	float FlowArrowStepInterval = 1.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
-	FLinearColor FlowArrowColor = FLinearColor(1.0f, 0.45f, 0.1f, 1.0f);
+	FLinearColor IdleFlowArrowColor = FLinearColor(0.65f, 0.65f, 0.65f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
+	FLinearColor WorkingFlowArrowColor = FLinearColor(0.1f, 1.0f, 0.2f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
+	FLinearColor NoPowerFlowArrowColor = FLinearColor(1.0f, 0.75f, 0.1f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
+	FLinearColor BlockedFlowArrowColor = FLinearColor(1.0f, 0.15f, 0.1f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
+	FLinearColor DisabledFlowArrowColor = FLinearColor(0.2f, 0.2f, 0.2f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual", meta = (ClampMin = "0.0"))
-	float FlowArrowEmissiveStrength = 8.0f;
+	float FlowArrowEmissiveStrength = 40.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual", meta = (ClampMin = "0.01"))
 	float ItemVisualScaleRatio = 0.28f;
@@ -200,6 +218,9 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> FlowArrowMaterialInstance;
+
+	UPROPERTY(Transient)
+	int32 LastFlowArrowPhase = INDEX_NONE;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMesh> PowderVisualMesh;
@@ -307,4 +328,6 @@ private:
 	bool HasVisibleItems() const;
 	FVector GetDebugTextLocalLocation() const;
 	FString BuildMovingItemSummary() const;
+	int32 GetFlowArrowPhase() const;
+	void UpdateFlowArrowMaterial();
 };

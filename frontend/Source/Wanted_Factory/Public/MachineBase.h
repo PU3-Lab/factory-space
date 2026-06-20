@@ -210,7 +210,7 @@ protected:
 	FVector StateIndicatorOffset = FVector(0.0f, 0.0f, 120.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "0.01"))
-	FVector StateIndicatorScale = FVector(0.18f, 0.18f, 0.18f);
+	FVector StateIndicatorScale = FVector(0.30f, 0.30f, 0.30f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
 	FLinearColor IdleIndicatorColor = FLinearColor(0.65f, 0.65f, 0.65f, 1.0f);
@@ -226,6 +226,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
 	FLinearColor DisabledIndicatorColor = FLinearColor(0.2f, 0.2f, 0.2f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "0.0"))
+	float StateIndicatorEmissiveStrength = 40.0f;
 
 	// 현재 사용 중인 레시피
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")

@@ -843,7 +843,12 @@ void AMachineBase::UpdateStateIndicator()
 	}
 
 	StateIndicatorComponent->SetVisibility(bShowStateIndicator);
-	StateIndicatorComponent->SetRelativeLocation(StateIndicatorOffset);
+	FVector IndicatorLocation = StateIndicatorOffset;
+	if (MeshComponent)
+	{
+		IndicatorLocation.Z = FMath::Max(IndicatorLocation.Z, MeshComponent->Bounds.BoxExtent.Z + 40.0f);
+	}
+	StateIndicatorComponent->SetRelativeLocation(IndicatorLocation);
 	StateIndicatorComponent->SetRelativeScale3D(StateIndicatorScale);
 	if (!bShowStateIndicator)
 	{
@@ -872,7 +877,20 @@ void AMachineBase::UpdateStateIndicator()
 
 	if (!StateIndicatorMaterialInstance)
 	{
+		if (UMaterialInstanceDynamic* ExistingMID =
+			Cast<UMaterialInstanceDynamic>(StateIndicatorComponent->GetMaterial(0)))
+		{
+			StateIndicatorMaterialInstance = ExistingMID;
+		}
+	}
+
+	if (!StateIndicatorMaterialInstance)
+	{
 		UMaterialInterface* BaseMaterial = StateIndicatorComponent->GetMaterial(0);
+		if (BaseMaterial)
+		{
+			BaseMaterial = BaseMaterial->GetMaterial();
+		}
 		if (!BaseMaterial)
 		{
 			BaseMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
@@ -885,9 +903,10 @@ void AMachineBase::UpdateStateIndicator()
 	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), IndicatorColor);
 	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("Tint"), IndicatorColor);
 	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), IndicatorColor);
-	StateIndicatorMaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), 8.0f);
+	StateIndicatorMaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), StateIndicatorEmissiveStrength);
 	StateIndicatorMaterialInstance->SetScalarParameterValue(TEXT("Opacity"), IndicatorColor.A);
 	StateIndicatorMaterialInstance->SetScalarParameterValue(TEXT("Alpha"), IndicatorColor.A);
+	StateIndicatorComponent->MarkRenderStateDirty();
 }
 
 void AMachineBase::UpdateDebugTextFacingPlayer()

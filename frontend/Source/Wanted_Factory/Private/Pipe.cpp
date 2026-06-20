@@ -18,6 +18,30 @@
 
 namespace
 {
+FLinearColor ResolveMachineStateColor(
+	EMachineState State,
+	const FLinearColor& IdleColor,
+	const FLinearColor& WorkingColor,
+	const FLinearColor& NoPowerColor,
+	const FLinearColor& BlockedColor,
+	const FLinearColor& DisabledColor)
+{
+	switch (State)
+	{
+	case EMachineState::Working:
+		return WorkingColor;
+	case EMachineState::NoPower:
+		return NoPowerColor;
+	case EMachineState::Blocked:
+		return BlockedColor;
+	case EMachineState::Disabled:
+		return DisabledColor;
+	case EMachineState::Idle:
+	default:
+		return IdleColor;
+	}
+}
+
 	// LiquidVisualInstances 머터리얼용 PerInstanceCustomData 레이아웃:
 	// 0-3 = RGBA, 4 = FillRatio(0~1), 5-7 = LocalFlowDirection(XYZ).
 	// 머터리얼에서 슬롯별 색/투명도/차오름 방향 표현에 사용.
@@ -126,16 +150,11 @@ APipe::APipe()
 		FlowArrowMaterialInstance = UMaterialInstanceDynamic::Create(MaterialAsset.Object, this);
 		if (FlowArrowMaterialInstance)
 		{
-			FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("Color"), FlowArrowColor);
-			FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), FlowArrowColor);
-			FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("Tint"), FlowArrowColor);
-			FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), FlowArrowColor);
-			FlowArrowMaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), FlowArrowEmissiveStrength);
-			FlowArrowMaterialInstance->SetScalarParameterValue(TEXT("Opacity"), FlowArrowColor.A);
-			FlowArrowMaterialInstance->SetScalarParameterValue(TEXT("Alpha"), FlowArrowColor.A);
 			FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
 		}
 	}
+
+	UpdateFlowArrowMaterial();
 
 	static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
 		TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData"));
@@ -148,8 +167,15 @@ APipe::APipe()
 void APipe::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	const int32 CurrentFlowArrowPhase = GetFlowArrowPhase();
+	if (CurrentFlowArrowPhase != LastFlowArrowPhase)
+	{
+		LastFlowArrowPhase = CurrentFlowArrowPhase;
+		RebuildVisuals();
+	}
 	RefreshLiquidVisualInstances();
 	RefreshShellVisualInstances();
+	UpdateFlowArrowMaterial();
 	if (bShowDebugStateText)
 	{
 		UpdateDebugTextFacingPlayer();
@@ -159,18 +185,22 @@ void APipe::Tick(float DeltaTime)
 void APipe::BeginPlay()
 {
 	Super::BeginPlay();
+	LastFlowArrowPhase = GetFlowArrowPhase();
 	RestartLiquidMoveTimer();
 	UpdateMaterialState();
 	RefreshLiquidVisualInstances();
+	UpdateFlowArrowMaterial();
 	UpdateDebugStateText();
 }
 
 void APipe::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
+	LastFlowArrowPhase = GetFlowArrowPhase();
 	RebuildVisuals();
 	UpdateMaterialState();
 	RefreshLiquidVisualInstances();
+	UpdateFlowArrowMaterial();
 	UpdateDebugStateText();
 }
 
@@ -191,6 +221,7 @@ void APipe::SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize)
 	RebuildVisuals();
 	UpdateMaterialState();
 	RefreshLiquidVisualInstances();
+	UpdateFlowArrowMaterial();
 	UpdateDebugStateText();
 }
 
@@ -214,10 +245,12 @@ void APipe::ConfigureTransport(
 
 	SourceMachine = NewSourceMachine;
 	TargetMachine = NewTargetMachine;
+	LastFlowArrowPhase = GetFlowArrowPhase();
 	ResetLiquidSlots();
 	RestartLiquidMoveTimer();
 	UpdateMaterialState();
 	RefreshLiquidVisualInstances();
+	UpdateFlowArrowMaterial();
 	UpdateDebugStateText();
 }
 
@@ -228,10 +261,12 @@ void APipe::ClearPath()
 	LiquidSlots.Reset();
 	SourceMachine.Reset();
 	TargetMachine.Reset();
+	LastFlowArrowPhase = GetFlowArrowPhase();
 	StopLiquidMoveTimer();
 	RebuildVisuals();
 	UpdateMaterialState();
 	RefreshLiquidVisualInstances();
+	UpdateFlowArrowMaterial();
 	UpdateDebugStateText();
 }
 
@@ -379,7 +414,9 @@ void APipe::RebuildVisuals()
 			}
 		}
 
-		if (FlowArrowInstances && bShowFlowArrows && (Index % 3) == 0)
+		const int32 ArrowSpacing = FMath::Max(1, FlowArrowSpacing);
+		const int32 ArrowPhase = ArrowSpacing > 1 ? GetFlowArrowPhase() % ArrowSpacing : 0;
+		if (FlowArrowInstances && bShowFlowArrows && (Index % ArrowSpacing) == ArrowPhase)
 		{
 			FVector ArrowDirection = FVector::ZeroVector;
 			if (Index + 1 < NumCells)
@@ -489,6 +526,20 @@ void APipe::RebuildVisuals()
 			JoinInstances->AddInstance(FTransform(FRotator::ZeroRotator, Nodes[Index], SphereScale));
 		}
 	}
+}
+
+int32 APipe::GetFlowArrowPhase() const
+{
+	const int32 ArrowSpacing = FMath::Max(1, FlowArrowSpacing);
+	if (ArrowSpacing <= 1)
+	{
+		return 0;
+	}
+
+	const UWorld* World = GetWorld();
+	const float Interval = FMath::Max(0.01f, FlowArrowStepInterval);
+	const float WorldTime = World ? World->GetTimeSeconds() : 0.0f;
+	return FMath::FloorToInt(WorldTime / Interval) % ArrowSpacing;
 }
 
 void APipe::ResetLiquidSlots()
@@ -832,6 +883,86 @@ bool APipe::HasAnyLiquid() const
 	}
 
 	return false;
+}
+
+void APipe::UpdateFlowArrowMaterial()
+{
+	if (!FlowArrowMaterialInstance)
+	{
+		if (UMaterialInstanceDynamic* ExistingMID =
+			Cast<UMaterialInstanceDynamic>(FlowArrowInstances ? FlowArrowInstances->GetMaterial(0) : nullptr))
+		{
+			FlowArrowMaterialInstance = ExistingMID;
+		}
+	}
+
+	if (!FlowArrowMaterialInstance)
+	{
+		UMaterialInterface* BaseMaterial = FlowArrowInstances ? FlowArrowInstances->GetMaterial(0) : nullptr;
+		if (BaseMaterial)
+		{
+			BaseMaterial = BaseMaterial->GetMaterial();
+		}
+		if (!BaseMaterial)
+		{
+			BaseMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
+		}
+		FlowArrowMaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
+		if (FlowArrowMaterialInstance && FlowArrowInstances)
+		{
+			FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
+		}
+	}
+
+	if (!FlowArrowMaterialInstance)
+	{
+		return;
+	}
+
+	FLinearColor FlowArrowColor = IdleFlowArrowColor;
+	if ((SourceMachine.IsValid() && SourceMachine->GetMachineState() == EMachineState::Disabled)
+		|| (TargetMachine.IsValid() && TargetMachine->GetMachineState() == EMachineState::Disabled))
+	{
+		FlowArrowColor = DisabledFlowArrowColor;
+	}
+	else if ((SourceMachine.IsValid() && SourceMachine->GetMachineState() == EMachineState::NoPower)
+		|| (TargetMachine.IsValid() && TargetMachine->GetMachineState() == EMachineState::NoPower))
+	{
+		FlowArrowColor = NoPowerFlowArrowColor;
+	}
+	else if (IsOutputBlocked())
+	{
+		FlowArrowColor = BlockedFlowArrowColor;
+	}
+	else if (HasAnyLiquid()
+		|| (SourceMachine.IsValid() && SourceMachine->GetMachineState() == EMachineState::Working)
+		|| (TargetMachine.IsValid() && TargetMachine->GetMachineState() == EMachineState::Working))
+	{
+		FlowArrowColor = WorkingFlowArrowColor;
+	}
+	else if (SourceMachine.IsValid())
+	{
+		FlowArrowColor = ResolveMachineStateColor(
+			SourceMachine->GetMachineState(),
+			IdleFlowArrowColor,
+			WorkingFlowArrowColor,
+			NoPowerFlowArrowColor,
+			BlockedFlowArrowColor,
+			DisabledFlowArrowColor);
+	}
+
+	FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("Color"), FlowArrowColor);
+	FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), FlowArrowColor);
+	FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("Tint"), FlowArrowColor);
+	FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), FlowArrowColor);
+	FlowArrowMaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), FlowArrowEmissiveStrength);
+	FlowArrowMaterialInstance->SetScalarParameterValue(TEXT("Opacity"), FlowArrowColor.A);
+	FlowArrowMaterialInstance->SetScalarParameterValue(TEXT("Alpha"), FlowArrowColor.A);
+	if (FlowArrowInstances)
+	{
+		FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
+		FlowArrowInstances->MarkRenderStateDirty();
+	}
 }
 
 FName APipe::GetPrimaryLiquidID() const

@@ -83,11 +83,29 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.0"))
 	float FlowArrowHeightOffset = 16.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "1"))
+	int32 FlowArrowSpacing = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.01"))
+	float FlowArrowStepInterval = 1.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
-	FLinearColor FlowArrowColor = FLinearColor(0.15f, 0.85f, 1.0f, 1.0f);
+	FLinearColor IdleFlowArrowColor = FLinearColor(0.65f, 0.65f, 0.65f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
+	FLinearColor WorkingFlowArrowColor = FLinearColor(0.1f, 1.0f, 0.2f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
+	FLinearColor NoPowerFlowArrowColor = FLinearColor(1.0f, 0.75f, 0.1f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
+	FLinearColor BlockedFlowArrowColor = FLinearColor(1.0f, 0.15f, 0.1f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
+	FLinearColor DisabledFlowArrowColor = FLinearColor(0.2f, 0.2f, 0.2f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.0"))
-	float FlowArrowEmissiveStrength = 8.0f;
+	float FlowArrowEmissiveStrength = 40.0f;
 
 	// 파이프 반경(월드 uu). 지름 = 2×PipeRadius (기본 60 = PIE 실측 확정). 메시 실측 치수로 환산하므로
 	// 엔진 기본 실린더/구의 절대 크기와 무관 — 메시를 바꿔도 반경이 유지됨. 직선/코너/라이저 전부 추종.
@@ -253,6 +271,8 @@ private:
 	void ConfigureMaterialInstance(UMaterialInstanceDynamic* MaterialInstance, bool bHasLiquid) const;
 	FVector GetPathCentroidLocal() const;
 	FVector GetCellLocalCenter(FIntPoint Cell) const;
+	int32 GetFlowArrowPhase() const;
+	void UpdateFlowArrowMaterial();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> EmptyPipeMaterialInstance;
@@ -262,4 +282,7 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> FlowArrowMaterialInstance;
+
+	UPROPERTY(Transient)
+	int32 LastFlowArrowPhase = INDEX_NONE;
 };
