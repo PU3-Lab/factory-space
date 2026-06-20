@@ -4141,6 +4141,15 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 R
 			return false;
 		}
 
+		// [직배치 규칙] raw 지상(buildable이며 Foundation 미커버) 셀은 CanPlaceOnRawGround() 머신만 — 그 외는 Foundation 위에만.
+		// water 위 배치(bWaterCellOk)는 CanStandOnWater로 별도 허용(직교). Foundation 셀은 bRawGroundCell=false라 무관(전 머신 통과).
+		// 채굴기(CanPlaceOnRawGround=true)는 raw 통과(+경사 면제는 위 게이트 A 담당). 별도 액터(Foundation/Conveyor/Pipe)는 이 경로 비경유.
+		const bool bRawGroundCell = IsCellBuildable(Cell) && !IsCellOnFoundation(Cell);
+		if (bRawGroundCell && !bWaterCellOk && !Machine->CanPlaceOnRawGround())
+		{
+			return false;
+		}
+
 		// 게이트 B 점유 — WaterArea(수원) 점유 셀은 물 위 배치 머신만 통과(bWaterCellOk가 해당 액터 존재를 보장).
 		const TWeakObjectPtr<AActor>* Found = OccupiedCells.Find(Cell);
 		if (Found && Found->IsValid() && !bWaterCellOk)
