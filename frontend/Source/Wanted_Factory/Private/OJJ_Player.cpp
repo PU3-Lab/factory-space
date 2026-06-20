@@ -302,7 +302,7 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
 	PlayerInputComponent->BindKey(EKeys::Period, IE_Pressed, this, &AOJJ_Player::TriggerTutorialDialogueReveal);
 	// [옛 빌드 입력 경로 전수 정리] O(성형)/P(합성)/T(통신) 직행 BindKey는 카테고리 숫자키 슬롯이 완전 대체하여 제거.
-	// 콘솔 OJJ_SetBuildMode tower(통신탑)는 계속 동작.
+	// 콘솔 SetBuildMode tower(통신탑)는 계속 동작.
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AOJJ_Player::SetDemolishModeShortcut);
 	// [공용키] 카테고리 무관 — 빌드모드 중 항상 동작. 전부 레거시 BindKey + 핸들러 IsInBuildMode 가드.
 	// 옛 IA_SetFoundationMode(G)/IA_SetRampMode(H) IMC 매핑·IA 에셋은 폐기됨(F/G로 환원).
@@ -819,7 +819,7 @@ void AOJJ_Player::BuildPlaceCanceled(const FInputActionValue& Value)
 	BuildController->CancelPowerLineDrag();
 }
 
-void AOJJ_Player::OJJ_SetBuildMode(const FString& ModeName)
+void AOJJ_Player::SetBuildMode(const FString& ModeName)
 {
 	// [임시 진입로] 콘솔 exec — IA/UI 미와이어링 모드(pipe/tank/tower) 전용. 빌드모드 여부는 검사하지
 	// 않음(빌드모드 밖 호출 = 다음 진입 모드 예약). SetPlacementMode 직접 위임이라 직행키/슬롯 경로와 독립.
@@ -842,7 +842,7 @@ void AOJJ_Player::OJJ_SetBuildMode(const FString& ModeName)
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] OJJ_SetBuildMode: unknown mode '%s' (pipe|tank|tower)"), *ModeName);
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] SetBuildMode: unknown mode '%s' (pipe|tank|tower)"), *ModeName);
 	}
 }
 
@@ -1401,7 +1401,7 @@ void AOJJ_Player::TriggerInventoryToggle()
 	}
 }
 
-void AOJJ_Player::OJJ_TutorialAdvance()
+void AOJJ_Player::TutorialAdvance()
 {
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -1412,7 +1412,7 @@ void AOJJ_Player::OJJ_TutorialAdvance()
 	}
 }
 
-void AOJJ_Player::OJJ_TutorialLog()
+void AOJJ_Player::TutorialLog()
 {
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -1423,17 +1423,17 @@ void AOJJ_Player::OJJ_TutorialLog()
 	}
 }
 
-void AOJJ_Player::OJJ_SetMachineLevel(const FString& MachineTypeName, int32 NewLevel)
+void AOJJ_Player::SetMachineLevel(const FString& MachineTypeName, int32 NewLevel)
 {
 	if (MachineTypeName.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_SetMachineLevel] MachineTypeName is empty."));
+		UE_LOG(LogTemp, Warning, TEXT("[SetMachineLevel] MachineTypeName is empty."));
 		return;
 	}
 
 	if (NewLevel <= 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_SetMachineLevel] NewLevel must be greater than 0."));
+		UE_LOG(LogTemp, Warning, TEXT("[SetMachineLevel] NewLevel must be greater than 0."));
 		return;
 	}
 
@@ -1443,7 +1443,7 @@ void AOJJ_Player::OJJ_SetMachineLevel(const FString& MachineTypeName, int32 NewL
 		: nullptr;
 	if (!MachineSubsystem)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_SetMachineLevel] MachineSubsystem not found."));
+		UE_LOG(LogTemp, Warning, TEXT("[SetMachineLevel] MachineSubsystem not found."));
 		return;
 	}
 
@@ -1451,29 +1451,29 @@ void AOJJ_Player::OJJ_SetMachineLevel(const FString& MachineTypeName, int32 NewL
 	if (!MachineSubsystem->SetMachineLevel(MachineType, NewLevel))
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[OJJ_SetMachineLevel] Failed to set %s to level %d."),
+			TEXT("[SetMachineLevel] Failed to set %s to level %d."),
 			*MachineTypeName,
 			NewLevel);
 		return;
 	}
 
 	UE_LOG(LogTemp, Log,
-		TEXT("[OJJ_SetMachineLevel] %s level set to %d."),
+		TEXT("[SetMachineLevel] %s level set to %d."),
 		*MachineTypeName,
 		NewLevel);
 }
 
-void AOJJ_Player::OJJ_UpgradeMachineLevel(const FString& MachineTypeName, int32 UpgradeCount)
+void AOJJ_Player::UpgradeMachineLevel(const FString& MachineTypeName, int32 UpgradeCount)
 {
 	if (MachineTypeName.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_UpgradeMachineLevel] MachineTypeName is empty."));
+		UE_LOG(LogTemp, Warning, TEXT("[UpgradeMachineLevel] MachineTypeName is empty."));
 		return;
 	}
 
 	if (UpgradeCount <= 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_UpgradeMachineLevel] UpgradeCount must be greater than 0."));
+		UE_LOG(LogTemp, Warning, TEXT("[UpgradeMachineLevel] UpgradeCount must be greater than 0."));
 		return;
 	}
 
@@ -1483,7 +1483,7 @@ void AOJJ_Player::OJJ_UpgradeMachineLevel(const FString& MachineTypeName, int32 
 		: nullptr;
 	if (!MachineSubsystem)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_UpgradeMachineLevel] MachineSubsystem not found."));
+		UE_LOG(LogTemp, Warning, TEXT("[UpgradeMachineLevel] MachineSubsystem not found."));
 		return;
 	}
 
@@ -1502,20 +1502,20 @@ void AOJJ_Player::OJJ_UpgradeMachineLevel(const FString& MachineTypeName, int32 
 	if (SuccessCount == 0)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[OJJ_UpgradeMachineLevel] Failed to upgrade %s. Current level=%d."),
+			TEXT("[UpgradeMachineLevel] Failed to upgrade %s. Current level=%d."),
 			*MachineTypeName,
 			MachineSubsystem->GetMachineLevel(MachineType));
 		return;
 	}
 
 	UE_LOG(LogTemp, Log,
-		TEXT("[OJJ_UpgradeMachineLevel] %s upgraded by %d. Current level=%d."),
+		TEXT("[UpgradeMachineLevel] %s upgraded by %d. Current level=%d."),
 		*MachineTypeName,
 		SuccessCount,
 		MachineSubsystem->GetMachineLevel(MachineType));
 }
 
-void AOJJ_Player::OJJ_ResetGame()
+void AOJJ_Player::ResetGame()
 {
 	UGameInstance* GameInstance = GetGameInstance();
 	UFactorySaveSubsystem* SaveSubsystem = GameInstance
@@ -1523,12 +1523,12 @@ void AOJJ_Player::OJJ_ResetGame()
 		: nullptr;
 	if (!SaveSubsystem)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_ResetGame] FactorySaveSubsystem not found."));
+		UE_LOG(LogTemp, Warning, TEXT("[ResetGame] FactorySaveSubsystem not found."));
 		return;
 	}
 
 	const bool bDeletedSave = SaveSubsystem->ResetToNewGame();
-	UE_LOG(LogTemp, Log, TEXT("[OJJ_ResetGame] Save reset requested. DeletedExistingSave=%s"),
+	UE_LOG(LogTemp, Log, TEXT("[ResetGame] Save reset requested. DeletedExistingSave=%s"),
 		bDeletedSave ? TEXT("true") : TEXT("false"));
 
 	UWorld* World = GetWorld();
@@ -1543,23 +1543,23 @@ void AOJJ_Player::OJJ_ResetGame()
 		LevelName = UWorld::RemovePIEPrefix(World->GetMapName());
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[OJJ_ResetGame] Reopening level: %s"), *LevelName);
+	UE_LOG(LogTemp, Log, TEXT("[ResetGame] Reopening level: %s"), *LevelName);
 	UGameplayStatics::OpenLevel(this, FName(*LevelName));
 }
 
-void AOJJ_Player::OJJ_TriggerPlanetEvent(const FString& EventName, float Severity, float DurationSeconds)
+void AOJJ_Player::TriggerPlanetEvent(const FString& EventName, float Severity, float DurationSeconds)
 {
 	UWorld* World = GetWorld();
 	if (!World)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_TriggerPlanetEvent] World is null."));
+		UE_LOG(LogTemp, Warning, TEXT("[TriggerPlanetEvent] World is null."));
 		return;
 	}
 
 	UPlanetEventManagerSubsystem* PlanetManager = World->GetSubsystem<UPlanetEventManagerSubsystem>();
 	if (!PlanetManager)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_TriggerPlanetEvent] PlanetEventManagerSubsystem not found."));
+		UE_LOG(LogTemp, Warning, TEXT("[TriggerPlanetEvent] PlanetEventManagerSubsystem not found."));
 		return;
 	}
 
@@ -1569,14 +1569,14 @@ void AOJJ_Player::OJJ_TriggerPlanetEvent(const FString& EventName, float Severit
 		UE_LOG(
 			LogTemp,
 			Warning,
-			TEXT("[OJJ_TriggerPlanetEvent] EventName is empty. Use magnetic, sand, or none."));
+			TEXT("[TriggerPlanetEvent] EventName is empty. Use magnetic, sand, or none."));
 		return;
 	}
 
 	if (NormalizedEventName == TEXT("none") || NormalizedEventName == TEXT("clear"))
 	{
 		PlanetManager->EndActiveEvent();
-		UE_LOG(LogTemp, Log, TEXT("[OJJ_TriggerPlanetEvent] Cleared active planet event."));
+		UE_LOG(LogTemp, Log, TEXT("[TriggerPlanetEvent] Cleared active planet event."));
 		return;
 	}
 
@@ -1594,7 +1594,7 @@ void AOJJ_Player::OJJ_TriggerPlanetEvent(const FString& EventName, float Severit
 		UE_LOG(
 			LogTemp,
 			Warning,
-			TEXT("[OJJ_TriggerPlanetEvent] Unknown event '%s'. Use magnetic, sand, or none."),
+			TEXT("[TriggerPlanetEvent] Unknown event '%s'. Use magnetic, sand, or none."),
 			*EventName);
 		return;
 	}
@@ -1610,7 +1610,7 @@ void AOJJ_Player::OJJ_TriggerPlanetEvent(const FString& EventName, float Severit
 		UE_LOG(
 			LogTemp,
 			Log,
-			TEXT("[OJJ_TriggerPlanetEvent] Event=%s Severity=%.2f Duration=%.2f Started=true"),
+			TEXT("[TriggerPlanetEvent] Event=%s Severity=%.2f Duration=%.2f Started=true"),
 			*UEnum::GetValueAsString(EventType),
 			Severity,
 			DurationSeconds);
@@ -1620,7 +1620,7 @@ void AOJJ_Player::OJJ_TriggerPlanetEvent(const FString& EventName, float Severit
 	UE_LOG(
 		LogTemp,
 		Log,
-		TEXT("[OJJ_TriggerPlanetEvent] Event=%s Severity=%.2f Duration=%.2f Started=false"),
+		TEXT("[TriggerPlanetEvent] Event=%s Severity=%.2f Duration=%.2f Started=false"),
 		*UEnum::GetValueAsString(EventType),
 		Severity,
 		DurationSeconds);
