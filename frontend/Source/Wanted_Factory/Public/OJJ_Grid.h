@@ -481,7 +481,7 @@ protected:
 	// 머신 제거(RemoveMachine) 시 이 플래그로 가드해 빌드모드 중일 때만 화살표를 재적재한다
 	// (빌드모드 밖 제거가 화살표를 띄우는 회귀 방지).
 	UPROPERTY(Transient)
-	bool bPlacedArrowsVisible = false;
+	bool bPlacedArrowsVisible = true;
 
 	// 포트 화살표 시각 튜닝 — 에디터/PIE에서 리컴파일 없이 조정. 콘 인스턴스 균일 스케일.
 	// 디테일 패널/레벨 인스턴스에서 바로 만지도록 EditAnywhere + BlueprintReadWrite.

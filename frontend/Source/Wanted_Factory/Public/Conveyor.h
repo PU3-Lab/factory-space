@@ -66,6 +66,9 @@ protected:
 	TObjectPtr<UInstancedStaticMeshComponent> ItemVisualInstances;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Components")
+	TObjectPtr<UInstancedStaticMeshComponent> FlowArrowInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Components")
 	TObjectPtr<UTextRenderComponent> DebugStateText;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Grid", meta = (ClampMin = "1.0"))
@@ -79,6 +82,15 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
 	float ZOffset = 6.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
+	bool bShowFlowArrows = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual", meta = (ClampMin = "0.01"))
+	float FlowArrowScale = 0.18f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual", meta = (ClampMin = "0.0"))
+	float FlowArrowHeightOffset = 18.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual", meta = (ClampMin = "0.01"))
 	float ItemVisualScaleRatio = 0.28f;

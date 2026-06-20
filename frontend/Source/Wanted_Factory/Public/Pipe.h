@@ -10,6 +10,7 @@ class UInstancedStaticMeshComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class USceneComponent;
+class UStaticMesh;
 class UTextRenderComponent;
 
 USTRUCT()
@@ -62,6 +63,9 @@ protected:
 	TObjectPtr<UInstancedStaticMeshComponent> LiquidVisualInstances;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Components")
+	TObjectPtr<UInstancedStaticMeshComponent> FlowArrowInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Components")
 	TObjectPtr<UTextRenderComponent> DebugStateText;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Grid", meta = (ClampMin = "1.0"))
@@ -69,6 +73,15 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
 	float ZOffset = 50.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
+	bool bShowFlowArrows = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.01"))
+	float FlowArrowScale = 0.16f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.0"))
+	float FlowArrowHeightOffset = 16.0f;
 
 	// 파이프 반경(월드 uu). 지름 = 2×PipeRadius (기본 60 = PIE 실측 확정). 메시 실측 치수로 환산하므로
 	// 엔진 기본 실린더/구의 절대 크기와 무관 — 메시를 바꿔도 반경이 유지됨. 직선/코너/라이저 전부 추종.
@@ -80,12 +93,6 @@ protected:
 	// 밀어 데크 밖에서 수직 전이한다. "모서리 안 닿는 최소"(≈ PipeRadius + α)로 PIE 다이얼. 기본 40(반경 30 + 10).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.0"))
 	float OJJ_PipeEdgeDropMargin = 40.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.01"))
-	float LiquidVisualScaleRatio = 0.2f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
-	float LiquidVisualZOffset = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Material")
 	TObjectPtr<UMaterialInterface> PipeMaterialBase;
@@ -160,6 +167,7 @@ protected:
 	TObjectPtr<UDataTable> ResourceTable;
 
 	FTimerHandle LiquidMoveTimerHandle;
+	float LastLiquidMoveWorldTime = 0.0f;
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Pipe|Path")
@@ -221,13 +229,20 @@ private:
 	void StopLiquidMoveTimer();
 	void MoveLiquidsOneSegment();
 	void RefreshLiquidVisualInstances();
+	void RefreshShellVisualInstances();
+	void ApplySlotVisualCustomData(UInstancedStaticMeshComponent* Instances, int32 InstanceIndex, int32 SlotIndex) const;
 	void UpdateDebugTextFacingPlayer();
 	void UpdateMaterialState();
+	float GetCurrentLiquidMoveAlpha() const;
 	bool TryPullLiquidFromSource(FPipeLiquidSlot& OutSlot);
 	bool IsLiquidItem(FName ItemID) const;
 	bool HasAnyLiquid() const;
 	FName GetPrimaryLiquidID() const;
 	FLinearColor GetFilledPipeColor() const;
+	FLinearColor GetSlotVisualColor(const FPipeLiquidSlot& Slot) const;
+	float GetSlotFillRatio(const FPipeLiquidSlot& Slot) const;
+	FVector GetSlotFlowDirection(int32 SlotIndex) const;
+	int32 FindClosestSlotIndexFromLocalLocation(const FVector& LocalLocation) const;
 	UMaterialInterface* GetPipeMaterial(bool bHasLiquid);
 	void ConfigureMaterialInstance(UMaterialInstanceDynamic* MaterialInstance, bool bHasLiquid) const;
 	FVector GetPathCentroidLocal() const;

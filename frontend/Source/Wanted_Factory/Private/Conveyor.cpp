@@ -108,6 +108,12 @@ AConveyor::AConveyor()
 	ItemVisualInstances->SetCastShadow(false);
 	ItemVisualInstances->SetVisibleInRayTracing(false);
 
+	FlowArrowInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("FlowArrowInstances"));
+	FlowArrowInstances->SetupAttachment(Root);
+	FlowArrowInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	FlowArrowInstances->SetCastShadow(false);
+	FlowArrowInstances->SetVisibleInRayTracing(false);
+
 	DebugStateText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("DebugStateText"));
 	DebugStateText->SetupAttachment(Root);
 	DebugStateText->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -128,6 +134,7 @@ AConveyor::AConveyor()
 	if (ConeMesh.Succeeded())
 	{
 		PowderVisualMesh = ConeMesh.Object;
+		FlowArrowInstances->SetStaticMesh(ConeMesh.Object);
 	}
 
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> MaterialAsset(
@@ -137,6 +144,7 @@ AConveyor::AConveyor()
 		StraightSegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		CornerSegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		ItemVisualInstances->SetMaterial(0, MaterialAsset.Object);
+		FlowArrowInstances->SetMaterial(0, MaterialAsset.Object);
 		PowderVisualMaterialBase = MaterialAsset.Object;
 	}
 
@@ -445,6 +453,10 @@ void AConveyor::RebuildVisuals()
 	{
 		CornerSegmentInstances->ClearInstances();
 	}
+	if (FlowArrowInstances)
+	{
+		FlowArrowInstances->ClearInstances();
+	}
 
 	if (!StraightSegmentInstances || !CornerSegmentInstances || PathCells.Num() == 0)
 	{
@@ -497,6 +509,25 @@ void AConveyor::RebuildVisuals()
 			(CurrentCell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
 			(CurrentCell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
 			ZOffset + OJJ_GetPathCellLocalZByIndex(Index));
+
+		if (FlowArrowInstances && bShowFlowArrows && VisualDirection != FIntPoint::ZeroValue && (Index % 3) == 0)
+		{
+			const float ArrowDeltaZ = bHasNext
+				? (OJJ_GetPathCellLocalZByIndex(Index + 1) - OJJ_GetPathCellLocalZByIndex(Index))
+				: (OJJ_GetPathCellLocalZByIndex(Index) - OJJ_GetPathCellLocalZByIndex(Index - 1));
+			const FVector ArrowDirection(
+				static_cast<float>(VisualDirection.X) * CellSize,
+				static_cast<float>(VisualDirection.Y) * CellSize,
+				ArrowDeltaZ);
+			const FVector SafeArrowDirection = ArrowDirection.GetSafeNormal();
+			if (!SafeArrowDirection.IsNearlyZero())
+			{
+				const FVector ArrowLocation = LocalLocation + FVector(0.0f, 0.0f, SegmentHeight + FlowArrowHeightOffset);
+				const FRotator ArrowRotation = FRotationMatrix::MakeFromZ(SafeArrowDirection).Rotator();
+				FlowArrowInstances->AddInstance(
+					FTransform(ArrowRotation, ArrowLocation, FVector(FMath::Max(0.01f, FlowArrowScale))));
+			}
+		}
 
 		if (bIsCorner)
 		{

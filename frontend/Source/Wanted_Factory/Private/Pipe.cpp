@@ -18,6 +18,25 @@
 
 namespace
 {
+	// LiquidVisualInstances 머터리얼용 PerInstanceCustomData 레이아웃:
+	// 0-3 = RGBA, 4 = FillRatio(0~1), 5-7 = LocalFlowDirection(XYZ).
+	// 머터리얼에서 슬롯별 색/투명도/차오름 방향 표현에 사용.
+	constexpr int32 OJJ_PipeLiquidCustomDataCount = 14;
+	constexpr int32 OJJ_PipeLiquidColorRIndex = 0;
+	constexpr int32 OJJ_PipeLiquidColorGIndex = 1;
+	constexpr int32 OJJ_PipeLiquidColorBIndex = 2;
+	constexpr int32 OJJ_PipeLiquidColorAIndex = 3;
+	constexpr int32 OJJ_PipeLiquidFillRatioIndex = 4;
+	constexpr int32 OJJ_PipeLiquidMoveAlphaIndex = 5;
+	constexpr int32 OJJ_PipeLiquidIncomingColorRIndex = 6;
+	constexpr int32 OJJ_PipeLiquidIncomingColorGIndex = 7;
+	constexpr int32 OJJ_PipeLiquidIncomingColorBIndex = 8;
+	constexpr int32 OJJ_PipeLiquidIncomingColorAIndex = 9;
+	constexpr int32 OJJ_PipeLiquidIncomingFillRatioIndex = 10;
+	constexpr int32 OJJ_PipeLiquidFlowDirXIndex = 11;
+	constexpr int32 OJJ_PipeLiquidFlowDirYIndex = 12;
+	constexpr int32 OJJ_PipeLiquidFlowDirZIndex = 13;
+
 	FVector OJJ_MeshBoxSize(const UInstancedStaticMeshComponent* ISM)
 	{
 		const UStaticMesh* Mesh = ISM ? ISM->GetStaticMesh() : nullptr;
@@ -49,17 +68,26 @@ APipe::APipe()
 	SegmentInstances->SetupAttachment(Root);
 	SetupTubeCollision(SegmentInstances);
 	SegmentInstances->SetVisibleInRayTracing(false);
+	SegmentInstances->NumCustomDataFloats = OJJ_PipeLiquidCustomDataCount;
 
 	JoinInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("JoinInstances"));
 	JoinInstances->SetupAttachment(Root);
 	SetupTubeCollision(JoinInstances);
 	JoinInstances->SetVisibleInRayTracing(false);
+	JoinInstances->NumCustomDataFloats = OJJ_PipeLiquidCustomDataCount;
 
 	LiquidVisualInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("LiquidVisualInstances"));
 	LiquidVisualInstances->SetupAttachment(Root);
 	LiquidVisualInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	LiquidVisualInstances->SetCastShadow(false);
 	LiquidVisualInstances->SetVisibleInRayTracing(false);
+	LiquidVisualInstances->NumCustomDataFloats = OJJ_PipeLiquidCustomDataCount;
+
+	FlowArrowInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("FlowArrowInstances"));
+	FlowArrowInstances->SetupAttachment(Root);
+	FlowArrowInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	FlowArrowInstances->SetCastShadow(false);
+	FlowArrowInstances->SetVisibleInRayTracing(false);
 
 	DebugStateText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("DebugStateText"));
 	DebugStateText->SetupAttachment(Root);
@@ -81,6 +109,12 @@ APipe::APipe()
 		JoinInstances->SetStaticMesh(SphereMesh.Object);
 	}
 
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> ConeMesh(TEXT("/Engine/BasicShapes/Cone.Cone"));
+	if (ConeMesh.Succeeded())
+	{
+		FlowArrowInstances->SetStaticMesh(ConeMesh.Object);
+	}
+
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> MaterialAsset(
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	if (MaterialAsset.Succeeded())
@@ -89,6 +123,7 @@ APipe::APipe()
 		SegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		JoinInstances->SetMaterial(0, MaterialAsset.Object);
 		LiquidVisualInstances->SetMaterial(0, MaterialAsset.Object);
+		FlowArrowInstances->SetMaterial(0, MaterialAsset.Object);
 	}
 
 	static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
@@ -103,6 +138,7 @@ void APipe::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	RefreshLiquidVisualInstances();
+	RefreshShellVisualInstances();
 	if (bShowDebugStateText)
 	{
 		UpdateDebugTextFacingPlayer();
@@ -265,6 +301,10 @@ void APipe::RebuildVisuals()
 	{
 		JoinInstances->ClearInstances();
 	}
+	if (FlowArrowInstances)
+	{
+		FlowArrowInstances->ClearInstances();
+	}
 	if (PathCells.Num() == 0)
 	{
 		return;
@@ -325,6 +365,44 @@ void APipe::RebuildVisuals()
 			else
 			{
 				Nodes.Add(FVector(LocalX, LocalY, ZOffset + NextLift)); // 기존: 셀 중심(오버패스/일반)
+			}
+		}
+
+		if (FlowArrowInstances && bShowFlowArrows && (Index % 3) == 0)
+		{
+			FVector ArrowDirection = FVector::ZeroVector;
+			if (Index + 1 < NumCells)
+			{
+				const FIntPoint NextCell = PathCells[Index + 1];
+				ArrowDirection = FVector(
+					static_cast<float>(NextCell.X - Cell.X) * CellSize,
+					static_cast<float>(NextCell.Y - Cell.Y) * CellSize,
+					NextLift - Lift);
+			}
+			else if (Index > 0)
+			{
+				const FIntPoint PrevCell = PathCells[Index - 1];
+				const float PrevPrevLift = CellLift(Index - 1);
+				ArrowDirection = FVector(
+					static_cast<float>(Cell.X - PrevCell.X) * CellSize,
+					static_cast<float>(Cell.Y - PrevCell.Y) * CellSize,
+					Lift - PrevPrevLift);
+			}
+			else if (OJJ_EndPortFlowDir != FIntPoint::ZeroValue)
+			{
+				ArrowDirection = FVector(
+					static_cast<float>(OJJ_EndPortFlowDir.X) * CellSize,
+					static_cast<float>(OJJ_EndPortFlowDir.Y) * CellSize,
+					0.0f);
+			}
+
+			const FVector SafeArrowDirection = ArrowDirection.GetSafeNormal();
+			if (!SafeArrowDirection.IsNearlyZero())
+			{
+				const FVector ArrowLocation(LocalX, LocalY, ZOffset + Lift + PipeRadius + FlowArrowHeightOffset);
+				const FRotator ArrowRotation = FRotationMatrix::MakeFromZ(SafeArrowDirection).Rotator();
+				FlowArrowInstances->AddInstance(
+					FTransform(ArrowRotation, ArrowLocation, FVector(FMath::Max(0.01f, FlowArrowScale))));
 			}
 		}
 	}
@@ -464,6 +542,7 @@ bool APipe::RefundLiquidsToWarehouse()
 void APipe::RestartLiquidMoveTimer()
 {
 	StopLiquidMoveTimer();
+	LastLiquidMoveWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
 
 	if (!bAutoMoveLiquids || LiquidSlots.Num() == 0 || !SourceMachine.IsValid() || !TargetMachine.IsValid())
 	{
@@ -495,6 +574,11 @@ void APipe::MoveLiquidsOneSegment()
 	{
 		UpdateDebugStateText();
 		return;
+	}
+
+	if (const UWorld* World = GetWorld())
+	{
+		LastLiquidMoveWorldTime = World->GetTimeSeconds();
 	}
 
 	const int32 LastIndex = LiquidSlots.Num() - 1;
@@ -538,24 +622,72 @@ void APipe::RefreshLiquidVisualInstances()
 	}
 
 	LiquidVisualInstances->ClearInstances();
-	if (LiquidSlots.Num() == 0)
+	LiquidVisualInstances->SetVisibility(false);
+}
+
+void APipe::RefreshShellVisualInstances()
+{
+	auto RefreshInstances = [this](UInstancedStaticMeshComponent* Instances)
+	{
+		if (!Instances)
+		{
+			return;
+		}
+
+		const int32 InstanceCount = Instances->GetInstanceCount();
+		for (int32 InstanceIndex = 0; InstanceIndex < InstanceCount; ++InstanceIndex)
+		{
+			FTransform InstanceTransform;
+			if (!Instances->GetInstanceTransform(InstanceIndex, InstanceTransform, false))
+			{
+				continue;
+			}
+
+			const int32 SlotIndex = FindClosestSlotIndexFromLocalLocation(InstanceTransform.GetLocation());
+			ApplySlotVisualCustomData(Instances, InstanceIndex, SlotIndex);
+		}
+	};
+
+	RefreshInstances(SegmentInstances);
+	RefreshInstances(JoinInstances);
+}
+
+void APipe::ApplySlotVisualCustomData(
+	UInstancedStaticMeshComponent* Instances,
+	int32 InstanceIndex,
+	int32 SlotIndex) const
+{
+	if (!Instances)
 	{
 		return;
 	}
 
-	const float VisualScale = FMath::Max(0.01f, LiquidVisualScaleRatio);
-	const FVector InstanceScale(VisualScale, VisualScale, VisualScale);
+	const bool bValidSlot = LiquidSlots.IsValidIndex(SlotIndex);
+	const FPipeLiquidSlot* Slot = bValidSlot ? &LiquidSlots[SlotIndex] : nullptr;
+	const FLinearColor SlotColor = Slot ? GetSlotVisualColor(*Slot) : EmptyPipeColor;
+	const float FillRatio = Slot ? GetSlotFillRatio(*Slot) : 0.0f;
+	const FVector FlowDirection = bValidSlot ? GetSlotFlowDirection(SlotIndex) : FVector::UpVector;
+	const float MoveAlpha = GetCurrentLiquidMoveAlpha();
+	const int32 IncomingSlotIndex = bValidSlot ? FMath::Max(0, SlotIndex - 1) : INDEX_NONE;
+	const bool bHasIncomingSlot = LiquidSlots.IsValidIndex(IncomingSlotIndex);
+	const FPipeLiquidSlot* IncomingSlot = bHasIncomingSlot ? &LiquidSlots[IncomingSlotIndex] : Slot;
+	const FLinearColor IncomingColor = IncomingSlot ? GetSlotVisualColor(*IncomingSlot) : SlotColor;
+	const float IncomingFillRatio = IncomingSlot ? GetSlotFillRatio(*IncomingSlot) : FillRatio;
 
-	for (int32 Index = 0; Index < LiquidSlots.Num(); ++Index)
-	{
-		if (LiquidSlots[Index].IsEmpty() || !OccupiedGridCells.IsValidIndex(Index))
-		{
-			continue;
-		}
-
-		const FVector LocalLocation = GetCellLocalCenter(OccupiedGridCells[Index]) + FVector(0.0f, 0.0f, LiquidVisualZOffset);
-		LiquidVisualInstances->AddInstance(FTransform(FRotator(90.0f, 0.0f, 0.0f), LocalLocation, InstanceScale));
-	}
+	Instances->SetCustomDataValue(InstanceIndex, OJJ_PipeLiquidColorRIndex, SlotColor.R, false);
+	Instances->SetCustomDataValue(InstanceIndex, OJJ_PipeLiquidColorGIndex, SlotColor.G, false);
+	Instances->SetCustomDataValue(InstanceIndex, OJJ_PipeLiquidColorBIndex, SlotColor.B, false);
+	Instances->SetCustomDataValue(InstanceIndex, OJJ_PipeLiquidColorAIndex, SlotColor.A, false);
+	Instances->SetCustomDataValue(InstanceIndex, OJJ_PipeLiquidFillRatioIndex, FillRatio, false);
+	Instances->SetCustomDataValue(InstanceIndex, OJJ_PipeLiquidFlowDirXIndex, FlowDirection.X, false);
+	Instances->SetCustomDataValue(InstanceIndex, OJJ_PipeLiquidFlowDirYIndex, FlowDirection.Y, false);
+	Instances->SetCustomDataValue(InstanceIndex, OJJ_PipeLiquidFlowDirZIndex, FlowDirection.Z, false);
+	Instances->SetCustomDataValue(InstanceIndex, OJJ_PipeLiquidMoveAlphaIndex, MoveAlpha, false);
+	Instances->SetCustomDataValue(InstanceIndex, OJJ_PipeLiquidIncomingColorRIndex, IncomingColor.R, false);
+	Instances->SetCustomDataValue(InstanceIndex, OJJ_PipeLiquidIncomingColorGIndex, IncomingColor.G, false);
+	Instances->SetCustomDataValue(InstanceIndex, OJJ_PipeLiquidIncomingColorBIndex, IncomingColor.B, false);
+	Instances->SetCustomDataValue(InstanceIndex, OJJ_PipeLiquidIncomingColorAIndex, IncomingColor.A, false);
+	Instances->SetCustomDataValue(InstanceIndex, OJJ_PipeLiquidIncomingFillRatioIndex, IncomingFillRatio, true);
 }
 
 void APipe::UpdateDebugTextFacingPlayer()
@@ -590,20 +722,38 @@ void APipe::UpdateDebugTextFacingPlayer()
 void APipe::UpdateMaterialState()
 {
 	const bool bHasLiquid = HasAnyLiquid();
-	UMaterialInterface* PipeMaterial = GetPipeMaterial(bHasLiquid);
+	UMaterialInterface* ShellMaterial = GetPipeMaterial(bHasLiquid);
 	if (SegmentInstances)
 	{
-		SegmentInstances->SetMaterial(0, PipeMaterial);
+		SegmentInstances->SetMaterial(0, ShellMaterial);
 	}
 	if (JoinInstances)
 	{
 		JoinInstances->SetVisibility(true);
-		JoinInstances->SetMaterial(0, PipeMaterial);
+		JoinInstances->SetMaterial(0, ShellMaterial);
 	}
 	if (LiquidVisualInstances)
 	{
-		LiquidVisualInstances->SetMaterial(0, GetPipeMaterial(true));
+		LiquidVisualInstances->SetVisibility(false);
 	}
+
+	RefreshShellVisualInstances();
+}
+
+float APipe::GetCurrentLiquidMoveAlpha() const
+{
+	if (SecondsPerSegment <= KINDA_SMALL_NUMBER)
+	{
+		return 1.0f;
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return 1.0f;
+	}
+
+	return FMath::Clamp((World->GetTimeSeconds() - LastLiquidMoveWorldTime) / SecondsPerSegment, 0.0f, 1.0f);
 }
 
 bool APipe::TryPullLiquidFromSource(FPipeLiquidSlot& OutSlot)
@@ -703,6 +853,85 @@ FLinearColor APipe::GetFilledPipeColor() const
 	return Resource->VisualColor;
 }
 
+FLinearColor APipe::GetSlotVisualColor(const FPipeLiquidSlot& Slot) const
+{
+	if (Slot.IsEmpty() || !ResourceTable)
+	{
+		return FilledPipeColor;
+	}
+
+	const FResourceData* Resource = ResourceTable->FindRow<FResourceData>(Slot.LiquidID, TEXT("Pipe.GetSlotVisualColor"));
+	return Resource ? Resource->VisualColor : FilledPipeColor;
+}
+
+float APipe::GetSlotFillRatio(const FPipeLiquidSlot& Slot) const
+{
+	if (Slot.IsEmpty())
+	{
+		return 0.0f;
+	}
+
+	const int32 SafeMaxUnits = FMath::Max(1, MaxUnitsPerSegment);
+	return FMath::Clamp(static_cast<float>(Slot.Amount) / static_cast<float>(SafeMaxUnits), 0.0f, 1.0f);
+}
+
+FVector APipe::GetSlotFlowDirection(int32 SlotIndex) const
+{
+	if (!OccupiedGridCells.IsValidIndex(SlotIndex))
+	{
+		return FVector::UpVector;
+	}
+
+	const FVector CurrentCenter = GetCellLocalCenter(OccupiedGridCells[SlotIndex]);
+	FVector FlowDirection = FVector::ZeroVector;
+
+	if (OccupiedGridCells.IsValidIndex(SlotIndex - 1))
+	{
+		FlowDirection += CurrentCenter - GetCellLocalCenter(OccupiedGridCells[SlotIndex - 1]);
+	}
+
+	if (OccupiedGridCells.IsValidIndex(SlotIndex + 1))
+	{
+		FlowDirection += GetCellLocalCenter(OccupiedGridCells[SlotIndex + 1]) - CurrentCenter;
+	}
+
+	if (FlowDirection.IsNearlyZero())
+	{
+		if (OccupiedGridCells.IsValidIndex(SlotIndex + 1))
+		{
+			FlowDirection = GetCellLocalCenter(OccupiedGridCells[SlotIndex + 1]) - CurrentCenter;
+		}
+		else if (OccupiedGridCells.IsValidIndex(SlotIndex - 1))
+		{
+			FlowDirection = CurrentCenter - GetCellLocalCenter(OccupiedGridCells[SlotIndex - 1]);
+		}
+	}
+
+	return FlowDirection.GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
+}
+
+int32 APipe::FindClosestSlotIndexFromLocalLocation(const FVector& LocalLocation) const
+{
+	if (OccupiedGridCells.Num() == 0)
+	{
+		return INDEX_NONE;
+	}
+
+	int32 ClosestSlotIndex = INDEX_NONE;
+	double ClosestDistanceSq = TNumericLimits<double>::Max();
+	for (int32 SlotIndex = 0; SlotIndex < OccupiedGridCells.Num(); ++SlotIndex)
+	{
+		const double DistanceSq = FVector::DistSquared(LocalLocation, GetCellLocalCenter(OccupiedGridCells[SlotIndex]));
+		if (DistanceSq < ClosestDistanceSq)
+		{
+			ClosestDistanceSq = DistanceSq;
+			ClosestSlotIndex = SlotIndex;
+		}
+	}
+
+	return ClosestSlotIndex;
+}
+
 UMaterialInterface* APipe::GetPipeMaterial(bool bHasLiquid)
 {
 	TObjectPtr<UMaterialInstanceDynamic>& MaterialInstance = bHasLiquid
@@ -744,6 +973,7 @@ void APipe::ConfigureMaterialInstance(UMaterialInstanceDynamic* MaterialInstance
 	const FLinearColor PipeColor = bHasLiquid ? GetFilledPipeColor() : EmptyPipeColor;
 	const float EmissiveStrength = bHasLiquid ? FilledPipeEmissiveStrength : 0.0f;
 	const FLinearColor EmissiveColor = PipeColor * EmissiveStrength;
+	const float FillRatio = bHasLiquid ? 1.0f : 0.0f;
 
 	MaterialInstance->SetVectorParameterValue(TEXT("Color"), PipeColor);
 	MaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), PipeColor);
@@ -752,6 +982,11 @@ void APipe::ConfigureMaterialInstance(UMaterialInstanceDynamic* MaterialInstance
 	MaterialInstance->SetScalarParameterValue(TEXT("Opacity"), PipeColor.A);
 	MaterialInstance->SetScalarParameterValue(TEXT("Alpha"), PipeColor.A);
 	MaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), EmissiveStrength);
+	MaterialInstance->SetScalarParameterValue(TEXT("FillAmount"), FillRatio);
+	MaterialInstance->SetScalarParameterValue(TEXT("LiquidFill"), FillRatio);
+	MaterialInstance->SetVectorParameterValue(TEXT("SlotColor"), PipeColor);
+	MaterialInstance->SetVectorParameterValue(TEXT("EmptyColor"), EmptyPipeColor);
+	MaterialInstance->SetVectorParameterValue(TEXT("EmptyBaseColor"), EmptyPipeColor);
 }
 
 FVector APipe::GetPathCentroidLocal() const
