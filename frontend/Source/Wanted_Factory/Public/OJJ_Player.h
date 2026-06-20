@@ -190,7 +190,7 @@ protected:
 	// PowerLine/PowerPlant/Grinder/Miner/Pump/Smelter/Warehouse)는 카테고리 숫자키 슬롯(UI_BuildModeMain)이
 	// 완전 대체하여 C++에서 폐기. 퀘스트 이벤트는 슬롯 경로(ExecutePlacementMode)가 동일/정합 문자열로 발사
 	// (QuestManagerSubsystem 리스너 기준 — #306/#308 검증). IA .uasset·IMC 매핑은 미변경(에디터 잔여는 UI 담당 후속).
-	// 콘솔 OJJ_SetBuildMode(pipe/tank/tower)는 SetPlacementMode 직접 호출이라 계속 동작.
+	// 콘솔 SetBuildMode(pipe/tank/tower)는 SetPlacementMode 직접 호출이라 계속 동작.
 
 	// 빌드모드 배치 모드 전환 — 철거(X키). IMC_Build에서 X에 매핑(에디터). 좌클릭으로 호버 대상(머신/컨베이어) 제거.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
@@ -333,25 +333,28 @@ protected:
 	void BuildPlaceCanceled(const FInputActionValue& Value);
 
 public:
-	// [임시 진입로 — F4-1'] PIE 콘솔용 배치 모드 전환(예: `OJJ_SetBuildMode pipe`). IA 에셋/UI 슬롯이
+	// [임시 진입로 — F4-1'] PIE 콘솔용 배치 모드 전환(예: `SetBuildMode pipe`). IA 에셋/UI 슬롯이
 	// 없는 신규 모드(pipe/tank)의 검증 진입로 — 정식 키/UI 와이어링(BP·UI 소유자 안건) 후 제거 후보.
 	UFUNCTION(Exec)
-	void OJJ_SetBuildMode(const FString& ModeName);
+	void SetBuildMode(const FString& ModeName);
 
 	UFUNCTION(Exec)
-	void OJJ_TutorialAdvance();
+	void TutorialAdvance();
 
 	UFUNCTION(Exec)
-	void OJJ_TutorialLog();
+	void TutorialLog();
 
 	UFUNCTION(Exec)
-	void OJJ_SetMachineLevel(const FString& MachineTypeName, int32 NewLevel);
+	void SetMachineLevel(const FString& MachineTypeName, int32 NewLevel);
 
 	UFUNCTION(Exec)
-	void OJJ_UpgradeMachineLevel(const FString& MachineTypeName, int32 UpgradeCount = 1);
+	void UpgradeMachineLevel(const FString& MachineTypeName, int32 UpgradeCount = 1);
 
 	UFUNCTION(Exec)
-	void OJJ_ResetGame();
+	void ResetGame();
+
+	UFUNCTION(Exec)
+	void TriggerPlanetEvent(const FString& EventName, float Severity = 1.0f, float DurationSeconds = -1.0f);
 
 protected:
 	void SetDemolishModeShortcut();

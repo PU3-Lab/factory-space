@@ -3,10 +3,17 @@
 #include "OJJ_DayNightController.h"
 
 #include "Components/LightComponent.h"
+#include "Components/ExponentialHeightFogComponent.h"
 #include "Engine/DirectionalLight.h"
+#include "Engine/ExponentialHeightFog.h"
+#include "Engine/PostProcessVolume.h"
+#include "GameFramework/PlayerController.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Engine/World.h"
 #include "Kismet/KismetMaterialLibrary.h"
 #include "Materials/MaterialParameterCollection.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 #include "PlanetEventManagerSubsystem.h"
 #include "Wanted_Factory.h"
 
@@ -20,10 +27,36 @@ void AOJJ_DayNightController::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (MagneticStormPostProcessVolume)
+	{
+		MagneticStormPostProcessVolume->BlendWeight = 0.0f;
+	}
+	if (SandStormPostProcessVolume)
+	{
+		SandStormPostProcessVolume->BlendWeight = 0.0f;
+	}
+
 	// 시간 소스 캐시. WorldSubsystem이 없는 월드(테스트 맵 등)에서도 크래시하지 않도록 가드.
 	if (const UWorld* World = GetWorld())
 	{
 		EventManager = World->GetSubsystem<UPlanetEventManagerSubsystem>();
+	}
+
+	if (EventManager.IsValid())
+	{
+		EventManager->OnPlanetEventStarted.AddDynamic(this, &AOJJ_DayNightController::HandlePlanetEventStarted);
+		EventManager->OnPlanetEventEnded.AddDynamic(this, &AOJJ_DayNightController::HandlePlanetEventEnded);
+
+		const FPlanetEventState EventState = EventManager->GetEventState();
+		VisualEventType = EventState.Type;
+		VisualEventSeverity = EventState.Severity;
+		CurrentEventVisualAlpha = EventState.Type == EPlanetEventType::None ? 0.0f : EventState.Severity;
+	}
+
+	CacheBaseVisualState();
+	if (VisualEventType != EPlanetEventType::None)
+	{
+		SpawnEventNiagara(VisualEventType);
 	}
 
 	if (!EventManager.IsValid())
@@ -49,6 +82,28 @@ void AOJJ_DayNightController::BeginPlay()
 	{
 		LOG_OJJ_W(TEXT("디버그 오버라이드 활성 상태로 실행 중 — 낮밤이 흐르지 않습니다(DebugProgressOverride=%.2f, -1로 되돌리세요)."), DebugProgressOverride);
 	}
+}
+
+void AOJJ_DayNightController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (EventManager.IsValid())
+	{
+		EventManager->OnPlanetEventStarted.RemoveDynamic(this, &AOJJ_DayNightController::HandlePlanetEventStarted);
+		EventManager->OnPlanetEventEnded.RemoveDynamic(this, &AOJJ_DayNightController::HandlePlanetEventEnded);
+	}
+
+	ClearEventNiagara();
+
+	if (MagneticStormPostProcessVolume)
+	{
+		MagneticStormPostProcessVolume->BlendWeight = 0.0f;
+	}
+	if (SandStormPostProcessVolume)
+	{
+		SandStormPostProcessVolume->BlendWeight = 0.0f;
+	}
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void AOJJ_DayNightController::Tick(float DeltaSeconds)
@@ -80,6 +135,7 @@ void AOJJ_DayNightController::Tick(float DeltaSeconds)
 	ApplySunRotation(SunPitch, DeltaSeconds);
 	ApplyMoon(CurrentSunPitch);
 	ApplyStars(CurrentSunPitch);
+	ApplyPlanetEventVisuals(DeltaSeconds);
 }
 
 void AOJJ_DayNightController::ApplySunRotation(float TargetSunPitch, float DeltaSeconds)
@@ -173,6 +229,188 @@ void AOJJ_DayNightController::ApplyStars(float SunPitch)
 
 	UKismetMaterialLibrary::SetScalarParameterValue(World, StarCollection, StarIntensityParam, TargetStarIntensity);
 	LastStarIntensity = TargetStarIntensity;
+}
+
+void AOJJ_DayNightController::HandlePlanetEventStarted(EPlanetEventType EventType, float Severity)
+{
+	VisualEventType = EventType;
+	VisualEventSeverity = FMath::Clamp(Severity, 0.0f, 1.0f);
+	SpawnEventNiagara(EventType);
+}
+
+void AOJJ_DayNightController::HandlePlanetEventEnded(EPlanetEventType EventType)
+{
+	VisualEventType = EPlanetEventType::None;
+	VisualEventSeverity = 0.0f;
+	ClearEventNiagara();
+}
+
+void AOJJ_DayNightController::CacheBaseVisualState()
+{
+	if (SunLight)
+	{
+		if (const ULightComponent* SunComponent = SunLight->GetLightComponent())
+		{
+			BaseSunLightColor = SunComponent->GetLightColor();
+			BaseSunIntensity = SunComponent->Intensity;
+		}
+	}
+
+	if (EventFog)
+	{
+		if (const UExponentialHeightFogComponent* FogComponent = EventFog->GetComponent())
+		{
+			BaseFogDensity = FogComponent->FogDensity;
+			BaseFogInscatteringColor = FogComponent->FogInscatteringLuminance;
+		}
+	}
+}
+
+void AOJJ_DayNightController::ApplyPlanetEventVisuals(float DeltaSeconds)
+{
+	const float TargetAlpha = VisualEventType == EPlanetEventType::None ? 0.0f : VisualEventSeverity;
+	CurrentEventVisualAlpha = FMath::FInterpTo(CurrentEventVisualAlpha, TargetAlpha, DeltaSeconds, EventVisualInterpSpeed);
+
+	FLinearColor TargetSunColor = BaseSunLightColor;
+	FLinearColor TargetFogColor = BaseFogInscatteringColor;
+	float TargetFogDensity = BaseFogDensity;
+	float TargetSunIntensity = BaseSunIntensity;
+	FVector TargetCameraColorScale = FVector(1.0f, 1.0f, 1.0f);
+
+	if (VisualEventType == EPlanetEventType::MagneticStorm)
+	{
+		TargetSunColor = FLinearColor::LerpUsingHSV(BaseSunLightColor, MagneticStormSunColor, CurrentEventVisualAlpha);
+		TargetFogColor = FLinearColor::LerpUsingHSV(BaseFogInscatteringColor, MagneticStormFogColor, CurrentEventVisualAlpha);
+		TargetFogDensity = BaseFogDensity + MagneticStormFogDensityBonus * CurrentEventVisualAlpha;
+		TargetSunIntensity = FMath::Lerp(BaseSunIntensity, BaseSunIntensity * MagneticStormSunIntensityScale, CurrentEventVisualAlpha);
+		TargetCameraColorScale = FMath::Lerp(FVector(1.0f, 1.0f, 1.0f), MagneticStormCameraColorScale, CurrentEventVisualAlpha);
+	}
+	else if (VisualEventType == EPlanetEventType::SandStorm)
+	{
+		TargetSunColor = FLinearColor::LerpUsingHSV(BaseSunLightColor, SandStormSunColor, CurrentEventVisualAlpha);
+		TargetFogColor = FLinearColor::LerpUsingHSV(BaseFogInscatteringColor, SandStormFogColor, CurrentEventVisualAlpha);
+		TargetFogDensity = BaseFogDensity + SandStormFogDensityBonus * CurrentEventVisualAlpha;
+		TargetSunIntensity = FMath::Lerp(BaseSunIntensity, BaseSunIntensity * SandStormSunIntensityScale, CurrentEventVisualAlpha);
+		TargetCameraColorScale = FMath::Lerp(FVector(1.0f, 1.0f, 1.0f), SandStormCameraColorScale, CurrentEventVisualAlpha);
+	}
+
+	if (MagneticStormPostProcessVolume)
+	{
+		MagneticStormPostProcessVolume->BlendWeight =
+			VisualEventType == EPlanetEventType::MagneticStorm ? CurrentEventVisualAlpha : 0.0f;
+	}
+	if (SandStormPostProcessVolume)
+	{
+		SandStormPostProcessVolume->BlendWeight =
+			VisualEventType == EPlanetEventType::SandStorm ? CurrentEventVisualAlpha : 0.0f;
+	}
+
+	if (SunLight)
+	{
+		if (ULightComponent* SunComponent = SunLight->GetLightComponent())
+		{
+			SunComponent->SetLightColor(TargetSunColor);
+			SunComponent->SetIntensity(TargetSunIntensity);
+		}
+	}
+
+	if (EventFog && EventFog->GetComponent())
+	{
+		EventFog->GetComponent()->SetFogInscatteringColor(TargetFogColor);
+		EventFog->GetComponent()->SetFogDensity(TargetFogDensity);
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+	{
+		APlayerController* PlayerController = It->Get();
+		if (!PlayerController || !PlayerController->PlayerCameraManager)
+		{
+			continue;
+		}
+
+		PlayerController->PlayerCameraManager->SetDesiredColorScale(TargetCameraColorScale, 0.0f);
+	}
+}
+
+void AOJJ_DayNightController::SpawnEventNiagara(EPlanetEventType EventType)
+{
+	ClearEventNiagara();
+
+	UNiagaraSystem* SystemToSpawn = nullptr;
+	FVector SpawnOffset = FVector::ZeroVector;
+	FVector WorldOffset = FVector::ZeroVector;
+	FVector WorldScale = FVector(1.0f, 1.0f, 1.0f);
+	if (EventType == EPlanetEventType::MagneticStorm)
+	{
+		SystemToSpawn = MagneticStormNiagara;
+		SpawnOffset = MagneticStormNiagaraOffset;
+		WorldOffset = MagneticStormNiagaraWorldOffset;
+		WorldScale = MagneticStormNiagaraWorldScale;
+	}
+	else if (EventType == EPlanetEventType::SandStorm)
+	{
+		SystemToSpawn = SandStormNiagara;
+		SpawnOffset = SandStormNiagaraOffset;
+		WorldOffset = SandStormNiagaraWorldOffset;
+		WorldScale = SandStormNiagaraWorldScale;
+	}
+
+	if (!SystemToSpawn)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	if (bSpawnPlanetEventNiagaraInWorld)
+	{
+		ActiveEventNiagaraComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			World,
+			SystemToSpawn,
+			GetActorLocation() + WorldOffset,
+			FRotator::ZeroRotator,
+			WorldScale,
+			true,
+			true,
+			ENCPoolMethod::None,
+			false);
+		return;
+	}
+
+	APlayerController* PlayerController = World->GetFirstPlayerController();
+	APawn* PlayerPawn = PlayerController ? PlayerController->GetPawn() : nullptr;
+	if (!PlayerPawn || !PlayerPawn->GetRootComponent())
+	{
+		return;
+	}
+
+	ActiveEventNiagaraComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		SystemToSpawn,
+		PlayerPawn->GetRootComponent(),
+		NAME_None,
+		SpawnOffset,
+		FRotator::ZeroRotator,
+		EAttachLocation::KeepRelativeOffset,
+		false);
+}
+
+void AOJJ_DayNightController::ClearEventNiagara()
+{
+	if (ActiveEventNiagaraComponent)
+	{
+		ActiveEventNiagaraComponent->DestroyComponent();
+		ActiveEventNiagaraComponent = nullptr;
+	}
 }
 
 bool AOJJ_DayNightController::ResolveProgress(float& OutProgress01) const

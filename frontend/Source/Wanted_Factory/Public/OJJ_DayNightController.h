@@ -4,11 +4,16 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "PlanetEventManagerSubsystem.h"
 #include "OJJ_DayNightController.generated.h"
 
 class ADirectionalLight;
+class AExponentialHeightFog;
+class APostProcessVolume;
 class UPlanetEventManagerSubsystem;
 class UMaterialParameterCollection;
+class UNiagaraComponent;
+class UNiagaraSystem;
 
 /**
  * 낮밤 사이클 — PlanetEventManagerSubsystem의 게임 내 시각에 맞춰 태양(Directional Light)을 회전시키는
@@ -49,6 +54,7 @@ public:
 	AOJJ_DayNightController();
 
 	virtual void Tick(float DeltaSeconds) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 protected:
 	virtual void BeginPlay() override;
@@ -102,6 +108,75 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Day Night|Stars", meta = (ClampMin = "0.0"))
 	float MaxStarIntensity = 1.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	TObjectPtr<AExponentialHeightFog> EventFog;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.1"))
+	float EventVisualInterpSpeed = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	FLinearColor MagneticStormSunColor = FLinearColor(0.42f, 0.72f, 0.82f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	FLinearColor SandStormSunColor = FLinearColor(1.0f, 0.72f, 0.45f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	FLinearColor MagneticStormFogColor = FLinearColor(0.18f, 0.34f, 0.42f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	FLinearColor SandStormFogColor = FLinearColor(0.78f, 0.58f, 0.35f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	FVector MagneticStormCameraColorScale = FVector(0.92f, 0.97f, 1.03f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	FVector SandStormCameraColorScale = FVector(1.1f, 0.9f, 0.72f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.0"))
+	float MagneticStormFogDensityBonus = 0.005f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.0"))
+	float SandStormFogDensityBonus = 0.035f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.0"))
+	float MagneticStormSunIntensityScale = 0.75f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.0"))
+	float SandStormSunIntensityScale = 0.65f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	TObjectPtr<UNiagaraSystem> MagneticStormNiagara;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	TObjectPtr<UNiagaraSystem> SandStormNiagara;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	FVector MagneticStormNiagaraOffset = FVector(20.0f, 0.0f, 70.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	FVector SandStormNiagaraOffset = FVector(40.0f, 0.0f, 60.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	bool bSpawnPlanetEventNiagaraInWorld = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	FVector MagneticStormNiagaraWorldOffset = FVector(0.0f, 0.0f, 500.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	FVector SandStormNiagaraWorldOffset = FVector(0.0f, 0.0f, 400.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	FVector MagneticStormNiagaraWorldScale = FVector(25.0f, 25.0f, 10.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	FVector SandStormNiagaraWorldScale = FVector(25.0f, 25.0f, 10.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Post Process")
+	TObjectPtr<APostProcessVolume> MagneticStormPostProcessVolume;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Post Process")
+	TObjectPtr<APostProcessVolume> SandStormPostProcessVolume;
+
 private:
 	// 시간 소스. BeginPlay에서 캐시(WorldSubsystem이라 월드 수명과 동일). 미존재 월드 가드.
 	TWeakObjectPtr<UPlanetEventManagerSubsystem> EventManager;
@@ -124,6 +199,14 @@ private:
 
 	// 직전에 적용한 별 강도. skip-if-unchanged용(변화 없으면 MPC 갱신 생략).
 	float LastStarIntensity = TNumericLimits<float>::Max();
+	EPlanetEventType VisualEventType = EPlanetEventType::None;
+	float VisualEventSeverity = 0.0f;
+	float CurrentEventVisualAlpha = 0.0f;
+	FLinearColor BaseSunLightColor = FLinearColor::White;
+	float BaseSunIntensity = 10.0f;
+	FLinearColor BaseFogInscatteringColor = FLinearColor::White;
+	float BaseFogDensity = 0.0f;
+	TObjectPtr<UNiagaraComponent> ActiveEventNiagaraComponent;
 
 	// progress(0~1)를 태양 Pitch(도)로 변환. Pitch = -90 * sin(progress * 2π).
 	static float ProgressToSunPitch(float Progress01);
@@ -143,4 +226,15 @@ private:
 
 	// 별 강도 적용. NightFactor×MaxStarIntensity를 StarCollection의 StarIntensityParam에 기록. 미지정이면 no-op.
 	void ApplyStars(float SunPitch);
+
+	UFUNCTION()
+	void HandlePlanetEventStarted(EPlanetEventType EventType, float Severity);
+
+	UFUNCTION()
+	void HandlePlanetEventEnded(EPlanetEventType EventType);
+
+	void CacheBaseVisualState();
+	void ApplyPlanetEventVisuals(float DeltaSeconds);
+	void SpawnEventNiagara(EPlanetEventType EventType);
+	void ClearEventNiagara();
 };
