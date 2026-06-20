@@ -2944,6 +2944,34 @@ bool AOJJ_Grid::OJJ_TryPlacePipe(APipe* Pipe, const TArray<FIntPoint>& PathCells
 		EdgeRisers[i] = IsCellOnFoundation(PipePathCells[i]) && !bBridge[i];
 	}
 	Pipe->OJJ_SetPathCellEdgeRisers(EdgeRisers);
+
+	// [탱크 소켓 높이 정합] 다리로 띄워진 탱크의 연결구는 높은 Z인데 파이프는 지면에 깔려 안 맞음 → 터미널 셀(시작=
+	// Source 아웃렛, 끝=Target 인렛)의 lift를 머신 메시 소켓 Z로 라이즈. 노드 월드Z = PathSurfaceZ + ZOffset + lift
+	// (액터 base가 PathSurfaceZ 안착, :위) 관계에서 lift = SocketWorldZ − PathSurfaceZ − ZOffset로 역산. 인접 셀과의
+	// lift 차로 RebuildVisuals가 지면→소켓 수직 라이저를 자동 생성(기존 패턴 재활용), #257 끝 스텁이 그 높이에서 포트로 물림.
+	// ⚠️ 소켓 없으면(미작업/실린더 폴백) no-op → 기존 지면 lift 유지(안전). 중간 셀 무변경 — 터미널만. 소켓이 지면
+	// lift보다 위일 때만 적용(Max — 음수 라이저 방지). 소켓 이름은 SM_LiquidTank Socket Manager의 PipeInlet/PipeOutlet과 일치.
+	// 소켓 이름은 머신 메시(SM_LiquidTank 등) Socket Manager의 소켓명과 EXACT 일치해야 읽힘 — 단일 정의로 오타 차단.
+	// 펌프 측(SM_Pump_*) PipeOutlet 추가 시에도 같은 상수 재사용(제네릭).
+	static const TCHAR* const OJJ_PipeInletSocket = TEXT("PipeInlet");
+	static const TCHAR* const OJJ_PipeOutletSocket = TEXT("PipeOutlet");
+	auto OJJ_ApplyMachineSocketLift = [&](int32 NodeIdx, AMachineBase* Machine, const TCHAR* SocketName)
+	{
+		if (!CellLifts.IsValidIndex(NodeIdx) || !IsValid(Machine))
+		{
+			return;
+		}
+		UStaticMeshComponent* MeshComp = Machine->GetMeshComponent();
+		if (!MeshComp || !MeshComp->DoesSocketExist(SocketName))
+		{
+			return;
+		}
+		const float SocketLift = MeshComp->GetSocketLocation(SocketName).Z - PathSurfaceZ - Pipe->GetZOffset();
+		CellLifts[NodeIdx] = FMath::Max(CellLifts[NodeIdx], SocketLift);
+	};
+	OJJ_ApplyMachineSocketLift(NumPipeCells - 1, TargetMachine, OJJ_PipeInletSocket);
+	OJJ_ApplyMachineSocketLift(0, SourceMachine, OJJ_PipeOutletSocket);
+
 	Pipe->OJJ_SetPathCellLocalZs(CellLifts);
 
 	FVector CentroidLocal = FVector::ZeroVector;
