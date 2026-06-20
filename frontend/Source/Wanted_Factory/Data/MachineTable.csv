@@ -22,7 +22,7 @@ Conveyor_Lv2,Conveyor,컨베이어,2,iron_ingot,10,1000,0,0,0,0,0,1,1,/Game/Asse
 Conveyor_Lv3,Conveyor,컨베이어,3,iron_ingot,10,1000,0,0,0,0,0,1,1,/Game/Assets/UIImg/Machine/Conveyor.Conveyor,,
 WarehousePort,WarehousePort,창고 포트,1,iron_ingot,10,99999,0,1,1,1,1,6,5,/Game/Assets/UIImg/Machine/WarehousePort.WarehousePort,/Game/OJJ/MeshyMachines/Meshes/Storage/StaticMeshes/Storage.Storage,/Game/OJJ/MeshyMachines/Meshes/Storage/Materials/Storage_material_0.Storage_material_0
 LiquidTank,LiquidTank,액체 탱크,1,iron_ingot,10,99999,0,1,1,1,1,5,5,/Game/Assets/UIImg/etc/LiquidTank.LiquidTank,/Game/Assets/Machine/LiquidTank/SM_LiquidTank.SM_LiquidTank,/Game/Assets/Machine/LiquidTank/M_LiquidTank.M_LiquidTank
-Pipe_Lv1,Pipe,파이프,1,iron_ingot,10,1000,0,0,0,0,0,1,1,,,
+Pipe_Lv1,Pipe,파이프,1,iron_ingot,10,1000,0,0,0,0,0,1,1,/Game/Assets/UIImg/etc/Pipe.Pipe,,
 Pipe_Lv2,Pipe,파이프,2,iron_ingot,10,1000,0,0,0,0,0,1,1,,,
 Pipe_Lv3,Pipe,파이프,3,iron_ingot,10,1000,0,0,0,0,0,1,1,,,
 Synthesizer_Lv1,Synthesizer,합성기,1,iron_ingot,10,1000,10,3,3,3,3,3,4,/Game/Assets/UIImg/Machine/Synthesizer_Lv1.Synthesizer_Lv1,/Game/SSR/Machine/Synthesizer/Lv1/SM_Synthesizer_Lv1.SM_Synthesizer_Lv1,/Game/SSR/Machine/Synthesizer/Lv1/M_Synthesizer_Lv1.M_Synthesizer_Lv1

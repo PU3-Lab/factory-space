@@ -4730,10 +4730,35 @@ void AOJJ_Grid::OJJ_ShowGhostForMachine(AMachineBase* MachineCDO, FIntPoint Orig
 	const float OffsetX = (EffSize.X - 1) * CellSize * 0.5f;
 	const float OffsetY = (EffSize.Y - 1) * CellSize * 0.5f;
 
-	// BaseZ = GetMachinePlacementLocation과 동일: footprint 균일면 성공 시 그 값, 아니면 평면(LowerLeftCenter.Z).
+	// BaseZ = GetMachinePlacementLocation과 동일: 물 위 머신(펌프)=균일 수면 Z, 아니면 footprint 균일면, 아니면 평면.
+	// ⚠️ 물 케이스(CanStandOnWater + 균일 수면 → WaterZ)를 라이브 배치(:1047-1075)와 동일하게 복제 — 빠지면
+	// 고스트가 강바닥 GroundZ로 가라앉음(OJJ_GetUniformSurfaceZ가 raw 수중 셀에 최고 GroundZ 반환). water Z 소스는
+	// GetWaterSurfaceZAtCell(WaterArea 면 Z)로 배치와 동일. 프리뷰=배치 Z 계약.
+	const TArray<FIntPoint> GhostFootprint = CalculateFootprint(MachineCDO, Origin, RotationSteps);
 	float BaseZ = LowerLeftCenter.Z;
+	bool bUniformWater = false;
+	float WaterZ = 0.0f;
+	if (MachineCDO->CanStandOnWater() && GhostFootprint.Num() > 0)
+	{
+		bUniformWater = true;
+		for (int32 i = 0; i < GhostFootprint.Num(); ++i)
+		{
+			float CellZ = 0.0f;
+			if (!GetWaterSurfaceZAtCell(GhostFootprint[i], CellZ)
+				|| (i > 0 && !FMath::IsNearlyEqual(CellZ, WaterZ)))
+			{
+				bUniformWater = false;
+				break;
+			}
+			WaterZ = CellZ;
+		}
+	}
 	float UniformZ = 0.0f;
-	if (OJJ_GetUniformSurfaceZ(CalculateFootprint(MachineCDO, Origin, RotationSteps), UniformZ))
+	if (bUniformWater)
+	{
+		BaseZ = WaterZ;
+	}
+	else if (OJJ_GetUniformSurfaceZ(GhostFootprint, UniformZ))
 	{
 		BaseZ = UniformZ;
 	}
