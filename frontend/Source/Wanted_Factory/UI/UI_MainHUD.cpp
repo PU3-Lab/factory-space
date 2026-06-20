@@ -27,6 +27,39 @@ void UUI_MainHUD::NativeConstruct()
             AgentClient->OnAgentErrorReceived.AddDynamic(this, &UUI_MainHUD::HandleOnOperatorGuideError);
         }
     }
+
+    if (GetWorld())
+    {
+        UPlanetEventManagerSubsystem* PlanetManager = GetWorld()->GetSubsystem<UPlanetEventManagerSubsystem>();
+        if (PlanetManager)
+        {
+            PlanetManager->OnWeatherChanged.AddDynamic(this, &UUI_MainHUD::HandleWeatherChanged);
+            RefreshWeatherText(PlanetManager->GetWeatherState());
+        }
+    }
+}
+
+void UUI_MainHUD::NativeDestruct()
+{
+    if (GetWorld())
+    {
+        UPlanetEventManagerSubsystem* PlanetManager = GetWorld()->GetSubsystem<UPlanetEventManagerSubsystem>();
+        if (PlanetManager)
+        {
+            PlanetManager->OnWeatherChanged.RemoveDynamic(this, &UUI_MainHUD::HandleWeatherChanged);
+        }
+    }
+
+    if (UGameInstance* GameInstance = GetGameInstance())
+    {
+        if (UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>())
+        {
+            AgentClient->OnAgentResponseReceived.RemoveDynamic(this, &UUI_MainHUD::HandleOnOperatorGuideResponse);
+            AgentClient->OnAgentErrorReceived.RemoveDynamic(this, &UUI_MainHUD::HandleOnOperatorGuideError);
+        }
+    }
+
+    Super::NativeDestruct();
 }
 
 void UUI_MainHUD::ToggleQuestWindow()
@@ -56,6 +89,52 @@ void UUI_MainHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
                 TXT_InGameTime->SetText(FText::FromString(PlanetManager->GetCurrentTime24String()));
             }
         }
+    }
+}
+
+void UUI_MainHUD::HandleWeatherChanged(const FPlanetWeatherState& WeatherState)
+{
+    RefreshWeatherText(WeatherState);
+}
+
+void UUI_MainHUD::RefreshWeatherText(const FPlanetWeatherState& WeatherState)
+{
+    const TCHAR* WindLabel = TEXT("고요함");
+    if (WeatherState.WindSpeed >= 0.75f)
+    {
+        WindLabel = TEXT("폭풍");
+    }
+    else if (WeatherState.WindSpeed >= 0.5f)
+    {
+        WindLabel = TEXT("강풍");
+    }
+    else if (WeatherState.WindSpeed >= 0.25f)
+    {
+        WindLabel = TEXT("산들바람");
+    }
+
+    const TCHAR* RainLabel = TEXT("맑음");
+    if (WeatherState.Rainfall >= 0.75f)
+    {
+        RainLabel = TEXT("폭우");
+    }
+    else if (WeatherState.Rainfall >= 0.5f)
+    {
+        RainLabel = TEXT("비");
+    }
+    else if (WeatherState.Rainfall > 0.0f)
+    {
+        RainLabel = TEXT("이슬비");
+    }
+
+    if (TXT_WindSpeed)
+    {
+        TXT_WindSpeed->SetText(FText::FromString(WindLabel));
+    }
+
+    if (TXT_Rainfall)
+    {
+        TXT_Rainfall->SetText(FText::FromString(RainLabel));
     }
 }
 

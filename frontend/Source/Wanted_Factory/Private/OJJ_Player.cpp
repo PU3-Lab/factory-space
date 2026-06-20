@@ -6,6 +6,7 @@
 #include "Camera/CameraComponent.h"
 #include "FactoryAgentClientSubsystem.h"
 #include "FactorySaveSubsystem.h"
+#include "PlanetEventManagerSubsystem.h"
 #include "QuestManagerSubsystem.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -1544,6 +1545,85 @@ void AOJJ_Player::OJJ_ResetGame()
 
 	UE_LOG(LogTemp, Log, TEXT("[OJJ_ResetGame] Reopening level: %s"), *LevelName);
 	UGameplayStatics::OpenLevel(this, FName(*LevelName));
+}
+
+void AOJJ_Player::OJJ_TriggerPlanetEvent(const FString& EventName, float Severity, float DurationSeconds)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_TriggerPlanetEvent] World is null."));
+		return;
+	}
+
+	UPlanetEventManagerSubsystem* PlanetManager = World->GetSubsystem<UPlanetEventManagerSubsystem>();
+	if (!PlanetManager)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_TriggerPlanetEvent] PlanetEventManagerSubsystem not found."));
+		return;
+	}
+
+	const FString NormalizedEventName = EventName.TrimStartAndEnd().ToLower();
+	if (NormalizedEventName.IsEmpty())
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("[OJJ_TriggerPlanetEvent] EventName is empty. Use magnetic, sand, or none."));
+		return;
+	}
+
+	if (NormalizedEventName == TEXT("none") || NormalizedEventName == TEXT("clear"))
+	{
+		PlanetManager->EndActiveEvent();
+		UE_LOG(LogTemp, Log, TEXT("[OJJ_TriggerPlanetEvent] Cleared active planet event."));
+		return;
+	}
+
+	EPlanetEventType EventType = EPlanetEventType::None;
+	if (NormalizedEventName == TEXT("magnetic") || NormalizedEventName == TEXT("magneticstorm"))
+	{
+		EventType = EPlanetEventType::MagneticStorm;
+	}
+	else if (NormalizedEventName == TEXT("sand") || NormalizedEventName == TEXT("sandstorm"))
+	{
+		EventType = EPlanetEventType::SandStorm;
+	}
+	else
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("[OJJ_TriggerPlanetEvent] Unknown event '%s'. Use magnetic, sand, or none."),
+			*EventName);
+		return;
+	}
+
+	if (PlanetManager->GetEventState().Type != EPlanetEventType::None)
+	{
+		PlanetManager->EndActiveEvent();
+	}
+
+	const bool bStarted = PlanetManager->StartPlanetEvent(EventType, Severity, DurationSeconds);
+	if (bStarted)
+	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[OJJ_TriggerPlanetEvent] Event=%s Severity=%.2f Duration=%.2f Started=true"),
+			*UEnum::GetValueAsString(EventType),
+			Severity,
+			DurationSeconds);
+		return;
+	}
+
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("[OJJ_TriggerPlanetEvent] Event=%s Severity=%.2f Duration=%.2f Started=false"),
+		*UEnum::GetValueAsString(EventType),
+		Severity,
+		DurationSeconds);
 }
 
 void AOJJ_Player::UpdateInventoryRealtime()
