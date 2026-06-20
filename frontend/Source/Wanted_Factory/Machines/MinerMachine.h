@@ -27,6 +27,9 @@ protected:
 	// CDO-safe — 인자 Grid/Origin/RotationSteps만 사용(MachineBase.h 주석 참조).
 	virtual bool CanPlaceAdditional(const AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps) const override;
 
+	// [직배치 규칙] 채굴기는 광맥에서 직접 캐므로 일반 바닥(raw 지형)에 직접 설치 허용(다른 머신은 Foundation 위만).
+	virtual bool CanPlaceOnRawGround() const override { return true; }
+
 	// 배치 확정: 인접 미선점 Ore 광맥을 선점(Claim) + LinkedResource 연결.
 	virtual void OnPlacedOnGrid(AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps) override;
 

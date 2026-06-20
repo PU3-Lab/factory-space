@@ -181,6 +181,9 @@ public:
 	// #257 탱크 진입 포트 방향 주입(시각 전용). SetPath 전에 호출 — RebuildVisuals가 마지막 스텁을 이 방향으로 꺾는다.
 	void OJJ_SetEndPortFlowDir(FIntPoint InEndPortFlowDir) { OJJ_EndPortFlowDir = InEndPortFlowDir; }
 
+	// 노드 base Z 오프셋(RebuildVisuals 노드 Z = ZOffset + lift). 그리드가 탱크 소켓 높이를 lift로 역산할 때 참조.
+	float GetZOffset() const { return ZOffset; }
+
 	// Foundation 셀 엣지 라이저 플래그 주입(시각 전용). SetPath 후 · OJJ_SetPathCellLocalZs 전에 호출 —
 	// 이어지는 RebuildVisuals가 반영. 길이 불일치면 무시(전부 false = 기존 셀중심 라이저).
 	void OJJ_SetPathCellEdgeRisers(const TArray<bool>& InFlags)

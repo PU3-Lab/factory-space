@@ -19,6 +19,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Pipe.h"
 #include "Resource/ResourceBase.h"
+#include "Resource/ResourceData.h"
 #include "UObject/ConstructorHelpers.h"
 
 // === Conveyor 포트 판정 헬퍼 (Step 3-b-1) ===
@@ -1077,6 +1078,132 @@ FVector AOJJ_Grid::GetMachinePlacementLocation(AMachineBase* Machine, FIntPoint 
 	return FVector(LowerLeftCenter.X + OffsetX, LowerLeftCenter.Y + OffsetY, BaseZ + ZOffset);
 }
 
+bool AOJJ_Grid::OJJ_ComputeFootprintTerrainPlane(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps,
+	FVector& OutNormal, float& OutCenterZ) const
+{
+	OutNormal = FVector::UpVector;
+	OutCenterZ = GetActorLocation().Z;
+	UWorld* World = GetWorld();
+	if (!Machine || !World)
+	{
+		return false;
+	}
+
+	// 풋프린트 월드 중심 + 절반범위(회전 반영 EffectiveSize). 코너는 경계 안쪽으로 약간 들여(인접 셀 절벽 회피)
+	// — BakeBuildableCells 5점(±0.4셀)과 같은 결. 1×1이면 중심에서 ±0.4셀.
+	const FIntPoint Size = EffectiveSize(Machine->GetMachineSize(), RotationSteps);
+	const FVector LowerLeftCenter = GridToWorld(Origin);
+	const float CenterX = LowerLeftCenter.X + (Size.X - 1) * CellSize * 0.5f;
+	const float CenterY = LowerLeftCenter.Y + (Size.Y - 1) * CellSize * 0.5f;
+	const float OffX = FMath::Max(1.0f, Size.X * CellSize * 0.5f - CellSize * 0.1f);
+	const float OffY = FMath::Max(1.0f, Size.Y * CellSize * 0.5f - CellSize * 0.1f);
+
+	const float PlaneZ = GetActorLocation().Z;
+	FCollisionQueryParams Params(FName(TEXT("GridMinerTilt")), /*bTraceComplex=*/false, this);
+	for (TActorIterator<AMachineBase> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
+	for (TActorIterator<AConveyor> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
+	for (TActorIterator<AResourceBase> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
+	for (TActorIterator<AOJJ_Foundation> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
+
+	// 코너 순서: 0:(+x,+y) 1:(+x,-y) 2:(-x,+y) 3:(-x,-y)
+	const FVector2D Corners[4] = {
+		FVector2D(CenterX + OffX, CenterY + OffY), FVector2D(CenterX + OffX, CenterY - OffY),
+		FVector2D(CenterX - OffX, CenterY + OffY), FVector2D(CenterX - OffX, CenterY - OffY) };
+
+	float Z[4];
+	float SumZ = 0.0f;
+	for (int32 i = 0; i < 4; ++i)
+	{
+		const FVector Start(Corners[i].X, Corners[i].Y, PlaneZ + BuildableTraceStartHeight);
+		const FVector End(Corners[i].X, Corners[i].Y, PlaneZ - BuildableTraceDepth);
+		FHitResult Hit;
+		if (!World->LineTraceSingleByChannel(Hit, Start, End, BuildableTraceChannel, Params))
+		{
+			return false; // 코너 중 하나라도 void(바닥없음) → 틸트 미적용(평면 폴백)
+		}
+		Z[i] = Hit.ImpactPoint.Z;
+		SumZ += Z[i];
+	}
+	OutCenterZ = SumZ * 0.25f;
+
+	// 평면 기울기: X/Y축 ΔZ gradient → 법선(-dZdX, -dZdY, 1).
+	const float dZdX = ((Z[0] + Z[1]) - (Z[2] + Z[3])) / (4.0f * OffX);
+	const float dZdY = ((Z[0] + Z[2]) - (Z[1] + Z[3])) / (4.0f * OffY);
+	OutNormal = FVector(-dZdX, -dZdY, 1.0f).GetSafeNormal();
+	return true;
+}
+
+FRotator AOJJ_Grid::OJJ_GetMachineTiltRotation(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps) const
+{
+	// 채굴기 전용(회귀 0). 그 외 머신은 틸트 없음.
+	if (!Machine || Machine->GetMachineType() != TEXT("MinerMachine"))
+	{
+		return FRotator::ZeroRotator;
+	}
+	// Foundation 위(평면 슬래브)면 틸트 없음 — raw 경사일 때만.
+	for (const FIntPoint& Cell : CalculateFootprint(Machine, Origin, RotationSteps))
+	{
+		if (IsCellOnFoundation(Cell))
+		{
+			return FRotator::ZeroRotator;
+		}
+	}
+
+	FVector Normal = FVector::UpVector;
+	float CenterZ = 0.0f;
+	if (!OJJ_ComputeFootprintTerrainPlane(Machine, Origin, RotationSteps, Normal, CenterZ))
+	{
+		return FRotator::ZeroRotator;
+	}
+	// 평지(법선≈up)면 틸트 0 (요건 b) — 미세 노이즈는 틸트로 안 침.
+	if (Normal.Z > 0.9999f)
+	{
+		return FRotator::ZeroRotator;
+	}
+	return FQuat::FindBetweenNormals(FVector::UpVector, Normal).Rotator();
+}
+
+FTransform AOJJ_Grid::OJJ_GetMachinePlacementTransform(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps) const
+{
+	const FVector FlatLoc = GetMachinePlacementLocation(Machine, Origin, RotationSteps);
+	const FRotator Yaw(0.0f, 90.0f * RotationSteps, 0.0f);
+	const FVector Scale = Machine ? Machine->GetActorScale3D() : FVector::OneVector;
+
+	const FRotator Tilt = OJJ_GetMachineTiltRotation(Machine, Origin, RotationSteps);
+	if (Tilt.IsNearlyZero())
+	{
+		// 비채굴기/평지/Foundation — 기존 동작 그대로(위치=Flat, 회전=yaw만). 회귀 0.
+		return FTransform(Yaw, FlatLoc, Scale);
+	}
+
+	// 채굴기-경사: 메시 바닥-중심을 지형 평면 중심(CenterZ)에 안착 → 바닥면 ∥ 지형면이라 전체 안착(묻힘/뜸 0).
+	FVector Normal = FVector::UpVector;
+	float CenterZ = FlatLoc.Z;
+	if (!OJJ_ComputeFootprintTerrainPlane(Machine, Origin, RotationSteps, Normal, CenterZ))
+	{
+		return FTransform(Yaw, FlatLoc, Scale); // 방어(여기 도달 시 Tilt도 zero였어야)
+	}
+
+	// yaw 먼저(오브젝트 정렬) → 지형 틸트 합성. (A*B).Rotate = A.Rotate(B.Rotate) 규약.
+	const FQuat Full = Tilt.Quaternion() * Yaw.Quaternion();
+
+	// 메시 바닥-중심(액터 로컬) — GetMachinePlacementLocation의 AABB 보정과 동형.
+	FVector BottomCenterLocal = FVector::ZeroVector;
+	if (const UStaticMeshComponent* Mesh = Machine->GetMeshComponent())
+	{
+		if (const UStaticMesh* MeshAsset = Mesh->GetStaticMesh())
+		{
+			const FTransform CompToActor =
+				Mesh->GetComponentTransform().GetRelativeTransform(Machine->GetActorTransform());
+			const FBox Box = MeshAsset->GetBoundingBox().TransformBy(CompToActor);
+			BottomCenterLocal = FVector(Box.GetCenter().X, Box.GetCenter().Y, Box.Min.Z);
+		}
+	}
+	// 회전 적용 후 바닥-중심의 액터원점 기준 Z만큼 보정 → 바닥중심을 CenterZ에 안착.
+	const float ActorZ = CenterZ - Full.RotateVector(BottomCenterLocal).Z;
+	return FTransform(Full, FVector(FlatLoc.X, FlatLoc.Y, ActorZ), Scale);
+}
+
 bool AOJJ_Grid::IsValidGridCell(FIntPoint Cell) const
 {
 	return Cell.X >= 0 && Cell.X < GridSize.X
@@ -1748,46 +1875,40 @@ void AOJJ_Grid::RefreshGridVisual()
 
 	if (bVisualizationActive)
 	{
-		// 빌드모드: 전 셀을 water(파랑)/blocked(빨강)/가능(초록)으로 채움. void는 모두 제외 → 그리드가 바닥 모양만 따라 보임.
-		// 우선순위 water > blocked: water도 건설 불가지만 파랑으로 구분 표시(분류 우선순위와 일치).
-		// F3.5': 커버된 blocked는 초록(CoveredCellISM — constructible 기준, 색=의미). blocked/covered는
-		// 부분 갱신 대상이라 장부(셀↔인스턴스)를 적재 순서로 병행 구축.
+		// [그리드 색상 2단계] 든 머신/모드의 지형규칙(OJJ_ClassifyCellColor)으로 셀별 초록(놓을수있음)/빨강(못놓음)/
+		// 파랑(물 정보색)/없음(void). 풋프린트·점유·광맥경사는 커서(ValidHover)가 담당(분리). 규칙 변경 시에만 호출됨
+		// (OJJ_UpdateGridColorRule 시그니처 스킵 — 동일 규칙 전환은 repaint 안 함). F3.5' 부분갱신 장부는 규칙 경로
+		// 미사용(OJJ_OnFoundationCoverageVisualChanged가 규칙 활성 시 전체 재적재로 위임) → 장부 비움 유지.
+		// Miner 모드면 광맥 인접 집합 사전계산(per-cell 분류가 참조). 그 외 모드는 비움(미사용).
+		if (bGridColorRuleSet && GridColorMode == EOJJGridColorMode::Miner)
+		{
+			OJJ_RebuildOreAdjacentCells();
+		}
+		else if (GridColorOreAdjacentCells.Num() > 0)
+		{
+			GridColorOreAdjacentCells.Reset();
+		}
+
 		TArray<FTransform> GreenXforms;
 		TArray<FTransform> RedXforms;
 		TArray<FTransform> BlueXforms;
-		TArray<FTransform> CoveredXforms;
-		TArray<FIntPoint> BlockedCellsInOrder;
-		TArray<FIntPoint> CoveredCellsInOrder;
 		for (int32 X = 0; X < GridSize.X; ++X)
 		{
 			for (int32 Y = 0; Y < GridSize.Y; ++Y)
 			{
 				const FIntPoint Cell(X, Y);
-				if (VoidCells.Contains(Cell)) { continue; }                  // void → 아무것도 안 그림
-				if (WaterCells.Contains(Cell)) { BlueXforms.Add(MakeCellXform(Cell)); }
-				else if (UnbuildableCells.Contains(Cell))
+				switch (OJJ_ClassifyCellColor(Cell))
 				{
-					if (IsCellOnFoundation(Cell))
-					{
-						CoveredXforms.Add(MakeCellXform(Cell));
-						CoveredCellsInOrder.Add(Cell);
-					}
-					else
-					{
-						RedXforms.Add(MakeCellXform(Cell));
-						BlockedCellsInOrder.Add(Cell);
-					}
+				case EOJJCellClass::Buildable: GreenXforms.Add(MakeCellXform(Cell)); break;
+				case EOJJCellClass::Blocked:   RedXforms.Add(MakeCellXform(Cell)); break;
+				case EOJJCellClass::Water:     BlueXforms.Add(MakeCellXform(Cell)); break;
+				default: break; // Void → 타일 안 그림
 				}
-				else { GreenXforms.Add(MakeCellXform(Cell)); }
 			}
 		}
 		if (BuildableCellISM && GreenXforms.Num() > 0) { BuildableCellISM->AddInstances(GreenXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
 		if (BlockedCellISM && RedXforms.Num() > 0) { BlockedCellISM->AddInstances(RedXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
 		if (WaterCellISM && BlueXforms.Num() > 0) { WaterCellISM->AddInstances(BlueXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
-		if (CoveredCellISM && CoveredXforms.Num() > 0) { CoveredCellISM->AddInstances(CoveredXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
-		// 배치 적재는 배열 순서 = 인스턴스 인덱스 — 적재 순서 배열에서 장부 구축(이후 인덱스 불변 — 숨김 방식).
-		for (int32 Idx = 0; Idx < BlockedCellsInOrder.Num(); ++Idx) { BlockedCellToInstance.Add(BlockedCellsInOrder[Idx], Idx); }
-		for (int32 Idx = 0; Idx < CoveredCellsInOrder.Num(); ++Idx) { CoveredCellToInstance.Add(CoveredCellsInOrder[Idx], Idx); }
 	}
 	else
 	{
@@ -1805,6 +1926,105 @@ void AOJJ_Grid::RefreshGridVisual()
 			if (WaterCellISM && BlueXforms.Num() > 0) { WaterCellISM->AddInstances(BlueXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
 		}
 	}
+}
+
+void AOJJ_Grid::OJJ_UpdateGridColorRule(EOJJGridColorMode Mode, bool bAllowRawGround, bool bAllowWater)
+{
+	// 시그니처(Mode/raw/water) 동일 + 이미 설정 → 스킵(창고↔제련 등 동일 규칙 전환 시 90k 풀갱신 회피).
+	const bool bSame = bGridColorRuleSet
+		&& GridColorMode == Mode
+		&& bGridColorAllowRawGround == bAllowRawGround
+		&& bGridColorAllowWater == bAllowWater;
+
+	bGridColorRuleSet = true;
+	GridColorMode = Mode;
+	bGridColorAllowRawGround = bAllowRawGround;
+	bGridColorAllowWater = bAllowWater;
+
+	// 빌드모드 활성 + 규칙 변경 시에만 재적재. 빌드모드 밖이면 멤버만 저장(다음 SetVisualizationVisible이 paint).
+	if (!bSame && bVisualizationActive)
+	{
+		RefreshGridVisual();
+	}
+}
+
+void AOJJ_Grid::OJJ_RebuildOreAdjacentCells()
+{
+	// Miner 모드 색상용: 미선점 채굴 광맥(OccupiedCells 점유 자원) 주변 반경 R 셀을 사전계산(per-cell O(1) 조회).
+	// OccupiedCells는 소수(배치 풋프린트)라 90k 루프보다 훨씬 가벼움. paint 직전 1회 재구축(모드전환/배치 시점).
+	// R=3: 원래 인접(4방향=맨해튼 1칸 십자)에서 2칸 더 확장 = 맨해튼 거리 ≤3(다이아몬드). 사각형(체비셰프) 아님 —
+	// FindAdjacentUnclaimedOre의 4방향 모양을 유지하며 반경만 1→3. 비용은 ore 주변만(OccupiedCells 순회).
+	const int32 R = OJJ_OreColorProximityRadius;
+	GridColorOreAdjacentCells.Reset();
+	for (const TPair<FIntPoint, TWeakObjectPtr<AActor>>& Pair : OccupiedCells)
+	{
+		const AResourceBase* Resource = Cast<AResourceBase>(Pair.Value.Get());
+		if (!Resource || Resource->IsClaimed())
+		{
+			continue;
+		}
+		// MinerMachine::IsMineableOreResource와 동일 판정(shape Ore 또는 rowname *_ore).
+		const bool bMineableOre =
+			Resource->HasShape(EResourceShape::Ore)
+			|| Resource->GetResourceRowName().ToString().EndsWith(TEXT("_ore"));
+		if (!bMineableOre)
+		{
+			continue;
+		}
+		for (int32 dx = -R; dx <= R; ++dx)
+		{
+			const int32 RemainY = R - FMath::Abs(dx); // 맨해튼: |dx|+|dy| ≤ R
+			for (int32 dy = -RemainY; dy <= RemainY; ++dy)
+			{
+				GridColorOreAdjacentCells.Add(Pair.Key + FIntPoint(dx, dy));
+			}
+		}
+	}
+}
+
+EOJJCellClass AOJJ_Grid::OJJ_ClassifyCellColor(FIntPoint Cell) const
+{
+	if (VoidCells.Contains(Cell))
+	{
+		return EOJJCellClass::Void; // 바닥 없음 → 타일 X
+	}
+
+	// --- Foundation/Ramp 모드: CanPlaceFoundation 기준 — 경사(blocked) 포함 전부 placeable, 물·이미foundation 제외. ---
+	if (bGridColorRuleSet && GridColorMode == EOJJGridColorMode::Foundation)
+	{
+		if (WaterCells.Contains(Cell)) { return EOJJCellClass::Water; }          // 물 = 파랑(못놓음)
+		if (IsCellOnFoundation(Cell)) { return EOJJCellClass::Blocked; }         // 이미 Foundation = 빨강(겹침)
+		return EOJJCellClass::Buildable;                                          // 평지·경사 모두 초록(평지화 가능)
+	}
+
+	// --- Miner 모드: 광맥 4방향 인접 셀만 placeable(평지·경사 무관). ---
+	if (bGridColorRuleSet && GridColorMode == EOJJGridColorMode::Miner)
+	{
+		if (WaterCells.Contains(Cell)) { return EOJJCellClass::Water; }          // 물 = 파랑(채굴기 못 섬)
+		// 인접 미선점 광맥이 있고, 셀 자체가 지상(buildable 또는 경사)이면 초록. 아니면 빨강(평지여도 광맥 없으면 X).
+		const bool bStandable = IsCellBuildable(Cell) || UnbuildableCells.Contains(Cell) || IsCellOnFoundation(Cell);
+		return (bStandable && GridColorOreAdjacentCells.Contains(Cell))
+			? EOJJCellClass::Buildable : EOJJCellClass::Blocked;
+	}
+
+	// --- Machine 모드(기본): raw 허용/물 허용 bool 참조. ---
+	const bool bRuleRaw = !bGridColorRuleSet || bGridColorAllowRawGround;
+	const bool bRuleWater = bGridColorRuleSet && bGridColorAllowWater;
+
+	if (WaterCells.Contains(Cell))
+	{
+		return bRuleWater ? EOJJCellClass::Buildable : EOJJCellClass::Water; // 펌프=초록 / 그 외=파랑(정보색)
+	}
+	if (IsCellOnFoundation(Cell))
+	{
+		return EOJJCellClass::Buildable; // Foundation 위 = 전 머신 OK(초록)
+	}
+	if (UnbuildableCells.Contains(Cell))
+	{
+		return EOJJCellClass::Blocked; // raw 경사 — 못놓음
+	}
+	// raw buildable(평지, non-Foundation): raw 허용 머신만 초록.
+	return bRuleRaw ? EOJJCellClass::Buildable : EOJJCellClass::Blocked;
 }
 
 FTransform AOJJ_Grid::OJJ_MakeOverlayCellTransform(FIntPoint Cell, bool bGroundZValid) const
@@ -1860,6 +2080,14 @@ void AOJJ_Grid::OJJ_OnFoundationCoverageVisualChanged(const TArray<FIntPoint>& C
 	// water/void는 CanPlaceFoundation이 거부, buildable은 이미 초록(전환 불요).
 	if (!bVisualizationActive)
 	{
+		return;
+	}
+
+	// [그리드 색상 2단계] 규칙 기반 색상 활성 시: Foundation 커버 변경은 셀색이 규칙에 따라 달라져(머신모드 covered=초록,
+	// Foundation모드 covered=빨강, raw 커버 등) blocked↔covered 부분 플립으로 표현 불가 → 전체 재적재(이산 액션이라 수용).
+	if (bGridColorRuleSet)
+	{
+		RefreshGridVisual();
 		return;
 	}
 
@@ -2944,6 +3172,34 @@ bool AOJJ_Grid::OJJ_TryPlacePipe(APipe* Pipe, const TArray<FIntPoint>& PathCells
 		EdgeRisers[i] = IsCellOnFoundation(PipePathCells[i]) && !bBridge[i];
 	}
 	Pipe->OJJ_SetPathCellEdgeRisers(EdgeRisers);
+
+	// [탱크 소켓 높이 정합] 다리로 띄워진 탱크의 연결구는 높은 Z인데 파이프는 지면에 깔려 안 맞음 → 터미널 셀(시작=
+	// Source 아웃렛, 끝=Target 인렛)의 lift를 머신 메시 소켓 Z로 라이즈. 노드 월드Z = PathSurfaceZ + ZOffset + lift
+	// (액터 base가 PathSurfaceZ 안착, :위) 관계에서 lift = SocketWorldZ − PathSurfaceZ − ZOffset로 역산. 인접 셀과의
+	// lift 차로 RebuildVisuals가 지면→소켓 수직 라이저를 자동 생성(기존 패턴 재활용), #257 끝 스텁이 그 높이에서 포트로 물림.
+	// ⚠️ 소켓 없으면(미작업/실린더 폴백) no-op → 기존 지면 lift 유지(안전). 중간 셀 무변경 — 터미널만. 소켓이 지면
+	// lift보다 위일 때만 적용(Max — 음수 라이저 방지). 소켓 이름은 SM_LiquidTank Socket Manager의 PipeInlet/PipeOutlet과 일치.
+	// 소켓 이름은 머신 메시(SM_LiquidTank 등) Socket Manager의 소켓명과 EXACT 일치해야 읽힘 — 단일 정의로 오타 차단.
+	// 펌프 측(SM_Pump_*) PipeOutlet 추가 시에도 같은 상수 재사용(제네릭).
+	static const TCHAR* const OJJ_PipeInletSocket = TEXT("PipeInlet");
+	static const TCHAR* const OJJ_PipeOutletSocket = TEXT("PipeOutlet");
+	auto OJJ_ApplyMachineSocketLift = [&](int32 NodeIdx, AMachineBase* Machine, const TCHAR* SocketName)
+	{
+		if (!CellLifts.IsValidIndex(NodeIdx) || !IsValid(Machine))
+		{
+			return;
+		}
+		UStaticMeshComponent* MeshComp = Machine->GetMeshComponent();
+		if (!MeshComp || !MeshComp->DoesSocketExist(SocketName))
+		{
+			return;
+		}
+		const float SocketLift = MeshComp->GetSocketLocation(SocketName).Z - PathSurfaceZ - Pipe->GetZOffset();
+		CellLifts[NodeIdx] = FMath::Max(CellLifts[NodeIdx], SocketLift);
+	};
+	OJJ_ApplyMachineSocketLift(NumPipeCells - 1, TargetMachine, OJJ_PipeInletSocket);
+	OJJ_ApplyMachineSocketLift(0, SourceMachine, OJJ_PipeOutletSocket);
+
 	Pipe->OJJ_SetPathCellLocalZs(CellLifts);
 
 	FVector CentroidLocal = FVector::ZeroVector;
@@ -3956,6 +4212,15 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 R
 	// bounds + 점유를 동시에 검사 (단일 패스).
 	const bool bMachineWater = Machine->CanStandOnWater();
 	const TArray<FIntPoint> Footprint = CalculateFootprint(Machine, Origin, RotationSteps);
+
+	// [1단계: 채굴기 광맥인접 경사 면제] 채굴기가 미선점 광맥에 인접하면 경사(Blocked) 셀에도 배치 허용.
+	// 광맥 인접 판정(CanPlaceAdditional=FindAdjacentUnclaimedOre)을 루프 앞으로 당겨, 아래 셀별 건설 게이트에서
+	// "경사(IsCellBlocked)만" 면제한다(채굴기 전용 — 다른 머신·다른 추출기는 기존 게이트 그대로). Void(바닥없음)/
+	// Water/점유/범위/단일건설면 게이트는 면제하지 않음(경사 기울기 정렬은 2단계 별도).
+	const bool bMinerOreAdjacent =
+		Machine->GetMachineType() == TEXT("MinerMachine")
+		&& Machine->CanPlaceAdditional(this, Origin, RotationSteps);
+
 	for (const FIntPoint& Cell : Footprint)
 	{
 		if (!IsValidGridCell(Cell))
@@ -3969,8 +4234,20 @@ bool AOJJ_Grid::CanPlaceMachine(AMachineBase* Machine, FIntPoint Origin, int32 R
 		float UnusedWaterZ = 0.0f;
 		const bool bWaterCellOk = bMachineWater && IsCellWater(Cell) && GetWaterSurfaceZAtCell(Cell, UnusedWaterZ);
 
+		// [1단계 면제] 경사(Blocked)만 면제 — IsCellBlocked는 UnbuildableCells(경사 전용, Void/Water와 배타).
+		const bool bSlopeExemptCell = bMinerOreAdjacent && IsCellBlocked(Cell);
+
 		// 게이트 A 건설(F1-c: buildable OR Foundation 커버) — 호버도 같은 함수라 자동 빨강. 물 위는 예외 허용.
-		if (!IsCellConstructible(Cell) && !bWaterCellOk)
+		if (!IsCellConstructible(Cell) && !bWaterCellOk && !bSlopeExemptCell)
+		{
+			return false;
+		}
+
+		// [직배치 규칙] raw 지상(buildable이며 Foundation 미커버) 셀은 CanPlaceOnRawGround() 머신만 — 그 외는 Foundation 위에만.
+		// water 위 배치(bWaterCellOk)는 CanStandOnWater로 별도 허용(직교). Foundation 셀은 bRawGroundCell=false라 무관(전 머신 통과).
+		// 채굴기(CanPlaceOnRawGround=true)는 raw 통과(+경사 면제는 위 게이트 A 담당). 별도 액터(Foundation/Conveyor/Pipe)는 이 경로 비경유.
+		const bool bRawGroundCell = IsCellBuildable(Cell) && !IsCellOnFoundation(Cell);
+		if (bRawGroundCell && !bWaterCellOk && !Machine->CanPlaceOnRawGround())
 		{
 			return false;
 		}

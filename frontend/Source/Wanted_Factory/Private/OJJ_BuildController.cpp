@@ -284,6 +284,10 @@ void AOJJ_BuildController::EnterBuildMode()
 		return;
 	}
 
+	// [그리드 색상 2단계] 현재 모드 색상 규칙을 먼저 주입(bVisualizationActive 아직 false → paint 없이 멤버만 저장),
+	// 직후 SetVisualizationVisible(true)가 그 규칙으로 1회 paint(중복 repaint 회피).
+	UpdateGridColorForCurrentMode();
+
 	TargetGrid->SetVisualizationVisible(true);
 
 	// 吏꾩엯 利됱떆 諛곗튂 癒몄떊 ?ы듃 ?붿궡???쒖떆(泥??몃쾭 ?꾩씠?쇰룄 蹂댁씠?꾨줉). ?몃쾭 ?붿궡?쒕뒗 泥?UpdateMouseHover?먯꽌.
@@ -538,6 +542,51 @@ TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
 	}
 
 	return MachineClass;
+}
+
+void AOJJ_BuildController::UpdateGridColorForCurrentMode()
+{
+	if (!TargetGrid)
+	{
+		return;
+	}
+
+	EOJJGridColorMode ColorMode = EOJJGridColorMode::Machine;
+	bool bRaw = false;
+	bool bWater = false;
+
+	switch (PlacementMode)
+	{
+	case EOJJ_BuildPlacementMode::Foundation:
+		// Foundation/Ramp(bRampFoundationSelected는 종류만 다름) — CanPlaceFoundation 기준(경사 포함, 물·이미foundation 제외).
+		ColorMode = EOJJGridColorMode::Foundation;
+		break;
+	case EOJJ_BuildPlacementMode::Miner:
+		// 채굴기 — 광맥 4방향 인접 셀만 placeable(평지·경사 무관).
+		ColorMode = EOJJGridColorMode::Miner;
+		break;
+	case EOJJ_BuildPlacementMode::Conveyor:
+	case EOJJ_BuildPlacementMode::Pipe:
+	case EOJJ_BuildPlacementMode::PowerLine:
+	case EOJJ_BuildPlacementMode::Demolish:
+	case EOJJ_BuildPlacementMode::None:
+		// 별도 액터/중립 — constructible(buildable OR Foundation) 위에 동작 → raw 평지·Foundation 초록.
+		bRaw = true;
+		break;
+	default:
+		// 일반 머신 모드 — CDO 지형규칙(CanPlaceOnRawGround/CanStandOnWater). 일반 머신은 둘 다 false = Foundation 위만.
+		if (TSubclassOf<AMachineBase> ActiveClass = GetActiveMachineClass())
+		{
+			if (const AMachineBase* CDO = ActiveClass.GetDefaultObject())
+			{
+				bRaw = CDO->CanPlaceOnRawGround();
+				bWater = CDO->CanStandOnWater();
+			}
+		}
+		break;
+	}
+
+	TargetGrid->OJJ_UpdateGridColorRule(ColorMode, bRaw, bWater);
 }
 
 void AOJJ_BuildController::UpdateMouseHover()
@@ -1215,7 +1264,11 @@ void AOJJ_BuildController::OnLeftClickPressed()
 		return;
 	}
 
-	NewMachine->SetActorRotation(FRotator(0.f, 90.f * HoverRotationSteps, 0.f));
+	// [2단계] 위치+회전 결합 적용 — 평지/비채굴기는 기존(위치=Flat, yaw만)과 동일, 채굴기-경사면 지형 틸트 합성.
+	// TryPlaceMachine이 이미 Flat 위치를 set했으나, 채굴기-경사는 여기서 틸트 안착 위치+회전으로 덮어쓴다(scale 불변).
+	const FTransform PlaceXform =
+		TargetGrid->OJJ_GetMachinePlacementTransform(NewMachine, Origin, HoverRotationSteps);
+	NewMachine->SetActorLocationAndRotation(PlaceXform.GetLocation(), PlaceXform.GetRotation());
 	NotifyMainQuestMachinePlaced(this, GetQuestPlacementTargetId(PlacementMode));
 
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s 癒몄떊 諛곗튂 ?깃났"),
@@ -1780,6 +1833,9 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::None:      ModeName = TEXT("None");       break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
+
+	// [그리드 색상 2단계] 든 머신/모드 바뀜 → 필드 색상 규칙 갱신(시그니처 동일하면 그리드가 스킵).
+	UpdateGridColorForCurrentMode();
 
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 	UpdateMouseHover();
