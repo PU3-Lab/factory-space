@@ -158,7 +158,7 @@ void UUI_BuildModeMain::InitializeHotbarRegistry()
     TArray<FHotbarSlotData>& MachineHotbar = SubModeHotbarRegistry.FindOrAdd(EBuildSubMode::Machine);
     MachineHotbar.SetNum(10);
     MachineHotbar[0] = { EOJJ_BuildPlacementMode::Conveyor,       TEXT("Conveyor"),       FText::FromString(TEXT("컨베이어")) };
-    MachineHotbar[1] = { EOJJ_BuildPlacementMode::Warehouse,      TEXT("Warehouse"),      FText::FromString(TEXT("창고")) };
+    MachineHotbar[1] = { EOJJ_BuildPlacementMode::Warehouse,      TEXT("WarehousePort"),  FText::FromString(TEXT("창고")) };
     MachineHotbar[2] = { EOJJ_BuildPlacementMode::Smelter,        TEXT("Smelter"),        FText::FromString(TEXT("제련기")) };
     MachineHotbar[3] = { EOJJ_BuildPlacementMode::Grinder,        TEXT("Grinder"),        FText::FromString(TEXT("분쇄기")) };
     MachineHotbar[4] = { EOJJ_BuildPlacementMode::MoldingMachine, TEXT("MoldingMachine"), FText::FromString(TEXT("성형기")) };
@@ -297,7 +297,7 @@ void UUI_BuildModeMain::UpdateSelectedPreview()
     switch (CurrentMode)
     {
         case EOJJ_BuildPlacementMode::Conveyor:       TargetDTKey = TEXT("Conveyor"); break;
-        case EOJJ_BuildPlacementMode::Warehouse:      TargetDTKey = TEXT("Warehouse"); break;
+        case EOJJ_BuildPlacementMode::Warehouse:      TargetDTKey = TEXT("WarehousePort"); break;
         case EOJJ_BuildPlacementMode::Smelter:        TargetDTKey = TEXT("Smelter"); break;
         case EOJJ_BuildPlacementMode::Grinder:        TargetDTKey = TEXT("Grinder"); break;
         case EOJJ_BuildPlacementMode::MoldingMachine: TargetDTKey = TEXT("MoldingMachine"); break;
