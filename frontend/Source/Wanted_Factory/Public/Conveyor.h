@@ -92,6 +92,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual", meta = (ClampMin = "0.0"))
 	float FlowArrowHeightOffset = 18.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
+	FLinearColor FlowArrowColor = FLinearColor(1.0f, 0.45f, 0.1f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual", meta = (ClampMin = "0.0"))
+	float FlowArrowEmissiveStrength = 8.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual", meta = (ClampMin = "0.01"))
 	float ItemVisualScaleRatio = 0.28f;
 
@@ -191,6 +197,9 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UDataTable> ResourceTable;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> FlowArrowMaterialInstance;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMesh> PowderVisualMesh;

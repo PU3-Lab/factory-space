@@ -144,7 +144,18 @@ AConveyor::AConveyor()
 		StraightSegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		CornerSegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		ItemVisualInstances->SetMaterial(0, MaterialAsset.Object);
-		FlowArrowInstances->SetMaterial(0, MaterialAsset.Object);
+		FlowArrowMaterialInstance = UMaterialInstanceDynamic::Create(MaterialAsset.Object, this);
+		if (FlowArrowMaterialInstance)
+		{
+			FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("Color"), FlowArrowColor);
+			FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), FlowArrowColor);
+			FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("Tint"), FlowArrowColor);
+			FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), FlowArrowColor);
+			FlowArrowMaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), FlowArrowEmissiveStrength);
+			FlowArrowMaterialInstance->SetScalarParameterValue(TEXT("Opacity"), FlowArrowColor.A);
+			FlowArrowMaterialInstance->SetScalarParameterValue(TEXT("Alpha"), FlowArrowColor.A);
+			FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
+		}
 		PowderVisualMaterialBase = MaterialAsset.Object;
 	}
 

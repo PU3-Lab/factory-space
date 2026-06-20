@@ -123,7 +123,18 @@ APipe::APipe()
 		SegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		JoinInstances->SetMaterial(0, MaterialAsset.Object);
 		LiquidVisualInstances->SetMaterial(0, MaterialAsset.Object);
-		FlowArrowInstances->SetMaterial(0, MaterialAsset.Object);
+		FlowArrowMaterialInstance = UMaterialInstanceDynamic::Create(MaterialAsset.Object, this);
+		if (FlowArrowMaterialInstance)
+		{
+			FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("Color"), FlowArrowColor);
+			FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), FlowArrowColor);
+			FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("Tint"), FlowArrowColor);
+			FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), FlowArrowColor);
+			FlowArrowMaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), FlowArrowEmissiveStrength);
+			FlowArrowMaterialInstance->SetScalarParameterValue(TEXT("Opacity"), FlowArrowColor.A);
+			FlowArrowMaterialInstance->SetScalarParameterValue(TEXT("Alpha"), FlowArrowColor.A);
+			FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
+		}
 	}
 
 	static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
