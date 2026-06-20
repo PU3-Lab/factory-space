@@ -307,6 +307,12 @@ public:
 	virtual bool CanStandOnWater() const { return false; }
 	virtual bool OJJ_RequiresOccupancyOnlyRegistration() const { return false; }
 
+	// [직배치 규칙] 일반 바닥(raw 지형 = buildable이며 Foundation 미커버)에 직접 설치 가능 여부. 기본 false =
+	// Foundation 위에만 설치. true 머신(채굴기 등)만 raw 지상 직접 배치. CanPlaceMachine 게이트가 AND로 참조.
+	// ⚠️ water 위 배치는 CanStandOnWater(별도 스위치)가 담당 — 이 함수와 직교(false여도 물 위는 CanStandOnWater로 허용).
+	// CDO-safe(인자/CDO getter만, 인스턴스 상태 미사용 — 호버가 CDO로 판정).
+	virtual bool CanPlaceOnRawGround() const { return false; }
+
 	// 그리드 등록 성공 직후(배치 확정) 호출 — 자원 선점 등. 실제 인스턴스에서만 호출(CDO 아님).
 	virtual void OnPlacedOnGrid(AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps) {}
 
