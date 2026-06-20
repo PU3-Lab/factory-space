@@ -267,58 +267,9 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 		UE_LOG(LogTemp, Warning,
 			TEXT("[OJJ_Player] IA_BuildPlace 미할당 — 배치(좌클릭) 비활성. BP_OJJ_Player에 IA_BuildPlace 에셋 할당 필요."));
 	}
-	if (IA_SetMachineMode)
-	{
-		EnhancedInput->BindAction(IA_SetMachineMode, ETriggerEvent::Started, this, &AOJJ_Player::SetMachineMode);
-	}
-	if (IA_SetConveyorMode)
-	{
-		EnhancedInput->BindAction(IA_SetConveyorMode, ETriggerEvent::Started, this, &AOJJ_Player::SetConveyorMode);
-	}
-	if (IA_SetPipeMode)
-	{
-		EnhancedInput->BindAction(IA_SetPipeMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPipeMode);
-	}
-	if (IA_SetTankMode)
-	{
-		EnhancedInput->BindAction(IA_SetTankMode, ETriggerEvent::Started, this, &AOJJ_Player::SetTankMode);
-	}
-	if (IA_SetPowerNodeMode)
-	{
-		EnhancedInput->BindAction(IA_SetPowerNodeMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerNodeMode);
-	}
-	if (IA_SetShieldMode)
-	{
-		EnhancedInput->BindAction(IA_SetShieldMode, ETriggerEvent::Started, this, &AOJJ_Player::SetShieldMode);
-	}
-	if (IA_SetPowerLineMode)
-	{
-		EnhancedInput->BindAction(IA_SetPowerLineMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerLineMode);
-	}
-	if (IA_SetPowerPlantMode)
-	{
-		EnhancedInput->BindAction(IA_SetPowerPlantMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerPlantMode);
-	}
-	if (IA_SetGrinderMode)
-	{
-		EnhancedInput->BindAction(IA_SetGrinderMode, ETriggerEvent::Started, this, &AOJJ_Player::SetGrinderMode);
-	}
-	if (IA_SetMinerMode)
-	{
-		EnhancedInput->BindAction(IA_SetMinerMode, ETriggerEvent::Started, this, &AOJJ_Player::SetMinerMode);
-	}
-	if (IA_SetPumpMode)
-	{
-		EnhancedInput->BindAction(IA_SetPumpMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPumpMode);
-	}
-	if (IA_SetSmelterMode)
-	{
-		EnhancedInput->BindAction(IA_SetSmelterMode, ETriggerEvent::Started, this, &AOJJ_Player::SetSmelterMode);
-	}
-	if (IA_SetWarehouseMode)
-	{
-		EnhancedInput->BindAction(IA_SetWarehouseMode, ETriggerEvent::Started, this, &AOJJ_Player::SetWarehouseMode);
-	}
+	// [옛 빌드 입력 경로 전수 정리] Machine/Conveyor/Pipe/Tank/PowerNode/Shield/PowerLine/PowerPlant/
+	// Grinder/Miner/Pump/Smelter/Warehouse 직행 IA BindAction은 카테고리 숫자키 슬롯이 완전 대체하여 제거.
+	// 철거(Demolish)는 X 직행키로 유지.
 	if (IA_SetDemolishMode)
 	{
 		EnhancedInput->BindAction(IA_SetDemolishMode, ETriggerEvent::Started, this, &AOJJ_Player::SetDemolishMode);
@@ -349,9 +300,8 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
 	PlayerInputComponent->BindKey(EKeys::Enter, IE_Pressed, this, &AOJJ_Player::TriggerTutorialDialogueReveal);
-	PlayerInputComponent->BindKey(EKeys::O, IE_Pressed, this, &AOJJ_Player::SetMoldingMachineModeShortcut);
-	PlayerInputComponent->BindKey(EKeys::P, IE_Pressed, this, &AOJJ_Player::SetSynthesizerModeShortcut);
-	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &AOJJ_Player::SetTeleCommunicationTowerModeShortcut);
+	// [옛 빌드 입력 경로 전수 정리] O(성형)/P(합성)/T(통신) 직행 BindKey는 카테고리 숫자키 슬롯이 완전 대체하여 제거.
+	// 콘솔 OJJ_SetBuildMode tower(통신탑)는 계속 동작.
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AOJJ_Player::SetDemolishModeShortcut);
 	// [공용키] 카테고리 무관 — 빌드모드 중 항상 동작. 전부 레거시 BindKey + 핸들러 IsInBuildMode 가드.
 	// 옛 IA_SetFoundationMode(G)/IA_SetRampMode(H) IMC 매핑·IA 에셋은 폐기됨(F/G로 환원).
@@ -363,7 +313,8 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::Z, IE_Pressed, this, &AOJJ_Player::CancelPlacementShortcut);       // 마우스 초기화(취소)
 
 	// [카테고리 숫자키] 1~9,0 → 현재 카테고리(LDJ UI_BuildModeMain)의 N번 슬롯 실행. 0키=10번 슬롯.
-	// ⚠️ 옛 IMC_Build 1~0 플랫 매핑(1→IA_SetMachineMode 등)을 에디터에서 제거해야 이중 발화 안 됨.
+	// 참고: 옛 직행 IA BindAction(IA_SetMachineMode 등)은 C++에서 폐기됨 → 에디터에 남은 IMC_Build 매핑은
+	//      바인딩이 없어 무동작(이중 발화 없음). 에디터 잔여 매핑 청소는 UI 담당 후속(정책상 .uasset 미변경).
 	PlayerInputComponent->BindKey(EKeys::One,   IE_Pressed, this, &AOJJ_Player::SetHotbarSlot1);
 	PlayerInputComponent->BindKey(EKeys::Two,   IE_Pressed, this, &AOJJ_Player::SetHotbarSlot2);
 	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &AOJJ_Player::SetHotbarSlot3);
@@ -867,55 +818,10 @@ void AOJJ_Player::BuildPlaceCanceled(const FInputActionValue& Value)
 	BuildController->CancelPowerLineDrag();
 }
 
-void AOJJ_Player::SetMachineMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Machine);
-}
-
-void AOJJ_Player::SetConveyorMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Conveyor);
-
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
-		{
-			QuestManager->NotifyTutorialEvent(TEXT("SelectConveyorMode"));
-		}
-	}
-}
-
-void AOJJ_Player::SetPipeMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pipe);
-}
-
-// 물탱크 모드 직행(K키 — F4-4, IA 경로). 파이프 핸들러 미러 — 콘솔 OJJ_SetBuildMode tank와 동일 위임.
-void AOJJ_Player::SetTankMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::LiquidTank);
-}
-
 void AOJJ_Player::OJJ_SetBuildMode(const FString& ModeName)
 {
-	// [임시 진입로] 콘솔 exec — IA/UI 미와이어링 모드(pipe/tank) 전용. 빌드모드 여부는 검사하지
-	// 않음 — 기존 모드 키(SetConveyorMode 등)와 동일 정책(빌드모드 밖 호출 = 다음 진입 모드 예약).
+	// [임시 진입로] 콘솔 exec — IA/UI 미와이어링 모드(pipe/tank/tower) 전용. 빌드모드 여부는 검사하지
+	// 않음(빌드모드 밖 호출 = 다음 진입 모드 예약). SetPlacementMode 직접 위임이라 직행키/슬롯 경로와 독립.
 	if (!BuildController)
 	{
 		return;
@@ -937,147 +843,6 @@ void AOJJ_Player::OJJ_SetBuildMode(const FString& ModeName)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] OJJ_SetBuildMode: unknown mode '%s' (pipe|tank|tower)"), *ModeName);
 	}
-}
-
-void AOJJ_Player::SetPowerNodeMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerNode);
-
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
-		{
-			QuestManager->NotifyTutorialEvent(TEXT("SelectPowerNodeMode"));
-		}
-	}
-}
-
-void AOJJ_Player::SetShieldMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Shield);
-}
-
-// 전선 드래그 모드 진입만 추가 — 드래그 로직(BeginPowerLineDrag/CommitPowerLineDrag)은 팀원 구현 무수정.
-void AOJJ_Player::SetPowerLineMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerLine);
-
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
-		{
-			QuestManager->NotifyTutorialEvent(TEXT("SelectPowerLineMode"));
-		}
-	}
-}
-
-void AOJJ_Player::SetPowerPlantMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerPlant);
-
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
-		{
-			QuestManager->NotifyTutorialEvent(TEXT("SelectPowerPlantMode"));
-		}
-	}
-}
-
-void AOJJ_Player::SetGrinderMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Grinder);
-}
-
-void AOJJ_Player::SetMinerMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Miner);
-
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
-		{
-			QuestManager->NotifyTutorialEvent(TEXT("SelectMinerMode"));
-		}
-	}
-}
-
-void AOJJ_Player::SetPumpMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pump);
-}
-
-void AOJJ_Player::SetSmelterMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Smelter);
-
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
-		{
-			QuestManager->NotifyTutorialEvent(TEXT("SelectSmelterMode"));
-		}
-	}
-}
-
-void AOJJ_Player::SetMoldingMachineModeShortcut()
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::MoldingMachine);
-}
-
-void AOJJ_Player::SetSynthesizerModeShortcut()
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Synthesizer);
-}
-
-// TeleCommunicationTower build mode shortcut.
-void AOJJ_Player::SetTeleCommunicationTowerModeShortcut()
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::TeleCommunicationTower);
 }
 
 void AOJJ_Player::SetDemolishModeShortcut()
@@ -1162,23 +927,6 @@ void AOJJ_Player::SetHotbarSlot7()  { ExecuteHotbarSlot(7); }
 void AOJJ_Player::SetHotbarSlot8()  { ExecuteHotbarSlot(8); }
 void AOJJ_Player::SetHotbarSlot9()  { ExecuteHotbarSlot(9); }
 void AOJJ_Player::SetHotbarSlot10() { ExecuteHotbarSlot(10); }
-
-void AOJJ_Player::SetWarehouseMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Warehouse);
-
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
-		{
-			QuestManager->NotifyTutorialEvent(TEXT("SelectWarehouseMode"));
-		}
-	}
-}
 
 // 철거 모드 진입(X키). 호버 대상 빨강 하이라이트 + 좌클릭 제거.
 void AOJJ_Player::SetDemolishMode(const FInputActionValue& Value)
