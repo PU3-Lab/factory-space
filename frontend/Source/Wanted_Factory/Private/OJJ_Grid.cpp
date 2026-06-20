@@ -19,6 +19,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Pipe.h"
 #include "Resource/ResourceBase.h"
+#include "Resource/ResourceData.h"
 #include "UObject/ConstructorHelpers.h"
 
 // === Conveyor 포트 판정 헬퍼 (Step 3-b-1) ===
@@ -1874,46 +1875,40 @@ void AOJJ_Grid::RefreshGridVisual()
 
 	if (bVisualizationActive)
 	{
-		// 빌드모드: 전 셀을 water(파랑)/blocked(빨강)/가능(초록)으로 채움. void는 모두 제외 → 그리드가 바닥 모양만 따라 보임.
-		// 우선순위 water > blocked: water도 건설 불가지만 파랑으로 구분 표시(분류 우선순위와 일치).
-		// F3.5': 커버된 blocked는 초록(CoveredCellISM — constructible 기준, 색=의미). blocked/covered는
-		// 부분 갱신 대상이라 장부(셀↔인스턴스)를 적재 순서로 병행 구축.
+		// [그리드 색상 2단계] 든 머신/모드의 지형규칙(OJJ_ClassifyCellColor)으로 셀별 초록(놓을수있음)/빨강(못놓음)/
+		// 파랑(물 정보색)/없음(void). 풋프린트·점유·광맥경사는 커서(ValidHover)가 담당(분리). 규칙 변경 시에만 호출됨
+		// (OJJ_UpdateGridColorRule 시그니처 스킵 — 동일 규칙 전환은 repaint 안 함). F3.5' 부분갱신 장부는 규칙 경로
+		// 미사용(OJJ_OnFoundationCoverageVisualChanged가 규칙 활성 시 전체 재적재로 위임) → 장부 비움 유지.
+		// Miner 모드면 광맥 인접 집합 사전계산(per-cell 분류가 참조). 그 외 모드는 비움(미사용).
+		if (bGridColorRuleSet && GridColorMode == EOJJGridColorMode::Miner)
+		{
+			OJJ_RebuildOreAdjacentCells();
+		}
+		else if (GridColorOreAdjacentCells.Num() > 0)
+		{
+			GridColorOreAdjacentCells.Reset();
+		}
+
 		TArray<FTransform> GreenXforms;
 		TArray<FTransform> RedXforms;
 		TArray<FTransform> BlueXforms;
-		TArray<FTransform> CoveredXforms;
-		TArray<FIntPoint> BlockedCellsInOrder;
-		TArray<FIntPoint> CoveredCellsInOrder;
 		for (int32 X = 0; X < GridSize.X; ++X)
 		{
 			for (int32 Y = 0; Y < GridSize.Y; ++Y)
 			{
 				const FIntPoint Cell(X, Y);
-				if (VoidCells.Contains(Cell)) { continue; }                  // void → 아무것도 안 그림
-				if (WaterCells.Contains(Cell)) { BlueXforms.Add(MakeCellXform(Cell)); }
-				else if (UnbuildableCells.Contains(Cell))
+				switch (OJJ_ClassifyCellColor(Cell))
 				{
-					if (IsCellOnFoundation(Cell))
-					{
-						CoveredXforms.Add(MakeCellXform(Cell));
-						CoveredCellsInOrder.Add(Cell);
-					}
-					else
-					{
-						RedXforms.Add(MakeCellXform(Cell));
-						BlockedCellsInOrder.Add(Cell);
-					}
+				case EOJJCellClass::Buildable: GreenXforms.Add(MakeCellXform(Cell)); break;
+				case EOJJCellClass::Blocked:   RedXforms.Add(MakeCellXform(Cell)); break;
+				case EOJJCellClass::Water:     BlueXforms.Add(MakeCellXform(Cell)); break;
+				default: break; // Void → 타일 안 그림
 				}
-				else { GreenXforms.Add(MakeCellXform(Cell)); }
 			}
 		}
 		if (BuildableCellISM && GreenXforms.Num() > 0) { BuildableCellISM->AddInstances(GreenXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
 		if (BlockedCellISM && RedXforms.Num() > 0) { BlockedCellISM->AddInstances(RedXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
 		if (WaterCellISM && BlueXforms.Num() > 0) { WaterCellISM->AddInstances(BlueXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
-		if (CoveredCellISM && CoveredXforms.Num() > 0) { CoveredCellISM->AddInstances(CoveredXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
-		// 배치 적재는 배열 순서 = 인스턴스 인덱스 — 적재 순서 배열에서 장부 구축(이후 인덱스 불변 — 숨김 방식).
-		for (int32 Idx = 0; Idx < BlockedCellsInOrder.Num(); ++Idx) { BlockedCellToInstance.Add(BlockedCellsInOrder[Idx], Idx); }
-		for (int32 Idx = 0; Idx < CoveredCellsInOrder.Num(); ++Idx) { CoveredCellToInstance.Add(CoveredCellsInOrder[Idx], Idx); }
 	}
 	else
 	{
@@ -1931,6 +1926,105 @@ void AOJJ_Grid::RefreshGridVisual()
 			if (WaterCellISM && BlueXforms.Num() > 0) { WaterCellISM->AddInstances(BlueXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
 		}
 	}
+}
+
+void AOJJ_Grid::OJJ_UpdateGridColorRule(EOJJGridColorMode Mode, bool bAllowRawGround, bool bAllowWater)
+{
+	// 시그니처(Mode/raw/water) 동일 + 이미 설정 → 스킵(창고↔제련 등 동일 규칙 전환 시 90k 풀갱신 회피).
+	const bool bSame = bGridColorRuleSet
+		&& GridColorMode == Mode
+		&& bGridColorAllowRawGround == bAllowRawGround
+		&& bGridColorAllowWater == bAllowWater;
+
+	bGridColorRuleSet = true;
+	GridColorMode = Mode;
+	bGridColorAllowRawGround = bAllowRawGround;
+	bGridColorAllowWater = bAllowWater;
+
+	// 빌드모드 활성 + 규칙 변경 시에만 재적재. 빌드모드 밖이면 멤버만 저장(다음 SetVisualizationVisible이 paint).
+	if (!bSame && bVisualizationActive)
+	{
+		RefreshGridVisual();
+	}
+}
+
+void AOJJ_Grid::OJJ_RebuildOreAdjacentCells()
+{
+	// Miner 모드 색상용: 미선점 채굴 광맥(OccupiedCells 점유 자원) 주변 반경 R 셀을 사전계산(per-cell O(1) 조회).
+	// OccupiedCells는 소수(배치 풋프린트)라 90k 루프보다 훨씬 가벼움. paint 직전 1회 재구축(모드전환/배치 시점).
+	// R=3: 원래 인접(4방향=맨해튼 1칸 십자)에서 2칸 더 확장 = 맨해튼 거리 ≤3(다이아몬드). 사각형(체비셰프) 아님 —
+	// FindAdjacentUnclaimedOre의 4방향 모양을 유지하며 반경만 1→3. 비용은 ore 주변만(OccupiedCells 순회).
+	const int32 R = OJJ_OreColorProximityRadius;
+	GridColorOreAdjacentCells.Reset();
+	for (const TPair<FIntPoint, TWeakObjectPtr<AActor>>& Pair : OccupiedCells)
+	{
+		const AResourceBase* Resource = Cast<AResourceBase>(Pair.Value.Get());
+		if (!Resource || Resource->IsClaimed())
+		{
+			continue;
+		}
+		// MinerMachine::IsMineableOreResource와 동일 판정(shape Ore 또는 rowname *_ore).
+		const bool bMineableOre =
+			Resource->HasShape(EResourceShape::Ore)
+			|| Resource->GetResourceRowName().ToString().EndsWith(TEXT("_ore"));
+		if (!bMineableOre)
+		{
+			continue;
+		}
+		for (int32 dx = -R; dx <= R; ++dx)
+		{
+			const int32 RemainY = R - FMath::Abs(dx); // 맨해튼: |dx|+|dy| ≤ R
+			for (int32 dy = -RemainY; dy <= RemainY; ++dy)
+			{
+				GridColorOreAdjacentCells.Add(Pair.Key + FIntPoint(dx, dy));
+			}
+		}
+	}
+}
+
+EOJJCellClass AOJJ_Grid::OJJ_ClassifyCellColor(FIntPoint Cell) const
+{
+	if (VoidCells.Contains(Cell))
+	{
+		return EOJJCellClass::Void; // 바닥 없음 → 타일 X
+	}
+
+	// --- Foundation/Ramp 모드: CanPlaceFoundation 기준 — 경사(blocked) 포함 전부 placeable, 물·이미foundation 제외. ---
+	if (bGridColorRuleSet && GridColorMode == EOJJGridColorMode::Foundation)
+	{
+		if (WaterCells.Contains(Cell)) { return EOJJCellClass::Water; }          // 물 = 파랑(못놓음)
+		if (IsCellOnFoundation(Cell)) { return EOJJCellClass::Blocked; }         // 이미 Foundation = 빨강(겹침)
+		return EOJJCellClass::Buildable;                                          // 평지·경사 모두 초록(평지화 가능)
+	}
+
+	// --- Miner 모드: 광맥 4방향 인접 셀만 placeable(평지·경사 무관). ---
+	if (bGridColorRuleSet && GridColorMode == EOJJGridColorMode::Miner)
+	{
+		if (WaterCells.Contains(Cell)) { return EOJJCellClass::Water; }          // 물 = 파랑(채굴기 못 섬)
+		// 인접 미선점 광맥이 있고, 셀 자체가 지상(buildable 또는 경사)이면 초록. 아니면 빨강(평지여도 광맥 없으면 X).
+		const bool bStandable = IsCellBuildable(Cell) || UnbuildableCells.Contains(Cell) || IsCellOnFoundation(Cell);
+		return (bStandable && GridColorOreAdjacentCells.Contains(Cell))
+			? EOJJCellClass::Buildable : EOJJCellClass::Blocked;
+	}
+
+	// --- Machine 모드(기본): raw 허용/물 허용 bool 참조. ---
+	const bool bRuleRaw = !bGridColorRuleSet || bGridColorAllowRawGround;
+	const bool bRuleWater = bGridColorRuleSet && bGridColorAllowWater;
+
+	if (WaterCells.Contains(Cell))
+	{
+		return bRuleWater ? EOJJCellClass::Buildable : EOJJCellClass::Water; // 펌프=초록 / 그 외=파랑(정보색)
+	}
+	if (IsCellOnFoundation(Cell))
+	{
+		return EOJJCellClass::Buildable; // Foundation 위 = 전 머신 OK(초록)
+	}
+	if (UnbuildableCells.Contains(Cell))
+	{
+		return EOJJCellClass::Blocked; // raw 경사 — 못놓음
+	}
+	// raw buildable(평지, non-Foundation): raw 허용 머신만 초록.
+	return bRuleRaw ? EOJJCellClass::Buildable : EOJJCellClass::Blocked;
 }
 
 FTransform AOJJ_Grid::OJJ_MakeOverlayCellTransform(FIntPoint Cell, bool bGroundZValid) const
@@ -1986,6 +2080,14 @@ void AOJJ_Grid::OJJ_OnFoundationCoverageVisualChanged(const TArray<FIntPoint>& C
 	// water/void는 CanPlaceFoundation이 거부, buildable은 이미 초록(전환 불요).
 	if (!bVisualizationActive)
 	{
+		return;
+	}
+
+	// [그리드 색상 2단계] 규칙 기반 색상 활성 시: Foundation 커버 변경은 셀색이 규칙에 따라 달라져(머신모드 covered=초록,
+	// Foundation모드 covered=빨강, raw 커버 등) blocked↔covered 부분 플립으로 표현 불가 → 전체 재적재(이산 액션이라 수용).
+	if (bGridColorRuleSet)
+	{
+		RefreshGridVisual();
 		return;
 	}
 

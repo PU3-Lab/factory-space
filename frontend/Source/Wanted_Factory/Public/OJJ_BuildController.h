@@ -250,6 +250,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void SetPlacementMode(EOJJ_BuildPlacementMode NewMode);
 
+	// [그리드 색상 2단계] 현재 PlacementMode(+머신 CDO 지형규칙)를 그리드 색상 규칙으로 주입. EnterBuildMode 진입·
+	// SetPlacementMode 전환 시 호출. 비머신 모드(Foundation/Conveyor/Pipe/PowerLine/Demolish/None)는 명시 분기.
+	void UpdateGridColorForCurrentMode();
+
 	UFUNCTION(BlueprintPure, Category = "BuildController")
 	EOJJ_BuildPlacementMode GetPlacementMode() const { return PlacementMode; }
 

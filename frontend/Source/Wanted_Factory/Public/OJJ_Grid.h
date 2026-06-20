@@ -22,6 +22,15 @@ class UMaterialInstanceDynamic;
  * Water는 Blocked와 별개 상태지만 IsCellBuildable=false는 동일(건설금지 불변식 — §3).
  * 값(0~3)이 패킹 비트와 직결되므로 재정렬 금지(직렬화 캐시 호환 깨짐).
  */
+// [그리드 색상 2단계] 빌드모드 필드 색상의 모드 분기 — 모드마다 placeable 규칙이 다름.
+UENUM()
+enum class EOJJGridColorMode : uint8
+{
+	Machine = 0,     // 일반 머신 — raw/water bool 참조(Foundation 위 OK, raw는 CanPlaceOnRawGround만)
+	Foundation = 1,  // Foundation/Ramp — CanPlaceFoundation 기준(경사 포함, 물·void·이미foundation 제외)
+	Miner = 2        // 채굴기 — 광맥 4방향 인접 셀만 placeable(평지·경사 무관)
+};
+
 UENUM()
 enum class EOJJCellClass : uint8
 {
@@ -404,6 +413,21 @@ protected:
 	UPROPERTY(Transient)
 	bool bVisualizationActive = false;
 
+	// [그리드 색상 2단계] 든 머신/모드의 지형규칙 — 빌드모드 필드 오버레이가 셀별 초록/빨강 판정에 사용.
+	// BuildController가 OJJ_UpdateGridColorRule로 주입. (bGridColorRuleSet=false면 미설정 → 전부 가능으로 취급.)
+	// 모드별 규칙이 달라 enum으로 분기: Machine(raw/water bool 참조) / Foundation(CanPlaceFoundation=경사 포함, 물·이미foundation 제외)
+	// / Miner(광맥 인접 셀만, 평지·경사 무관).
+	bool bGridColorRuleSet = false;
+	EOJJGridColorMode GridColorMode = EOJJGridColorMode::Machine;
+	bool bGridColorAllowRawGround = false;   // Machine 모드 — raw 평지 직배치 허용(컨베이어/파이프 등)
+	bool bGridColorAllowWater = false;       // Machine 모드 — 물 위 배치 허용(펌프)
+	// Miner 모드 전용: 광맥 주변 강조 셀 사전계산 집합(RefreshGridVisual paint 직전 OccupiedCells에서 재구축).
+	TSet<FIntPoint> GridColorOreAdjacentCells;
+
+	// Miner 색상 강조 반경(맨해튼=다이아몬드, 광맥 셀 기준). 3 = 원래 4방향 인접(1)에서 2칸 더 — 십자 모양 확장. PIE 다이얼.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Color", meta = (ClampMin = "0"))
+	int32 OJJ_OreColorProximityRadius = 3;
+
 	// 배치 가능 셀 호버 표시 (녹색)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Hover")
 	TObjectPtr<UInstancedStaticMeshComponent> ValidHoverISM;
@@ -568,6 +592,13 @@ private:
 
 	// 오버레이 셀 트랜스폼(기준면 +3 — RefreshGridVisual과 부분 갱신이 공유하는 단일원).
 	FTransform OJJ_MakeOverlayCellTransform(FIntPoint Cell, bool bGroundZValid) const;
+
+	// [그리드 색상 2단계] 셀별 필드 색상 분류(든 머신 지형규칙 기준). 반환 재사용: Buildable=초록(놓을수있음)/
+	// Blocked=빨강(못놓음)/Water=파랑(물 정보색, 펌프면 초록)/Void=없음(타일 X). 풋프린트·점유·광맥경사는 커서가 담당.
+	EOJJCellClass OJJ_ClassifyCellColor(FIntPoint Cell) const;
+
+	// [그리드 색상 2단계] Miner 모드 color용 광맥 인접 셀 집합 재구축(RefreshGridVisual paint 직전 호출).
+	void OJJ_RebuildOreAdjacentCells();
 
 	// 장부 동반 표시/숨김(F3.5' 부분 갱신). 숨김 = zero-scale 트랜스폼(UpdateInstanceTransform, O(1)) —
 	// 인덱스가 불변이라 RemoveInstance의 시프트/스왑 시맨틱에 비의존(Codex F3.5' ① 해소). 표시는
@@ -786,6 +817,10 @@ public:
 	// 그리드 셀 비주얼 갱신 — 현재 상태(bVisualizationActive/bForceShowBlocked) 기준으로 초록(가능)/빨강(blocked)
 	// per-cell ISM 재적재. void 셀은 양쪽 다 제외. 클리어 후 재적재라 진입/퇴장 반복에도 중복·잔존 없음.
 	void RefreshGridVisual();
+
+	// [그리드 색상 2단계] 든 머신/모드의 지형규칙 주입 + 필요 시 recolor. 시그니처(Mode/raw/water) 동일하면
+	// 스킵(창고↔제련 등 동일 규칙 전환 시 90k 풀갱신 회피). 다르면 bVisualizationActive일 때 RefreshGridVisual.
+	void OJJ_UpdateGridColorRule(EOJJGridColorMode Mode, bool bAllowRawGround, bool bAllowWater);
 
 	// 디버그(OJJ.Grid.ShowBlocked) — 빌드모드와 무관하게 오버레이 강제 표시 토글.
 	void SetForceShowBlocked(bool bShow);
