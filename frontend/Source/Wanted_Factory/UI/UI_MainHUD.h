@@ -63,6 +63,12 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional))
     class UTextBlock* TXT_Rainfall;
 
+    UPROPERTY(meta = (BindWidgetOptional))
+    class UBorder* B_PlanetEvent;
+
+    UPROPERTY(meta = (BindWidgetOptional))
+    class UTextBlock* TXT_PlanetEvent;
+
     virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 private:
@@ -70,6 +76,14 @@ private:
     void HandleWeatherChanged(const FPlanetWeatherState& WeatherState);
 
     void RefreshWeatherText(const FPlanetWeatherState& WeatherState);
+
+    UFUNCTION()
+    void HandlePlanetEventStarted(EPlanetEventType EventType, float Severity);
+
+    UFUNCTION()
+    void HandlePlanetEventEnded(EPlanetEventType EventType);
+
+    void RefreshPlanetEventUI(EPlanetEventType EventType, float Severity);
 
     UFUNCTION()
     void HandleOnTextCommitted(const FText& Text, ETextCommit::Type CommitType);
