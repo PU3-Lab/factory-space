@@ -8,7 +8,6 @@
 #include "OJJ_Grid.h"
 #include "Components/StaticMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
-#include "UObject/ConstructorHelpers.h"
 
 namespace
 {
@@ -42,12 +41,6 @@ AResourceBase::AResourceBase()
 
 	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
 	Mesh->SetupAttachment(Root);
-
-	static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(DefaultResourceTablePath);
-	if (ResourceTableFinder.Succeeded())
-	{
-		ResourceData.DataTable = ResourceTableFinder.Object;
-	}
 }
 
 // Called when the game starts or when spawned
@@ -69,14 +62,9 @@ void AResourceBase::BeginPlay()
 
 void AResourceBase::NormalizeResourceDataHandle()
 {
-	if (!ResourceData.DataTable)
+	if (ResourceID.IsNone() && !ResourceData.RowName.IsNone())
 	{
-		ResourceData.DataTable = LoadObject<UDataTable>(nullptr, DefaultResourceTablePath);
-	}
-
-	if (ResourceData.RowName.IsNone() && !ResourceID.IsNone())
-	{
-		ResourceData.RowName = ResourceID;
+		ResourceID = ResourceData.RowName;
 	}
 }
 
@@ -188,32 +176,33 @@ bool AResourceBase::IsEmpty() const
 
 bool AResourceBase::GetResourceData(FResourceData& OutResourceData) const
 {
-	if (!ResourceData.DataTable)
+	UDataTable* ResourceTable = GetDefaultResourceTable();
+	if (!ResourceTable)
 	{
 		LOG_SSR_W(TEXT("GetResourceData failed: DataTable is null. Resource=%s"), *GetName());
 		return false;
 	}
 
-	if (ResourceData.RowName.IsNone())
+	const FName RowName = GetResourceRowName();
+	if (RowName.IsNone())
 	{
 		LOG_SSR_W(
 			TEXT("GetResourceData failed: RowName is None. Resource=%s DataTable=%s"),
 			*GetName(),
-			*ResourceData.DataTable->GetName()
+			*ResourceTable->GetName()
 		);
 		return false;
 	}
 	
-	const FResourceData* FoundData = 
-		ResourceData.GetRow<FResourceData>(TEXT("GetResourceData"));
+	const FResourceData* FoundData = ResourceTable->FindRow<FResourceData>(RowName, TEXT("GetResourceData"));
 	
 	if (!FoundData)
 	{
 		LOG_SSR_W(
 			TEXT("GetResourceData failed: Row not found. Resource=%s DataTable=%s RowName=%s"),
 			*GetName(),
-			*ResourceData.DataTable->GetName(),
-			*ResourceData.RowName.ToString()
+			*ResourceTable->GetName(),
+			*RowName.ToString()
 		);
 		return false;
 	}
@@ -224,7 +213,12 @@ bool AResourceBase::GetResourceData(FResourceData& OutResourceData) const
 
 FName AResourceBase::GetResourceRowName() const
 {
-	return ResourceData.RowName;
+	return !ResourceID.IsNone() ? ResourceID : ResourceData.RowName;
+}
+
+UDataTable* AResourceBase::GetDefaultResourceTable() const
+{
+	return LoadObject<UDataTable>(nullptr, DefaultResourceTablePath);
 }
 
 bool AResourceBase::IsClaimed() const

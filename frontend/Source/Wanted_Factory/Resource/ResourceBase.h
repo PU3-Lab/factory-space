@@ -30,6 +30,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	UStaticMeshComponent* Mesh;
 
+	// 레거시 호환용. 실제 런타임 조회는 ResourceID + 기본 리소스 테이블을 사용한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Resource")
 	FDataTableRowHandle ResourceData;
 
@@ -102,6 +103,8 @@ protected:
 	// 기본 구현은 단일 셀 등록(광맥). 다중 셀 영역(AWaterArea 등)은 override로 확장 — 본 경로/광맥 동작 무변경.
 	virtual void RegisterToGrid();
 
-	// 레거시 ResourceID / 누락된 DataTable 핸들을 기본 리소스 테이블로 보정한다.
+	// 레거시 핸들에서 ResourceID를 보정하고, 기본 리소스 테이블을 코드에서 로드한다.
 	void NormalizeResourceDataHandle();
+
+	UDataTable* GetDefaultResourceTable() const;
 };
