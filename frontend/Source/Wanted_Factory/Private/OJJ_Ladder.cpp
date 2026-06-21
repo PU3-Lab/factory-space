@@ -5,6 +5,7 @@
 #include "Components/BoxComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "OJJ_Grid.h"
 #include "OJJ_Player.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -104,6 +105,23 @@ void AOJJ_Ladder::BeginPlay()
 		ClimbTrigger->OnComponentBeginOverlap.AddDynamic(this, &AOJJ_Ladder::OnTriggerBeginOverlap);
 		ClimbTrigger->OnComponentEndOverlap.AddDynamic(this, &AOJJ_Ladder::OnTriggerEndOverlap);
 	}
+}
+
+void AOJJ_Ladder::OJJ_SetRegisteredGrid(AOJJ_Grid* InGrid)
+{
+	// 헤더선 AOJJ_Grid 전방선언뿐 → TWeakObjectPtr 대입을 완전 타입 보이는 여기서.
+	RegisteredGrid = InGrid;
+}
+
+void AOJJ_Ladder::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// [#184 철거] 사다리 레이어(OJJ_LadderCells)에서 자동 해제 — 데모리시/cascade/세이브리셋/레벨종료 어느 경로로
+	// 파괴돼도 맵을 청소(stale 누적 방지). RegisteredGrid는 OJJ_RegisterLadder가 주입(미등록이면 no-op).
+	if (AOJJ_Grid* Grid = RegisteredGrid.Get())
+	{
+		Grid->OJJ_UnregisterLadder(this);
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 void AOJJ_Ladder::OnTriggerBeginOverlap(UPrimitiveComponent* /*OverlappedComp*/, AActor* OtherActor,

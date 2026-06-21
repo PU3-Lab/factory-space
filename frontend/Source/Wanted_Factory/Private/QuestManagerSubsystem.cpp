@@ -42,6 +42,13 @@ constexpr TCHAR TutorialEventSelectConveyorMode[] = TEXT("SelectConveyorMode");
 constexpr TCHAR TutorialEventSelectPowerLineMode[] = TEXT("SelectPowerLineMode");
 constexpr TCHAR TutorialEventPowerLineConnected[] = TEXT("PowerLineConnected");
 constexpr TCHAR TutorialEventWarehouseOutputItemSet[] = TEXT("WarehouseOutputItemSet");
+constexpr TCHAR TutorialEventSelectFlatFoundationMode[] = TEXT("SelectFlatFoundationMode");
+constexpr TCHAR TutorialEventSelectRampFoundationMode[] = TEXT("SelectRampFoundationMode");
+constexpr TCHAR TutorialEventSelectLadderMode[] = TEXT("SelectLadderMode");
+constexpr TCHAR TutorialEventPlaceFlatFoundation[] = TEXT("PlaceFlatFoundation");
+constexpr TCHAR TutorialEventPlaceRampFoundation[] = TEXT("PlaceRampFoundation");
+constexpr TCHAR TutorialEventPlaceLadder[] = TEXT("PlaceLadder");
+constexpr TCHAR TutorialEventSelectBaseCampMode[] = TEXT("SelectBaseCampMode");
 
 enum class ETutorialRequirementType : uint8
 {
@@ -246,6 +253,18 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	{
 		SetEventRequirement(TutorialEventDemolishRemoved);
 	}
+	else if (QuestId == TEXT("TUT_BUILD_007"))
+	{
+		SetEventRequirement(TutorialEventPlaceFlatFoundation);
+	}
+	else if (QuestId == TEXT("TUT_BUILD_008"))
+	{
+		SetEventRequirement(TutorialEventPlaceRampFoundation);
+	}
+	else if (QuestId == TEXT("TUT_BUILD_009"))
+	{
+		SetEventRequirement(TutorialEventPlaceLadder);
+	}
 	else if (QuestId == TEXT("TUT_MINING_001"))
 	{
 		SetEventRequirement(TutorialEventSelectMinerMode);
@@ -358,6 +377,10 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	{
 		SetWarehouseRequirement(TEXT("iron_ingot"), 1);
 	}
+	else if (QuestId == TEXT("TUT_BASE_001"))
+	{
+		SetEventRequirement(TutorialEventSelectBaseCampMode);
+	}
 	else if (QuestId == TEXT("TUT_EXPAND_001"))
 	{
 		SetWarehouseRequirement(TEXT("iron_ingot"), 10);
@@ -393,6 +416,18 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	else if (QuestId == TEXT("TUT_EXPAND_009"))
 	{
 		SetWarehouseRequirement(TEXT("iron_ingot"), 30);
+	}
+	else if (QuestId == TEXT("TUT_COMM_001"))
+	{
+		SetWarehouseRequirement(TEXT("TeleCommunicationTower"), 1);
+	}
+	else if (QuestId == TEXT("TUT_COMM_002"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("TeleCommunicationTower"));
+	}
+	else if (QuestId == TEXT("TUT_COMM_003"))
+	{
+		SetEventRequirement(TutorialEventPowerLineConnected);
 	}
 
 	return Requirement;
@@ -613,6 +648,50 @@ bool UQuestManagerSubsystem::CompleteCurrentTutorialQuestForTest()
 	}
 
 	return AdvanceTutorialQuestStep(true);
+}
+
+bool UQuestManagerSubsystem::AdvanceTutorialManualStep()
+{
+	if (!bTutorialQuestTestActive || bPendingTutorialStartDialogueReveal)
+	{
+		return false;
+	}
+
+	const FTutorialQuestStep* Step = FindCurrentTutorialQuestStep();
+	if (!Step)
+	{
+		return false;
+	}
+
+	const FTutorialRequirement Requirement = GetTutorialRequirement(Step->QuestId);
+	if (Requirement.Type != ETutorialRequirementType::Unsupported)
+	{
+		return false;
+	}
+
+	return AdvanceTutorialQuestStep(false);
+}
+
+bool UQuestManagerSubsystem::CanDismissTutorialCompletionDialogue() const
+{
+	return !bTutorialQuestTestActive
+		&& !bPendingTutorialStartDialogueReveal
+		&& LastTutorialDialogueTriggerType == TEXT("on_complete")
+		&& !LastTutorialDialogueLines.IsEmpty();
+}
+
+bool UQuestManagerSubsystem::DismissTutorialCompletionDialogue()
+{
+	if (!CanDismissTutorialCompletionDialogue())
+	{
+		return false;
+	}
+
+	LastTutorialDialogueQuestId.Empty();
+	LastTutorialDialogueTriggerType.Empty();
+	LastTutorialDialogueLines.Reset();
+	OnTutorialDialogueLogged.Broadcast(FString(), TEXT("dismissed"), LastTutorialDialogueLines);
+	return true;
 }
 
 void UQuestManagerSubsystem::LogCurrentTutorialQuestTestState() const
@@ -992,7 +1071,7 @@ FString UQuestManagerSubsystem::SendSubQuestRequest(const FString& PayloadJson)
 	return RequestId;
 }
 
-void UQuestManagerSubsystem::RefreshSubQuestCompletion()
+void UQuestManagerSubsystem::RefreshSubQuestCompletion(bool bForceBroadcast)
 {
 	bool bAnyQuestUpdated = false;
 
@@ -1010,7 +1089,7 @@ void UQuestManagerSubsystem::RefreshSubQuestCompletion()
 		}
 	}
 
-	if (bAnyQuestUpdated)
+	if (bAnyQuestUpdated || bForceBroadcast)
 	{
 		OnSubQuestsUpdated.Broadcast(SubQuests);
 	}
@@ -1121,15 +1200,14 @@ void UQuestManagerSubsystem::ApplyMainQuestObjectiveEvent(EQuestObjectiveType Ob
 
 bool UQuestManagerSubsystem::IsQuestCompletedByWarehouse(const FQuestState& Quest) const
 {
-	if (!WarehouseSubsystem || Quest.Objectives.IsEmpty())
+	if (Quest.Objectives.IsEmpty())
 	{
 		return false;
 	}
 
 	for (const FQuestObjective& Objective : Quest.Objectives)
 	{
-		const FName ItemId(*Objective.TargetItemId);
-		if (ItemId.IsNone() || WarehouseSubsystem->GetItemCount(ItemId) < Objective.Quantity)
+		if (Objective.CurrentCount < Objective.Quantity)
 		{
 			return false;
 		}
@@ -1237,7 +1315,35 @@ void UQuestManagerSubsystem::HandleWarehouseItemAdded(FName ItemID, int32 AddedC
 		}
 	}
 
-	RefreshSubQuestCompletion();
+	bool bSubQuestProgressUpdated = false;
+	for (FQuestState& Quest : SubQuests)
+	{
+		if (Quest.Status != EQuestStatus::Active)
+		{
+			continue;
+		}
+
+		for (FQuestObjective& Objective : Quest.Objectives)
+		{
+			if (Objective.TargetId != ItemID)
+			{
+				continue;
+			}
+
+			const int32 NewCount = FMath::Min(Objective.Quantity, Objective.CurrentCount + AddedCount);
+			if (NewCount != Objective.CurrentCount)
+			{
+				Objective.CurrentCount = NewCount;
+				bSubQuestProgressUpdated = true;
+			}
+		}
+	}
+
+	if (bSubQuestProgressUpdated)
+	{
+		RefreshSubQuestCompletion(true);
+	}
+
 	RefreshMainQuestCompletion();
 }
 
@@ -1288,7 +1394,6 @@ void UQuestManagerSubsystem::HandleAgentResponse(
 
 	SubQuests = GeneratedQuests;
 	SubQuestTitles = GeneratedTitles;
-	RefreshSubQuestCompletion();
 	OnSubQuestsGenerated.Broadcast(RequestId, SubQuests);
 	OnSubQuestTitlesUpdated.Broadcast(RequestId, SubQuestTitles);
 }

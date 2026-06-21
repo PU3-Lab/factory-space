@@ -16,6 +16,8 @@ class AOJJ_BuildCamera;
 class AOJJ_Ladder;
 class AMachineBase;
 class UUI_MachineInteract;
+class UAnimMontage;
+class UOJJ_CharacterAppearanceData;
 struct FInputActionValue;
 
 /**
@@ -58,8 +60,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Climb")
 	bool IsClimbing() const { return bClimbing; }
 
+	// [게임진입 테스트] 위젯 전 독립 검증용 콘솔 명령 — PIE 콘솔에 `OJJ_DebugSetCharacter 1`(Woman)/`0`(Man)
+	// 입력 시 선택 서브시스템 설정 + 즉시 재스왑(레벨 재진입 없이 확인). 2단계 위젯 붙으면 제거 가능.
+	UFUNCTION(Exec)
+	void OJJ_DebugSetCharacter(int32 CharacterIndex);
+
 protected:
 	virtual void BeginPlay() override;
+
+	// [게임진입] 선택 서브시스템(EOJJ_CharacterType)값으로 GetMesh()의 SkeletalMesh+AnimClass를 스왑(외형만 —
+	// 사다리/빌드/입력 로직 무영향, 단일 pawn 유지). AppearanceData/서브시스템/항목 미존재면 안전하게 스킵.
+	void ApplySelectedCharacterAppearance();
 
 	// step-off 부드러운 안착 보간(#184) 처리. 평상시엔 별 비용 없음(bSteppingOff 가드).
 	virtual void Tick(float DeltaSeconds) override;
@@ -110,6 +121,12 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> Camera;
+
+	// --- Character appearance (게임진입) ---
+	// 캐릭터 종류 → 외형(메시+ABP) 매핑 DataAsset. BeginPlay에서 선택 서브시스템값으로 GetMesh()를 스왑한다.
+	// 미할당이면 스왑 스킵(BP 기본 메시 유지) — 게임진입 흐름 미완성 단계에서도 안전. JJ가 BP_OJJ_Player에 DA 할당.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character")
+	TObjectPtr<UOJJ_CharacterAppearanceData> AppearanceData;
 
 	// --- Camera tuning ---
 	// 스크롤 줌 한 틱당 SpringArm 길이 변화량
@@ -215,6 +232,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
 	float ClimbSpeed = 250.f;
 
+	// [#184] 등반 시작 시 캐릭터를 사다리 안쪽(GetStepOffDirection, +X) 바라보게 회전 + 이 오프셋을 더한다.
+	// 메시 기본 yaw 오프셋(보통 -90°)·애니 제작 방향 때문에 그대로면 옆을 볼 수 있어 PIE에서 ±90 조정용
+	// (재컴파일 없이 디테일 패널). 기본 0 — 캐릭터가 옆 보면 이 값으로 맞춤.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb")
+	float LadderFacingYawOffset = 0.f;
+
 	// [#184] 등반 중 캐릭터를 사다리 등반 면에서 띄우는 여유(uu). 실제 거리 = 캡슐반경 + 이 값. 너무 작으면
 	// 메시 관통, 크면 떨어져 보임 — 캡슐 반경 부근이 적정이라 이 값은 그 위 소량 gap.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
@@ -253,6 +276,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
 	float ClimbEntryZTolerance = 80.f;
 
+	// [#184] 사다리 마무리(올라서기) 몽타주(예: AM_Man_Ladder_Finish, DefaultSlot). top 도착 '이전'에
+	// Move()의 FinishTriggerDistance 거리트리거로 1회 재생 — 올라서기가 실제 top 도착과 맞물리게(도착 순간
+	// 재생은 늦음). 미할당(nullptr)이면 몽타주 없이 기존 동작. ⚠️ ABP AnimGraph에 Slot 'DefaultSlot' 노드 필요.
+	// ⚠️ 몽타주 Root Motion OFF(캡슐 이동은 비행이 전담, 켜면 이중이동). Finish 루트높이(f0≈101) top 안착 PIE 확인.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb")
+	TObjectPtr<UAnimMontage> LadderFinishMontage = nullptr;
+
+	// [#184] top까지 남은 Z가 이 값 이하면 Finish 마무리 몽타주를 1회 재생(올라서기가 top 도착과 맞물리게).
+	// 몽타주가 '마무리(올라서기)'만 담으므로 작게 시작 — PIE 튜닝. ⚠️ 짧은 사다리는 ClimbHeight*0.5로 클램프(Move).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
+	float FinishTriggerDistance = 100.f;
+
 	// 현재 오르는 사다리(없으면 null). 등반 상태의 단일 진실원.
 	UPROPERTY(Transient)
 	TObjectPtr<AOJJ_Ladder> CurrentLadder;
@@ -270,6 +305,10 @@ protected:
 
 	// step-off 보간 상태(#184). 보간 중엔 이동 입력 잠금 + 비행(중력0) 유지, 완료 시 Walking+쿨다운.
 	bool bSteppingOff = false;
+
+	// [#184] Finish 마무리 몽타주 한 등반당 1회 재생 가드. FinishTriggerDistance 도달 시 set,
+	// BeginClimb/AbortClimb에서 clear. 미설정 시 매 프레임 재트리거되어 몽타주가 처음부터 반복("계속 나옴").
+	bool bFinishPlaying = false;
 	FVector StepOffStart = FVector::ZeroVector;
 	FVector StepOffTarget = FVector::ZeroVector;
 	float StepOffElapsed = 0.f;
@@ -357,6 +396,15 @@ public:
 
 	UFUNCTION(Exec)
 	void ResetGame();
+
+	UFUNCTION(Exec)
+	void BackupAndResetGame();
+
+	UFUNCTION(Exec)
+	void RestoreBackupGame();
+
+	UFUNCTION(Exec)
+	void ClearWarehouse();
 
 	UFUNCTION(Exec)
 	void TriggerPlanetEvent(const FString& EventName, float Severity = 1.0f, float DurationSeconds = -1.0f);

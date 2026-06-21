@@ -259,6 +259,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Quest|Tutorial")
 	void RevealPendingTutorialStartDialogue();
 
+	UFUNCTION(BlueprintCallable, Category = "Quest|Tutorial")
+	bool AdvanceTutorialManualStep();
+
+	UFUNCTION(BlueprintPure, Category = "Quest|Tutorial")
+	bool CanDismissTutorialCompletionDialogue() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Quest|Tutorial")
+	bool DismissTutorialCompletionDialogue();
+
 	void NotifyTutorialEvent(FName EventId, FName TargetId = NAME_None, int32 DeltaCount = 1);
 
 private:
@@ -306,7 +315,7 @@ private:
 	bool IsMainQuestCompleted(const FQuestState& Quest) const;
 	void ApplyMainQuestObjectiveEvent(EQuestObjectiveType ObjectiveType, FName TargetId, int32 DeltaCount);
 	FString SendSubQuestRequest(const FString& PayloadJson);
-	void RefreshSubQuestCompletion();
+	void RefreshSubQuestCompletion(bool bForceBroadcast = false);
 	bool IsQuestCompletedByWarehouse(const FQuestState& Quest) const;
 	bool AdvanceTutorialQuestStep(bool bFromManualTest);
 	void BroadcastCurrentTutorialQuestStep();

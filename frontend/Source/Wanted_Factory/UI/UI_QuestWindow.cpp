@@ -1,9 +1,39 @@
 #include "UI/UI_QuestWindow.h"
+
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
 #include "UI_QuestNotify.h"
 #include "Components/Border.h"
+
+namespace
+{
+bool ShouldShowSubQuestZone(const FTutorialQuestStep& Step)
+{
+    return Step.QuestId == TEXT("TUT_COMM_002")
+        || Step.QuestId == TEXT("TUT_COMM_003")
+        || Step.QuestId == TEXT("TUT_COMM_004")
+        || Step.QuestId.StartsWith(TEXT("TUT_SIGNAL_"));
+}
+
+FString BuildSubQuestProgressText(const FQuestState& Quest)
+{
+    TArray<FString> ObjectiveTexts;
+    for (const FQuestObjective& Objective : Quest.Objectives)
+    {
+        ObjectiveTexts.Add(FString::Printf(TEXT("%d/%d"), Objective.CurrentCount, Objective.Quantity));
+    }
+
+    const FString ProgressText = ObjectiveTexts.IsEmpty()
+        ? TEXT("0/0")
+        : FString::Join(ObjectiveTexts, TEXT(", "));
+    const FString StatusText = Quest.Status == EQuestStatus::Completed
+        ? TEXT("[Completed]")
+        : TEXT("[In Progress]");
+
+    return FString::Printf(TEXT("- %s (%s) %s"), *Quest.Title.ToString(), *ProgressText, *StatusText);
+}
+}
 
 void UUI_QuestWindow::NativeConstruct()
 {
@@ -27,6 +57,7 @@ void UUI_QuestWindow::NativeConstruct()
     }
 
     QuestManager->OnSubQuestsGenerated.AddDynamic(this, &UUI_QuestWindow::HandleOnSubQuestsGenerated);
+    QuestManager->OnSubQuestsUpdated.AddDynamic(this, &UUI_QuestWindow::HandleOnSubQuestsUpdated);
     QuestManager->OnSubQuestRequestFailed.AddDynamic(this, &UUI_QuestWindow::HandleOnSubQuestRequestFailed);
     QuestManager->OnMainQuestChanged.AddDynamic(this, &UUI_QuestWindow::HandleOnMainQuestChanged);
     QuestManager->OnTutorialStepChanged.AddDynamic(this, &UUI_QuestWindow::HandleOnTutorialStepChanged);
@@ -49,6 +80,9 @@ void UUI_QuestWindow::NativeConstruct()
     {
         DisplayTutorialStep(InitialStep);
     }
+
+    UpdateQuestZoneVisibility();
+    UpdateSubQuestZoneVisibility();
 }
 
 void UUI_QuestWindow::ToggleQuestWindow()
@@ -80,7 +114,7 @@ void UUI_QuestWindow::UpdateMainQuestUI(const FQuestState& MainQuest)
 
     if (MainQuest.Status != EQuestStatus::Active)
     {
-        TXT_MainQuestTitle->SetText(FText::FromString(TEXT("진행 중인 메인 미션 없음")));
+        TXT_MainQuestTitle->SetText(FText::FromString(TEXT("No active main quest")));
         TXT_MainQuestDesc->SetText(FText::GetEmpty());
         return;
     }
@@ -92,6 +126,7 @@ void UUI_QuestWindow::UpdateMainQuestUI(const FQuestState& MainQuest)
 void UUI_QuestWindow::HandleOnMainQuestChanged(const FQuestState& NewQuest)
 {
     UpdateMainQuestUI(NewQuest);
+    UpdateSubQuestZoneVisibility();
 
     UGameInstance* GI = GetGameInstance();
     if (!GI)
@@ -123,7 +158,7 @@ void UUI_QuestWindow::HandleOnMainQuestChanged(const FQuestState& NewQuest)
     }
 
     NotifyWidget->AddToViewport(100);
-    NotifyWidget->PlayNotify(NewQuest.Title.ToString(), TEXT("새로운 메인 미션 해제"));
+    NotifyWidget->PlayNotify(NewQuest.Title.ToString(), TEXT("New main quest unlocked"));
 }
 
 void UUI_QuestWindow::OnRequestQuestsClicked()
@@ -140,7 +175,7 @@ void UUI_QuestWindow::OnRequestQuestsClicked()
         return;
     }
 
-    if (TXT_SubQuest_1) TXT_SubQuest_1->SetText(FText::FromString(TEXT("AI 응답 대기 중...")));
+    if (TXT_SubQuest_1) TXT_SubQuest_1->SetText(FText::FromString(TEXT("Waiting for AI response...")));
     if (TXT_SubQuest_2) TXT_SubQuest_2->SetText(FText::GetEmpty());
     if (TXT_SubQuest_3) TXT_SubQuest_3->SetText(FText::GetEmpty());
     if (TXT_SubQuest_4) TXT_SubQuest_4->SetText(FText::GetEmpty());
@@ -151,6 +186,16 @@ void UUI_QuestWindow::OnRequestQuestsClicked()
 }
 
 void UUI_QuestWindow::HandleOnSubQuestsGenerated(const FString& RequestId, const TArray<FQuestState>& Quests)
+{
+    UpdateSubQuestTexts(Quests);
+}
+
+void UUI_QuestWindow::HandleOnSubQuestsUpdated(const TArray<FQuestState>& Quests)
+{
+    UpdateSubQuestTexts(Quests);
+}
+
+void UUI_QuestWindow::UpdateSubQuestTexts(const TArray<FQuestState>& Quests)
 {
     TArray<UTextBlock*> SubBoxes = { TXT_SubQuest_1, TXT_SubQuest_2, TXT_SubQuest_3, TXT_SubQuest_4, TXT_SubQuest_5 };
 
@@ -169,9 +214,7 @@ void UUI_QuestWindow::HandleOnSubQuestsGenerated(const FString& RequestId, const
             continue;
         }
 
-        const FString StatusIndicator = (Quests[i].Status == EQuestStatus::Completed) ? TEXT(" [완료]") : TEXT(" [진행 중]");
-        const FString FormattedLine = FString::Printf(TEXT("- %s%s"), *Quests[i].Title.ToString(), *StatusIndicator);
-        SubBoxes[i]->SetText(FText::FromString(FormattedLine));
+        SubBoxes[i]->SetText(FText::FromString(BuildSubQuestProgressText(Quests[i])));
     }
 }
 
@@ -179,7 +222,7 @@ void UUI_QuestWindow::HandleOnSubQuestRequestFailed(const FString& RequestId, co
 {
     if (TXT_SubQuest_1)
     {
-        TXT_SubQuest_1->SetText(FText::FromString(TEXT("서브 퀘스트 요청 실패")));
+        TXT_SubQuest_1->SetText(FText::FromString(TEXT("Sub quest request failed")));
     }
 }
 
@@ -194,6 +237,74 @@ void UUI_QuestWindow::DisplayTutorialStep(const FTutorialQuestStep& Step)
     TXT_MainQuestDesc->SetText(FText::FromString(Step.Description));
 }
 
+void UUI_QuestWindow::UpdateQuestZoneVisibility()
+{
+    if (!VB_MainQuestZone || !VB_SubQuestZone)
+    {
+        return;
+    }
+
+    UGameInstance* GI = GetGameInstance();
+    UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+    if (!QuestManager)
+    {
+        VB_MainQuestZone->SetVisibility(ESlateVisibility::Collapsed);
+        VB_SubQuestZone->SetVisibility(ESlateVisibility::Collapsed);
+        return;
+    }
+
+    FTutorialQuestStep CurrentStep;
+    const bool bHasTutorialStep = QuestManager->GetCurrentTutorialQuestStep(CurrentStep);
+    const ESlateVisibility MainQuestVisibility = bHasTutorialStep
+        ? ESlateVisibility::SelfHitTestInvisible
+        : ESlateVisibility::Collapsed;
+
+    VB_MainQuestZone->SetVisibility(MainQuestVisibility);
+
+    if (!bHasTutorialStep)
+    {
+        if (TXT_MainQuestTitle)
+        {
+            TXT_MainQuestTitle->SetText(FText::GetEmpty());
+        }
+
+        if (TXT_MainQuestDesc)
+        {
+            TXT_MainQuestDesc->SetText(FText::GetEmpty());
+        }
+
+        VB_SubQuestZone->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    }
+}
+
+void UUI_QuestWindow::UpdateSubQuestZoneVisibility()
+{
+    if (!VB_SubQuestZone)
+    {
+        return;
+    }
+
+    UGameInstance* GI = GetGameInstance();
+    UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+    if (!QuestManager)
+    {
+        VB_SubQuestZone->SetVisibility(ESlateVisibility::Collapsed);
+        return;
+    }
+
+    FTutorialQuestStep CurrentStep;
+    if (!QuestManager->GetCurrentTutorialQuestStep(CurrentStep))
+    {
+        VB_SubQuestZone->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        return;
+    }
+
+    const ESlateVisibility NextVisibility = ShouldShowSubQuestZone(CurrentStep)
+        ? ESlateVisibility::SelfHitTestInvisible
+        : ESlateVisibility::Collapsed;
+    VB_SubQuestZone->SetVisibility(NextVisibility);
+}
+
 void UUI_QuestWindow::HandleOnTutorialStepChanged(const FTutorialQuestStep& NewStep)
 {
     UGameInstance* GI = GetGameInstance();
@@ -204,6 +315,8 @@ void UUI_QuestWindow::HandleOnTutorialStepChanged(const FTutorialQuestStep& NewS
     }
 
     DisplayTutorialStep(NewStep);
+    UpdateQuestZoneVisibility();
+    UpdateSubQuestZoneVisibility();
 }
 
 void UUI_QuestWindow::HandleOnTutorialDialogueLogged(
@@ -224,6 +337,8 @@ void UUI_QuestWindow::HandleOnTutorialDialogueLogged(
         if (QuestManager->GetTutorialQuestStepById(QuestId, Step))
         {
             DisplayTutorialStep(Step);
+            UpdateQuestZoneVisibility();
+            UpdateSubQuestZoneVisibility();
         }
         return;
     }
@@ -231,5 +346,11 @@ void UUI_QuestWindow::HandleOnTutorialDialogueLogged(
     if (TriggerType == TEXT("on_start") && QuestManager->GetCurrentTutorialQuestStep(Step))
     {
         DisplayTutorialStep(Step);
+        UpdateQuestZoneVisibility();
+        UpdateSubQuestZoneVisibility();
+        return;
     }
+
+    UpdateQuestZoneVisibility();
+    UpdateSubQuestZoneVisibility();
 }

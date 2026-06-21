@@ -15,8 +15,11 @@
 #include "Camera/PlayerCameraManager.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
+#include "OJJ_CharacterSelectionSubsystem.h"
+#include "OJJ_CharacterAppearanceData.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 #include "InputAction.h"
@@ -76,13 +79,8 @@ void AOJJ_Player::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>())
-		{
-			WarehouseSubsystem->GrantInitialItems(InitialWarehouseItems);
-		}
-	}
+	// [게임진입] 선택 캐릭터 외형 적용 — 다른 setup 전에 먼저(메시/ABP 확정 후 입력/카메라 등 진행).
+	ApplySelectedCharacterAppearance();
 
 	// 걷기 속도를 권위 있게 적용(BP CharacterMovement의 MaxWalkSpeed 기본값을 덮음 — 단일 출처).
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
@@ -160,6 +158,60 @@ void AOJJ_Player::BeginPlay()
 	}
 	
 	ConnectFactoryAgentClient();
+}
+
+void AOJJ_Player::ApplySelectedCharacterAppearance()
+{
+	// [게임진입] 선택 서브시스템값 → DataAsset 매핑 → GetMesh() 스왑. 어느 단계든 미존재면 안전 스킵
+	// (AppearanceData 미할당/서브시스템 없음/항목 없음 → BP 기본 메시 유지). 외형만 — 로직 BP는 단일 유지.
+	if (!AppearanceData)
+	{
+		return;
+	}
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!GameInstance)
+	{
+		return;
+	}
+	UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>();
+	if (!Selection)
+	{
+		return;
+	}
+	const FOJJ_CharacterAppearance* Appearance = AppearanceData->Appearances.Find(Selection->GetSelectedCharacter());
+	if (!Appearance)
+	{
+		return;
+	}
+	USkeletalMeshComponent* MeshComp = GetMesh();
+	if (!MeshComp)
+	{
+		return;
+	}
+	// 메시·ABP 각각 비어 있으면 해당 스왑 스킵(부분 지정 허용 — 스켈레톤 동일 시 메시만, 다르면 ABP까지).
+	if (Appearance->SkeletalMesh)
+	{
+		MeshComp->SetSkeletalMeshAsset(Appearance->SkeletalMesh);
+	}
+	if (Appearance->AnimClass)
+	{
+		MeshComp->SetAnimInstanceClass(Appearance->AnimClass);
+	}
+}
+
+void AOJJ_Player::OJJ_DebugSetCharacter(int32 CharacterIndex)
+{
+	// [게임진입 테스트] 콘솔 디버그 — 서브시스템 값 설정 후 즉시 재스왑(BeginPlay 외 런타임 반영 검증).
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
+		{
+			Selection->SetSelectedCharacter(
+				CharacterIndex == 1 ? EOJJ_CharacterType::Woman : EOJJ_CharacterType::Man);
+			ApplySelectedCharacterAppearance();
+			UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] DebugSetCharacter=%d 적용"), CharacterIndex);
+		}
+	}
 }
 
 void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -296,9 +348,9 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	}
 
 	PlayerInputComponent->BindKey(EKeys::M, IE_Pressed, this, &AOJJ_Player::SendOperatorGuideRequest);
-	PlayerInputComponent->BindKey(EKeys::Slash, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestRequest);
+	PlayerInputComponent->BindKey(EKeys::K, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestRequest);
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
-	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
+	PlayerInputComponent->BindKey(EKeys::Slash, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
 	PlayerInputComponent->BindKey(EKeys::Period, IE_Pressed, this, &AOJJ_Player::TriggerTutorialDialogueReveal);
 	// [옛 빌드 입력 경로 전수 정리] O(성형)/P(합성)/T(통신) 직행 BindKey는 카테고리 숫자키 슬롯이 완전 대체하여 제거.
@@ -350,6 +402,21 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 
 		// 발 밑 Z로 상/하단 도달 판정. ClimbReachMargin 여유로 경계 떨림 방지(도달은 살짝 일찍).
 		const float FeetZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+
+		// [#184] top 직전 Finish 마무리 몽타주 트리거(도착 순간 EndClimb 재생은 늦음 — 올라서기가 도착과
+		// 맞물리게 미리 시작). 올라가는 중(Axis.Y>0)에만. 한 등반당 1회(bFinishPlaying). ⚠️ 짧은 사다리는
+		// ClimbHeight*0.5로 클램프 — 안 그러면 RemainingToTop이 시작부터 작아 BeginClimb 직후 트리거됨.
+		if (Axis.Y > 0.f && !bFinishPlaying && LadderFinishMontage)
+		{
+			const float RemainingToTop = CurrentLadder->GetClimbTopZ() - FeetZ;
+			const float EffectiveTrigger = FMath::Min(FinishTriggerDistance, CurrentLadder->GetClimbHeight() * 0.5f);
+			if (RemainingToTop <= EffectiveTrigger)
+			{
+				PlayAnimMontage(LadderFinishMontage);
+				bFinishPlaying = true;
+			}
+		}
+
 		if (Axis.Y > 0.f && FeetZ >= CurrentLadder->GetClimbTopZ() - ClimbReachMargin)
 		{
 			EndClimb(/*bStepOffTop=*/true);
@@ -416,8 +483,14 @@ void AOJJ_Player::BeginClimb(AOJJ_Ladder* Ladder)
 
 	CurrentLadder = Ladder;
 	bClimbing = true;
+	bFinishPlaying = false; // [#184] 새 등반 시작 — Finish 마무리 몽타주 재트리거 허용
 	UE_LOG(LogTemp, Verbose, TEXT("[Climb] BeginClimb Bottom=%.1f Top=%.1f"),
 		Ladder->GetClimbBottomZ(), Ladder->GetClimbTopZ());
+
+	// 사다리 마주보게 1회 정렬: 캐릭터는 사다리 바깥쪽에 서서 안쪽(GetStepOffDirection=+X, 벽/Foundation)을
+	// 바라봐야 한다. yaw만(pitch/roll 0). 메시/애니 방향 보정은 LadderFacingYawOffset(PIE 튜닝)로 더한다.
+	const float FaceYaw = Ladder->GetStepOffDirection().Rotation().Yaw + LadderFacingYawOffset;
+	SetActorRotation(FRotator(0.f, FaceYaw, 0.f));
 
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
@@ -427,6 +500,9 @@ void AOJJ_Player::BeginClimb(AOJJ_Ladder* Ladder)
 		Movement->MaxFlySpeed = ClimbSpeed;
 		Movement->BrakingDecelerationFlying = 2048.f;
 		Movement->StopMovementImmediately();
+		// 등반 중엔 수직 이동만이라 OrientRotationToMovement가 yaw를 못 잡는다(XY 0). 위 사다리-facing이
+		// 흔들리지 않게 끄고, EndClimb/AbortClimb에서 걷기용으로 복원한다.
+		Movement->bOrientRotationToMovement = false;
 	}
 }
 
@@ -440,6 +516,8 @@ void AOJJ_Player::EndClimb(bool bStepOffTop)
 	AOJJ_Ladder* Ladder = CurrentLadder;
 	CurrentLadder = nullptr;
 	bClimbing = false;
+	// [#184] Finish 마무리 몽타주는 top 도착 '이전'에 Move() 거리트리거(FinishTriggerDistance)로 이미 재생됨
+	// — 여기서 재생하면 늦으므로(올라선 뒤 또 올라서기) 두지 않는다. bFinishPlaying은 다음 BeginClimb에서 리셋.
 
 	// 상단 도달: Foundation 상면으로 '부드럽게' 보간 안착(StepOffDuration). 즉시 텔레포트는 순간이동 느낌이라
 	// 짧은 lerp로 부드럽게 + 보간 중 입력 잠금(진동 방지). 완료 시 Walking 복귀 + 쿨다운(Tick에서).
@@ -490,6 +568,7 @@ void AOJJ_Player::ResumeWalkingWithCooldown()
 		Movement->GravityScale = 1.f;
 		Movement->StopMovementImmediately();
 		Movement->SetMovementMode(MOVE_Walking);
+		Movement->bOrientRotationToMovement = true; // 등반 중 끈 것 복원(걷기 방향 회전 정상화)
 	}
 
 	// 재진입 쿨다운 개시 — step-off로 상면에 올라간 직후 같은 트리거에 다시 잡히는 진동 차단.
@@ -504,14 +583,17 @@ void AOJJ_Player::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	// 안전망: 등반 중 표시인데 사다리가 사라졌으면(파괴/GC로 CurrentLadder=null) 걷기 복귀 — 비행/중력0 고착 방지.
-	if (bClimbing && !CurrentLadder)
+	// 사다리 파괴/invalid(pending-kill 포함) 시에도 강제 청산 — AbortClimb이 Flying 해제 + GravityScale 복원 +
+	// bOrientRotationToMovement=true(BeginClimb에서 끈 것) 복원을 보장한다. TObjectPtr는 weak 아니라 stale 가능 →
+	// 단순 null 체크론 부족(IsValid). 누락 시 등반 중 끈 회전이 영구 고착되어 걸어도 안 돌게 됨.
+	if (bClimbing && !IsValid(CurrentLadder))
 	{
 		AbortClimb();
 	}
 
 	// [#184] 등반 중 X/Y를 사다리 등반 면으로 '부드럽게' 당김(즉시 SetActorLocation은 멀리서 시작 시 순간이동
 	// → VInterpTo). Z는 등반(비행 수직)이 전담하므로 현재 Z 유지. 가까이서 W로 시작하면 거의 즉시 붙음.
-	if (bClimbing && CurrentLadder)
+	if (bClimbing && IsValid(CurrentLadder))
 	{
 		const FVector Cur = GetActorLocation();
 		const FVector Face = OJJ_GetClimbFaceLocation(CurrentLadder, Cur.Z);
@@ -549,6 +631,7 @@ void AOJJ_Player::AbortClimb()
 	CurrentLadder = nullptr;
 	bClimbing = false;
 	bSteppingOff = false;
+	bFinishPlaying = false; // [#184] 비정상 청산 — 다음 등반서 Finish 재트리거 허용
 	ResumeWalkingWithCooldown();
 }
 
@@ -865,6 +948,14 @@ void AOJJ_Player::SetLadderModeShortcut()
 	}
 
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Ladder);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectLadderMode"));
+		}
+	}
 }
 
 // [공용키 F] 평면 Foundation 직행. 레거시 BindKey라 IMC 게이팅 없음 → 빌드모드 가드 필수(Ladder/Demolish 패턴).
@@ -875,6 +966,14 @@ void AOJJ_Player::SetFoundationModeShortcut()
 		return;
 	}
 	BuildController->OJJ_SelectFoundationKind(false);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectFlatFoundationMode"));
+		}
+	}
 }
 
 // [공용키 G] 경사 RampFoundation 직행.
@@ -885,6 +984,14 @@ void AOJJ_Player::SetRampFoundationModeShortcut()
 		return;
 	}
 	BuildController->OJJ_SelectFoundationKind(true);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectRampFoundationMode"));
+		}
+	}
 }
 
 // [공용키 Z] 마우스 초기화 — 들고 있던 placement 고스트 취소(None 모드), 빌드모드/배치된 액터는 그대로.
@@ -1282,6 +1389,10 @@ void AOJJ_Player::TriggerTutorialDialogueReveal()
 			{
 				QuestManager->RevealPendingTutorialStartDialogue();
 			}
+			else if (!QuestManager->AdvanceTutorialManualStep())
+			{
+				QuestManager->DismissTutorialCompletionDialogue();
+			}
 		}
 	}
 }
@@ -1531,6 +1642,13 @@ void AOJJ_Player::ResetGame()
 	UE_LOG(LogTemp, Log, TEXT("[ResetGame] Save reset requested. DeletedExistingSave=%s"),
 		bDeletedSave ? TEXT("true") : TEXT("false"));
 
+	if (UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>())
+	{
+		const int32 PreviousItemTypeCount = WarehouseSubsystem->GetStoredItems().Num();
+		WarehouseSubsystem->ClearWarehouse();
+		UE_LOG(LogTemp, Log, TEXT("[ResetGame] Warehouse cleared. PreviousItemTypes=%d"), PreviousItemTypeCount);
+	}
+
 	UWorld* World = GetWorld();
 	if (!World)
 	{
@@ -1545,6 +1663,91 @@ void AOJJ_Player::ResetGame()
 
 	UE_LOG(LogTemp, Log, TEXT("[ResetGame] Reopening level: %s"), *LevelName);
 	UGameplayStatics::OpenLevel(this, FName(*LevelName));
+}
+
+void AOJJ_Player::BackupAndResetGame()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UFactorySaveSubsystem* SaveSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UFactorySaveSubsystem>()
+		: nullptr;
+	if (!SaveSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BackupAndResetGame] FactorySaveSubsystem not found."));
+		return;
+	}
+
+	const bool bBackedUp = SaveSubsystem->BackupCurrentGame();
+	UE_LOG(LogTemp, Log, TEXT("[BackupAndResetGame] BackupRequested=%s"),
+		bBackedUp ? TEXT("true") : TEXT("false"));
+	if (!bBackedUp)
+	{
+		return;
+	}
+
+	ResetGame();
+}
+
+void AOJJ_Player::RestoreBackupGame()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UFactorySaveSubsystem* SaveSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UFactorySaveSubsystem>()
+		: nullptr;
+	if (!SaveSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[RestoreBackupGame] FactorySaveSubsystem not found."));
+		return;
+	}
+
+	const bool bRestored = SaveSubsystem->RestoreBackupGame();
+	UE_LOG(LogTemp, Log, TEXT("[RestoreBackupGame] BackupRestoreRequested=%s"),
+		bRestored ? TEXT("true") : TEXT("false"));
+	if (!bRestored)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FString LevelName = World->GetOutermost()->GetName();
+	if (LevelName.IsEmpty())
+	{
+		LevelName = UWorld::RemovePIEPrefix(World->GetMapName());
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[RestoreBackupGame] Reopening level: %s"), *LevelName);
+	UGameplayStatics::OpenLevel(this, FName(*LevelName));
+}
+
+void AOJJ_Player::ClearWarehouse()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>()
+		: nullptr;
+	if (!WarehouseSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ClearWarehouse] PlayerWarehouseSubsystem not found."));
+		return;
+	}
+
+	const int32 PreviousItemTypeCount = WarehouseSubsystem->GetStoredItems().Num();
+	WarehouseSubsystem->ClearWarehouse();
+
+	bool bSaved = false;
+	if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+	{
+		bSaved = SaveSubsystem->SaveCurrentGame();
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[ClearWarehouse] Warehouse cleared. PreviousItemTypes=%d Saved=%s"),
+		PreviousItemTypeCount,
+		bSaved ? TEXT("true") : TEXT("false"));
 }
 
 void AOJJ_Player::TriggerPlanetEvent(const FString& EventName, float Severity, float DurationSeconds)

@@ -263,9 +263,23 @@ void UUI_BuildModeMain::ExecutePlacementMode(int32 SlotIndex)
     UQuestManagerSubsystem* QuestManager = GameInstance ? GameInstance->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
     if (!QuestManager) return;
 
+    if (FinalTargetSlot.SubsystemKey.IsNone() && FinalTargetSlot.DisplayName.EqualTo(FText::FromString(TEXT("중앙거점"))))
+    {
+        QuestManager->NotifyTutorialEvent(TEXT("SelectBaseCampMode"));
+        return;
+    }
+
     if (!FinalTargetSlot.SubsystemKey.IsNone())
     {
-        FString EventString = FString::Printf(TEXT("Select%sMode"), *FinalTargetSlot.SubsystemKey.ToString());
+        FString EventString;
+        if (FinalTargetSlot.SubsystemKey == TEXT("WarehousePort"))
+        {
+            EventString = TEXT("SelectWarehouseMode");
+        }
+        else
+        {
+            EventString = FString::Printf(TEXT("Select%sMode"), *FinalTargetSlot.SubsystemKey.ToString());
+        }
         QuestManager->NotifyTutorialEvent(*EventString);
     }
 }

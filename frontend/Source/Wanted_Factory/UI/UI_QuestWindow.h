@@ -50,6 +50,9 @@ protected:
     void K2_PlayQuestAnimation(bool bOpen);
 private:
     void DisplayTutorialStep(const FTutorialQuestStep& Step);
+    void UpdateQuestZoneVisibility();
+    void UpdateSubQuestZoneVisibility();
+    void UpdateSubQuestTexts(const TArray<FQuestState>& Quests);
 
     UFUNCTION()
     void HandleOnTutorialStepChanged(const FTutorialQuestStep& NewStep);
@@ -59,5 +62,6 @@ private:
 
     UFUNCTION() void HandleOnMainQuestChanged(const FQuestState& NewQuest);
     UFUNCTION() void HandleOnSubQuestsGenerated(const FString& RequestId, const TArray<FQuestState>& Quests);
+    UFUNCTION() void HandleOnSubQuestsUpdated(const TArray<FQuestState>& Quests);
     UFUNCTION() void HandleOnSubQuestRequestFailed(const FString& RequestId, const FString& ErrorMessage);
 };

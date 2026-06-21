@@ -13,4 +13,6 @@ class WANTED_FACTORY_API ASynthesizer : public AMachineBase
 
 public:
 	ASynthesizer();
+
+	virtual void ApplyMachineData(const FMachineTableRow& MachineData) override;
 };
