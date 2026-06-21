@@ -13,7 +13,8 @@ enum class EResourceType : uint8
 	Organism,
 	Fuel,
 	Metal,
-	Nonmetal
+	Nonmetal,
+	machine
 };
 
 UENUM(BlueprintType)

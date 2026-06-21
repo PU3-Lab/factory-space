@@ -1478,6 +1478,7 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 		*Origin.ToString(), EffSize.X, EffSize.Y, Fit.EffectiveRotationSteps,
 		FMath::RoundToInt(SnapLift / AOJJ_Grid::OJJ_FoundationSnapStep), *HeightSource,
 		Fit.DirectionSource.IsEmpty() ? TEXT("") : TEXT(", "), *Fit.DirectionSource);
+	NotifyTutorialQuestEvent(this, bRampFoundationSelected ? TEXT("PlaceRampFoundation") : TEXT("PlaceFlatFoundation"));
 
 	// F2-4 ?꾩냽 ?? ?뗮봽由고듃??源붾┛ Pawn???곷㈃?쇰줈 ?щ젮?쒖?(F3-2遺???蹂?SurfaceZ ???깅줉 ?곗씠?곕?
 	// 洹몃━?쒖뿉???쎌쓬). ?꾩냽 ??罹먯떆??由ъ뀑 ???? 洹몃?濡쒖뿬??鍮꾩＜??Z媛 ?곷㈃?쇰줈 諛붾뚮?濡?媛뺤젣 ?ъ쟻??
@@ -1811,6 +1812,7 @@ void AOJJ_BuildController::PlaceLadderAtCursor()
 	}
 	NewLadder->OJJ_SetClimbHeight(ClimbHeight);
 	NewLadder->FinishSpawning(SpawnXf);
+	NotifyTutorialQuestEvent(this, TEXT("PlaceLadder"));
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] ?щ떎由?諛곗튂 ??height=%.1f loc=%s"), ClimbHeight, *BottomLoc.ToString());
 }
 

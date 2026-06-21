@@ -3671,10 +3671,7 @@ TArray<FIntPoint> AOJJ_Grid::OJJ_PortCellsFromFootprint(const TArray<FIntPoint>&
 	if (PortCount == 1)
 	{
 		// 단일 포트는 홀수 면에서만 정중앙 가능. 짝수 면이면 대칭 불가 → 아래 검증에서 폴백.
-		if ((L % 2) == 1)
-		{
-			Indices.Add((L - 1) / 2);
-		}
+		Indices.Add((L - 1) / 2);
 	}
 	else
 	{

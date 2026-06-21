@@ -12,6 +12,7 @@ class WANTED_FACTORY_API UFactorySaveSubsystem : public UGameInstanceSubsystem
 	GENERATED_BODY()
 
 public:
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 
 	UFUNCTION(BlueprintCallable, Category = "Factory Save")
@@ -45,10 +46,13 @@ private:
 	bool bHasLoadedInitialState = false;
 	bool bIsRestoring = false;
 	bool bIsResettingToNewGame = false;
+	bool bHasHandledShutdownSave = false;
 
 	void StartAutoSaveTimer();
 	void StopAutoSaveTimer();
 	void AutoSaveTick();
 	void AutoSaveWarningTick();
 	void ShowAutoSaveWarning() const;
+	void HandlePreExitSave();
+	void HandleWorldBeginTearDown(UWorld* World);
 };
