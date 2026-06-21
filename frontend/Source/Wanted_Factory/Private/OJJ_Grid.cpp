@@ -2646,7 +2646,10 @@ float AOJJ_Grid::OJJ_GetCellVisualBaseZInternal(FIntPoint Cell, bool bGroundZVal
 	float SurfaceZ = 0.0f;
 	if (GetFoundationSurfaceZ(Cell, SurfaceZ))
 	{
-		return SurfaceZ;  // 슬래브 상면은 평탄 — 교차 없음, 리프트 불요
+		// 슬래브 상면은 평탄해 셀 내 '교차'는 없지만, SurfaceZ(=데크 윗면)와 타일이 +3uu(MakeOverlayCellTransform)만
+		// 떨어지면 넓은 데크 메시와 깊이버퍼 정밀도가 겹쳐 원거리에서 z-fighting(각도 따라 보였다 안 보였다)이 난다.
+		// 지형/물 셀과 동일하게 VisualZLift를 더해 데크 위로 충분히 띄운다(머신 셀은 +Lift라 안 묻혔던 비대칭 해소).
+		return SurfaceZ + VisualZLift;
 	}
 	if (bGroundZValid && IsValidGridCell(Cell))
 	{
@@ -4903,6 +4906,14 @@ void AOJJ_Grid::OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntP
 	// Z: 액터 Z 등가 = 평면 + 스냅 리프트, 그 위 헬퍼 Offset.Z로 윗면을 +Thickness에. SnapLift는 호버=배치 정합.
 	const float SnapLift = FoundationCDO->OJJ_ComputeSnapLift(*this, Origin, EffSize, /*RotationSteps=*/0, nullptr);
 
+	// Nanite 메시는 SetOverlayMaterial(고스트 틴트 패스)을 그리지 않는다(UE5.7+Substrate — 머신/사다리 고스트와 동일
+	// 이슈). Deck 메시가 Nanite면 Foundation 고스트만 틴트 미렌더로 안 보였다 → 컴포넌트 Nanite 강제 비활성으로 복원
+	// (IsForceDisableNanite 가드로 멱등, Live Coding 친화). 머신 고스트 OJJ_ShowGhostForMachine와 평행.
+	if (!GhostMeshComp->IsForceDisableNanite())
+	{
+		GhostMeshComp->SetForceDisableNanite(true);
+	}
+
 	GhostMeshComp->SetStaticMesh(Mesh);
 	GhostMeshComp->SetWorldScale3D(Scale);
 	GhostMeshComp->SetWorldLocationAndRotation(
@@ -4911,6 +4922,82 @@ void AOJJ_Grid::OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntP
 		SlabRot);
 
 	// 틴트는 Overlay Material 패스(#187 B안) — 머신 고스트와 동일. 베이스(슬래브 원본) 위에 초록/빨강 합성.
+	GhostMeshComp->EmptyOverrideMaterials();
+	GhostMeshComp->SetOverlayMaterial(GhostMID);
+	GhostMeshComp->SetVisibility(true);
+}
+
+void AOJJ_Grid::OJJ_ShowGhostForRamp(AOJJ_Foundation* RampCDO, FIntPoint Origin, FIntPoint EffSize,
+	int32 EffRotSteps, int32 RiseSteps, bool bValid)
+{
+	if (!GhostMeshComp || !RampCDO || EffSize.X < 1 || EffSize.Y < 1)
+	{
+		OJJ_HideGhost();
+		return;
+	}
+
+	UStaticMeshComponent* SlabMeshComp = RampCDO->GetSlabMesh();
+	UStaticMesh* Mesh = SlabMeshComp ? SlabMeshComp->GetStaticMesh() : nullptr;
+	if (!Mesh)
+	{
+		OJJ_HideGhost();
+		return;
+	}
+
+	OJJ_EnsureGhostMIDs();
+	UMaterialInstanceDynamic* GhostMID = bValid ? GhostValidMID.Get() : GhostInvalidMID.Get();
+	if (!GhostMID)
+	{
+		OJJ_HideGhost();
+		return;
+	}
+
+	const float Thickness = FMath::Max(1.0f, RampCDO->GetThickness());
+	const int32 Step = ((EffRotSteps % 4) + 4) % 4;
+
+	// EffSize는 회전 적용된 월드 풋프린트 → 로컬(미회전) 클라임 길이 R(로컬 +X) / 폭 Cols(로컬 +Y) 복원.
+	const int32 R = (Step % 2 == 0) ? EffSize.X : EffSize.Y;
+	const int32 Cols = (Step % 2 == 0) ? EffSize.Y : EffSize.X;
+	const int32 Rise = FMath::Max(0, RiseSteps);
+
+	// RampFoundation::UpdateSlabVisual 틸트 산식 재현: Deck를 빗변길이로 스케일 후 상면중심 피벗 pitch θ 틸트.
+	const float L = R * CellSize;
+	const float RiseUU = Rise * AOJJ_Grid::OJJ_FoundationSnapStep;
+	const float Theta = FMath::Atan2(RiseUU, L);
+	const float Hyp = FMath::Sqrt(L * L + RiseUU * RiseUU);
+
+	const FRotator SlabRot = RampCDO->GetSlabMeshLocalRotation();
+	FVector Scale, Offset;
+	AOJJ_Foundation::OJJ_ComputeDeckSlabTransform(Mesh, SlabRot, Hyp, Cols * CellSize, Thickness, Scale, Offset);
+
+	const FQuat PitchQ(FRotator(FMath::RadiansToDegrees(Theta), 0.0f, 0.0f));
+	const FQuat R0(SlabRot);
+	const FVector P(0.0f, 0.0f, Thickness);
+	const FVector RelLoc = PitchQ.RotateVector(Offset) + P - PitchQ.RotateVector(P)
+		+ FVector(0.0f, 0.0f, RiseUU * 0.5f);
+
+	// 액터 등가 변환: yaw(90×step) + 풋프린트 중심 XY + (평면 Z + SnapLift). Deck 상대변환을 액터 변환에 합성.
+	// SnapLift는 가상 OJJ_ComputeSnapLift(램프 override) — CDO 비변형(Placed* 기본값, one-side-ground는 씨앗 폴백).
+	// KNOWN-LIMIT: one-side-ground 하강 램프 프리뷰 Z 미세 불일치(높은끝 스냅 미반영). 배치는 Fit으로 정상. 후속 이슈 #322.
+	const FRotator ActorYaw(0.0f, 90.0f * Step, 0.0f);
+	const FVector LowerLeftCenter = GridToWorld(Origin);
+	const float OffsetX = (EffSize.X - 1) * CellSize * 0.5f;
+	const float OffsetY = (EffSize.Y - 1) * CellSize * 0.5f;
+	const float SnapLift = RampCDO->OJJ_ComputeSnapLift(*this, Origin, EffSize, EffRotSteps, nullptr);
+	const FVector ActorLoc(LowerLeftCenter.X + OffsetX, LowerLeftCenter.Y + OffsetY, LowerLeftCenter.Z + SnapLift);
+
+	const FQuat WorldRot = ActorYaw.Quaternion() * PitchQ * R0;
+	const FVector WorldLoc = ActorLoc + ActorYaw.RotateVector(RelLoc);
+
+	// 평판 고스트와 동일 — Nanite 메시는 오버레이 틴트 패스 미렌더라 강제 비활성(IsForceDisableNanite 가드 멱등).
+	if (!GhostMeshComp->IsForceDisableNanite())
+	{
+		GhostMeshComp->SetForceDisableNanite(true);
+	}
+
+	GhostMeshComp->SetStaticMesh(Mesh);
+	GhostMeshComp->SetWorldScale3D(Scale);
+	GhostMeshComp->SetWorldLocationAndRotation(WorldLoc, WorldRot.Rotator());
 	GhostMeshComp->EmptyOverrideMaterials();
 	GhostMeshComp->SetOverlayMaterial(GhostMID);
 	GhostMeshComp->SetVisibility(true);

@@ -1209,6 +1209,12 @@ bool OJJ_BuildConveyorPlacementPath(
 	// 평판 전용(램프는 호출하지 않음). MID 미비 시 안전하게 고스트 숨김.
 	void OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize, bool bValid);
 
+	// 램프 Foundation 고스트 — 경사 Deck를 RampFoundation::UpdateSlabVisual 산식(빗변 스케일 + pitch 틸트)으로
+	// 재현해 반투명 미리보기. EffRotSteps/RiseSteps는 호버 Fit 결과(CDO 비변형 — 가상 OJJ_ComputeSnapLift로 Z).
+	// 평판 OJJ_ShowGhostForFoundation은 평면 박스라 경사 형상 부적합 → 램프 전용 경로. MID 미비 시 안전 숨김.
+	void OJJ_ShowGhostForRamp(AOJJ_Foundation* RampCDO, FIntPoint Origin, FIntPoint EffSize,
+		int32 EffRotSteps, int32 RiseSteps, bool bValid);
+
 	// [#184] 사다리 고스트 — 자유 배치(그리드 셀 스냅 아님). 바닥 월드위치 + ClimbHeight로 엔진 Cube 얇은 세로
 	// 박스 고스트를 그린다(실제 사다리 ISM 타일과 독립 — 깔끔한 위치/높이 인디케이터). bValid → 초록/빨강 오버레이.
 	void OJJ_ShowGhostForLadder(const FVector& BottomLocation, float ClimbHeight, const FRotator& Rotation, bool bValid);
