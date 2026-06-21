@@ -72,6 +72,9 @@ protected:
     virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 private:
+    class UUI_DialogueBalloon* FindDialogueBalloon() const;
+    void ShowGuideResponseInDialogueBalloon(const FString& Message) const;
+
     UFUNCTION()
     void HandleWeatherChanged(const FPlanetWeatherState& WeatherState);
 

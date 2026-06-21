@@ -12,6 +12,7 @@
 #include "Machines/EscapePod.h"
 #include "Machines/MachineSubsystem.h"
 #include "Machines/PowerLine.h"
+#include "Machines/WarehousePort.h"
 #include "Misc/CoreDelegates.h"
 #include "OJJ_Foundation.h"
 #include "OJJ_Grid.h"
@@ -262,6 +263,10 @@ bool UFactorySaveSubsystem::SaveCurrentGame()
 		SavedMachine.Transform = Machine->GetActorTransform();
 		SavedMachine.bOccupancyOnly = Machine->OJJ_RequiresOccupancyOnlyRegistration();
 		Machine->GetSaveState(SavedMachine.InputInventory, SavedMachine.OutputBuffer, SavedMachine.CurrentDurability);
+		if (const AWarehousePort* WarehousePort = Cast<AWarehousePort>(Machine))
+		{
+			SavedMachine.SelectedOutputItemId = WarehousePort->GetSelectedOutputItem();
+		}
 		SaveGame->Machines.Add(SavedMachine);
 		MachineIds.Add(Machine, SavedMachine.InstanceId);
 	}
@@ -546,6 +551,10 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 						SavedMachine.InputInventory,
 						SavedMachine.OutputBuffer,
 						SavedMachine.CurrentDurability);
+					if (AWarehousePort* WarehousePort = Cast<AWarehousePort>(Machine))
+					{
+						WarehousePort->SetSelectedOutputItem(SavedMachine.SelectedOutputItemId);
+					}
 					RestoredMachines.Add(SavedMachine.InstanceId, Machine);
 				}
 				else
@@ -673,6 +682,53 @@ bool UFactorySaveSubsystem::ResetToNewGame()
 	bHasLoadedInitialState = false;
 	bIsResettingToNewGame = true;
 	return UGameplayStatics::DeleteGameInSlot(SaveSlotName, 0);
+}
+
+bool UFactorySaveSubsystem::BackupCurrentGame()
+{
+	if (!SaveCurrentGame())
+	{
+		return false;
+	}
+
+	UFactorySaveGame* SaveGame = Cast<UFactorySaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlotName, 0));
+	if (!SaveGame)
+	{
+		return false;
+	}
+
+	return UGameplayStatics::SaveGameToSlot(SaveGame, BackupSlotName, 0);
+}
+
+bool UFactorySaveSubsystem::RestoreBackupGame()
+{
+	if (!UGameplayStatics::DoesSaveGameExist(BackupSlotName, 0))
+	{
+		return false;
+	}
+
+	UFactorySaveGame* BackupSave = Cast<UFactorySaveGame>(UGameplayStatics::LoadGameFromSlot(BackupSlotName, 0));
+	if (!BackupSave)
+	{
+		return false;
+	}
+
+	bHasLoadedInitialState = false;
+	bIsResettingToNewGame = true;
+	bHasHandledShutdownSave = false;
+
+	if (!UGameplayStatics::SaveGameToSlot(BackupSave, SaveSlotName, 0))
+	{
+		bIsResettingToNewGame = false;
+		return false;
+	}
+
+	return true;
+}
+
+bool UFactorySaveSubsystem::HasBackupGame() const
+{
+	return UGameplayStatics::DoesSaveGameExist(BackupSlotName, 0);
 }
 
 void UFactorySaveSubsystem::StartAutoSaveTimer()

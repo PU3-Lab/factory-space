@@ -1,4 +1,7 @@
 quest_id,next_quest_id,group,title,description,reward
+TUT_PROLOGUE_001,TUT_PROLOGUE_002,tutorial_prologue,기상 확인,"스카이의 호출에 응답하세요.",
+TUT_PROLOGUE_002,TUT_PROLOGUE_003,tutorial_prologue,사고 상황 확인,"현재 사고 상황에 대한 브리핑을 확인하세요.",
+TUT_PROLOGUE_003,TUT_BASIC_001,tutorial_prologue,초기 목표 확인,"현재 생존 목표와 개척 방향을 확인하세요.",
 TUT_BASIC_001,TUT_BASIC_002,tutorial_basic,이동하기,"W, A, S, D를 눌러 캐릭터를 이동하세요.",
 TUT_BASIC_002,TUT_BASIC_003,tutorial_basic,점프하기,"Space를 눌러 점프하세요.",
 TUT_BASIC_003,TUT_BASIC_004,tutorial_basic,달리기,"Shift를 눌러 달리세요.",iron ingot 10

@@ -348,9 +348,9 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	}
 
 	PlayerInputComponent->BindKey(EKeys::M, IE_Pressed, this, &AOJJ_Player::SendOperatorGuideRequest);
-	PlayerInputComponent->BindKey(EKeys::Slash, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestRequest);
+	PlayerInputComponent->BindKey(EKeys::K, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestRequest);
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
-	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
+	PlayerInputComponent->BindKey(EKeys::Slash, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
 	PlayerInputComponent->BindKey(EKeys::Period, IE_Pressed, this, &AOJJ_Player::TriggerTutorialDialogueReveal);
 	// [옛 빌드 입력 경로 전수 정리] O(성형)/P(합성)/T(통신) 직행 BindKey는 카테고리 숫자키 슬롯이 완전 대체하여 제거.
@@ -1389,6 +1389,10 @@ void AOJJ_Player::TriggerTutorialDialogueReveal()
 			{
 				QuestManager->RevealPendingTutorialStartDialogue();
 			}
+			else if (!QuestManager->AdvanceTutorialManualStep())
+			{
+				QuestManager->DismissTutorialCompletionDialogue();
+			}
 		}
 	}
 }
@@ -1658,6 +1662,65 @@ void AOJJ_Player::ResetGame()
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[ResetGame] Reopening level: %s"), *LevelName);
+	UGameplayStatics::OpenLevel(this, FName(*LevelName));
+}
+
+void AOJJ_Player::BackupAndResetGame()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UFactorySaveSubsystem* SaveSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UFactorySaveSubsystem>()
+		: nullptr;
+	if (!SaveSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BackupAndResetGame] FactorySaveSubsystem not found."));
+		return;
+	}
+
+	const bool bBackedUp = SaveSubsystem->BackupCurrentGame();
+	UE_LOG(LogTemp, Log, TEXT("[BackupAndResetGame] BackupRequested=%s"),
+		bBackedUp ? TEXT("true") : TEXT("false"));
+	if (!bBackedUp)
+	{
+		return;
+	}
+
+	ResetGame();
+}
+
+void AOJJ_Player::RestoreBackupGame()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UFactorySaveSubsystem* SaveSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UFactorySaveSubsystem>()
+		: nullptr;
+	if (!SaveSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[RestoreBackupGame] FactorySaveSubsystem not found."));
+		return;
+	}
+
+	const bool bRestored = SaveSubsystem->RestoreBackupGame();
+	UE_LOG(LogTemp, Log, TEXT("[RestoreBackupGame] BackupRestoreRequested=%s"),
+		bRestored ? TEXT("true") : TEXT("false"));
+	if (!bRestored)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FString LevelName = World->GetOutermost()->GetName();
+	if (LevelName.IsEmpty())
+	{
+		LevelName = UWorld::RemovePIEPrefix(World->GetMapName());
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[RestoreBackupGame] Reopening level: %s"), *LevelName);
 	UGameplayStatics::OpenLevel(this, FName(*LevelName));
 }
 

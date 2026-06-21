@@ -398,6 +398,12 @@ public:
 	void ResetGame();
 
 	UFUNCTION(Exec)
+	void BackupAndResetGame();
+
+	UFUNCTION(Exec)
+	void RestoreBackupGame();
+
+	UFUNCTION(Exec)
 	void ClearWarehouse();
 
 	UFUNCTION(Exec)
