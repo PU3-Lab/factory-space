@@ -15,8 +15,11 @@
 #include "Camera/PlayerCameraManager.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
+#include "OJJ_CharacterSelectionSubsystem.h"
+#include "OJJ_CharacterAppearanceData.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 #include "InputAction.h"
@@ -75,6 +78,9 @@ AOJJ_Player::AOJJ_Player()
 void AOJJ_Player::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// [게임진입] 선택 캐릭터 외형 적용 — 다른 setup 전에 먼저(메시/ABP 확정 후 입력/카메라 등 진행).
+	ApplySelectedCharacterAppearance();
 
 	// 걷기 속도를 권위 있게 적용(BP CharacterMovement의 MaxWalkSpeed 기본값을 덮음 — 단일 출처).
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
@@ -152,6 +158,60 @@ void AOJJ_Player::BeginPlay()
 	}
 	
 	ConnectFactoryAgentClient();
+}
+
+void AOJJ_Player::ApplySelectedCharacterAppearance()
+{
+	// [게임진입] 선택 서브시스템값 → DataAsset 매핑 → GetMesh() 스왑. 어느 단계든 미존재면 안전 스킵
+	// (AppearanceData 미할당/서브시스템 없음/항목 없음 → BP 기본 메시 유지). 외형만 — 로직 BP는 단일 유지.
+	if (!AppearanceData)
+	{
+		return;
+	}
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!GameInstance)
+	{
+		return;
+	}
+	UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>();
+	if (!Selection)
+	{
+		return;
+	}
+	const FOJJ_CharacterAppearance* Appearance = AppearanceData->Appearances.Find(Selection->GetSelectedCharacter());
+	if (!Appearance)
+	{
+		return;
+	}
+	USkeletalMeshComponent* MeshComp = GetMesh();
+	if (!MeshComp)
+	{
+		return;
+	}
+	// 메시·ABP 각각 비어 있으면 해당 스왑 스킵(부분 지정 허용 — 스켈레톤 동일 시 메시만, 다르면 ABP까지).
+	if (Appearance->SkeletalMesh)
+	{
+		MeshComp->SetSkeletalMeshAsset(Appearance->SkeletalMesh);
+	}
+	if (Appearance->AnimClass)
+	{
+		MeshComp->SetAnimInstanceClass(Appearance->AnimClass);
+	}
+}
+
+void AOJJ_Player::OJJ_DebugSetCharacter(int32 CharacterIndex)
+{
+	// [게임진입 테스트] 콘솔 디버그 — 서브시스템 값 설정 후 즉시 재스왑(BeginPlay 외 런타임 반영 검증).
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
+		{
+			Selection->SetSelectedCharacter(
+				CharacterIndex == 1 ? EOJJ_CharacterType::Woman : EOJJ_CharacterType::Man);
+			ApplySelectedCharacterAppearance();
+			UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] DebugSetCharacter=%d 적용"), CharacterIndex);
+		}
+	}
 }
 
 void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)

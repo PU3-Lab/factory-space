@@ -17,6 +17,7 @@ class AOJJ_Ladder;
 class AMachineBase;
 class UUI_MachineInteract;
 class UAnimMontage;
+class UOJJ_CharacterAppearanceData;
 struct FInputActionValue;
 
 /**
@@ -59,8 +60,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Climb")
 	bool IsClimbing() const { return bClimbing; }
 
+	// [게임진입 테스트] 위젯 전 독립 검증용 콘솔 명령 — PIE 콘솔에 `OJJ_DebugSetCharacter 1`(Woman)/`0`(Man)
+	// 입력 시 선택 서브시스템 설정 + 즉시 재스왑(레벨 재진입 없이 확인). 2단계 위젯 붙으면 제거 가능.
+	UFUNCTION(Exec)
+	void OJJ_DebugSetCharacter(int32 CharacterIndex);
+
 protected:
 	virtual void BeginPlay() override;
+
+	// [게임진입] 선택 서브시스템(EOJJ_CharacterType)값으로 GetMesh()의 SkeletalMesh+AnimClass를 스왑(외형만 —
+	// 사다리/빌드/입력 로직 무영향, 단일 pawn 유지). AppearanceData/서브시스템/항목 미존재면 안전하게 스킵.
+	void ApplySelectedCharacterAppearance();
 
 	// step-off 부드러운 안착 보간(#184) 처리. 평상시엔 별 비용 없음(bSteppingOff 가드).
 	virtual void Tick(float DeltaSeconds) override;
@@ -111,6 +121,12 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> Camera;
+
+	// --- Character appearance (게임진입) ---
+	// 캐릭터 종류 → 외형(메시+ABP) 매핑 DataAsset. BeginPlay에서 선택 서브시스템값으로 GetMesh()를 스왑한다.
+	// 미할당이면 스왑 스킵(BP 기본 메시 유지) — 게임진입 흐름 미완성 단계에서도 안전. JJ가 BP_OJJ_Player에 DA 할당.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character")
+	TObjectPtr<UOJJ_CharacterAppearanceData> AppearanceData;
 
 	// --- Camera tuning ---
 	// 스크롤 줌 한 틱당 SpringArm 길이 변화량
