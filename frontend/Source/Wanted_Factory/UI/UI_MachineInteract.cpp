@@ -141,12 +141,7 @@ void UUI_MachineInteract::SetTargetMachine(AMachineBase* InMachine)
 void UUI_MachineInteract::NativeConstruct()
 {
     Super::NativeConstruct();
-
-    if (BTN_Close)
-    {
-        BTN_Close->OnClicked.AddDynamic(this, &UUI_MachineInteract::OnCloseClicked);
-    }
-
+    
     if (BTN_Repair)
     {
         BTN_Repair->OnClicked.AddDynamic(this, &UUI_MachineInteract::OnRepairClicked);
@@ -394,11 +389,6 @@ void UUI_MachineInteract::UpdateMachineName(const FText& MachineName)
     {
         TXT_MachineName->SetText(MachineName);
     }
-}
-
-void UUI_MachineInteract::OnCloseClicked()
-{
-    RemoveFromParent();
 }
 
 void UUI_MachineInteract::OnRepairClicked()

@@ -1150,9 +1150,9 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
         {
            InventoryWidgetInstance->AdjustInventoryLayout(true); 
 
-           InventoryWidgetInstance->AddToViewport();
-           InventoryWidgetInstance->RefreshInventoryWindow();
-           bIsInventoryOpen = true;
+        	InventoryWidgetInstance->AddToViewport(-1); 
+        	InventoryWidgetInstance->RefreshInventoryWindow();
+        	bIsInventoryOpen = true;
 
            GetWorldTimerManager().SetTimer(
              InventoryRefreshTimerHandle, 
@@ -1370,7 +1370,7 @@ void AOJJ_Player::TriggerInventoryToggle()
 
 		// 중복되던 슬롯 필터 및 뷰포트 추가 로직 하나로 깔끔하게 압축
 		InventoryWidgetInstance->SetItemFormFilter(InventoryFormFilter);
-		InventoryWidgetInstance->AddToViewport();
+		InventoryWidgetInstance->AddToViewport(-1); 
 		InventoryWidgetInstance->RefreshInventoryWindow();
 		bIsInventoryOpen = true;
        
