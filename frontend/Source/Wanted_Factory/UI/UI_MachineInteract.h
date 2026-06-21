@@ -74,8 +74,6 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	class UImage* IMG_MachinePreview;
 	
-	UPROPERTY(meta = (BindWidget))
-	class UButton* BTN_Close;
 	UPROPERTY(meta = (BindWidgetOptional))
 	class UButton* BTN_Repair;
 	
@@ -106,9 +104,6 @@ private:
 	
 	UPROPERTY()
 	TObjectPtr<AMachineBase> TargetMachine;
-	
-	UFUNCTION()
-	void OnCloseClicked();
 
 	UFUNCTION()
 	void OnRepairClicked();
