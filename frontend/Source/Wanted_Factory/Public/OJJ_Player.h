@@ -53,6 +53,11 @@ public:
 	void NotifyLadderOverlap(AOJJ_Ladder* Ladder);
 	void NotifyLadderEndOverlap(AOJJ_Ladder* Ladder);
 
+	// 등반 활성 여부 — ABP_Man 스테이트머신 climbing 진입/탈출 조건용(읽기 전용 노출). 방향(위/아래)·속도는
+	// 별도 변수 없이 ABP가 Velocity.Z로 판별(위>0 Loop, 아래<0 Down) — 노출 최소화(#184 사다리 애니 장착).
+	UFUNCTION(BlueprintPure, Category = "Climb")
+	bool IsClimbing() const { return bClimbing; }
+
 protected:
 	virtual void BeginPlay() override;
 
