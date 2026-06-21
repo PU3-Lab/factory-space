@@ -643,6 +643,13 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 			{
 				Ladder->OJJ_SetClimbHeight(SavedLadder.ClimbHeight);
 				Ladder->FinishSpawning(SavedLadder.Transform);
+				// [#184 철거] 로드 시에도 사다리 레이어 재등록 — 지면 셀 맵 + OwningFoundation 링크를 transform에서
+				// 재계산(세이브에 링크 저장 불필요). Foundation은 위 루프(452)에서 선복원돼 조회 성립 → 리로드 후에도
+				// 개별 철거 + Foundation 철거 cascade 정상.
+				if (Grid)
+				{
+					Grid->OJJ_RegisterLadder(Ladder);
+				}
 			}
 		}
 	}

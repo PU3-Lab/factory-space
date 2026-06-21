@@ -9,6 +9,7 @@
 class UInstancedStaticMeshComponent;
 class UBoxComponent;
 class AOJJ_Player;
+class AOJJ_Grid;
 
 /**
  * 사다리 — 지면 → Foundation 수직 등반 (#184, 부유 슬래브 아래 접근).
@@ -51,8 +52,19 @@ public:
 	// 이 값으로 ApplyDimensions(메시/트리거 사이징). 런타임 변경도 즉시 반영되도록 여기서도 ApplyDimensions 호출.
 	void OJJ_SetClimbHeight(float NewClimbHeight);
 
+	// [#184 철거] 이 사다리가 기댄(등반 목적지) Foundation. 배치/로드 시 Grid가 사다리 transform에서 산출해 주입
+	// (약참조 — Foundation 파괴 안전). Foundation 철거 cascade(OJJ_DestroyLaddersOnFoundation) 매칭 키.
+	// 세이브엔 저장 안 함 — 로드 시 OJJ_RegisterLadder가 재계산(로드 순서상 Foundation이 먼저 복원됨).
+	void OJJ_SetOwningFoundation(AActor* InFoundation) { OwningFoundation = InFoundation; }
+	AActor* OJJ_GetOwningFoundation() const { return OwningFoundation.Get(); }
+
+	// [#184 철거] 등록된 Grid 기억 — EndPlay에서 사다리 레이어(OJJ_LadderCells) 자동 해제용
+	// (데모리시/cascade/세이브리셋/레벨종료 어느 경로로 파괴돼도 맵 청소). 구현은 .cpp(헤더선 AOJJ_Grid 불완전).
+	void OJJ_SetRegisteredGrid(AOJJ_Grid* InGrid);
+
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// 씬 루트 = 사다리 '바닥' 기준점. GetActorLocation().Z = 하단(끝점 산식의 단일 기준).
 	// 메시 오프셋/스케일이 GetActorLocation을 오염시키지 않도록 루트를 메시와 분리.
@@ -107,4 +119,8 @@ protected:
 private:
 	// 메시/트리거를 ClimbHeight에 맞춰 배치(에디터/스폰 공통). 큐브(100uu) 기준 스케일/오프셋 계산.
 	void ApplyDimensions();
+
+	// [#184 철거] 기댄 Foundation(약참조) — cascade 매칭. [철거] 등록 Grid(약참조) — EndPlay 자동 해제.
+	TWeakObjectPtr<AActor> OwningFoundation;
+	TWeakObjectPtr<AOJJ_Grid> RegisteredGrid;
 };
