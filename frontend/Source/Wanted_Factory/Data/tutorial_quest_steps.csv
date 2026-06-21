@@ -9,7 +9,10 @@ TUT_BUILD_002,TUT_BUILD_003,tutorial_build,화면 왼쪽 회전,"Q를 눌러 화
 TUT_BUILD_003,TUT_BUILD_004,tutorial_build,화면 오른쪽 회전,"E를 눌러 화면을 오른쪽으로 회전하세요.",,
 TUT_BUILD_004,TUT_BUILD_005,tutorial_build,설치물 회전,"R을 눌러 설치물 방향을 회전하세요.",,
 TUT_BUILD_005,TUT_BUILD_006,tutorial_build,철거 모드 진입,"X를 눌러 철거 모드로 전환하세요.",,
-TUT_BUILD_006,TUT_MINING_001,tutorial_build,탈출 포드 철거,"탈출 포드를 철거해 자재를 회수하세요.",iron ingot 10
+TUT_BUILD_006,TUT_BUILD_007,tutorial_build,탈출 포드 철거,"탈출 포드를 철거해 자재를 회수하세요.",iron ingot 10
+TUT_BUILD_007,TUT_BUILD_008,tutorial_build,플랫폼 설치,"F키로 평면 플랫폼 모드로 전환한 뒤 플랫폼을 설치하세요.",
+TUT_BUILD_008,TUT_BUILD_009,tutorial_build,경사면 설치,"G키로 경사면 모드로 전환한 뒤 경사면을 설치하세요.",
+TUT_BUILD_009,TUT_MINING_001,tutorial_build,사다리 설치,"H키로 사다리 모드로 전환한 뒤 사다리를 설치하세요.",
 TUT_MINING_001,TUT_MINING_002,tutorial_mining,채굴기 선택,"하단 UI 또는 단축키로 채굴기를 선택하세요.",,
 TUT_MINING_002,TUT_MINING_003,tutorial_mining,채굴기 위치 확인,"철 광맥 옆에서 채굴기를 설치할 수 있는 위치를 확인하세요.",,
 TUT_MINING_003,TUT_POWER_001,tutorial_mining,채굴기 설치 완료,"철 광맥 옆에 채굴기를 설치해 자원 채굴을 시작할 준비를 마치세요.",iron ingot 10

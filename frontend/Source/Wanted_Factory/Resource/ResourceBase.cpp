@@ -13,6 +13,21 @@
 namespace
 {
 	const TCHAR DefaultResourceTablePath[] = TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData");
+
+	bool IsInfiniteOreResource(const AResourceBase* Resource)
+	{
+		if (!Resource)
+		{
+			return false;
+		}
+
+		if (Resource->HasShape(EResourceShape::Ore))
+		{
+			return true;
+		}
+
+		return Resource->GetResourceRowName().ToString().EndsWith(TEXT("_ore"));
+	}
 }
 
 
@@ -41,6 +56,11 @@ void AResourceBase::BeginPlay()
 	Super::BeginPlay();
 
 	NormalizeResourceDataHandle();
+
+	if (IsInfiniteOreResource(this))
+	{
+		bIsInfinite = true;
+	}
 
 	Amount = FMath::Clamp(Amount, 0, MaxAmount);
 

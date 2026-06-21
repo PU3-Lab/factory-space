@@ -17,6 +17,14 @@ AMoldingMachine::AMoldingMachine()
 	bDisableWhenBroken = true;
 }
 
+void AMoldingMachine::ApplyMachineData(const FMachineTableRow& MachineData)
+{
+	FMachineTableRow MoldingMachineData = MachineData;
+	MoldingMachineData.InputPortCnt = 1;
+	MoldingMachineData.OutputPortCnt = 1;
+	Super::ApplyMachineData(MoldingMachineData);
+}
+
 bool AMoldingMachine::AddItem(FName ItemID, int32 Count)
 {
 	if (!CanReceiveConveyorItem(ItemID, Count))

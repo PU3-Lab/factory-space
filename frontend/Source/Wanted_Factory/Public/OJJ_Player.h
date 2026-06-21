@@ -354,6 +354,9 @@ public:
 	void ResetGame();
 
 	UFUNCTION(Exec)
+	void ClearWarehouse();
+
+	UFUNCTION(Exec)
 	void TriggerPlanetEvent(const FString& EventName, float Severity = 1.0f, float DurationSeconds = -1.0f);
 
 protected:

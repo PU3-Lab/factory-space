@@ -11,3 +11,11 @@ ASynthesizer::ASynthesizer()
 	bNeedPower = true;
 	bDisableWhenBroken = true;
 }
+
+void ASynthesizer::ApplyMachineData(const FMachineTableRow& MachineData)
+{
+	FMachineTableRow SynthesizerData = MachineData;
+	SynthesizerData.InputPortCnt = 3;
+	SynthesizerData.OutputPortCnt = 1;
+	Super::ApplyMachineData(SynthesizerData);
+}

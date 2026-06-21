@@ -76,14 +76,6 @@ void AOJJ_Player::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>())
-		{
-			WarehouseSubsystem->GrantInitialItems(InitialWarehouseItems);
-		}
-	}
-
 	// 걷기 속도를 권위 있게 적용(BP CharacterMovement의 MaxWalkSpeed 기본값을 덮음 — 단일 출처).
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
@@ -865,6 +857,14 @@ void AOJJ_Player::SetLadderModeShortcut()
 	}
 
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Ladder);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectLadderMode"));
+		}
+	}
 }
 
 // [공용키 F] 평면 Foundation 직행. 레거시 BindKey라 IMC 게이팅 없음 → 빌드모드 가드 필수(Ladder/Demolish 패턴).
@@ -875,6 +875,14 @@ void AOJJ_Player::SetFoundationModeShortcut()
 		return;
 	}
 	BuildController->OJJ_SelectFoundationKind(false);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectFlatFoundationMode"));
+		}
+	}
 }
 
 // [공용키 G] 경사 RampFoundation 직행.
@@ -885,6 +893,14 @@ void AOJJ_Player::SetRampFoundationModeShortcut()
 		return;
 	}
 	BuildController->OJJ_SelectFoundationKind(true);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectRampFoundationMode"));
+		}
+	}
 }
 
 // [공용키 Z] 마우스 초기화 — 들고 있던 placement 고스트 취소(None 모드), 빌드모드/배치된 액터는 그대로.
@@ -1531,6 +1547,13 @@ void AOJJ_Player::ResetGame()
 	UE_LOG(LogTemp, Log, TEXT("[ResetGame] Save reset requested. DeletedExistingSave=%s"),
 		bDeletedSave ? TEXT("true") : TEXT("false"));
 
+	if (UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>())
+	{
+		const int32 PreviousItemTypeCount = WarehouseSubsystem->GetStoredItems().Num();
+		WarehouseSubsystem->ClearWarehouse();
+		UE_LOG(LogTemp, Log, TEXT("[ResetGame] Warehouse cleared. PreviousItemTypes=%d"), PreviousItemTypeCount);
+	}
+
 	UWorld* World = GetWorld();
 	if (!World)
 	{
@@ -1545,6 +1568,32 @@ void AOJJ_Player::ResetGame()
 
 	UE_LOG(LogTemp, Log, TEXT("[ResetGame] Reopening level: %s"), *LevelName);
 	UGameplayStatics::OpenLevel(this, FName(*LevelName));
+}
+
+void AOJJ_Player::ClearWarehouse()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>()
+		: nullptr;
+	if (!WarehouseSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ClearWarehouse] PlayerWarehouseSubsystem not found."));
+		return;
+	}
+
+	const int32 PreviousItemTypeCount = WarehouseSubsystem->GetStoredItems().Num();
+	WarehouseSubsystem->ClearWarehouse();
+
+	bool bSaved = false;
+	if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+	{
+		bSaved = SaveSubsystem->SaveCurrentGame();
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[ClearWarehouse] Warehouse cleared. PreviousItemTypes=%d Saved=%s"),
+		PreviousItemTypeCount,
+		bSaved ? TEXT("true") : TEXT("false"));
 }
 
 void AOJJ_Player::TriggerPlanetEvent(const FString& EventName, float Severity, float DurationSeconds)

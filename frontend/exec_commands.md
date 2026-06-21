@@ -1,5 +1,12 @@
 # Exec Commands
 
+## ClearWarehouse
+
+- 목적: 플레이어 창고에 저장된 모든 물자를 제거하고 즉시 저장합니다.
+- 실제 입력: `ClearWarehouse`
+- 로그: 성공 시 Output Log에 `[ClearWarehouse] Warehouse cleared.` 메시지가 출력됩니다.
+- 구현 위치: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
+
 게임 코드 기준으로 현재 사용 중인 `exec` 커맨드 중, `SetBuildMode`, `TutorialLog`를 뺀 목록입니다.
 
 ## TutorialAdvance

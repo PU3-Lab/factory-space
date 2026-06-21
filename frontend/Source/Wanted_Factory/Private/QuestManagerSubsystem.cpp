@@ -42,6 +42,13 @@ constexpr TCHAR TutorialEventSelectConveyorMode[] = TEXT("SelectConveyorMode");
 constexpr TCHAR TutorialEventSelectPowerLineMode[] = TEXT("SelectPowerLineMode");
 constexpr TCHAR TutorialEventPowerLineConnected[] = TEXT("PowerLineConnected");
 constexpr TCHAR TutorialEventWarehouseOutputItemSet[] = TEXT("WarehouseOutputItemSet");
+constexpr TCHAR TutorialEventSelectFlatFoundationMode[] = TEXT("SelectFlatFoundationMode");
+constexpr TCHAR TutorialEventSelectRampFoundationMode[] = TEXT("SelectRampFoundationMode");
+constexpr TCHAR TutorialEventSelectLadderMode[] = TEXT("SelectLadderMode");
+constexpr TCHAR TutorialEventPlaceFlatFoundation[] = TEXT("PlaceFlatFoundation");
+constexpr TCHAR TutorialEventPlaceRampFoundation[] = TEXT("PlaceRampFoundation");
+constexpr TCHAR TutorialEventPlaceLadder[] = TEXT("PlaceLadder");
+constexpr TCHAR TutorialEventSelectBaseCampMode[] = TEXT("SelectBaseCampMode");
 
 enum class ETutorialRequirementType : uint8
 {
@@ -246,6 +253,18 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	{
 		SetEventRequirement(TutorialEventDemolishRemoved);
 	}
+	else if (QuestId == TEXT("TUT_BUILD_007"))
+	{
+		SetEventRequirement(TutorialEventPlaceFlatFoundation);
+	}
+	else if (QuestId == TEXT("TUT_BUILD_008"))
+	{
+		SetEventRequirement(TutorialEventPlaceRampFoundation);
+	}
+	else if (QuestId == TEXT("TUT_BUILD_009"))
+	{
+		SetEventRequirement(TutorialEventPlaceLadder);
+	}
 	else if (QuestId == TEXT("TUT_MINING_001"))
 	{
 		SetEventRequirement(TutorialEventSelectMinerMode);
@@ -358,6 +377,10 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	{
 		SetWarehouseRequirement(TEXT("iron_ingot"), 1);
 	}
+	else if (QuestId == TEXT("TUT_BASE_001"))
+	{
+		SetEventRequirement(TutorialEventSelectBaseCampMode);
+	}
 	else if (QuestId == TEXT("TUT_EXPAND_001"))
 	{
 		SetWarehouseRequirement(TEXT("iron_ingot"), 10);
@@ -393,6 +416,18 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	else if (QuestId == TEXT("TUT_EXPAND_009"))
 	{
 		SetWarehouseRequirement(TEXT("iron_ingot"), 30);
+	}
+	else if (QuestId == TEXT("TUT_COMM_001"))
+	{
+		SetWarehouseRequirement(TEXT("TeleCommunicationTower"), 1);
+	}
+	else if (QuestId == TEXT("TUT_COMM_002"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("TeleCommunicationTower"));
+	}
+	else if (QuestId == TEXT("TUT_COMM_003"))
+	{
+		SetEventRequirement(TutorialEventPowerLineConnected);
 	}
 
 	return Requirement;
