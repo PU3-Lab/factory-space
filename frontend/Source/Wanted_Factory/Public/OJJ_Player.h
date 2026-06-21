@@ -215,6 +215,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
 	float ClimbSpeed = 250.f;
 
+	// [#184] 등반 시작 시 캐릭터를 사다리 안쪽(GetStepOffDirection, +X) 바라보게 회전 + 이 오프셋을 더한다.
+	// 메시 기본 yaw 오프셋(보통 -90°)·애니 제작 방향 때문에 그대로면 옆을 볼 수 있어 PIE에서 ±90 조정용
+	// (재컴파일 없이 디테일 패널). 기본 0 — 캐릭터가 옆 보면 이 값으로 맞춤.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb")
+	float LadderFacingYawOffset = 0.f;
+
 	// [#184] 등반 중 캐릭터를 사다리 등반 면에서 띄우는 여유(uu). 실제 거리 = 캡슐반경 + 이 값. 너무 작으면
 	// 메시 관통, 크면 떨어져 보임 — 캡슐 반경 부근이 적정이라 이 값은 그 위 소량 gap.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))

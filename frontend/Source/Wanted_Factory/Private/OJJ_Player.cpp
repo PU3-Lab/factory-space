@@ -411,6 +411,11 @@ void AOJJ_Player::BeginClimb(AOJJ_Ladder* Ladder)
 	UE_LOG(LogTemp, Verbose, TEXT("[Climb] BeginClimb Bottom=%.1f Top=%.1f"),
 		Ladder->GetClimbBottomZ(), Ladder->GetClimbTopZ());
 
+	// 사다리 마주보게 1회 정렬: 캐릭터는 사다리 바깥쪽에 서서 안쪽(GetStepOffDirection=+X, 벽/Foundation)을
+	// 바라봐야 한다. yaw만(pitch/roll 0). 메시/애니 방향 보정은 LadderFacingYawOffset(PIE 튜닝)로 더한다.
+	const float FaceYaw = Ladder->GetStepOffDirection().Rotation().Yaw + LadderFacingYawOffset;
+	SetActorRotation(FRotator(0.f, FaceYaw, 0.f));
+
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		// 중력 끄고 비행 모드로 수직 이동. 키를 떼면 빠르게 멈춰 사다리에서 호버하도록 제동 강하게.
@@ -419,6 +424,9 @@ void AOJJ_Player::BeginClimb(AOJJ_Ladder* Ladder)
 		Movement->MaxFlySpeed = ClimbSpeed;
 		Movement->BrakingDecelerationFlying = 2048.f;
 		Movement->StopMovementImmediately();
+		// 등반 중엔 수직 이동만이라 OrientRotationToMovement가 yaw를 못 잡는다(XY 0). 위 사다리-facing이
+		// 흔들리지 않게 끄고, EndClimb/AbortClimb에서 걷기용으로 복원한다.
+		Movement->bOrientRotationToMovement = false;
 	}
 }
 
@@ -482,6 +490,7 @@ void AOJJ_Player::ResumeWalkingWithCooldown()
 		Movement->GravityScale = 1.f;
 		Movement->StopMovementImmediately();
 		Movement->SetMovementMode(MOVE_Walking);
+		Movement->bOrientRotationToMovement = true; // 등반 중 끈 것 복원(걷기 방향 회전 정상화)
 	}
 
 	// 재진입 쿨다운 개시 — step-off로 상면에 올라간 직후 같은 트리거에 다시 잡히는 진동 차단.
@@ -496,14 +505,17 @@ void AOJJ_Player::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	// 안전망: 등반 중 표시인데 사다리가 사라졌으면(파괴/GC로 CurrentLadder=null) 걷기 복귀 — 비행/중력0 고착 방지.
-	if (bClimbing && !CurrentLadder)
+	// 사다리 파괴/invalid(pending-kill 포함) 시에도 강제 청산 — AbortClimb이 Flying 해제 + GravityScale 복원 +
+	// bOrientRotationToMovement=true(BeginClimb에서 끈 것) 복원을 보장한다. TObjectPtr는 weak 아니라 stale 가능 →
+	// 단순 null 체크론 부족(IsValid). 누락 시 등반 중 끈 회전이 영구 고착되어 걸어도 안 돌게 됨.
+	if (bClimbing && !IsValid(CurrentLadder))
 	{
 		AbortClimb();
 	}
 
 	// [#184] 등반 중 X/Y를 사다리 등반 면으로 '부드럽게' 당김(즉시 SetActorLocation은 멀리서 시작 시 순간이동
 	// → VInterpTo). Z는 등반(비행 수직)이 전담하므로 현재 Z 유지. 가까이서 W로 시작하면 거의 즉시 붙음.
-	if (bClimbing && CurrentLadder)
+	if (bClimbing && IsValid(CurrentLadder))
 	{
 		const FVector Cur = GetActorLocation();
 		const FVector Face = OJJ_GetClimbFaceLocation(CurrentLadder, Cur.Z);
