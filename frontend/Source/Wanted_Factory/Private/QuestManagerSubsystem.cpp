@@ -650,6 +650,50 @@ bool UQuestManagerSubsystem::CompleteCurrentTutorialQuestForTest()
 	return AdvanceTutorialQuestStep(true);
 }
 
+bool UQuestManagerSubsystem::AdvanceTutorialManualStep()
+{
+	if (!bTutorialQuestTestActive || bPendingTutorialStartDialogueReveal)
+	{
+		return false;
+	}
+
+	const FTutorialQuestStep* Step = FindCurrentTutorialQuestStep();
+	if (!Step)
+	{
+		return false;
+	}
+
+	const FTutorialRequirement Requirement = GetTutorialRequirement(Step->QuestId);
+	if (Requirement.Type != ETutorialRequirementType::Unsupported)
+	{
+		return false;
+	}
+
+	return AdvanceTutorialQuestStep(false);
+}
+
+bool UQuestManagerSubsystem::CanDismissTutorialCompletionDialogue() const
+{
+	return !bTutorialQuestTestActive
+		&& !bPendingTutorialStartDialogueReveal
+		&& LastTutorialDialogueTriggerType == TEXT("on_complete")
+		&& !LastTutorialDialogueLines.IsEmpty();
+}
+
+bool UQuestManagerSubsystem::DismissTutorialCompletionDialogue()
+{
+	if (!CanDismissTutorialCompletionDialogue())
+	{
+		return false;
+	}
+
+	LastTutorialDialogueQuestId.Empty();
+	LastTutorialDialogueTriggerType.Empty();
+	LastTutorialDialogueLines.Reset();
+	OnTutorialDialogueLogged.Broadcast(FString(), TEXT("dismissed"), LastTutorialDialogueLines);
+	return true;
+}
+
 void UQuestManagerSubsystem::LogCurrentTutorialQuestTestState() const
 {
 }
@@ -1027,7 +1071,7 @@ FString UQuestManagerSubsystem::SendSubQuestRequest(const FString& PayloadJson)
 	return RequestId;
 }
 
-void UQuestManagerSubsystem::RefreshSubQuestCompletion()
+void UQuestManagerSubsystem::RefreshSubQuestCompletion(bool bForceBroadcast)
 {
 	bool bAnyQuestUpdated = false;
 
@@ -1045,7 +1089,7 @@ void UQuestManagerSubsystem::RefreshSubQuestCompletion()
 		}
 	}
 
-	if (bAnyQuestUpdated)
+	if (bAnyQuestUpdated || bForceBroadcast)
 	{
 		OnSubQuestsUpdated.Broadcast(SubQuests);
 	}
@@ -1156,15 +1200,14 @@ void UQuestManagerSubsystem::ApplyMainQuestObjectiveEvent(EQuestObjectiveType Ob
 
 bool UQuestManagerSubsystem::IsQuestCompletedByWarehouse(const FQuestState& Quest) const
 {
-	if (!WarehouseSubsystem || Quest.Objectives.IsEmpty())
+	if (Quest.Objectives.IsEmpty())
 	{
 		return false;
 	}
 
 	for (const FQuestObjective& Objective : Quest.Objectives)
 	{
-		const FName ItemId(*Objective.TargetItemId);
-		if (ItemId.IsNone() || WarehouseSubsystem->GetItemCount(ItemId) < Objective.Quantity)
+		if (Objective.CurrentCount < Objective.Quantity)
 		{
 			return false;
 		}
@@ -1272,7 +1315,35 @@ void UQuestManagerSubsystem::HandleWarehouseItemAdded(FName ItemID, int32 AddedC
 		}
 	}
 
-	RefreshSubQuestCompletion();
+	bool bSubQuestProgressUpdated = false;
+	for (FQuestState& Quest : SubQuests)
+	{
+		if (Quest.Status != EQuestStatus::Active)
+		{
+			continue;
+		}
+
+		for (FQuestObjective& Objective : Quest.Objectives)
+		{
+			if (Objective.TargetId != ItemID)
+			{
+				continue;
+			}
+
+			const int32 NewCount = FMath::Min(Objective.Quantity, Objective.CurrentCount + AddedCount);
+			if (NewCount != Objective.CurrentCount)
+			{
+				Objective.CurrentCount = NewCount;
+				bSubQuestProgressUpdated = true;
+			}
+		}
+	}
+
+	if (bSubQuestProgressUpdated)
+	{
+		RefreshSubQuestCompletion(true);
+	}
+
 	RefreshMainQuestCompletion();
 }
 
@@ -1323,7 +1394,6 @@ void UQuestManagerSubsystem::HandleAgentResponse(
 
 	SubQuests = GeneratedQuests;
 	SubQuestTitles = GeneratedTitles;
-	RefreshSubQuestCompletion();
 	OnSubQuestsGenerated.Broadcast(RequestId, SubQuests);
 	OnSubQuestTitlesUpdated.Broadcast(RequestId, SubQuestTitles);
 }

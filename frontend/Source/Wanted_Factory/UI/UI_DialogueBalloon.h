@@ -21,6 +21,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Quest|UI")
 	void RefreshDialogueUI();
 
+	UFUNCTION(BlueprintCallable, Category = "Quest|UI")
+	void ShowExternalDialogue(const FString& DialogueText);
+
+	UFUNCTION(BlueprintCallable, Category = "Quest|UI")
+	void ClearExternalDialogue();
+
 private:
 	UFUNCTION()
 	void HandleTutorialStepChanged(const FTutorialQuestStep& Step);
@@ -34,4 +40,6 @@ private:
 	class UQuestManagerSubsystem* QuestSubsystem;
 
 	TArray<FTutorialQuestDialogueLine> CachedLines;
+	bool bHasExternalDialogue = false;
+	FString ExternalDialogueText;
 };

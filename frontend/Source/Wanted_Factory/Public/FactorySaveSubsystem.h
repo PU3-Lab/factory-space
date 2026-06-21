@@ -27,12 +27,24 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Factory Save")
 	bool ResetToNewGame();
 
+	UFUNCTION(BlueprintCallable, Category = "Factory Save")
+	bool BackupCurrentGame();
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Save")
+	bool RestoreBackupGame();
+
+	UFUNCTION(BlueprintPure, Category = "Factory Save")
+	bool HasBackupGame() const;
+
 	UFUNCTION(BlueprintPure, Category = "Factory Save")
 	bool HasLoadedInitialState() const { return bHasLoadedInitialState; }
 
 private:
 	UPROPERTY()
 	FString SaveSlotName = TEXT("FactorySpace_Autosave");
+
+	UPROPERTY()
+	FString BackupSlotName = TEXT("FactorySpace_Backup");
 
 	UPROPERTY()
 	float AutoSaveIntervalSeconds = 60.0f;
