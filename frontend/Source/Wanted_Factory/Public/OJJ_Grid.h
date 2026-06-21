@@ -12,6 +12,7 @@ class AConveyor;
 class APipe;
 class AResourceBase;
 class AOJJ_Foundation;
+class AOJJ_Ladder;
 class UStaticMeshComponent;
 class UInstancedStaticMeshComponent;
 class UMaterialInterface;
@@ -541,6 +542,12 @@ protected:
 	// 파이프 → 점유 셀 목록 (일괄 해제용) — OJJ_FoundationToCells 패턴 미러(비-UPROPERTY, weak 키).
 	TMap<TWeakObjectPtr<AActor>, TArray<FIntPoint>> OJJ_PipeToCells;
 
+	// [#184 사다리 철거] 지면 셀(player 서는 off-foundation 셀) → 사다리. 점유/커버리지와 독립 레이어
+	// (배치 차단 영향 0). 배치·로드 시 등록, Destroy/EndPlay 시 해제. stale은 OJJ_GetLadderAtCell이 IsValid로 거른다.
+	// ⚠️ TMultiMap — MVP 자유배치라 같은 지면 셀에 사다리 다중 배치 가능. TMap이면 Add가 덮어써 먼저 놓은
+	// 사다리가 고아(맵 소실 → 철거/cascade 누락)가 된다. 셀당 전부 보관해 개별/cascade 철거가 모두 잡게.
+	TMultiMap<FIntPoint, TWeakObjectPtr<AOJJ_Ladder>> OJJ_LadderCells;
+
 private:
 	// Origin부터 머신 풋프린트가 차지하는 셀 좌표 목록. RotationSteps로 90° 회전 footprint 지원(기본 0).
 	TArray<FIntPoint> CalculateFootprint(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
@@ -894,6 +901,18 @@ public:
 	// Codex F1-b' #4): RemoveFoundation(클릭 거부)과 철거 호버(UpdateDemolishHover)가 같은 식을 공유해
 	// "호버 빨강인데 클릭 거부" 불일치 차단. 미등록 Foundation이면 INDEX_NONE.
 	int32 OJJ_CountOccupiedFoundationCells(AActor* Foundation) const;
+
+	// === [#184 사다리 철거] 사다리 별도 레이어 ===
+	// 사다리는 그리드 미등록 자유액터(점유 X, 배치 차단 영향 0)지만 철거/cascade를 위해 '지면 셀 → 사다리'
+	// 레이어를 둔다. 배치/로드 시 OJJ_RegisterLadder가 사다리 transform에서 지면 셀(off-foundation)·기댄
+	// Foundation을 재계산해 등록 + OwningFoundation 주입(세이브에 링크 저장 불필요 — 로드 시 Foundation 선복원).
+	void OJJ_RegisterLadder(AOJJ_Ladder* Ladder);
+	// 사다리 레이어에서 해제 — Destroy 시 EndPlay가 호출(셀 키 모름 → 값 매칭 + stale 동시 청소).
+	void OJJ_UnregisterLadder(AOJJ_Ladder* Ladder);
+	// 셀 → 사다리(stale/없으면 nullptr). Demolish 트레이스 폴백 — Foundation 없어도 지면 셀 키 유지 → 떠 있어도 철거.
+	AOJJ_Ladder* OJJ_GetLadderAtCell(FIntPoint Cell) const;
+	// Foundation 철거 cascade — OwningFoundation==대상인 사다리 일괄 Destroy(고아 부유 사다리 방지). 환불 없음(MVP 무료).
+	void OJJ_DestroyLaddersOnFoundation(AActor* Foundation);
 
 	// 사각 영역 내 셀들의 지배 Foundation SurfaceZ(F3.5) — 접촉 셀 수 최다, 동률이면 낮은 단(결정 ㉷).
 	// stale Foundation은 GetFoundationSurfaceZ의 weak IsValid가 걸러 비후보(유령 단 상속 차단).
