@@ -32,10 +32,10 @@ constexpr TCHAR TutorialEventRotateViewRight[] = TEXT("RotateViewRight");
 constexpr TCHAR TutorialEventRotatePlacement[] = TEXT("RotatePlacement");
 constexpr TCHAR TutorialEventDemolishMode[] = TEXT("DemolishMode");
 constexpr TCHAR TutorialEventDemolishRemoved[] = TEXT("DemolishRemoved");
-constexpr TCHAR TutorialEventSelectMinerMode[] = TEXT("SelectMinerMode");
+constexpr TCHAR TutorialEventSelectMinerMode[] = TEXT("SelectMinerMachineMode");
 constexpr TCHAR TutorialEventValidMinerPlacement[] = TEXT("ValidMinerPlacement");
 constexpr TCHAR TutorialEventSelectPowerPlantMode[] = TEXT("SelectPowerPlantMode");
-constexpr TCHAR TutorialEventSelectPowerNodeMode[] = TEXT("SelectPowerNodeMode");
+constexpr TCHAR TutorialEventSelectPowerNodeMode[] = TEXT("SelectPowerGridNodeMode");
 constexpr TCHAR TutorialEventSelectSmelterMode[] = TEXT("SelectSmelterMode");
 constexpr TCHAR TutorialEventSelectWarehouseMode[] = TEXT("SelectWarehouseMode");
 constexpr TCHAR TutorialEventSelectConveyorMode[] = TEXT("SelectConveyorMode");
@@ -486,6 +486,15 @@ bool UQuestManagerSubsystem::AdvanceMainQuest()
 	return SetCurrentMainQuestIndex(CurrentMainQuestIndex + 1);
 }
 
+void UQuestManagerSubsystem::SetMainQuestSequenceForSave(
+	const TArray<FQuestState>& InMainQuestSequence,
+	int32 InCurrentMainQuestIndex)
+{
+	MainQuestSequence = InMainQuestSequence;
+	CurrentMainQuestIndex = FMath::Clamp(InCurrentMainQuestIndex, 0, FMath::Max(0, MainQuestSequence.Num() - 1));
+	ActivateCurrentMainQuest();
+}
+
 void UQuestManagerSubsystem::ResetMainQuestProgress()
 {
 	CurrentMainQuestIndex = 0;
@@ -531,6 +540,16 @@ void UQuestManagerSubsystem::GetSubQuests(TArray<FQuestState>& OutQuests) const
 void UQuestManagerSubsystem::GetSubQuestTitles(TArray<FString>& OutTitles) const
 {
 	OutTitles = SubQuestTitles;
+}
+
+void UQuestManagerSubsystem::SetSubQuestsForSave(
+	const TArray<FQuestState>& InSubQuests,
+	const TArray<FString>& InSubQuestTitles)
+{
+	SubQuests = InSubQuests;
+	SubQuestTitles = InSubQuestTitles;
+	OnSubQuestsUpdated.Broadcast(SubQuests);
+	OnSubQuestTitlesUpdated.Broadcast(FString(), SubQuestTitles);
 }
 
 void UQuestManagerSubsystem::ConnectQuestAgent()
@@ -654,6 +673,44 @@ void UQuestManagerSubsystem::GetLastTutorialDialogueLog(
 	OutQuestId = LastTutorialDialogueQuestId;
 	OutTriggerType = LastTutorialDialogueTriggerType;
 	OutLines = LastTutorialDialogueLines;
+}
+
+void UQuestManagerSubsystem::GetTutorialSaveState(
+	bool& bOutTutorialQuestTestActive,
+	FString& OutCurrentTutorialQuestId,
+	bool& bOutPendingTutorialStartDialogueReveal,
+	FString& OutLastTutorialDialogueQuestId,
+	FString& OutLastTutorialDialogueTriggerType,
+	TArray<FTutorialQuestDialogueLine>& OutLastTutorialDialogueLines) const
+{
+	bOutTutorialQuestTestActive = bTutorialQuestTestActive;
+	OutCurrentTutorialQuestId = CurrentTutorialQuestId;
+	bOutPendingTutorialStartDialogueReveal = bPendingTutorialStartDialogueReveal;
+	OutLastTutorialDialogueQuestId = LastTutorialDialogueQuestId;
+	OutLastTutorialDialogueTriggerType = LastTutorialDialogueTriggerType;
+	OutLastTutorialDialogueLines = LastTutorialDialogueLines;
+}
+
+void UQuestManagerSubsystem::RestoreTutorialSaveState(
+	bool bInTutorialQuestTestActive,
+	const FString& InCurrentTutorialQuestId,
+	bool bInPendingTutorialStartDialogueReveal,
+	const FString& InLastTutorialDialogueQuestId,
+	const FString& InLastTutorialDialogueTriggerType,
+	const TArray<FTutorialQuestDialogueLine>& InLastTutorialDialogueLines)
+{
+	bTutorialQuestTestActive = bInTutorialQuestTestActive;
+	CurrentTutorialQuestId = InCurrentTutorialQuestId;
+	bPendingTutorialStartDialogueReveal = bInPendingTutorialStartDialogueReveal;
+	LastTutorialDialogueQuestId = InLastTutorialDialogueQuestId;
+	LastTutorialDialogueTriggerType = InLastTutorialDialogueTriggerType;
+	LastTutorialDialogueLines = InLastTutorialDialogueLines;
+
+	BroadcastCurrentTutorialQuestStep();
+	OnTutorialDialogueLogged.Broadcast(
+		LastTutorialDialogueQuestId,
+		LastTutorialDialogueTriggerType,
+		LastTutorialDialogueLines);
 }
 
 bool UQuestManagerSubsystem::HasPendingTutorialStartDialogue() const

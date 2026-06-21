@@ -10,6 +10,7 @@ class UInstancedStaticMeshComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class USceneComponent;
+class UStaticMesh;
 class UTextRenderComponent;
 
 USTRUCT()
@@ -62,6 +63,9 @@ protected:
 	TObjectPtr<UInstancedStaticMeshComponent> LiquidVisualInstances;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Components")
+	TObjectPtr<UInstancedStaticMeshComponent> FlowArrowInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Components")
 	TObjectPtr<UTextRenderComponent> DebugStateText;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Grid", meta = (ClampMin = "1.0"))
@@ -70,16 +74,49 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
 	float ZOffset = 50.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
+	bool bShowFlowArrows = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.01"))
+	float FlowArrowScale = 0.16f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.0"))
+	float FlowArrowHeightOffset = 16.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "1"))
+	int32 FlowArrowSpacing = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.01"))
+	float FlowArrowStepInterval = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
+	FLinearColor IdleFlowArrowColor = FLinearColor(0.65f, 0.65f, 0.65f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
+	FLinearColor WorkingFlowArrowColor = FLinearColor(0.1f, 1.0f, 0.2f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
+	FLinearColor NoPowerFlowArrowColor = FLinearColor(1.0f, 0.75f, 0.1f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
+	FLinearColor BlockedFlowArrowColor = FLinearColor(1.0f, 0.15f, 0.1f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
+	FLinearColor DisabledFlowArrowColor = FLinearColor(0.2f, 0.2f, 0.2f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.0"))
+	float FlowArrowEmissiveStrength = 40.0f;
+
 	// 파이프 반경(월드 uu). 지름 = 2×PipeRadius (기본 60 = PIE 실측 확정). 메시 실측 치수로 환산하므로
 	// 엔진 기본 실린더/구의 절대 크기와 무관 — 메시를 바꿔도 반경이 유지됨. 직선/코너/라이저 전부 추종.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "1.0"))
 	float PipeRadius = 30.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.01"))
-	float LiquidVisualScaleRatio = 0.2f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual")
-	float LiquidVisualZOffset = 0.0f;
+	// ⭐ Foundation 엣지 라이저 드롭 지점을 데크 가장자리 라인보다 바깥으로 더 미는 여유(uu). 라이저 중심을
+	// 엣지에 딱 맞추면 파이프 반지름만큼 안쪽 몸체가 데크 모서리를 스치므로, (HalfCell + 이 값)만큼 이웃 방향으로
+	// 밀어 데크 밖에서 수직 전이한다. "모서리 안 닿는 최소"(≈ PipeRadius + α)로 PIE 다이얼. 기본 40(반경 30 + 10).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.0"))
+	float OJJ_PipeEdgeDropMargin = 40.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Material")
 	TObjectPtr<UMaterialInterface> PipeMaterialBase;
@@ -109,7 +146,7 @@ protected:
 	bool bAutoMoveLiquids = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Debug")
-	bool bShowDebugStateText = true;
+	bool bShowDebugStateText = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Debug")
 	FVector DebugTextOffset = FVector(0.0f, 0.0f, 90.0f);
@@ -132,6 +169,12 @@ protected:
 	// 시각 전용 — 경로 판정/예약셀/액체 슬롯과 무관. Zero면 기존 직선 돌출(항등).
 	FIntPoint OJJ_EndPortFlowDir = FIntPoint::ZeroValue;
 
+	// Foundation(솔리드 데크) 셀의 진입/이탈 수직 라이저를 셀 중심이 아닌 셀 엣지(이웃 방향 HalfCell = 데크
+	// 가장자리 라인)에 두기 위한 플래그(PathCells와 1:1). 셀 중심 드롭은 데크 슬래브를 관통하므로, 솔리드 셀은
+	// 데크 위 수평을 엣지까지 끌고 가 엣지 밖에서 수직 전이(ㄴ자)한다. 그리드가 OJJ_SetPathCellEdgeRisers로
+	// 주입(IsCellOnFoundation ∧ 비오버패스). 빈 배열/길이불일치면 전부 false = 기존 셀중심 라이저(오버패스 ㄷ자 보존).
+	TArray<bool> PathCellEdgeRiser;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Path")
 	TArray<FIntPoint> OccupiedGridCells;
 
@@ -148,6 +191,7 @@ protected:
 	TObjectPtr<UDataTable> ResourceTable;
 
 	FTimerHandle LiquidMoveTimerHandle;
+	float LastLiquidMoveWorldTime = 0.0f;
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Pipe|Path")
@@ -160,6 +204,16 @@ public:
 
 	// #257 탱크 진입 포트 방향 주입(시각 전용). SetPath 전에 호출 — RebuildVisuals가 마지막 스텁을 이 방향으로 꺾는다.
 	void OJJ_SetEndPortFlowDir(FIntPoint InEndPortFlowDir) { OJJ_EndPortFlowDir = InEndPortFlowDir; }
+
+	// 노드 base Z 오프셋(RebuildVisuals 노드 Z = ZOffset + lift). 그리드가 탱크 소켓 높이를 lift로 역산할 때 참조.
+	float GetZOffset() const { return ZOffset; }
+
+	// Foundation 셀 엣지 라이저 플래그 주입(시각 전용). SetPath 후 · OJJ_SetPathCellLocalZs 전에 호출 —
+	// 이어지는 RebuildVisuals가 반영. 길이 불일치면 무시(전부 false = 기존 셀중심 라이저).
+	void OJJ_SetPathCellEdgeRisers(const TArray<bool>& InFlags)
+	{
+		PathCellEdgeRiser = (InFlags.Num() == PathCells.Num()) ? InFlags : TArray<bool>();
+	}
 
 	UFUNCTION(BlueprintCallable, Category = "Pipe|Path")
 	void ConfigureTransport(
@@ -188,6 +242,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pipe|Debug")
 	void UpdateDebugStateText();
 
+	const TArray<FPipeLiquidSlot>& GetLiquidSlotsForSave() const { return LiquidSlots; }
+	void ApplyLiquidSlotsForSave(const TArray<FPipeLiquidSlot>& SavedLiquidSlots);
+	bool RefundLiquidsToWarehouse();
+
 private:
 	void RebuildVisuals();
 	void ResetLiquidSlots();
@@ -195,21 +253,36 @@ private:
 	void StopLiquidMoveTimer();
 	void MoveLiquidsOneSegment();
 	void RefreshLiquidVisualInstances();
+	void RefreshShellVisualInstances();
+	void ApplySlotVisualCustomData(UInstancedStaticMeshComponent* Instances, int32 InstanceIndex, int32 SlotIndex) const;
 	void UpdateDebugTextFacingPlayer();
 	void UpdateMaterialState();
+	float GetCurrentLiquidMoveAlpha() const;
 	bool TryPullLiquidFromSource(FPipeLiquidSlot& OutSlot);
 	bool IsLiquidItem(FName ItemID) const;
 	bool HasAnyLiquid() const;
 	FName GetPrimaryLiquidID() const;
 	FLinearColor GetFilledPipeColor() const;
+	FLinearColor GetSlotVisualColor(const FPipeLiquidSlot& Slot) const;
+	float GetSlotFillRatio(const FPipeLiquidSlot& Slot) const;
+	FVector GetSlotFlowDirection(int32 SlotIndex) const;
+	int32 FindClosestSlotIndexFromLocalLocation(const FVector& LocalLocation) const;
 	UMaterialInterface* GetPipeMaterial(bool bHasLiquid);
 	void ConfigureMaterialInstance(UMaterialInstanceDynamic* MaterialInstance, bool bHasLiquid) const;
 	FVector GetPathCentroidLocal() const;
 	FVector GetCellLocalCenter(FIntPoint Cell) const;
+	int32 GetFlowArrowPhase() const;
+	void UpdateFlowArrowMaterial();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> EmptyPipeMaterialInstance;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> FilledPipeMaterialInstance;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> FlowArrowMaterialInstance;
+
+	UPROPERTY(Transient)
+	int32 LastFlowArrowPhase = INDEX_NONE;
 };

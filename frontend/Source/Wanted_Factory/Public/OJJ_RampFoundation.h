@@ -42,6 +42,8 @@ public:
 
 	// 배치 확정 풋프린트 저장(F3.6-1) — 자동 맞춤의 동적 길이/상승 단수를 계단 비주얼이 쓰도록.
 	virtual void OJJ_NotifyFitResult(const FOJJFoundationFitResult& Fit) override;
+	virtual void GetSaveState(int32& OutRiseSteps, bool& bOutOneSideGroundRamp, float& OutLoEndLowestGroundRaw, bool& bOutLoEndLowestValid) const override;
+	virtual void ApplySaveState(int32 InRiseSteps, bool bInOneSideGroundRamp, float InLoEndLowestGroundRaw, bool bInLoEndLowestValid) override;
 
 	// 쐐기 빗변 면의 보간 Z(F3.8'' — 벨트 반행 편차 해소): 쐐기 꼭짓점과 같은 프레임/수식
 	// (OJJ_ClimbDirForStep + L/Rise/Thickness — 단일원). 평지 브리지(Rise 0)는 false(면=장부 평탄).
@@ -61,8 +63,13 @@ public:
 		int32 RotationSteps, FString* OutHeightSource = nullptr) const override;
 
 protected:
-	// 베이스 슬래브 숨기고 행당 1박스 계단을 적재(상면 = 해당 행 SurfaceZ — 등록 데이터와 동일 산식).
+	// 램프 4단계: 베이스 Deck 슬래브를 숨기지 않고 경사각만큼 틸트해 보이는 경사면으로 사용
+	// (보행/충돌은 쐐기 convex 전담, 시각 OFF). 계단 박스 폴백 은퇴.
 	virtual void UpdateSlabVisual() override;
+
+	// 램프 4단계 결정: 램프는 다리 없음(Deck 틸트만 — 안 깔아도 어색하지 않음). 베이스 4모서리 다리
+	// 로직을 오버라이드해 상속 LegISM의 인스턴스를 비운다(평지는 베이스 그대로 다리 유지).
+	virtual void UpdateLegVisual() override;
 
 	// 자동 맞춤 이웃 스캔 한계(㉾ — 축 방향 한쪽당 최대 라인 수). 초과 틈은 미검출 → 고정 램프 폴백.
 	// 프리뷰 셀 수 최악(2×32−1)×8 = 504 < 그리드 가드 4096 — 폭주 없음.

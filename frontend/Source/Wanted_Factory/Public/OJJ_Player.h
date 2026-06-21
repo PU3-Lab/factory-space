@@ -53,6 +53,11 @@ public:
 	void NotifyLadderOverlap(AOJJ_Ladder* Ladder);
 	void NotifyLadderEndOverlap(AOJJ_Ladder* Ladder);
 
+	// 등반 활성 여부 — ABP_Man 스테이트머신 climbing 진입/탈출 조건용(읽기 전용 노출). 방향(위/아래)·속도는
+	// 별도 변수 없이 ABP가 Velocity.Z로 판별(위>0 Loop, 아래<0 Down) — 노출 최소화(#184 사다리 애니 장착).
+	UFUNCTION(BlueprintPure, Category = "Climb")
+	bool IsClimbing() const { return bClimbing; }
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -186,67 +191,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_MachineRotate;
 
-	// 빌드모드 배치 모드 전환 — 머신 모드(예: 1키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetMachineMode;
-
-	// 빌드모드 배치 모드 전환 — 컨베이어 모드(예: 2키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetConveyorMode;
-
-	// 파이프 모드(F4-1 — 펌프→물탱크 액체 라인, 컨베이어와 드래그 공용). IMC_Build 매핑/에셋 연결은
-	// 에디터 작업(BP 후속 — IA 미지정 시 키 진입 불가, SetPlacementMode(Pipe) BP 직접 호출은 가능).
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetPipeMode;
-
-	// 물탱크 모드(F4-4 — K키). IA_SetPipeMode 미러. IMC_Build의 K 매핑/에셋 연결은 에디터 작업
-	// (IA 미지정 시 키 진입 불가 — 콘솔 OJJ_SetBuildMode tank는 계속 동작).
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetTankMode;
-
-	// 평판 Foundation 모드(G키 — #196 레거시 BindKey→IA 전환). IMC_Build의 G 매핑/에셋 연결은 에디터 작업.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetFoundationMode;
-
-	// 램프 Foundation 모드(H키 — #196 레거시 BindKey→IA 전환). IMC_Build의 H 매핑/에셋 연결은 에디터 작업.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetRampMode;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetPowerNodeMode;
-
-	// 빌드모드 배치 모드 전환 — 차폐장(예: 8키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetShieldMode;
-
-	// 빌드모드 배치 모드 전환 — 전선 드래그(예: - 키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetPowerLineMode;
-
-	// 빌드모드 배치 모드 전환 — 발전소(예: 7키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetPowerPlantMode;
-
-	// 빌드모드 배치 모드 전환 — 그라인더(예: 2키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetGrinderMode;
-
-	// 빌드모드 배치 모드 전환 — 채굴기(예: 5키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetMinerMode;
-
-	// 빌드모드 배치 모드 전환 — 펌프(예: 6키). IMC_Build에 매핑. 에셋 연결은 에디터 작업.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetPumpMode;
-
-	// 빌드모드 배치 모드 전환 — 스멜터(예: 3키 — 빈 키 가정, IMC_Build에서 확정). 에셋 연결은 에디터 작업.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetSmelterMode;
-
-	// 빌드모드 배치 모드 전환 — 창고(1키, generic Machine 진입 키 대체). IMC_Build에서 1번을 이 IA로 재매핑(에디터).
-	// generic IA_SetMachineMode/SetMachineMode는 코드에 그대로 보존(진입 키만 교체) — 스멜터 때와 동일 방식.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
-	TObjectPtr<UInputAction> IA_SetWarehouseMode;
+	// [옛 빌드 입력 경로 전수 정리] 배치 모드별 직행 IA(Machine/Conveyor/Pipe/Tank/PowerNode/Shield/
+	// PowerLine/PowerPlant/Grinder/Miner/Pump/Smelter/Warehouse)는 카테고리 숫자키 슬롯(UI_BuildModeMain)이
+	// 완전 대체하여 C++에서 폐기. 퀘스트 이벤트는 슬롯 경로(ExecutePlacementMode)가 동일/정합 문자열로 발사
+	// (QuestManagerSubsystem 리스너 기준 — #306/#308 검증). IA .uasset·IMC 매핑은 미변경(에디터 잔여는 UI 담당 후속).
+	// 콘솔 SetBuildMode(pipe/tank/tower)는 SetPlacementMode 직접 호출이라 계속 동작.
 
 	// 빌드모드 배치 모드 전환 — 철거(X키). IMC_Build에서 X에 매핑(에디터). 좌클릭으로 호버 대상(머신/컨베이어) 제거.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
@@ -265,6 +214,12 @@ protected:
 	// 등반 중 수직 이동 속도(MaxFlySpeed). W/S로 위/아래.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
 	float ClimbSpeed = 250.f;
+
+	// [#184] 등반 시작 시 캐릭터를 사다리 안쪽(GetStepOffDirection, +X) 바라보게 회전 + 이 오프셋을 더한다.
+	// 메시 기본 yaw 오프셋(보통 -90°)·애니 제작 방향 때문에 그대로면 옆을 볼 수 있어 PIE에서 ±90 조정용
+	// (재컴파일 없이 디테일 패널). 기본 0 — 캐릭터가 옆 보면 이 값으로 맞춤.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb")
+	float LadderFacingYawOffset = 0.f;
 
 	// [#184] 등반 중 캐릭터를 사다리 등반 면에서 띄우는 여유(uu). 실제 거리 = 캡슐반경 + 이 값. 너무 작으면
 	// 메시 관통, 크면 떨어져 보임 — 캡슐 반경 부근이 적정이라 이 값은 그 위 소량 gap.
@@ -388,52 +343,52 @@ protected:
 	void BuildPlaceReleased(const FInputActionValue& Value);
 	void BuildPlaceCanceled(const FInputActionValue& Value);
 
-	// 배치 모드 전환 — BuildController->SetPlacementMode로 위임.
-	void SetMachineMode(const FInputActionValue& Value);
-	void SetConveyorMode(const FInputActionValue& Value);
-	void SetPipeMode(const FInputActionValue& Value);
-	void SetTankMode(const FInputActionValue& Value);
-
 public:
-	// [임시 진입로 — F4-1'] PIE 콘솔용 배치 모드 전환(예: `OJJ_SetBuildMode pipe`). IA 에셋/UI 슬롯이
+	// [임시 진입로 — F4-1'] PIE 콘솔용 배치 모드 전환(예: `SetBuildMode pipe`). IA 에셋/UI 슬롯이
 	// 없는 신규 모드(pipe/tank)의 검증 진입로 — 정식 키/UI 와이어링(BP·UI 소유자 안건) 후 제거 후보.
 	UFUNCTION(Exec)
-	void OJJ_SetBuildMode(const FString& ModeName);
+	void SetBuildMode(const FString& ModeName);
 
 	UFUNCTION(Exec)
-	void OJJ_TutorialAdvance();
+	void TutorialAdvance();
 
 	UFUNCTION(Exec)
-	void OJJ_TutorialLog();
+	void TutorialLog();
 
 	UFUNCTION(Exec)
-	void OJJ_SetMachineLevel(const FString& MachineTypeName, int32 NewLevel);
+	void SetMachineLevel(const FString& MachineTypeName, int32 NewLevel);
 
 	UFUNCTION(Exec)
-	void OJJ_UpgradeMachineLevel(const FString& MachineTypeName, int32 UpgradeCount = 1);
+	void UpgradeMachineLevel(const FString& MachineTypeName, int32 UpgradeCount = 1);
+
+	UFUNCTION(Exec)
+	void ResetGame();
+
+	UFUNCTION(Exec)
+	void TriggerPlanetEvent(const FString& EventName, float Severity = 1.0f, float DurationSeconds = -1.0f);
 
 protected:
-	void SetPowerNodeMode(const FInputActionValue& Value);
-	void SetShieldMode(const FInputActionValue& Value);
-	void SetPowerLineMode(const FInputActionValue& Value);
-	void SetPowerPlantMode(const FInputActionValue& Value);
-	void SetGrinderMode(const FInputActionValue& Value);
-	void SetMinerMode(const FInputActionValue& Value);
-	void SetPumpMode(const FInputActionValue& Value);
-	void SetSmelterMode(const FInputActionValue& Value);
-	void SetMoldingMachineModeShortcut();
-	void SetSynthesizerModeShortcut();
-	void SetTeleCommunicationTowerModeShortcut();
 	void SetDemolishModeShortcut();
-	// [#184] C키 — 사다리 빌드 서브모드 진입(빌드모드 중에만, SetDemolishModeShortcut 패턴).
+	// [#184] C키 — 사다리 빌드 서브모드 진입(빌드모드 중에만, SetDemolishModeShortcut 패턴). 공용키 개편서 H로 이동.
 	void SetLadderModeShortcut();
-	void SetWarehouseMode(const FInputActionValue& Value);
+	// [공용키] F=평면 Foundation, G=경사 RampFoundation, Z=마우스 초기화(취소). 전부 레거시 BindKey + IsInBuildMode 가드.
+	void SetFoundationModeShortcut();
+	void SetRampFoundationModeShortcut();
+	void CancelPlacementShortcut();
+	// [카테고리 숫자키] 1~9,0 → 현재 카테고리(LDJ UI_BuildModeMain)의 N번 슬롯 실행. 0키=10번 슬롯(1-base).
+	// ExecuteHotbarSlot: IsInBuildMode 가드 + BuildModeWidgetInstance Cast(null이면 무동작+로그). 10개 thin BindKey 래퍼.
+	void ExecuteHotbarSlot(int32 SlotIndex);
+	void SetHotbarSlot1();
+	void SetHotbarSlot2();
+	void SetHotbarSlot3();
+	void SetHotbarSlot4();
+	void SetHotbarSlot5();
+	void SetHotbarSlot6();
+	void SetHotbarSlot7();
+	void SetHotbarSlot8();
+	void SetHotbarSlot9();
+	void SetHotbarSlot10();
 	void SetDemolishMode(const FInputActionValue& Value);
-
-	// 평판/램프 Foundation 모드 진입(G/H — #196 Enhanced Input IA 전환, 탱크/파이프와 동일 구조).
-	// 이중발화 차단 위해 레거시 BindKey 제거 + IA 단일 경로로 통일.
-	void SetFoundationMode(const FInputActionValue& Value);
-	void SetRampFoundationMode(const FInputActionValue& Value);
 
 	// 스프린트 — Started=달리기 속도, Completed=걷기 속도로 복귀.
 	void StartSprint(const FInputActionValue& Value);

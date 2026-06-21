@@ -39,6 +39,7 @@ public:
 
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual bool ShouldRefundBuffersToWarehouseOnRemoval() const override { return false; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Liquid Tank", meta = (ClampMin = "1"))
 	int32 Capacity = 500;

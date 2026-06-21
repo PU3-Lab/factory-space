@@ -11,6 +11,7 @@
 class UTextRenderComponent;
 class AOJJ_Grid;
 class UStaticMesh;
+class UMaterialInstanceDynamic;
 
 // 효율 modifier 키 모음 (요인별). 새 효율 요인은 여기에 한 줄 추가 — 머신/이벤트 매니저 등
 // 양쪽 파일의 문자열 중복을 방지하는 단일 정의 지점. 정의는 MachineBase.cpp.
@@ -160,6 +161,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Components")
 	UStaticMeshComponent* MeshComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Components")
+	UStaticMeshComponent* StateIndicatorComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Debug")
 	UTextRenderComponent* DebugBufferText;
 
@@ -191,13 +195,40 @@ protected:
 	TMap<FName, int32> OutputInventory;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Debug")
-	bool bShowDebugBufferText = true;
+	bool bShowDebugBufferText = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Debug")
 	FVector DebugTextOffset = FVector(0.0f, 0.0f, 180.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Debug", meta = (ClampMin = "1.0"))
 	float DebugTextWorldSize = 24.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
+	bool bShowStateIndicator = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
+	FVector StateIndicatorOffset = FVector(0.0f, 0.0f, 120.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "0.01"))
+	FVector StateIndicatorScale = FVector(0.30f, 0.30f, 0.30f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
+	FLinearColor IdleIndicatorColor = FLinearColor(0.65f, 0.65f, 0.65f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
+	FLinearColor WorkingIndicatorColor = FLinearColor(0.1f, 1.0f, 0.2f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
+	FLinearColor NoPowerIndicatorColor = FLinearColor(1.0f, 0.75f, 0.1f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
+	FLinearColor BlockedIndicatorColor = FLinearColor(1.0f, 0.15f, 0.1f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
+	FLinearColor DisabledIndicatorColor = FLinearColor(0.2f, 0.2f, 0.2f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "0.0"))
+	float StateIndicatorEmissiveStrength = 40.0f;
 
 	// 현재 사용 중인 레시피
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Inventory")
@@ -253,6 +284,9 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Machine | Planet Event")
 	TMap<FName, float> EfficiencyModifiers;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> StateIndicatorMaterialInstance;
+
 public:
 	// 기능들
 	UPROPERTY(BlueprintAssignable, Category = "Machine | Durability")
@@ -305,12 +339,19 @@ public:
 	// GetMachinePlacementLocation의 수면 Z 안착 스위치. 교집합(IsCellWater AND GetWaterSurfaceZAtCell)은
 	// 그리드 측이 셀별로 보장하므로, 머신은 "물 위에 설 수 있는가"만 선언한다(CDO-safe — 인스턴스 상태 미사용).
 	virtual bool CanStandOnWater() const { return false; }
+	virtual bool OJJ_RequiresOccupancyOnlyRegistration() const { return false; }
+
+	// [직배치 규칙] 일반 바닥(raw 지형 = buildable이며 Foundation 미커버)에 직접 설치 가능 여부. 기본 false =
+	// Foundation 위에만 설치. true 머신(채굴기 등)만 raw 지상 직접 배치. CanPlaceMachine 게이트가 AND로 참조.
+	// ⚠️ water 위 배치는 CanStandOnWater(별도 스위치)가 담당 — 이 함수와 직교(false여도 물 위는 CanStandOnWater로 허용).
+	// CDO-safe(인자/CDO getter만, 인스턴스 상태 미사용 — 호버가 CDO로 판정).
+	virtual bool CanPlaceOnRawGround() const { return false; }
 
 	// 그리드 등록 성공 직후(배치 확정) 호출 — 자원 선점 등. 실제 인스턴스에서만 호출(CDO 아님).
 	virtual void OnPlacedOnGrid(AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationSteps) {}
 
 	// 그리드에서 제거되기 직전 호출 — 자원 선점 해제 등. 실제 인스턴스에서만 호출.
-	virtual void OnRemovedFromGrid() {}
+	virtual void OnRemovedFromGrid();
 
 	// 임시 테스트 용 : 아이템 투입
 	UFUNCTION(BlueprintCallable, Category = "Machine | Inventory")
@@ -370,6 +411,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Machine | Debug")
 	void UpdateDebugBufferText();
 
+	UFUNCTION(BlueprintCallable, Category = "Machine | State Indicator")
+	void UpdateStateIndicator();
+
 	void UpdateDebugTextFacingPlayer();
 	
 	UFUNCTION(BlueprintCallable, Category = "Machine | Transfer")
@@ -419,6 +463,15 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Machine | Durability")
 	float GetCurrentDurability() const { return CurrentDurability; }
+	bool RefundBufferedItemsToWarehouse();
+	void GetSaveState(
+		TMap<FName, int32>& OutInputInventory,
+		TMap<FName, int32>& OutOutputBuffer,
+		float& OutCurrentDurability) const;
+	void ApplySaveState(
+		const TMap<FName, int32>& InInputInventory,
+		const TMap<FName, int32>& InOutputBuffer,
+		float InCurrentDurability);
 	
 	// 파워 (전력)
 	UFUNCTION(BlueprintCallable, Category = "Machine | Power")
@@ -461,6 +514,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Machine | Planet Event")
 	float GetEffectiveProcessTime(float BaseProcessTime) const;
-	
-	
+
+protected:
+	virtual bool ShouldRefundBuffersToWarehouseOnRemoval() const { return true; }
 };

@@ -8,6 +8,8 @@
 #include "FactoryManagerSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "Machines/MachineSubsystem.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "PlanetEventManagerSubsystem.h"
 #include "PlayerWarehouseSubsystem.h"
@@ -17,6 +19,9 @@
 
 namespace
 {
+	constexpr float WorkingDurabilityDamagePerSecond = 1.0f;
+	constexpr float SandStormWorkingDurabilityDamagePerSecond = 5.0f;
+
 	void AddRecipeItemQuantity(TMap<FName, int32>& ItemQuantities, FName ItemID, int32 Count)
 	{
 		if (ItemID.IsNone() || Count <= 0)
@@ -136,6 +141,14 @@ AMachineBase::AMachineBase()
 
 	MeshComponent->SetupAttachment(Root);
 
+	StateIndicatorComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("StateIndicator"));
+	StateIndicatorComponent->SetupAttachment(Root);
+	StateIndicatorComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	StateIndicatorComponent->SetCastShadow(false);
+	StateIndicatorComponent->SetVisibleInRayTracing(false);
+	StateIndicatorComponent->SetRelativeLocation(StateIndicatorOffset);
+	StateIndicatorComponent->SetRelativeScale3D(StateIndicatorScale);
+
 	// 메쉬 방향 보정: 머신 메쉬의 시각적 입출력부가 논리 포트 방향(액터 forward 기반)과 -90° Yaw
 	// 어긋나는 문제(전 머신 균일, PIE 관찰 확정)를 +90° 회전으로 상쇄. RelativeRotation은 자식 메쉬만
 	// 회전시키므로 액터 forward/footprint/포트 셀 계산(GetActorForwardVector 기반)에는 무영향 —
@@ -157,11 +170,20 @@ AMachineBase::AMachineBase()
 	{
 		MeshComponent->SetStaticMesh(CubeMesh.Object);
 	}
+	ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	if (SphereMesh.Succeeded())
+	{
+		StateIndicatorComponent->SetStaticMesh(SphereMesh.Object);
+	}
 	ConstructorHelpers::FObjectFinder<UMaterial> MaterialAsset(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	if (MaterialAsset.Succeeded())
 	{
 		MeshComponent->SetMaterial(0, MaterialAsset.Object);
+		StateIndicatorMaterialInstance = UMaterialInstanceDynamic::Create(MaterialAsset.Object, this);
+		StateIndicatorComponent->SetMaterial(0, StateIndicatorMaterialInstance);
 	}
+
+	UpdateStateIndicator();
 }
 
 void AMachineBase::ApplyMachineData(const FMachineTableRow& MachineData)
@@ -311,6 +333,7 @@ void AMachineBase::OnConstruction(const FTransform& Transform)
 
 	CurrentDurability = FMath::Clamp(CurrentDurability, 0.f, MaxDurability);
 	UpdateDebugBufferText();
+	UpdateStateIndicator();
 	UpdateDebugTextFacingPlayer();
 }
 
@@ -318,10 +341,31 @@ void AMachineBase::OnConstruction(const FTransform& Transform)
 void AMachineBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (MachineState == EMachineState::Working && DeltaTime > 0.0f)
+	{
+		float DurabilityDamagePerSecond = WorkingDurabilityDamagePerSecond;
+
+		if (const UWorld* World = GetWorld())
+		{
+			if (const UPlanetEventManagerSubsystem* PlanetEventManager = World->GetSubsystem<UPlanetEventManagerSubsystem>())
+			{
+				if (PlanetEventManager->GetEventState().Type == EPlanetEventType::SandStorm)
+				{
+					DurabilityDamagePerSecond = SandStormWorkingDurabilityDamagePerSecond;
+				}
+			}
+		}
+
+		DamageDurability(DeltaTime * DurabilityDamagePerSecond);
+	}
+
 	if (bShowDebugBufferText)
 	{
 		UpdateDebugTextFacingPlayer();
 	}
+
+	UpdateStateIndicator();
 }
 
 bool AMachineBase::CanPlace()
@@ -331,6 +375,18 @@ bool AMachineBase::CanPlace()
 	// ---------------------------
 
 	return true;
+}
+
+void AMachineBase::OnRemovedFromGrid()
+{
+	StopProcess();
+
+	if (!ShouldRefundBuffersToWarehouseOnRemoval())
+	{
+		return;
+	}
+
+	RefundBufferedItemsToWarehouse();
 }
 
 bool AMachineBase::AddItem(FName ItemID, int32 Count)
@@ -723,6 +779,33 @@ bool AMachineBase::CanReceiveConveyorItem(FName ItemID, int32 Count) const
 	return CanAddInputItem(ItemID, Count);
 }
 
+void AMachineBase::GetSaveState(
+	TMap<FName, int32>& OutInputInventory,
+	TMap<FName, int32>& OutOutputBuffer,
+	float& OutCurrentDurability) const
+{
+	OutInputInventory = InputInventory;
+	OutOutputBuffer = OutputBuffer;
+	OutCurrentDurability = CurrentDurability;
+}
+
+void AMachineBase::ApplySaveState(
+	const TMap<FName, int32>& InInputInventory,
+	const TMap<FName, int32>& InOutputBuffer,
+	float InCurrentDurability)
+{
+	StopProcess();
+	InputInventory = InInputInventory;
+	OutputBuffer = InOutputBuffer;
+	CurrentDurability = FMath::Clamp(InCurrentDurability, 0.0f, MaxDurability);
+	UpdateDebugBufferText();
+	RefreshMachineState();
+	if (MachineState == EMachineState::Idle)
+	{
+		TryStartProcess();
+	}
+}
+
 bool AMachineBase::ReceiveConveyorItem(FName ItemID, int32 Count)
 {
 	const bool bAdded = AddItem(ItemID, Count);
@@ -750,6 +833,80 @@ void AMachineBase::UpdateDebugBufferText()
 		*FormatItemMap(InputInventory),
 		*FormatItemMap(OutputBuffer));
 	DebugBufferText->SetText(FText::FromString(DebugText));
+}
+
+void AMachineBase::UpdateStateIndicator()
+{
+	if (!StateIndicatorComponent)
+	{
+		return;
+	}
+
+	StateIndicatorComponent->SetVisibility(bShowStateIndicator);
+	FVector IndicatorLocation = StateIndicatorOffset;
+	if (MeshComponent)
+	{
+		IndicatorLocation.Z = FMath::Max(IndicatorLocation.Z, MeshComponent->Bounds.BoxExtent.Z + 40.0f);
+	}
+	StateIndicatorComponent->SetRelativeLocation(IndicatorLocation);
+	StateIndicatorComponent->SetRelativeScale3D(StateIndicatorScale);
+	if (!bShowStateIndicator)
+	{
+		return;
+	}
+
+	FLinearColor IndicatorColor = IdleIndicatorColor;
+	switch (MachineState)
+	{
+	case EMachineState::Working:
+		IndicatorColor = WorkingIndicatorColor;
+		break;
+	case EMachineState::NoPower:
+		IndicatorColor = NoPowerIndicatorColor;
+		break;
+	case EMachineState::Blocked:
+		IndicatorColor = BlockedIndicatorColor;
+		break;
+	case EMachineState::Disabled:
+		IndicatorColor = DisabledIndicatorColor;
+		break;
+	case EMachineState::Idle:
+	default:
+		break;
+	}
+
+	if (!StateIndicatorMaterialInstance)
+	{
+		if (UMaterialInstanceDynamic* ExistingMID =
+			Cast<UMaterialInstanceDynamic>(StateIndicatorComponent->GetMaterial(0)))
+		{
+			StateIndicatorMaterialInstance = ExistingMID;
+		}
+	}
+
+	if (!StateIndicatorMaterialInstance)
+	{
+		UMaterialInterface* BaseMaterial = StateIndicatorComponent->GetMaterial(0);
+		if (BaseMaterial)
+		{
+			BaseMaterial = BaseMaterial->GetMaterial();
+		}
+		if (!BaseMaterial)
+		{
+			BaseMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
+		}
+		StateIndicatorMaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
+		StateIndicatorComponent->SetMaterial(0, StateIndicatorMaterialInstance);
+	}
+
+	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("Color"), IndicatorColor);
+	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), IndicatorColor);
+	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("Tint"), IndicatorColor);
+	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), IndicatorColor);
+	StateIndicatorMaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), StateIndicatorEmissiveStrength);
+	StateIndicatorMaterialInstance->SetScalarParameterValue(TEXT("Opacity"), IndicatorColor.A);
+	StateIndicatorMaterialInstance->SetScalarParameterValue(TEXT("Alpha"), IndicatorColor.A);
+	StateIndicatorComponent->MarkRenderStateDirty();
 }
 
 void AMachineBase::UpdateDebugTextFacingPlayer()
@@ -1147,12 +1304,53 @@ bool AMachineBase::HasEnoughPower() const
 	return CurrentProvidedPower >= PowerConsumption;
 }
 
+bool AMachineBase::RefundBufferedItemsToWarehouse()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UPlayerWarehouseSubsystem* Warehouse = GameInstance
+		? GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>()
+		: nullptr;
+	if (!Warehouse)
+	{
+		return false;
+	}
+
+	bool bRefundedAny = false;
+
+	for (const TPair<FName, int32>& Input : InputInventory)
+	{
+		if (!Input.Key.IsNone() && Input.Value > 0)
+		{
+			Warehouse->AddItem(Input.Key, Input.Value);
+			bRefundedAny = true;
+		}
+	}
+
+	for (const TPair<FName, int32>& Output : OutputBuffer)
+	{
+		if (!Output.Key.IsNone() && Output.Value > 0)
+		{
+			Warehouse->AddItem(Output.Key, Output.Value);
+			bRefundedAny = true;
+		}
+	}
+
+	InputInventory.Reset();
+	OutputBuffer.Reset();
+	OutputInventory.Reset();
+	CurrentRecipe = FRecipeTable();
+	UpdateDebugBufferText();
+	RefreshMachineState();
+	return bRefundedAny;
+}
+
 void AMachineBase::RefreshMachineState()
 {
 	if (isBroken() && bDisableWhenBroken)
 	{
 		MachineState = EMachineState::Disabled;
 		StopProcess();
+		UpdateStateIndicator();
 		return;
 	}
 
@@ -1160,6 +1358,7 @@ void AMachineBase::RefreshMachineState()
 	{
 		MachineState = EMachineState::NoPower;
 		StopProcess();
+		UpdateStateIndicator();
 		return;
 	}
 	
@@ -1167,6 +1366,8 @@ void AMachineBase::RefreshMachineState()
 	{
 		MachineState = EMachineState::Idle;
 	}
+
+	UpdateStateIndicator();
 }
 
 namespace EfficiencyKeys

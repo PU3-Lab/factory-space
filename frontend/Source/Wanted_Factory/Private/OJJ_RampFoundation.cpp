@@ -368,6 +368,34 @@ void AOJJ_RampFoundation::OJJ_NotifyFitResult(const FOJJFoundationFitResult& Fit
 	bPlacedLoEndLowestValid = Fit.bOneSideGroundRamp && Fit.bLoEndLowestValid;
 }
 
+void AOJJ_RampFoundation::GetSaveState(
+	int32& OutRiseSteps,
+	bool& bOutOneSideGroundRamp,
+	float& OutLoEndLowestGroundRaw,
+	bool& bOutLoEndLowestValid) const
+{
+	OutRiseSteps = PlacedRiseSteps;
+	bOutOneSideGroundRamp = bPlacedOneSideGroundRamp;
+	OutLoEndLowestGroundRaw = PlacedLoEndLowestGroundZ;
+	bOutLoEndLowestValid = bPlacedLoEndLowestValid;
+}
+
+void AOJJ_RampFoundation::ApplySaveState(
+	int32 InRiseSteps,
+	bool bInOneSideGroundRamp,
+	float InLoEndLowestGroundRaw,
+	bool bInLoEndLowestValid)
+{
+	PlacedRiseSteps = InRiseSteps;
+	bPlacedOneSideGroundRamp = bInOneSideGroundRamp;
+	PlacedLoEndLowestGroundZ = InLoEndLowestGroundRaw;
+	bPlacedLoEndLowestValid = bInLoEndLowestValid;
+	PlacedRotationSteps = ((FMath::RoundToInt(GetActorRotation().Yaw / 90.0f) % 4) + 4) % 4;
+	PlacedClimbLengthCells = (PlacedRotationSteps % 2 == 0)
+		? FMath::Max(1, FoundationSize.X)
+		: FMath::Max(1, FoundationSize.Y);
+}
+
 bool AOJJ_RampFoundation::OJJ_BuildPerCellSurfaceZ(FIntPoint EffSize, int32 RotationSteps, float BaseSurfaceZ,
 	int32 RiseSteps, TArray<float>& OutCellZs) const
 {
@@ -483,13 +511,12 @@ float AOJJ_RampFoundation::OJJ_ComputeSnapLift(const AOJJ_Grid& Grid, FIntPoint 
 
 void AOJJ_RampFoundation::UpdateSlabVisual()
 {
-	// 베이스 슬래브(단일 박스)는 램프 형상과 안 맞음 — 숨기고 충돌도 끔(쐐기/계단이 전담).
-	if (SlabMesh)
-	{
-		SlabMesh->SetVisibility(false);
-		SlabMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	}
-
+	// Foundation 4단계 §1 — 램프 Deck 틸트: 베이스 Deck 슬래브를 숨기지 않고 경사각만큼 틸트해
+	// 보이는 경사면으로 쓴다. 보행/충돌은 검증된 쐐기(WedgeMesh) convex가 그대로 전담하되 시각은
+	// 끈다(invisible collision body) — (1) 박막 틸트 슬래브 충돌 모험 회피 = 보행 회귀 0,
+	// (2) 쐐기가 Deck 머티리얼을 복사해 색이 바뀌던 이슈는 쐐기를 안 그리므로 자동 해소(Deck는
+	// 자기 머티리얼로 렌더). 장부/벨트 Z(OJJ_BuildPerCellSurfaceZ / OJJ_GetVisualSurfaceZAtWorld)는
+	// 해석적 산식이라 시각과 독립 — 틸트가 그 기준을 안 건드린다.
 	const float CellSize = OJJ_ResolveCellSize();
 	// F3.6-1: 배치 확정값 우선(자동 맞춤 동적 길이/단수 — OJJ_NotifyFitResult가 저장),
 	// 미확정(에디터 프리뷰/스폰 직후 OnConstruction)은 CDO 고정 램프 규격(기존과 동일).
@@ -497,49 +524,69 @@ void AOJJ_RampFoundation::UpdateSlabVisual()
 	const int32 Rise = PlacedClimbLengthCells > 0 ? PlacedRiseSteps : 1;
 	const int32 Cols = FMath::Max(1, FoundationSize.Y);
 	const float SlabThickness = FMath::Max(1.0f, Thickness);
-
-	// F3.8: 쐐기 우선 — 성공 시 계단 ISM은 비움(인스턴스 0 = 충돌 셰이프 0, 토글 불필요).
 	// F3.8': 확정 step 전달(미확정 에디터 프리뷰 0 — 역회전 항등, 기존 프리뷰와 동일).
 	const int32 Step = PlacedClimbLengthCells > 0 ? PlacedRotationSteps : 0;
-	if (OJJ_BuildWedgeVisual(R, Cols, Rise, CellSize, Step))
-	{
-		if (StepMeshISM)
-		{
-			StepMeshISM->ClearInstances();
-		}
-		return;
-	}
 
-	// 폴백: 기존 계단 박스(쐐기 실패). 쐐기 잔여 정리. Rise 0(평지 브리지)은 의도된 퇴화라 무경고 —
-	// 경고는 비정상 실패(컴포넌트 미생성 등)에만.
+	// 충돌 바디 = 쐐기(시각 OFF, 충돌 유지). Rise<1(평지 브리지)은 쐐기 미생성(false) → Deck이 충돌 담당.
+	const bool bWedgeBuilt = OJJ_BuildWedgeVisual(R, Cols, Rise, CellSize, Step);
 	if (WedgeMesh)
 	{
-		WedgeMesh->ClearAllMeshSections();
-		WedgeMesh->ClearCollisionConvexMeshes();
+		// SetVisibility(false)는 렌더만 끄고 충돌/Visibility 트레이스는 유지 — 커서 스냅/보행 그대로.
+		WedgeMesh->SetVisibility(false);
+		if (!bWedgeBuilt)
+		{
+			WedgeMesh->ClearAllMeshSections();
+			WedgeMesh->ClearCollisionConvexMeshes();
+		}
 	}
-	if (Rise >= 1)
+	// 계단 박스 폴백은 은퇴(Deck가 항상 면을 그림) — 잔여 인스턴스만 정리.
+	if (StepMeshISM)
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[RampFoundation] 쐐기 생성 불가(R=%d, Rise=%d단) — 계단 박스 폴백"), R, Rise);
+		StepMeshISM->ClearInstances();
 	}
-	if (!StepMeshISM)
+
+	if (!SlabMesh || !SlabMesh->GetStaticMesh())
 	{
 		return;
 	}
+	SlabMesh->SetVisibility(true);
+	// 보행은 쐐기 convex가 전담 → Deck은 시각 전용(NoCollision)으로 이중 충돌 회피.
+	// 단 평지 브리지(쐐기 미생성)는 Deck이 보행 충돌도 담당(베이스 프로파일 = Pawn/Visibility Block).
+	SlabMesh->SetCollisionEnabled(bWedgeBuilt ? ECollisionEnabled::NoCollision : ECollisionEnabled::QueryOnly);
 
-	// 로컬 공간 계단: 액터 원점 = 풋프린트 중심, 액터 Z + Thickness = Z_low(낮은 단 상면).
-	// 행 r 박스 상면(로컬) = Thickness + (r/(R−1))×Rise×100 — 등록 SurfaceZ와 동일 산식(시각=데이터
-	// 단일원, Rise=0 평지 브리지는 전 행 동일 = 평판 등록과 일치).
-	// 두께는 Thickness 고정(행 사이 측면 갭은 F2 결정 ⑥ 프로토 수용과 동일 정책).
-	StepMeshISM->ClearInstances();
-	for (int32 r = 0; r < R; ++r)
+	// 경사 기하: 저끝(로컬 −X) Z = 액터Z+Thickness, 고끝(로컬 +X) Z = +Rise×100 — 쐐기 빗변과 동일 평면.
+	// 방향(yaw)은 액터가 90×step 회전(OJJ_BuildController.cpp:1385)하므로 Deck엔 pitch만(이중 yaw 금지).
+	const float L = R * CellSize;
+	const float RiseUU = Rise * AOJJ_Grid::OJJ_FoundationSnapStep;
+	const float Theta = FMath::Atan2(RiseUU, L);                 // 경사각(라디안)
+	const float Hyp = FMath::Sqrt(L * L + RiseUU * RiseUU);      // 빗변 길이 — 틸트 후 수평투영 = L(footprint 정합)
+
+	// Deck를 빗변길이로 스케일(클라임=로컬 +X, 폭=로컬 +Y). 베이스 헬퍼로 평지(미틸트) 변환 산출 후 틸트 합성.
+	FVector Scale, Offset;
+	OJJ_ComputeDeckSlabTransform(SlabMesh->GetStaticMesh(), SlabMeshLocalRotation,
+		Hyp, Cols * CellSize, SlabThickness, Scale, Offset);
+
+	// 평지 변환된 Deck의 상면중심 P=(0,0,Thickness)를 피벗으로 pitch θ만큼 틸트 + 저끝 보정 위로 Rise/2.
+	// 결과: 상면 [−L/2,T]→[+L/2,T+Rise](쐐기 빗변과 일치). +X(고끝)를 위로 = Unreal 양(+) pitch.
+	const FQuat PitchQ(FRotator(FMath::RadiansToDegrees(Theta), 0.0f, 0.0f));
+	const FQuat R0(SlabMeshLocalRotation);
+	const FVector P(0.0f, 0.0f, SlabThickness);
+	const FVector RelLoc = PitchQ.RotateVector(Offset) + P - PitchQ.RotateVector(P)
+		+ FVector(0.0f, 0.0f, RiseUU * 0.5f);
+
+	SlabMesh->SetRelativeRotation((PitchQ * R0).Rotator());
+	SlabMesh->SetRelativeScale3D(Scale);
+	SlabMesh->SetRelativeLocation(RelLoc);
+}
+
+void AOJJ_RampFoundation::UpdateLegVisual()
+{
+	// 램프 4단계 결정: 램프는 다리 없음(Deck 틸트만으로 충분 — 안 깔아도 어색하지 않음).
+	// 베이스 UpdateLegVisual(4모서리 TrussTower 타일링)을 호출하지 않고, 상속 LegISM에 남은
+	// 인스턴스만 정리한다(에디터에서 클래스 전환/재구성 시 잔여 다리 제거). 평지(베이스)는 무영향.
+	if (LegISM)
 	{
-		const float TopLocalZ = SlabThickness
-			+ (R > 1 ? ((float)r / (float)(R - 1)) * Rise * AOJJ_Grid::OJJ_FoundationSnapStep : 0.0f);
-		const FVector StepLocation(
-			(r + 0.5f) * CellSize - R * CellSize * 0.5f, 0.0f, TopLocalZ - SlabThickness * 0.5f);
-		const FVector StepScale(CellSize / 100.0f, Cols * CellSize / 100.0f, SlabThickness / 100.0f);
-		StepMeshISM->AddInstance(FTransform(FRotator::ZeroRotator, StepLocation, StepScale));
+		LegISM->ClearInstances();
 	}
 }
 

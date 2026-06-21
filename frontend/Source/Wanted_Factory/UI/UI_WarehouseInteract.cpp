@@ -17,40 +17,47 @@
 #include "QuestManagerSubsystem.h"
 #include "Blueprint/SlateBlueprintLibrary.h"
 #include "UObject/ConstructorHelpers.h"
+#include "UI/UIInteractDisplayHelpers.h"
 
-namespace
-{
-FText GetResourceDisplayText(const UDataTable* ResourceDataTable, FName ItemName)
-{
-    if (ItemName.IsNone())
-    {
-        return FText::GetEmpty();
-    }
+using namespace UIInteractHelpers;
 
-    if (ResourceDataTable)
-    {
-        if (const FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("GetResourceDisplayText")))
-        {
-            if (!RowData->DisplayName.IsEmpty())
-            {
-                return FText::FromString(RowData->DisplayName);
-            }
-        }
-    }
-
-    return FText::FromName(ItemName);
-}
-
-FText GetMachineDisplayText(UMachineSubsystem* MachineSubsystem, FName MachineTypeName)
-{
-    if (MachineSubsystem)
-    {
-        return MachineSubsystem->GetMachineDisplayName(MachineTypeName);
-    }
-
-    return MachineTypeName.IsNone() ? FText::GetEmpty() : FText::FromName(MachineTypeName);
-}
-}
+// [JJ #296 빌드수정] 이 익명 헬퍼가 두 .cpp(UI_MachineInteract / UI_WarehouseInteract)에
+// 바이트 동일하게 중복돼 unity(jumbo) 빌드 C2084(재정의) 충돌을 일으켰습니다.
+// UI/UIInteractDisplayHelpers.h(namespace UIInteractHelpers)로 추출했습니다.
+// 아래 블록은 확인 후 삭제해도 됩니다(공용 헤더가 대체). — Chan 확인 요망
+// namespace
+// {
+// FText GetResourceDisplayText(const UDataTable* ResourceDataTable, FName ItemName)
+// {
+//     if (ItemName.IsNone())
+//     {
+//         return FText::GetEmpty();
+//     }
+//
+//     if (ResourceDataTable)
+//     {
+//         if (const FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("GetResourceDisplayText")))
+//         {
+//             if (!RowData->DisplayName.IsEmpty())
+//             {
+//                 return FText::FromString(RowData->DisplayName);
+//             }
+//         }
+//     }
+//
+//     return FText::FromName(ItemName);
+// }
+//
+// FText GetMachineDisplayText(UMachineSubsystem* MachineSubsystem, FName MachineTypeName)
+// {
+//     if (MachineSubsystem)
+//     {
+//         return MachineSubsystem->GetMachineDisplayName(MachineTypeName);
+//     }
+//
+//     return MachineTypeName.IsNone() ? FText::GetEmpty() : FText::FromName(MachineTypeName);
+// }
+// }
 
 
 
@@ -114,7 +121,6 @@ void UUI_WarehouseInteract::SetTargetMachine(AMachineBase* InMachine)
 void UUI_WarehouseInteract::NativeConstruct()
 {
     Super::NativeConstruct();
-    if (BTN_Close) BTN_Close->OnClicked.AddDynamic(this, &UUI_WarehouseInteract::OnCloseClicked);
     if (BTN_Repair) BTN_Repair->OnClicked.AddDynamic(this, &UUI_WarehouseInteract::OnRepairClicked);
 }
 
@@ -431,6 +437,5 @@ void UUI_WarehouseInteract::CancelMachineProcess()
 
 void UUI_WarehouseInteract::UpdateMachineName(const FText& MachineName) { if (TXT_MachineName) TXT_MachineName->SetText(MachineName); }
 void UUI_WarehouseInteract::UpdateMachineState(FString StateText, FLinearColor StateColor) { if (TXT_MachineState) { TXT_MachineState->SetText(FText::FromString(StateText)); TXT_MachineState->SetColorAndOpacity(FSlateColor(StateColor)); } }
-void UUI_WarehouseInteract::OnCloseClicked() { RemoveFromParent(); }
 void UUI_WarehouseInteract::OnRepairClicked() { if (TargetMachine) TargetMachine->RepairUsingWarehouse(); }
 void UUI_WarehouseInteract::UpdateDurabilityUI(float CurrentDur, float MaxDur) { if (TXT_DurabilityPercent && PB_Durability) { float SafeMax = (MaxDur > 0.f) ? MaxDur : 100.f; float Percent = FMath::Clamp(CurrentDur / SafeMax, 0.0f, 1.0f); PB_Durability->SetPercent(Percent); FString DurabilityStr = FString::Printf(TEXT("내구도: %d / %d"), FMath::RoundToInt(CurrentDur), FMath::RoundToInt(SafeMax)); TXT_DurabilityPercent->SetText(FText::FromString(DurabilityStr)); } }

@@ -27,6 +27,44 @@ void UUI_MainHUD::NativeConstruct()
             AgentClient->OnAgentErrorReceived.AddDynamic(this, &UUI_MainHUD::HandleOnOperatorGuideError);
         }
     }
+
+    if (GetWorld())
+    {
+        UPlanetEventManagerSubsystem* PlanetManager = GetWorld()->GetSubsystem<UPlanetEventManagerSubsystem>();
+        if (PlanetManager)
+        {
+            PlanetManager->OnWeatherChanged.AddDynamic(this, &UUI_MainHUD::HandleWeatherChanged);
+            PlanetManager->OnPlanetEventStarted.AddDynamic(this, &UUI_MainHUD::HandlePlanetEventStarted);
+            PlanetManager->OnPlanetEventEnded.AddDynamic(this, &UUI_MainHUD::HandlePlanetEventEnded);
+            RefreshWeatherText(PlanetManager->GetWeatherState());
+            RefreshPlanetEventUI(PlanetManager->GetEventState().Type, PlanetManager->GetEventState().Severity);
+        }
+    }
+}
+
+void UUI_MainHUD::NativeDestruct()
+{
+    if (GetWorld())
+    {
+        UPlanetEventManagerSubsystem* PlanetManager = GetWorld()->GetSubsystem<UPlanetEventManagerSubsystem>();
+        if (PlanetManager)
+        {
+            PlanetManager->OnWeatherChanged.RemoveDynamic(this, &UUI_MainHUD::HandleWeatherChanged);
+            PlanetManager->OnPlanetEventStarted.RemoveDynamic(this, &UUI_MainHUD::HandlePlanetEventStarted);
+            PlanetManager->OnPlanetEventEnded.RemoveDynamic(this, &UUI_MainHUD::HandlePlanetEventEnded);
+        }
+    }
+
+    if (UGameInstance* GameInstance = GetGameInstance())
+    {
+        if (UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>())
+        {
+            AgentClient->OnAgentResponseReceived.RemoveDynamic(this, &UUI_MainHUD::HandleOnOperatorGuideResponse);
+            AgentClient->OnAgentErrorReceived.RemoveDynamic(this, &UUI_MainHUD::HandleOnOperatorGuideError);
+        }
+    }
+
+    Super::NativeDestruct();
 }
 
 void UUI_MainHUD::ToggleQuestWindow()
@@ -56,6 +94,94 @@ void UUI_MainHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
                 TXT_InGameTime->SetText(FText::FromString(PlanetManager->GetCurrentTime24String()));
             }
         }
+    }
+}
+
+void UUI_MainHUD::HandleWeatherChanged(const FPlanetWeatherState& WeatherState)
+{
+    RefreshWeatherText(WeatherState);
+}
+
+void UUI_MainHUD::RefreshWeatherText(const FPlanetWeatherState& WeatherState)
+{
+    const TCHAR* WindLabel = TEXT("고요함");
+    if (WeatherState.WindSpeed >= 0.75f)
+    {
+        WindLabel = TEXT("폭풍");
+    }
+    else if (WeatherState.WindSpeed >= 0.5f)
+    {
+        WindLabel = TEXT("강풍");
+    }
+    else if (WeatherState.WindSpeed >= 0.25f)
+    {
+        WindLabel = TEXT("산들바람");
+    }
+
+    const TCHAR* RainLabel = TEXT("맑음");
+    if (WeatherState.Rainfall >= 0.75f)
+    {
+        RainLabel = TEXT("폭우");
+    }
+    else if (WeatherState.Rainfall >= 0.5f)
+    {
+        RainLabel = TEXT("비");
+    }
+    else if (WeatherState.Rainfall > 0.0f)
+    {
+        RainLabel = TEXT("이슬비");
+    }
+
+    if (TXT_WindSpeed)
+    {
+        TXT_WindSpeed->SetText(FText::FromString(WindLabel));
+    }
+
+    if (TXT_Rainfall)
+    {
+        TXT_Rainfall->SetText(FText::FromString(RainLabel));
+    }
+}
+
+void UUI_MainHUD::HandlePlanetEventStarted(EPlanetEventType EventType, float Severity)
+{
+    RefreshPlanetEventUI(EventType, Severity);
+}
+
+void UUI_MainHUD::HandlePlanetEventEnded(EPlanetEventType EventType)
+{
+    RefreshPlanetEventUI(EPlanetEventType::None, 0.0f);
+}
+
+void UUI_MainHUD::RefreshPlanetEventUI(EPlanetEventType EventType, float Severity)
+{
+    if (!TXT_PlanetEvent && !B_PlanetEvent)
+    {
+        return;
+    }
+
+    FString EventText;
+    FLinearColor EventColor = FLinearColor(0.15f, 0.15f, 0.15f, 0.75f);
+    if (EventType == EPlanetEventType::MagneticStorm)
+    {
+        EventText = FString::Printf(TEXT("자기폭풍 발생 %.0f%%"), Severity * 100.0f);
+        EventColor = FLinearColor(0.1f, 0.45f, 0.55f, 0.9f);
+    }
+    else if (EventType == EPlanetEventType::SandStorm)
+    {
+        EventText = FString::Printf(TEXT("모래폭풍 발생 %.0f%%"), Severity * 100.0f);
+        EventColor = FLinearColor(0.55f, 0.34f, 0.12f, 0.9f);
+    }
+
+    if (TXT_PlanetEvent)
+    {
+        TXT_PlanetEvent->SetText(FText::FromString(EventText));
+    }
+
+    if (B_PlanetEvent)
+    {
+        B_PlanetEvent->SetBrushColor(EventColor);
+        B_PlanetEvent->SetVisibility(EventType == EPlanetEventType::None ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
     }
 }
 

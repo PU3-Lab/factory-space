@@ -17,40 +17,47 @@
 #include "Blueprint/SlateBlueprintLibrary.h"
 #include "Components/Border.h"
 #include "UObject/ConstructorHelpers.h"
+#include "UI/UIInteractDisplayHelpers.h"
 
-namespace
-{
-FText GetResourceDisplayText(const UDataTable* ResourceDataTable, FName ItemName)
-{
-    if (ItemName.IsNone())
-    {
-        return FText::GetEmpty();
-    }
+using namespace UIInteractHelpers;
 
-    if (ResourceDataTable)
-    {
-        if (const FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("GetResourceDisplayText")))
-        {
-            if (!RowData->DisplayName.IsEmpty())
-            {
-                return FText::FromString(RowData->DisplayName);
-            }
-        }
-    }
-
-    return FText::FromName(ItemName);
-}
-
-FText GetMachineDisplayText(UMachineSubsystem* MachineSubsystem, FName MachineTypeName)
-{
-    if (MachineSubsystem)
-    {
-        return MachineSubsystem->GetMachineDisplayName(MachineTypeName);
-    }
-
-    return MachineTypeName.IsNone() ? FText::GetEmpty() : FText::FromName(MachineTypeName);
-}
-}
+// [JJ #296 빌드수정] 이 익명 헬퍼가 두 .cpp(UI_MachineInteract / UI_WarehouseInteract)에
+// 바이트 동일하게 중복돼 unity(jumbo) 빌드 C2084(재정의) 충돌을 일으켰습니다.
+// UI/UIInteractDisplayHelpers.h(namespace UIInteractHelpers)로 추출했습니다.
+// 아래 블록은 확인 후 삭제해도 됩니다(공용 헤더가 대체). — Chan 확인 요망
+// namespace
+// {
+// FText GetResourceDisplayText(const UDataTable* ResourceDataTable, FName ItemName)
+// {
+//     if (ItemName.IsNone())
+//     {
+//         return FText::GetEmpty();
+//     }
+//
+//     if (ResourceDataTable)
+//     {
+//         if (const FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("GetResourceDisplayText")))
+//         {
+//             if (!RowData->DisplayName.IsEmpty())
+//             {
+//                 return FText::FromString(RowData->DisplayName);
+//             }
+//         }
+//     }
+//
+//     return FText::FromName(ItemName);
+// }
+//
+// FText GetMachineDisplayText(UMachineSubsystem* MachineSubsystem, FName MachineTypeName)
+// {
+//     if (MachineSubsystem)
+//     {
+//         return MachineSubsystem->GetMachineDisplayName(MachineTypeName);
+//     }
+//
+//     return MachineTypeName.IsNone() ? FText::GetEmpty() : FText::FromName(MachineTypeName);
+// }
+// }
 
 UUI_MachineInteract::UUI_MachineInteract(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
@@ -134,12 +141,7 @@ void UUI_MachineInteract::SetTargetMachine(AMachineBase* InMachine)
 void UUI_MachineInteract::NativeConstruct()
 {
     Super::NativeConstruct();
-
-    if (BTN_Close)
-    {
-        BTN_Close->OnClicked.AddDynamic(this, &UUI_MachineInteract::OnCloseClicked);
-    }
-
+    
     if (BTN_Repair)
     {
         BTN_Repair->OnClicked.AddDynamic(this, &UUI_MachineInteract::OnRepairClicked);
@@ -387,11 +389,6 @@ void UUI_MachineInteract::UpdateMachineName(const FText& MachineName)
     {
         TXT_MachineName->SetText(MachineName);
     }
-}
-
-void UUI_MachineInteract::OnCloseClicked()
-{
-    RemoveFromParent();
 }
 
 void UUI_MachineInteract::OnRepairClicked()

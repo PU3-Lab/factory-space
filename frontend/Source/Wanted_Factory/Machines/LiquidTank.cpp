@@ -12,7 +12,6 @@ ALiquidTank::ALiquidTank()
 	PrimaryActorTick.bCanEverTick = true;
 
 	MachineType = TEXT("LiquidTank");
-	SelectedOutputLiquidID = TEXT("water");
 	bNeedPower = false;
 	bDisableWhenBroken = true;
 	InputPortCount = 1;
@@ -60,22 +59,14 @@ void ALiquidTank::SetSelectedOutputLiquid(FName ItemID)
 FName ALiquidTank::GetStoredLiquidID() const
 {
 	const UPlayerWarehouseSubsystem* Warehouse = GetWarehouse();
-	if (!Warehouse)
+	if (!Warehouse || SelectedOutputLiquidID.IsNone())
 	{
 		return NAME_None;
 	}
 
-	if (!SelectedOutputLiquidID.IsNone() && Warehouse->GetItemCount(SelectedOutputLiquidID) > 0)
+	if (Warehouse->GetItemCount(SelectedOutputLiquidID) > 0)
 	{
 		return SelectedOutputLiquidID;
-	}
-
-	for (const TPair<FName, int32>& Pair : Warehouse->GetStoredItems())
-	{
-		if (!Pair.Key.IsNone() && Pair.Value > 0 && IsLiquidItem(Pair.Key))
-		{
-			return Pair.Key;
-		}
 	}
 
 	return NAME_None;
@@ -186,11 +177,6 @@ bool ALiquidTank::StoreLiquid(FName ItemID, int32 Count)
 	if (!Warehouse || !Warehouse->AddItem(ItemID, Count))
 	{
 		return false;
-	}
-
-	if (SelectedOutputLiquidID.IsNone())
-	{
-		SelectedOutputLiquidID = ItemID;
 	}
 
 	SyncDisplayedBuffer();

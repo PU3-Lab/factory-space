@@ -24,7 +24,6 @@ protected:
     UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_MachineState;
     UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_DurabilityPercent;
     UPROPERTY(meta = (BindWidget)) class UProgressBar* PB_Durability;
-    UPROPERTY(meta = (BindWidget)) class UButton* BTN_Close;
     UPROPERTY(meta = (BindWidget)) class UButton* BTN_Repair;
 
     // 출력(보관함) UI들
@@ -54,8 +53,6 @@ protected:
     void UpdateMachineState(FString StateText, FLinearColor StateColor);
     void UpdateDurabilityUI(float CurrentDurability, float MaxDurability);
     void UpdateCraftingProgress(float Percent);
-    
-    UFUNCTION() void OnCloseClicked();
     UFUNCTION() void OnRepairClicked();
 
     // 드래그 앤 드롭 수용

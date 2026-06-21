@@ -226,6 +226,7 @@ private:
 
 	void SupplyPowerToComponent(
 		const TArray<APowerGridNode*>& ComponentNodes,
+		TMap<AMachineBase*, float>& DesiredConsumerPower,
 		TSet<AMachineBase*>& SuppliedConsumers,
 		TSet<AMachineBase*>& UsedGenerators);
 

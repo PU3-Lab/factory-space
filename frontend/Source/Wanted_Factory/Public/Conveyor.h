@@ -66,6 +66,9 @@ protected:
 	TObjectPtr<UInstancedStaticMeshComponent> ItemVisualInstances;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Components")
+	TObjectPtr<UInstancedStaticMeshComponent> FlowArrowInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Components")
 	TObjectPtr<UTextRenderComponent> DebugStateText;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Grid", meta = (ClampMin = "1.0"))
@@ -79,6 +82,39 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
 	float ZOffset = 6.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
+	bool bShowFlowArrows = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual", meta = (ClampMin = "0.01"))
+	float FlowArrowScale = 0.18f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual", meta = (ClampMin = "0.0"))
+	float FlowArrowHeightOffset = 18.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual", meta = (ClampMin = "1"))
+	int32 FlowArrowSpacing = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual", meta = (ClampMin = "0.01"))
+	float FlowArrowStepInterval = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
+	FLinearColor IdleFlowArrowColor = FLinearColor(0.65f, 0.65f, 0.65f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
+	FLinearColor WorkingFlowArrowColor = FLinearColor(0.1f, 1.0f, 0.2f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
+	FLinearColor NoPowerFlowArrowColor = FLinearColor(1.0f, 0.75f, 0.1f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
+	FLinearColor BlockedFlowArrowColor = FLinearColor(1.0f, 0.15f, 0.1f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual")
+	FLinearColor DisabledFlowArrowColor = FLinearColor(0.2f, 0.2f, 0.2f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual", meta = (ClampMin = "0.0"))
+	float FlowArrowEmissiveStrength = 40.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual", meta = (ClampMin = "0.01"))
 	float ItemVisualScaleRatio = 0.28f;
@@ -163,7 +199,7 @@ protected:
 	bool bAutoMoveItems = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Debug")
-	bool bShowDebugStateText = true;
+	bool bShowDebugStateText = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Debug")
 	FVector DebugTextOffset = FVector(0.0f, 0.0f, 90.0f);
@@ -179,6 +215,12 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UDataTable> ResourceTable;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> FlowArrowMaterialInstance;
+
+	UPROPERTY(Transient)
+	int32 LastFlowArrowPhase = INDEX_NONE;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMesh> PowderVisualMesh;
@@ -248,6 +290,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Conveyor|Items")
 	AMachineBase* GetTargetMachine() const { return TargetMachine.Get(); }
 
+	const TArray<FName>& GetItemSlotsForSave() const { return ItemSlots; }
+	void ApplyItemSlotsForSave(const TArray<FName>& SavedItemSlots);
+	bool RefundItemsToWarehouse();
+
 private:
 	void RebuildVisuals();
 	void ResetItemSlots();
@@ -282,4 +328,6 @@ private:
 	bool HasVisibleItems() const;
 	FVector GetDebugTextLocalLocation() const;
 	FString BuildMovingItemSummary() const;
+	int32 GetFlowArrowPhase() const;
+	void UpdateFlowArrowMaterial();
 };

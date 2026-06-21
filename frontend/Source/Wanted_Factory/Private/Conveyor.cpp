@@ -15,12 +15,37 @@
 #include "Materials/MaterialInterface.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "PlayerWarehouseSubsystem.h"
 #include "Resource/ResourceData.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace
 {
+FLinearColor ResolveMachineStateColor(
+	EMachineState State,
+	const FLinearColor& IdleColor,
+	const FLinearColor& WorkingColor,
+	const FLinearColor& NoPowerColor,
+	const FLinearColor& BlockedColor,
+	const FLinearColor& DisabledColor)
+{
+	switch (State)
+	{
+	case EMachineState::Working:
+		return WorkingColor;
+	case EMachineState::NoPower:
+		return NoPowerColor;
+	case EMachineState::Blocked:
+		return BlockedColor;
+	case EMachineState::Disabled:
+		return DisabledColor;
+	case EMachineState::Idle:
+	default:
+		return IdleColor;
+	}
+}
+
 FIntPoint GetStepDirection(FIntPoint From, FIntPoint To)
 {
 	const int32 DeltaX = To.X - From.X;
@@ -107,6 +132,12 @@ AConveyor::AConveyor()
 	ItemVisualInstances->SetCastShadow(false);
 	ItemVisualInstances->SetVisibleInRayTracing(false);
 
+	FlowArrowInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("FlowArrowInstances"));
+	FlowArrowInstances->SetupAttachment(Root);
+	FlowArrowInstances->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	FlowArrowInstances->SetCastShadow(false);
+	FlowArrowInstances->SetVisibleInRayTracing(false);
+
 	DebugStateText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("DebugStateText"));
 	DebugStateText->SetupAttachment(Root);
 	DebugStateText->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -127,6 +158,7 @@ AConveyor::AConveyor()
 	if (ConeMesh.Succeeded())
 	{
 		PowderVisualMesh = ConeMesh.Object;
+		FlowArrowInstances->SetStaticMesh(ConeMesh.Object);
 	}
 
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> MaterialAsset(
@@ -136,8 +168,15 @@ AConveyor::AConveyor()
 		StraightSegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		CornerSegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		ItemVisualInstances->SetMaterial(0, MaterialAsset.Object);
+		FlowArrowMaterialInstance = UMaterialInstanceDynamic::Create(MaterialAsset.Object, this);
+		if (FlowArrowMaterialInstance)
+		{
+			FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
+		}
 		PowderVisualMaterialBase = MaterialAsset.Object;
 	}
+
+	UpdateFlowArrowMaterial();
 
 	static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
 		TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData"));
@@ -151,7 +190,15 @@ void AConveyor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	const int32 CurrentFlowArrowPhase = GetFlowArrowPhase();
+	if (CurrentFlowArrowPhase != LastFlowArrowPhase)
+	{
+		LastFlowArrowPhase = CurrentFlowArrowPhase;
+		RebuildVisuals();
+	}
+
 	RefreshItemVisualInstances();
+	UpdateFlowArrowMaterial();
 	if (bShowDebugStateText)
 	{
 		UpdateDebugTextFacingPlayer();
@@ -162,8 +209,10 @@ void AConveyor::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 
+	LastFlowArrowPhase = GetFlowArrowPhase();
 	RebuildVisuals();
 	RefreshItemVisualInstances();
+	UpdateFlowArrowMaterial();
 	UpdateDebugStateText();
 	UpdateDebugTextFacingPlayer();
 }
@@ -180,8 +229,10 @@ void AConveyor::BeginPlay()
 		}
 	}
 
+	LastFlowArrowPhase = GetFlowArrowPhase();
 	RestartItemMoveTimer();
 	RefreshItemVisualInstances();
+	UpdateFlowArrowMaterial();
 	UpdateDebugTextFacingPlayer();
 }
 
@@ -285,9 +336,11 @@ void AConveyor::ConfigureTransport(
 
 	SourceMachine = NewSourceMachine;
 	TargetMachine = NewTargetMachine;
+	LastFlowArrowPhase = GetFlowArrowPhase();
 	ResetItemSlots();
 	RestartItemMoveTimer();
 	RefreshItemVisualInstances();
+	UpdateFlowArrowMaterial();
 	UpdateDebugStateText();
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -314,6 +367,7 @@ void AConveyor::ClearPath()
 	OccupiedGridCells.Reset();
 	SourceMachine.Reset();
 	TargetMachine.Reset();
+	LastFlowArrowPhase = GetFlowArrowPhase();
 	ItemSlots.Reset();
 	PreviousItemSlots.Reset();
 	ItemVisualIds.Reset();
@@ -335,6 +389,7 @@ void AConveyor::ClearPath()
 	StopItemMoveTimer();
 	RebuildVisuals();
 	RefreshItemVisualInstances();
+	UpdateFlowArrowMaterial();
 	UpdateDebugStateText();
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -444,6 +499,10 @@ void AConveyor::RebuildVisuals()
 	{
 		CornerSegmentInstances->ClearInstances();
 	}
+	if (FlowArrowInstances)
+	{
+		FlowArrowInstances->ClearInstances();
+	}
 
 	if (!StraightSegmentInstances || !CornerSegmentInstances || PathCells.Num() == 0)
 	{
@@ -496,6 +555,30 @@ void AConveyor::RebuildVisuals()
 			(CurrentCell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
 			(CurrentCell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
 			ZOffset + OJJ_GetPathCellLocalZByIndex(Index));
+
+		const int32 ArrowSpacing = FMath::Max(1, FlowArrowSpacing);
+		const int32 ArrowPhase = ArrowSpacing > 1 ? GetFlowArrowPhase() % ArrowSpacing : 0;
+		if (FlowArrowInstances
+			&& bShowFlowArrows
+			&& VisualDirection != FIntPoint::ZeroValue
+			&& (Index % ArrowSpacing) == ArrowPhase)
+		{
+			const float ArrowDeltaZ = bHasNext
+				? (OJJ_GetPathCellLocalZByIndex(Index + 1) - OJJ_GetPathCellLocalZByIndex(Index))
+				: (OJJ_GetPathCellLocalZByIndex(Index) - OJJ_GetPathCellLocalZByIndex(Index - 1));
+			const FVector ArrowDirection(
+				static_cast<float>(VisualDirection.X) * CellSize,
+				static_cast<float>(VisualDirection.Y) * CellSize,
+				ArrowDeltaZ);
+			const FVector SafeArrowDirection = ArrowDirection.GetSafeNormal();
+			if (!SafeArrowDirection.IsNearlyZero())
+			{
+				const FVector ArrowLocation = LocalLocation + FVector(0.0f, 0.0f, SegmentHeight + FlowArrowHeightOffset);
+				const FRotator ArrowRotation = FRotationMatrix::MakeFromZ(SafeArrowDirection).Rotator();
+				FlowArrowInstances->AddInstance(
+					FTransform(ArrowRotation, ArrowLocation, FVector(FMath::Max(0.01f, FlowArrowScale))));
+			}
+		}
 
 		if (bIsCorner)
 		{
@@ -562,6 +645,68 @@ void AConveyor::ResetItemSlots()
 	LastItemMoveWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
 	NextItemVisualId = 1;
 	DepartingVisuals.Reset();
+}
+
+void AConveyor::ApplyItemSlotsForSave(const TArray<FName>& SavedItemSlots)
+{
+	ItemSlots = SavedItemSlots;
+	PreviousItemSlots = ItemSlots;
+	ItemVisualIds.SetNum(ItemSlots.Num());
+	PreviousItemVisualIds.SetNum(ItemSlots.Num());
+
+	for (int32 Index = 0; Index < ItemSlots.Num(); ++Index)
+	{
+		ItemVisualIds[Index] = ItemSlots[Index].IsNone() ? INDEX_NONE : NextItemVisualId++;
+		PreviousItemVisualIds[Index] = ItemVisualIds[Index];
+	}
+
+	DepartingVisuals.Reset();
+	LastItemMoveWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastItemMoveWorldTime;
+	RefreshItemVisualInstances();
+	UpdateDebugStateText();
+}
+
+bool AConveyor::RefundItemsToWarehouse()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>()
+		: nullptr;
+	if (!WarehouseSubsystem)
+	{
+		return false;
+	}
+
+	TMap<FName, int32> RefundedItems;
+	for (const FName& ItemId : ItemSlots)
+	{
+		if (!ItemId.IsNone())
+		{
+			RefundedItems.FindOrAdd(ItemId)++;
+		}
+	}
+
+	if (RefundedItems.Num() == 0)
+	{
+		return true;
+	}
+
+	for (const TPair<FName, int32>& Item : RefundedItems)
+	{
+		WarehouseSubsystem->AddItem(Item.Key, Item.Value);
+	}
+
+	for (FName& ItemSlot : ItemSlots)
+	{
+		ItemSlot = NAME_None;
+	}
+	PreviousItemSlots = ItemSlots;
+	ItemVisualIds.Init(INDEX_NONE, ItemSlots.Num());
+	PreviousItemVisualIds = ItemVisualIds;
+	DepartingVisuals.Reset();
+	RefreshItemVisualInstances();
+	UpdateDebugStateText();
+	return true;
 }
 
 void AConveyor::RestartItemMoveTimer()
@@ -1121,6 +1266,101 @@ bool AConveyor::HasVisibleItems() const
 	}
 
 	return false;
+}
+
+int32 AConveyor::GetFlowArrowPhase() const
+{
+	const int32 ArrowSpacing = FMath::Max(1, FlowArrowSpacing);
+	if (ArrowSpacing <= 1)
+	{
+		return 0;
+	}
+
+	const UWorld* World = GetWorld();
+	const float Interval = FMath::Max(0.01f, FlowArrowStepInterval);
+	const float WorldTime = World ? World->GetTimeSeconds() : 0.0f;
+	return FMath::FloorToInt(WorldTime / Interval) % ArrowSpacing;
+}
+
+void AConveyor::UpdateFlowArrowMaterial()
+{
+	if (!FlowArrowMaterialInstance)
+	{
+		if (UMaterialInstanceDynamic* ExistingMID =
+			Cast<UMaterialInstanceDynamic>(FlowArrowInstances ? FlowArrowInstances->GetMaterial(0) : nullptr))
+		{
+			FlowArrowMaterialInstance = ExistingMID;
+		}
+	}
+
+	if (!FlowArrowMaterialInstance)
+	{
+		UMaterialInterface* BaseMaterial = FlowArrowInstances ? FlowArrowInstances->GetMaterial(0) : nullptr;
+		if (BaseMaterial)
+		{
+			BaseMaterial = BaseMaterial->GetMaterial();
+		}
+		if (!BaseMaterial)
+		{
+			BaseMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
+		}
+		FlowArrowMaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
+		if (FlowArrowMaterialInstance && FlowArrowInstances)
+		{
+			FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
+		}
+	}
+
+	if (!FlowArrowMaterialInstance)
+	{
+		return;
+	}
+
+	FLinearColor FlowArrowColor = IdleFlowArrowColor;
+	if ((SourceMachine.IsValid() && SourceMachine->GetMachineState() == EMachineState::Disabled)
+		|| (TargetMachine.IsValid() && TargetMachine->GetMachineState() == EMachineState::Disabled))
+	{
+		FlowArrowColor = DisabledFlowArrowColor;
+	}
+	else if ((SourceMachine.IsValid() && SourceMachine->GetMachineState() == EMachineState::NoPower)
+		|| (TargetMachine.IsValid() && TargetMachine->GetMachineState() == EMachineState::NoPower))
+	{
+		FlowArrowColor = NoPowerFlowArrowColor;
+	}
+	else if (IsOutputBlocked())
+	{
+		FlowArrowColor = BlockedFlowArrowColor;
+	}
+	else if (HasVisibleItems()
+		|| DepartingVisuals.Num() > 0
+		|| (SourceMachine.IsValid() && SourceMachine->GetMachineState() == EMachineState::Working)
+		|| (TargetMachine.IsValid() && TargetMachine->GetMachineState() == EMachineState::Working))
+	{
+		FlowArrowColor = WorkingFlowArrowColor;
+	}
+	else if (SourceMachine.IsValid())
+	{
+		FlowArrowColor = ResolveMachineStateColor(
+			SourceMachine->GetMachineState(),
+			IdleFlowArrowColor,
+			WorkingFlowArrowColor,
+			NoPowerFlowArrowColor,
+			BlockedFlowArrowColor,
+			DisabledFlowArrowColor);
+	}
+
+	FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("Color"), FlowArrowColor);
+	FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), FlowArrowColor);
+	FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("Tint"), FlowArrowColor);
+	FlowArrowMaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), FlowArrowColor);
+	FlowArrowMaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), FlowArrowEmissiveStrength);
+	FlowArrowMaterialInstance->SetScalarParameterValue(TEXT("Opacity"), FlowArrowColor.A);
+	FlowArrowMaterialInstance->SetScalarParameterValue(TEXT("Alpha"), FlowArrowColor.A);
+	if (FlowArrowInstances)
+	{
+		FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
+		FlowArrowInstances->MarkRenderStateDirty();
+	}
 }
 
 FVector AConveyor::GetPathCentroidLocal() const

@@ -5,6 +5,8 @@
 
 #include "Camera/CameraComponent.h"
 #include "FactoryAgentClientSubsystem.h"
+#include "FactorySaveSubsystem.h"
+#include "PlanetEventManagerSubsystem.h"
 #include "QuestManagerSubsystem.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -28,6 +30,7 @@
 #include "Blueprint/UserWidget.h"
 #include "MachineBase.h"
 #include "UI/UI_MachineInteract.h"
+#include "UI/UI_BuildModeMain.h"
 #include "UI/UI_MainHUD.h"
 #include "UI/UI_Inventory.h"
 #include "UI/UI_WarehouseInteract.h"
@@ -149,6 +152,11 @@ void AOJJ_Player::BeginPlay()
 		{
 			QuestManager->StartTutorialQuestTest();
 		}
+
+		if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+		{
+			SaveSubsystem->HandlePlayerReady(this);
+		}
 	}
 	
 	ConnectFactoryAgentClient();
@@ -164,6 +172,14 @@ void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	// 등반/step-off 중 폰 파괴·언포제스 시 비행/중력0 상태가 남지 않도록 청산(폰 재사용 안전).
 	AbortClimb();
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+		{
+			SaveSubsystem->SaveCurrentGame();
+		}
+	}
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -252,66 +268,9 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 		UE_LOG(LogTemp, Warning,
 			TEXT("[OJJ_Player] IA_BuildPlace 미할당 — 배치(좌클릭) 비활성. BP_OJJ_Player에 IA_BuildPlace 에셋 할당 필요."));
 	}
-	if (IA_SetMachineMode)
-	{
-		EnhancedInput->BindAction(IA_SetMachineMode, ETriggerEvent::Started, this, &AOJJ_Player::SetMachineMode);
-	}
-	if (IA_SetConveyorMode)
-	{
-		EnhancedInput->BindAction(IA_SetConveyorMode, ETriggerEvent::Started, this, &AOJJ_Player::SetConveyorMode);
-	}
-	if (IA_SetPipeMode)
-	{
-		EnhancedInput->BindAction(IA_SetPipeMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPipeMode);
-	}
-	if (IA_SetTankMode)
-	{
-		EnhancedInput->BindAction(IA_SetTankMode, ETriggerEvent::Started, this, &AOJJ_Player::SetTankMode);
-	}
-	if (IA_SetFoundationMode)
-	{
-		EnhancedInput->BindAction(IA_SetFoundationMode, ETriggerEvent::Started, this, &AOJJ_Player::SetFoundationMode);
-	}
-	if (IA_SetRampMode)
-	{
-		EnhancedInput->BindAction(IA_SetRampMode, ETriggerEvent::Started, this, &AOJJ_Player::SetRampFoundationMode);
-	}
-	if (IA_SetPowerNodeMode)
-	{
-		EnhancedInput->BindAction(IA_SetPowerNodeMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerNodeMode);
-	}
-	if (IA_SetShieldMode)
-	{
-		EnhancedInput->BindAction(IA_SetShieldMode, ETriggerEvent::Started, this, &AOJJ_Player::SetShieldMode);
-	}
-	if (IA_SetPowerLineMode)
-	{
-		EnhancedInput->BindAction(IA_SetPowerLineMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerLineMode);
-	}
-	if (IA_SetPowerPlantMode)
-	{
-		EnhancedInput->BindAction(IA_SetPowerPlantMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPowerPlantMode);
-	}
-	if (IA_SetGrinderMode)
-	{
-		EnhancedInput->BindAction(IA_SetGrinderMode, ETriggerEvent::Started, this, &AOJJ_Player::SetGrinderMode);
-	}
-	if (IA_SetMinerMode)
-	{
-		EnhancedInput->BindAction(IA_SetMinerMode, ETriggerEvent::Started, this, &AOJJ_Player::SetMinerMode);
-	}
-	if (IA_SetPumpMode)
-	{
-		EnhancedInput->BindAction(IA_SetPumpMode, ETriggerEvent::Started, this, &AOJJ_Player::SetPumpMode);
-	}
-	if (IA_SetSmelterMode)
-	{
-		EnhancedInput->BindAction(IA_SetSmelterMode, ETriggerEvent::Started, this, &AOJJ_Player::SetSmelterMode);
-	}
-	if (IA_SetWarehouseMode)
-	{
-		EnhancedInput->BindAction(IA_SetWarehouseMode, ETriggerEvent::Started, this, &AOJJ_Player::SetWarehouseMode);
-	}
+	// [옛 빌드 입력 경로 전수 정리] Machine/Conveyor/Pipe/Tank/PowerNode/Shield/PowerLine/PowerPlant/
+	// Grinder/Miner/Pump/Smelter/Warehouse 직행 IA BindAction은 카테고리 숫자키 슬롯이 완전 대체하여 제거.
+	// 철거(Demolish)는 X 직행키로 유지.
 	if (IA_SetDemolishMode)
 	{
 		EnhancedInput->BindAction(IA_SetDemolishMode, ETriggerEvent::Started, this, &AOJJ_Player::SetDemolishMode);
@@ -341,15 +300,32 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
 	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
-	PlayerInputComponent->BindKey(EKeys::Enter, IE_Pressed, this, &AOJJ_Player::TriggerTutorialDialogueReveal);
-	PlayerInputComponent->BindKey(EKeys::O, IE_Pressed, this, &AOJJ_Player::SetMoldingMachineModeShortcut);
-	PlayerInputComponent->BindKey(EKeys::P, IE_Pressed, this, &AOJJ_Player::SetSynthesizerModeShortcut);
-	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &AOJJ_Player::SetTeleCommunicationTowerModeShortcut);
+	PlayerInputComponent->BindKey(EKeys::Period, IE_Pressed, this, &AOJJ_Player::TriggerTutorialDialogueReveal);
+	// [옛 빌드 입력 경로 전수 정리] O(성형)/P(합성)/T(통신) 직행 BindKey는 카테고리 숫자키 슬롯이 완전 대체하여 제거.
+	// 콘솔 SetBuildMode tower(통신탑)는 계속 동작.
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AOJJ_Player::SetDemolishModeShortcut);
-	// [#184] C — 사다리 빌드 서브모드(레거시 BindKey, 핸들러에서 IsInBuildMode 가드. IMC 정석 전환은 후속 IMC 정리 때).
-	PlayerInputComponent->BindKey(EKeys::C, IE_Pressed, this, &AOJJ_Player::SetLadderModeShortcut);
-	// Foundation G/H는 #196에서 Enhanced Input(IA_SetFoundationMode/IA_SetRampMode)로 전환 —
-	// 레거시 BindKey 제거(이중발화 차단). 바인딩은 위 BindAction 블록 + IMC_Build/BP 매핑(에디터).
+	// [공용키] 카테고리 무관 — 빌드모드 중 항상 동작. 전부 레거시 BindKey + 핸들러 IsInBuildMode 가드.
+	// 옛 IA_SetFoundationMode(G)/IA_SetRampMode(H) IMC 매핑·IA 에셋은 폐기됨(F/G로 환원).
+	// ⚠️ F는 IA_Interact(머신 상호작용)와 공유 — 빌드모드 중=Foundation, 밖=Interact. 상호배타는
+	// SetFoundationModeShortcut(IsInBuildMode 요구)와 OnInteract(IsInBuildMode면 early-return)의 역가드에 의존.
+	PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AOJJ_Player::SetFoundationModeShortcut);     // 평면 플랫폼
+	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AOJJ_Player::SetRampFoundationModeShortcut); // 경사면
+	PlayerInputComponent->BindKey(EKeys::H, IE_Pressed, this, &AOJJ_Player::SetLadderModeShortcut);         // 사다리(기존 C에서 이동)
+	PlayerInputComponent->BindKey(EKeys::Z, IE_Pressed, this, &AOJJ_Player::CancelPlacementShortcut);       // 마우스 초기화(취소)
+
+	// [카테고리 숫자키] 1~9,0 → 현재 카테고리(LDJ UI_BuildModeMain)의 N번 슬롯 실행. 0키=10번 슬롯.
+	// 참고: 옛 직행 IA BindAction(IA_SetMachineMode 등)은 C++에서 폐기됨 → 에디터에 남은 IMC_Build 매핑은
+	//      바인딩이 없어 무동작(이중 발화 없음). 에디터 잔여 매핑 청소는 UI 담당 후속(정책상 .uasset 미변경).
+	PlayerInputComponent->BindKey(EKeys::One,   IE_Pressed, this, &AOJJ_Player::SetHotbarSlot1);
+	PlayerInputComponent->BindKey(EKeys::Two,   IE_Pressed, this, &AOJJ_Player::SetHotbarSlot2);
+	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &AOJJ_Player::SetHotbarSlot3);
+	PlayerInputComponent->BindKey(EKeys::Four,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot4);
+	PlayerInputComponent->BindKey(EKeys::Five,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot5);
+	PlayerInputComponent->BindKey(EKeys::Six,   IE_Pressed, this, &AOJJ_Player::SetHotbarSlot6);
+	PlayerInputComponent->BindKey(EKeys::Seven, IE_Pressed, this, &AOJJ_Player::SetHotbarSlot7);
+	PlayerInputComponent->BindKey(EKeys::Eight, IE_Pressed, this, &AOJJ_Player::SetHotbarSlot8);
+	PlayerInputComponent->BindKey(EKeys::Nine,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot9);
+	PlayerInputComponent->BindKey(EKeys::Zero,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot10); // 0키 = 10번 슬롯
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -443,6 +419,11 @@ void AOJJ_Player::BeginClimb(AOJJ_Ladder* Ladder)
 	UE_LOG(LogTemp, Verbose, TEXT("[Climb] BeginClimb Bottom=%.1f Top=%.1f"),
 		Ladder->GetClimbBottomZ(), Ladder->GetClimbTopZ());
 
+	// 사다리 마주보게 1회 정렬: 캐릭터는 사다리 바깥쪽에 서서 안쪽(GetStepOffDirection=+X, 벽/Foundation)을
+	// 바라봐야 한다. yaw만(pitch/roll 0). 메시/애니 방향 보정은 LadderFacingYawOffset(PIE 튜닝)로 더한다.
+	const float FaceYaw = Ladder->GetStepOffDirection().Rotation().Yaw + LadderFacingYawOffset;
+	SetActorRotation(FRotator(0.f, FaceYaw, 0.f));
+
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		// 중력 끄고 비행 모드로 수직 이동. 키를 떼면 빠르게 멈춰 사다리에서 호버하도록 제동 강하게.
@@ -451,6 +432,9 @@ void AOJJ_Player::BeginClimb(AOJJ_Ladder* Ladder)
 		Movement->MaxFlySpeed = ClimbSpeed;
 		Movement->BrakingDecelerationFlying = 2048.f;
 		Movement->StopMovementImmediately();
+		// 등반 중엔 수직 이동만이라 OrientRotationToMovement가 yaw를 못 잡는다(XY 0). 위 사다리-facing이
+		// 흔들리지 않게 끄고, EndClimb/AbortClimb에서 걷기용으로 복원한다.
+		Movement->bOrientRotationToMovement = false;
 	}
 }
 
@@ -514,6 +498,7 @@ void AOJJ_Player::ResumeWalkingWithCooldown()
 		Movement->GravityScale = 1.f;
 		Movement->StopMovementImmediately();
 		Movement->SetMovementMode(MOVE_Walking);
+		Movement->bOrientRotationToMovement = true; // 등반 중 끈 것 복원(걷기 방향 회전 정상화)
 	}
 
 	// 재진입 쿨다운 개시 — step-off로 상면에 올라간 직후 같은 트리거에 다시 잡히는 진동 차단.
@@ -528,14 +513,17 @@ void AOJJ_Player::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	// 안전망: 등반 중 표시인데 사다리가 사라졌으면(파괴/GC로 CurrentLadder=null) 걷기 복귀 — 비행/중력0 고착 방지.
-	if (bClimbing && !CurrentLadder)
+	// 사다리 파괴/invalid(pending-kill 포함) 시에도 강제 청산 — AbortClimb이 Flying 해제 + GravityScale 복원 +
+	// bOrientRotationToMovement=true(BeginClimb에서 끈 것) 복원을 보장한다. TObjectPtr는 weak 아니라 stale 가능 →
+	// 단순 null 체크론 부족(IsValid). 누락 시 등반 중 끈 회전이 영구 고착되어 걸어도 안 돌게 됨.
+	if (bClimbing && !IsValid(CurrentLadder))
 	{
 		AbortClimb();
 	}
 
 	// [#184] 등반 중 X/Y를 사다리 등반 면으로 '부드럽게' 당김(즉시 SetActorLocation은 멀리서 시작 시 순간이동
 	// → VInterpTo). Z는 등반(비행 수직)이 전담하므로 현재 Z 유지. 가까이서 W로 시작하면 거의 즉시 붙음.
-	if (bClimbing && CurrentLadder)
+	if (bClimbing && IsValid(CurrentLadder))
 	{
 		const FVector Cur = GetActorLocation();
 		const FVector Face = OJJ_GetClimbFaceLocation(CurrentLadder, Cur.Z);
@@ -711,11 +699,19 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 
 		if (BuildCamera && BuildController)
 		{
-			// 진입할 때마다 그리드 중심으로 카메라 재배치 — 그리드가 동적으로 커져도 매 진입 시 맞춰짐.
-			// XY/Z만 이동(회전은 보존). SpringArm pitch/arm이 높이·거리 담당.
+			// 진입 시 1회: 카메라 XY = 플레이어 현재 위치, Z = 그리드 평면(GetGridCenter().Z).
+			// "선 데에서 빌드" — B 누른 순간 플레이어 위로 탑다운 배치. 빌드 중 추종 아님(WASD 패닝/QE 회전으로 이동).
+			// Z를 그리드 평면에 고정해 플레이어가 높은 Foundation 위여도 탑다운 거리(화면 스케일) 일정.
+			// 회전은 보존 — SpringArm pitch/arm이 높이·거리 담당.
 			if (const AOJJ_Grid* Grid = BuildController->GetTargetGrid())
 			{
-				BuildCamera->SetActorLocation(Grid->GetGridCenter());
+				const FVector PlayerLoc = GetActorLocation();
+				// 플레이어가 그리드 placement 범위 안이면 그 위로(선 데서 빌드), 밖이면 그리드 센터로 폴백.
+				// off-grid 진입 시 커서가 무효 셀에서 시작해 hover/place가 막히는 것 방지(Codex 리뷰 2026-06-19).
+				const FVector AnchorXY = Grid->IsValidGridCell(Grid->WorldToGrid(PlayerLoc))
+					? PlayerLoc : Grid->GetGridCenter();
+				const FVector CamLoc(AnchorXY.X, AnchorXY.Y, Grid->GetGridCenter().Z);
+				BuildCamera->SetActorLocation(CamLoc);
 			}
 		}
 		if (PC && BuildCamera)
@@ -835,55 +831,10 @@ void AOJJ_Player::BuildPlaceCanceled(const FInputActionValue& Value)
 	BuildController->CancelPowerLineDrag();
 }
 
-void AOJJ_Player::SetMachineMode(const FInputActionValue& Value)
+void AOJJ_Player::SetBuildMode(const FString& ModeName)
 {
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Machine);
-}
-
-void AOJJ_Player::SetConveyorMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Conveyor);
-
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
-		{
-			QuestManager->NotifyTutorialEvent(TEXT("SelectConveyorMode"));
-		}
-	}
-}
-
-void AOJJ_Player::SetPipeMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pipe);
-}
-
-// 물탱크 모드 직행(K키 — F4-4, IA 경로). 파이프 핸들러 미러 — 콘솔 OJJ_SetBuildMode tank와 동일 위임.
-void AOJJ_Player::SetTankMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::LiquidTank);
-}
-
-void AOJJ_Player::OJJ_SetBuildMode(const FString& ModeName)
-{
-	// [임시 진입로] 콘솔 exec — IA/UI 미와이어링 모드(pipe/tank) 전용. 빌드모드 여부는 검사하지
-	// 않음 — 기존 모드 키(SetConveyorMode 등)와 동일 정책(빌드모드 밖 호출 = 다음 진입 모드 예약).
+	// [임시 진입로] 콘솔 exec — IA/UI 미와이어링 모드(pipe/tank/tower) 전용. 빌드모드 여부는 검사하지
+	// 않음(빌드모드 밖 호출 = 다음 진입 모드 예약). SetPlacementMode 직접 위임이라 직행키/슬롯 경로와 독립.
 	if (!BuildController)
 	{
 		return;
@@ -903,149 +854,8 @@ void AOJJ_Player::OJJ_SetBuildMode(const FString& ModeName)
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] OJJ_SetBuildMode: unknown mode '%s' (pipe|tank|tower)"), *ModeName);
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] SetBuildMode: unknown mode '%s' (pipe|tank|tower)"), *ModeName);
 	}
-}
-
-void AOJJ_Player::SetPowerNodeMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerNode);
-
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
-		{
-			QuestManager->NotifyTutorialEvent(TEXT("SelectPowerNodeMode"));
-		}
-	}
-}
-
-void AOJJ_Player::SetShieldMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Shield);
-}
-
-// 전선 드래그 모드 진입만 추가 — 드래그 로직(BeginPowerLineDrag/CommitPowerLineDrag)은 팀원 구현 무수정.
-void AOJJ_Player::SetPowerLineMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerLine);
-
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
-		{
-			QuestManager->NotifyTutorialEvent(TEXT("SelectPowerLineMode"));
-		}
-	}
-}
-
-void AOJJ_Player::SetPowerPlantMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::PowerPlant);
-
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
-		{
-			QuestManager->NotifyTutorialEvent(TEXT("SelectPowerPlantMode"));
-		}
-	}
-}
-
-void AOJJ_Player::SetGrinderMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Grinder);
-}
-
-void AOJJ_Player::SetMinerMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Miner);
-
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
-		{
-			QuestManager->NotifyTutorialEvent(TEXT("SelectMinerMode"));
-		}
-	}
-}
-
-void AOJJ_Player::SetPumpMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Pump);
-}
-
-void AOJJ_Player::SetSmelterMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Smelter);
-
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
-		{
-			QuestManager->NotifyTutorialEvent(TEXT("SelectSmelterMode"));
-		}
-	}
-}
-
-void AOJJ_Player::SetMoldingMachineModeShortcut()
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::MoldingMachine);
-}
-
-void AOJJ_Player::SetSynthesizerModeShortcut()
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Synthesizer);
-}
-
-// TeleCommunicationTower build mode shortcut.
-void AOJJ_Player::SetTeleCommunicationTowerModeShortcut()
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::TeleCommunicationTower);
 }
 
 void AOJJ_Player::SetDemolishModeShortcut()
@@ -1069,22 +879,67 @@ void AOJJ_Player::SetLadderModeShortcut()
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Ladder);
 }
 
-void AOJJ_Player::SetWarehouseMode(const FInputActionValue& Value)
+// [공용키 F] 평면 Foundation 직행. 레거시 BindKey라 IMC 게이팅 없음 → 빌드모드 가드 필수(Ladder/Demolish 패턴).
+void AOJJ_Player::SetFoundationModeShortcut()
 {
-	if (!BuildController)
+	if (!BuildController || !BuildController->IsInBuildMode())
 	{
 		return;
 	}
-	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Warehouse);
+	BuildController->OJJ_SelectFoundationKind(false);
+}
 
-	if (UGameInstance* GameInstance = GetGameInstance())
+// [공용키 G] 경사 RampFoundation 직행.
+void AOJJ_Player::SetRampFoundationModeShortcut()
+{
+	if (!BuildController || !BuildController->IsInBuildMode())
 	{
-		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
-		{
-			QuestManager->NotifyTutorialEvent(TEXT("SelectWarehouseMode"));
-		}
+		return;
+	}
+	BuildController->OJJ_SelectFoundationKind(true);
+}
+
+// [공용키 Z] 마우스 초기화 — 들고 있던 placement 고스트 취소(None 모드), 빌드모드/배치된 액터는 그대로.
+void AOJJ_Player::CancelPlacementShortcut()
+{
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::None);
+}
+
+// [카테고리 숫자키] 현재 카테고리의 SlotIndex(1~10)번 슬롯 실행 — LDJ UI_BuildModeMain에 위임(슬롯 클릭과 동일 경로).
+// 카테고리 상태(CurrentSubMode)는 위젯이 보유 → 슬롯 번호만 넘기면 위젯이 현재 카테고리 기준 해석.
+void AOJJ_Player::ExecuteHotbarSlot(int32 SlotIndex)
+{
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+	// BuildModeWidgetClass = WBP_BuildModeMain(UI_BuildModeMain) 전제(에디터 확인됨). 안전망: 아니면 무동작+경고.
+	if (UUI_BuildModeMain* BuildMenu = Cast<UUI_BuildModeMain>(BuildModeWidgetInstance))
+	{
+		BuildMenu->ExecutePlacementMode(SlotIndex);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] 핫바 슬롯 %d 무시 — BuildModeWidgetInstance가 UUI_BuildModeMain 아님/없음(BuildModeWidgetClass 확인)"),
+			SlotIndex);
 	}
 }
+
+void AOJJ_Player::SetHotbarSlot1()  { ExecuteHotbarSlot(1); }
+void AOJJ_Player::SetHotbarSlot2()  { ExecuteHotbarSlot(2); }
+void AOJJ_Player::SetHotbarSlot3()  { ExecuteHotbarSlot(3); }
+void AOJJ_Player::SetHotbarSlot4()  { ExecuteHotbarSlot(4); }
+void AOJJ_Player::SetHotbarSlot5()  { ExecuteHotbarSlot(5); }
+void AOJJ_Player::SetHotbarSlot6()  { ExecuteHotbarSlot(6); }
+void AOJJ_Player::SetHotbarSlot7()  { ExecuteHotbarSlot(7); }
+void AOJJ_Player::SetHotbarSlot8()  { ExecuteHotbarSlot(8); }
+void AOJJ_Player::SetHotbarSlot9()  { ExecuteHotbarSlot(9); }
+void AOJJ_Player::SetHotbarSlot10() { ExecuteHotbarSlot(10); }
 
 // 철거 모드 진입(X키). 호버 대상 빨강 하이라이트 + 좌클릭 제거.
 void AOJJ_Player::SetDemolishMode(const FInputActionValue& Value)
@@ -1102,27 +957,6 @@ void AOJJ_Player::SetDemolishMode(const FInputActionValue& Value)
 			QuestManager->NotifyTutorialEvent(TEXT("DemolishMode"));
 		}
 	}
-}
-
-// 평판 Foundation 모드 진입(G키 — #196 IA 전환). 다른 모드 핸들러(탱크/파이프)와 동일 구조 —
-// BuildController 위임만. 모드 진입/호버 갱신/빌드모드 밖 무해성은 컨트롤러 소관.
-void AOJJ_Player::SetFoundationMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->OJJ_SelectFoundationKind(false);
-}
-
-// 램프 Foundation 모드 진입(H키 — #196 IA 전환, F3-2.5 T 토글 대체).
-void AOJJ_Player::SetRampFoundationMode(const FInputActionValue& Value)
-{
-	if (!BuildController)
-	{
-		return;
-	}
-	BuildController->OJJ_SelectFoundationKind(true);
 }
 
 void AOJJ_Player::StartSprint(const FInputActionValue& Value)
@@ -1231,23 +1065,21 @@ void AOJJ_Player::SendOperatorGuideRequest()
 
 void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 {
-	if (!IsLocallyControlled()) return;
+    if (!IsLocallyControlled()) return;
 
-	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC) return;
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    if (!PC) return;
 
-	if (BuildController && BuildController->IsInBuildMode()) return;
-	
-	FInputModeGameAndUI QuickFixMode;
-	QuickFixMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	// 현재 포커스를 강제로 게임 뷰포트로 지정하여 굳어버린 키보드 입력을 깨웁니다.
-	QuickFixMode.SetWidgetToFocus(nullptr); 
-	PC->SetInputMode(QuickFixMode);
+    if (BuildController && BuildController->IsInBuildMode()) return;
+    
+    FInputModeGameAndUI QuickFixMode;
+    QuickFixMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+    QuickFixMode.SetWidgetToFocus(nullptr); 
+    PC->SetInputMode(QuickFixMode);
 
-    // 일반 기계창, 창고창, 가방창 중 하나라도 열려 있으면 무조건 전부 다 닫습니다.
     if (bIsInventoryOpen || 
         (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()) ||
-        (WarehouseInteractWidgetInstance && WarehouseInteractWidgetInstance->IsInViewport())) // 창고 닫기 가드 추가
+        (WarehouseInteractWidgetInstance && WarehouseInteractWidgetInstance->IsInViewport()))
     {
        if (MachineInteractWidgetInstance.IsValid())
        {
@@ -1255,7 +1087,6 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
           MachineInteractWidgetInstance = nullptr;
        }
 
-       // 띄워져 있던 창고 창을 부모로부터 제거하고 메모리 초기화
        if (WarehouseInteractWidgetInstance)
        {
           WarehouseInteractWidgetInstance->RemoveFromParent();
@@ -1286,9 +1117,8 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 
     AMachineBase* Machine = Cast<AMachineBase>(Hit.GetActor());
     if (!Machine) return;
-
-    // 바라본 기계가 '창고' 계열인지 검사합니다
-    if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
+    // 바라본 기계가 창고포트 클래스이거나, '액체 탱크(ALiquidTank)' 클래스이거나, 이름에 Warehouse가 들어간다면
+    if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
     {
        if (!WarehouseInteractWidgetClass)
        {
@@ -1296,7 +1126,7 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
           return;
        }
 
-       // 창고 전용 UI 창
+       // 이제 액체 탱크도 여기로 안전하게 들어와 UI_WarehouseInteract 창을 소환합니다
        UUI_WarehouseInteract* WHWidget = CreateWidget<UUI_WarehouseInteract>(PC, WarehouseInteractWidgetClass);
        if (WHWidget)
        {
@@ -1320,33 +1150,32 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
           Widget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
        }
     }
-
-    // 창고 포트 계열일 때 우측에 유저 가방 창 세트로 동시 소환하는 로직 (기존 유지)
-    if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
+    // 창고 포트뿐만 아니라 '액체 탱크' 계열 상호작용 시에도 우측에 인벤토리 생성
+    if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
     {
        if (!InventoryWidgetInstance && InventoryWidgetClass)
        {
           InventoryWidgetInstance = CreateWidget<UUI_Inventory>(PC, InventoryWidgetClass);
        }
 
-    	if (InventoryWidgetInstance)
-    	{
-    		InventoryWidgetInstance->AdjustInventoryLayout(true); 
+        if (InventoryWidgetInstance)
+        {
+           InventoryWidgetInstance->AdjustInventoryLayout(true); 
 
-    		InventoryWidgetInstance->AddToViewport();
-    		InventoryWidgetInstance->RefreshInventoryWindow();
-    		bIsInventoryOpen = true;
+        	InventoryWidgetInstance->AddToViewport(-1); 
+        	InventoryWidgetInstance->RefreshInventoryWindow();
+        	bIsInventoryOpen = true;
 
-    		GetWorldTimerManager().SetTimer(
-			   InventoryRefreshTimerHandle, 
-			   this, 
-			   &AOJJ_Player::UpdateInventoryRealtime, 
-			   0.1f, 
-			   true
-			);
+           GetWorldTimerManager().SetTimer(
+             InventoryRefreshTimerHandle, 
+             this, 
+             &AOJJ_Player::UpdateInventoryRealtime, 
+             0.1f, 
+             true
+          );
             
-    		UE_LOG(LogTemp, Log, TEXT("[창고 F키 성공] 창고 전용 창과 가방 창을 완벽하게 동시 활성화했습니다!"));
-    	}
+           UE_LOG(LogTemp, Log, TEXT("[물류 상호작용 성공] 창고형 기계 연동 모드로 가방 창 동시 활성화 완료!"));
+        }
     }
 
     FInputModeGameAndUI InputModeData;
@@ -1553,7 +1382,7 @@ void AOJJ_Player::TriggerInventoryToggle()
 
 		// 중복되던 슬롯 필터 및 뷰포트 추가 로직 하나로 깔끔하게 압축
 		InventoryWidgetInstance->SetItemFormFilter(InventoryFormFilter);
-		InventoryWidgetInstance->AddToViewport();
+		InventoryWidgetInstance->AddToViewport(-1); 
 		InventoryWidgetInstance->RefreshInventoryWindow();
 		bIsInventoryOpen = true;
        
@@ -1584,7 +1413,7 @@ void AOJJ_Player::TriggerInventoryToggle()
 	}
 }
 
-void AOJJ_Player::OJJ_TutorialAdvance()
+void AOJJ_Player::TutorialAdvance()
 {
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -1595,7 +1424,7 @@ void AOJJ_Player::OJJ_TutorialAdvance()
 	}
 }
 
-void AOJJ_Player::OJJ_TutorialLog()
+void AOJJ_Player::TutorialLog()
 {
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -1606,17 +1435,17 @@ void AOJJ_Player::OJJ_TutorialLog()
 	}
 }
 
-void AOJJ_Player::OJJ_SetMachineLevel(const FString& MachineTypeName, int32 NewLevel)
+void AOJJ_Player::SetMachineLevel(const FString& MachineTypeName, int32 NewLevel)
 {
 	if (MachineTypeName.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_SetMachineLevel] MachineTypeName is empty."));
+		UE_LOG(LogTemp, Warning, TEXT("[SetMachineLevel] MachineTypeName is empty."));
 		return;
 	}
 
 	if (NewLevel <= 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_SetMachineLevel] NewLevel must be greater than 0."));
+		UE_LOG(LogTemp, Warning, TEXT("[SetMachineLevel] NewLevel must be greater than 0."));
 		return;
 	}
 
@@ -1626,7 +1455,7 @@ void AOJJ_Player::OJJ_SetMachineLevel(const FString& MachineTypeName, int32 NewL
 		: nullptr;
 	if (!MachineSubsystem)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_SetMachineLevel] MachineSubsystem not found."));
+		UE_LOG(LogTemp, Warning, TEXT("[SetMachineLevel] MachineSubsystem not found."));
 		return;
 	}
 
@@ -1634,29 +1463,29 @@ void AOJJ_Player::OJJ_SetMachineLevel(const FString& MachineTypeName, int32 NewL
 	if (!MachineSubsystem->SetMachineLevel(MachineType, NewLevel))
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[OJJ_SetMachineLevel] Failed to set %s to level %d."),
+			TEXT("[SetMachineLevel] Failed to set %s to level %d."),
 			*MachineTypeName,
 			NewLevel);
 		return;
 	}
 
 	UE_LOG(LogTemp, Log,
-		TEXT("[OJJ_SetMachineLevel] %s level set to %d."),
+		TEXT("[SetMachineLevel] %s level set to %d."),
 		*MachineTypeName,
 		NewLevel);
 }
 
-void AOJJ_Player::OJJ_UpgradeMachineLevel(const FString& MachineTypeName, int32 UpgradeCount)
+void AOJJ_Player::UpgradeMachineLevel(const FString& MachineTypeName, int32 UpgradeCount)
 {
 	if (MachineTypeName.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_UpgradeMachineLevel] MachineTypeName is empty."));
+		UE_LOG(LogTemp, Warning, TEXT("[UpgradeMachineLevel] MachineTypeName is empty."));
 		return;
 	}
 
 	if (UpgradeCount <= 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_UpgradeMachineLevel] UpgradeCount must be greater than 0."));
+		UE_LOG(LogTemp, Warning, TEXT("[UpgradeMachineLevel] UpgradeCount must be greater than 0."));
 		return;
 	}
 
@@ -1666,7 +1495,7 @@ void AOJJ_Player::OJJ_UpgradeMachineLevel(const FString& MachineTypeName, int32 
 		: nullptr;
 	if (!MachineSubsystem)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[OJJ_UpgradeMachineLevel] MachineSubsystem not found."));
+		UE_LOG(LogTemp, Warning, TEXT("[UpgradeMachineLevel] MachineSubsystem not found."));
 		return;
 	}
 
@@ -1685,17 +1514,128 @@ void AOJJ_Player::OJJ_UpgradeMachineLevel(const FString& MachineTypeName, int32 
 	if (SuccessCount == 0)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[OJJ_UpgradeMachineLevel] Failed to upgrade %s. Current level=%d."),
+			TEXT("[UpgradeMachineLevel] Failed to upgrade %s. Current level=%d."),
 			*MachineTypeName,
 			MachineSubsystem->GetMachineLevel(MachineType));
 		return;
 	}
 
 	UE_LOG(LogTemp, Log,
-		TEXT("[OJJ_UpgradeMachineLevel] %s upgraded by %d. Current level=%d."),
+		TEXT("[UpgradeMachineLevel] %s upgraded by %d. Current level=%d."),
 		*MachineTypeName,
 		SuccessCount,
 		MachineSubsystem->GetMachineLevel(MachineType));
+}
+
+void AOJJ_Player::ResetGame()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UFactorySaveSubsystem* SaveSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UFactorySaveSubsystem>()
+		: nullptr;
+	if (!SaveSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ResetGame] FactorySaveSubsystem not found."));
+		return;
+	}
+
+	const bool bDeletedSave = SaveSubsystem->ResetToNewGame();
+	UE_LOG(LogTemp, Log, TEXT("[ResetGame] Save reset requested. DeletedExistingSave=%s"),
+		bDeletedSave ? TEXT("true") : TEXT("false"));
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FString LevelName = World->GetOutermost()->GetName();
+	if (LevelName.IsEmpty())
+	{
+		LevelName = UWorld::RemovePIEPrefix(World->GetMapName());
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[ResetGame] Reopening level: %s"), *LevelName);
+	UGameplayStatics::OpenLevel(this, FName(*LevelName));
+}
+
+void AOJJ_Player::TriggerPlanetEvent(const FString& EventName, float Severity, float DurationSeconds)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[TriggerPlanetEvent] World is null."));
+		return;
+	}
+
+	UPlanetEventManagerSubsystem* PlanetManager = World->GetSubsystem<UPlanetEventManagerSubsystem>();
+	if (!PlanetManager)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[TriggerPlanetEvent] PlanetEventManagerSubsystem not found."));
+		return;
+	}
+
+	const FString NormalizedEventName = EventName.TrimStartAndEnd().ToLower();
+	if (NormalizedEventName.IsEmpty())
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("[TriggerPlanetEvent] EventName is empty. Use magnetic, sand, or none."));
+		return;
+	}
+
+	if (NormalizedEventName == TEXT("none") || NormalizedEventName == TEXT("clear"))
+	{
+		PlanetManager->EndActiveEvent();
+		UE_LOG(LogTemp, Log, TEXT("[TriggerPlanetEvent] Cleared active planet event."));
+		return;
+	}
+
+	EPlanetEventType EventType = EPlanetEventType::None;
+	if (NormalizedEventName == TEXT("magnetic") || NormalizedEventName == TEXT("magneticstorm"))
+	{
+		EventType = EPlanetEventType::MagneticStorm;
+	}
+	else if (NormalizedEventName == TEXT("sand") || NormalizedEventName == TEXT("sandstorm"))
+	{
+		EventType = EPlanetEventType::SandStorm;
+	}
+	else
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("[TriggerPlanetEvent] Unknown event '%s'. Use magnetic, sand, or none."),
+			*EventName);
+		return;
+	}
+
+	if (PlanetManager->GetEventState().Type != EPlanetEventType::None)
+	{
+		PlanetManager->EndActiveEvent();
+	}
+
+	const bool bStarted = PlanetManager->StartPlanetEvent(EventType, Severity, DurationSeconds);
+	if (bStarted)
+	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[TriggerPlanetEvent] Event=%s Severity=%.2f Duration=%.2f Started=true"),
+			*UEnum::GetValueAsString(EventType),
+			Severity,
+			DurationSeconds);
+		return;
+	}
+
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("[TriggerPlanetEvent] Event=%s Severity=%.2f Duration=%.2f Started=false"),
+		*UEnum::GetValueAsString(EventType),
+		Severity,
+		DurationSeconds);
 }
 
 void AOJJ_Player::UpdateInventoryRealtime()

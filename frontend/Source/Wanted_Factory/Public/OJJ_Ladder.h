@@ -42,6 +42,7 @@ public:
 	// 등반 끝점(월드 Z). 플레이어가 상/하단 도달 판정에 사용.
 	float GetClimbBottomZ() const { return GetActorLocation().Z; }
 	float GetClimbTopZ() const { return GetActorLocation().Z + ClimbHeight; }
+	float GetClimbHeight() const { return ClimbHeight; }
 
 	// 상단 도달 시 Foundation 위로 내딛는 수평 방향(정규화). 액터 전방(+X).
 	FVector GetStepOffDirection() const { return GetActorForwardVector().GetSafeNormal2D(); }

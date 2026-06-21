@@ -22,6 +22,15 @@ class UMaterialInstanceDynamic;
  * Water는 Blocked와 별개 상태지만 IsCellBuildable=false는 동일(건설금지 불변식 — §3).
  * 값(0~3)이 패킹 비트와 직결되므로 재정렬 금지(직렬화 캐시 호환 깨짐).
  */
+// [그리드 색상 2단계] 빌드모드 필드 색상의 모드 분기 — 모드마다 placeable 규칙이 다름.
+UENUM()
+enum class EOJJGridColorMode : uint8
+{
+	Machine = 0,     // 일반 머신 — raw/water bool 참조(Foundation 위 OK, raw는 CanPlaceOnRawGround만)
+	Foundation = 1,  // Foundation/Ramp — CanPlaceFoundation 기준(경사 포함, 물·void·이미foundation 제외)
+	Miner = 2        // 채굴기 — 광맥 4방향 인접 셀만 placeable(평지·경사 무관)
+};
+
 UENUM()
 enum class EOJJCellClass : uint8
 {
@@ -131,6 +140,14 @@ protected:
 	// 공유했으나 분리됨). Foundation/램프 컨베이어 경로는 OJJ_MaxConveyorStepZ(100) 별도(램프 MaxRampStepPerRow 가정 보존).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Conveyor", meta = (ClampMin = "1.0"))
 	float OJJ_MaxSlopeStepZ = 300.0f;
+
+	// ⭐ 파이프 시각 lift 단차 임계(uu) — forced breakpoint(XY 코너/오버패스 다리/끝점) 사이 구간을 "최고점 수평
+	// plateau"로 평탄화한다. 연속 셀의 vertical span(최고−최저)이 이 값 이하면 한 구간 = 그 구간 최고 lift로 수평
+	// (낮은 셀은 그 아래로 떠 있음 — 압송이라 OK). span이 이 값을 초과하면 거기서 구간을 끊고 꺾어 다음 높이로.
+	// → 완만한 굴곡은 최고점 수평선으로 흡수, 큰 단차서만 꺾임. 장부 CellZs(레이어/오버패스 판정)는 raw 유지 —
+	// 시각 lift만 평탄화. 0이면 비활성(평탄화 스킵 = raw 추종). 기본 100 = PIE 다이얼 시작값.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Pipe", meta = (ClampMin = "0.0"))
+	float OJJ_PipeLiftStepTolZ = 100.0f;
 
 	// 실제 placement 가능 영역 (X 칸 × Y 칸).
 	// CanPlaceMachine / IsValidGridCell이 권위 있는 grid extent로 사용. 머신은 이 범위 내에서만 등록 가능.
@@ -396,6 +413,21 @@ protected:
 	UPROPERTY(Transient)
 	bool bVisualizationActive = false;
 
+	// [그리드 색상 2단계] 든 머신/모드의 지형규칙 — 빌드모드 필드 오버레이가 셀별 초록/빨강 판정에 사용.
+	// BuildController가 OJJ_UpdateGridColorRule로 주입. (bGridColorRuleSet=false면 미설정 → 전부 가능으로 취급.)
+	// 모드별 규칙이 달라 enum으로 분기: Machine(raw/water bool 참조) / Foundation(CanPlaceFoundation=경사 포함, 물·이미foundation 제외)
+	// / Miner(광맥 인접 셀만, 평지·경사 무관).
+	bool bGridColorRuleSet = false;
+	EOJJGridColorMode GridColorMode = EOJJGridColorMode::Machine;
+	bool bGridColorAllowRawGround = false;   // Machine 모드 — raw 평지 직배치 허용(컨베이어/파이프 등)
+	bool bGridColorAllowWater = false;       // Machine 모드 — 물 위 배치 허용(펌프)
+	// Miner 모드 전용: 광맥 주변 강조 셀 사전계산 집합(RefreshGridVisual paint 직전 OccupiedCells에서 재구축).
+	TSet<FIntPoint> GridColorOreAdjacentCells;
+
+	// Miner 색상 강조 반경(맨해튼=다이아몬드, 광맥 셀 기준). 3 = 원래 4방향 인접(1)에서 2칸 더 — 십자 모양 확장. PIE 다이얼.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Color", meta = (ClampMin = "0"))
+	int32 OJJ_OreColorProximityRadius = 3;
+
 	// 배치 가능 셀 호버 표시 (녹색)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Hover")
 	TObjectPtr<UInstancedStaticMeshComponent> ValidHoverISM;
@@ -449,7 +481,7 @@ protected:
 	// 머신 제거(RemoveMachine) 시 이 플래그로 가드해 빌드모드 중일 때만 화살표를 재적재한다
 	// (빌드모드 밖 제거가 화살표를 띄우는 회귀 방지).
 	UPROPERTY(Transient)
-	bool bPlacedArrowsVisible = false;
+	bool bPlacedArrowsVisible = true;
 
 	// 포트 화살표 시각 튜닝 — 에디터/PIE에서 리컴파일 없이 조정. 콘 인스턴스 균일 스케일.
 	// 디테일 패널/레벨 인스턴스에서 바로 만지도록 EditAnywhere + BlueprintReadWrite.
@@ -561,6 +593,19 @@ private:
 	// 오버레이 셀 트랜스폼(기준면 +3 — RefreshGridVisual과 부분 갱신이 공유하는 단일원).
 	FTransform OJJ_MakeOverlayCellTransform(FIntPoint Cell, bool bGroundZValid) const;
 
+	// [그리드 색상 2단계] 셀별 필드 색상 분류(든 머신 지형규칙 기준). 반환 재사용: Buildable=초록(놓을수있음)/
+	// Blocked=빨강(못놓음)/Water=파랑(물 정보색, 펌프면 초록)/Void=없음(타일 X). 풋프린트·점유·광맥경사는 커서가 담당.
+	EOJJCellClass OJJ_ClassifyCellColor(FIntPoint Cell) const;
+
+	// [그리드 색상 2단계] Miner 모드 color용 광맥 인접 셀 집합 재구축(RefreshGridVisual paint 직전 호출).
+	void OJJ_RebuildOreAdjacentCells();
+
+	// [WaterArea 재정의] "안 가려진 WaterArea" = 셀이 WaterArea에 덮이고(GetWaterSurfaceZAtCell) 지형 GroundZ가 면 Z보다
+	// 낮아 면이 드러난 셀(드러난 웅덩이)만 실제 물. 묻힌 땅(지형≥면)·WaterArea 없는 깊은 구덩이는 물 아님.
+	// ⚠️ Foundation 경로(OJJ_ClassifyCellColor·CanPlaceFoundation)에서만 사용. 전역 IsCellWater(펌프/파이프)는 −20 유지
+	// (의도적 공존 — 블래스트 회피). GroundZ 무효 시 옛 baked WaterCells(−20)로 안전 폴백.
+	bool OJJ_IsUncoveredWaterCell(FIntPoint Cell) const;
+
 	// 장부 동반 표시/숨김(F3.5' 부분 갱신). 숨김 = zero-scale 트랜스폼(UpdateInstanceTransform, O(1)) —
 	// 인덱스가 불변이라 RemoveInstance의 시프트/스왑 시맨틱에 비의존(Codex F3.5' ① 해소). 표시는
 	// 장부에 있으면 트랜스폼 복원, 없으면 append(인덱스 안정). 숨김 잔존분은 다음 RefreshGridVisual의
@@ -669,6 +714,24 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
 	FVector GetMachinePlacementLocation(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
 
+	// [2단계] 채굴기 경사 틸트 — 풋프린트 코너 라인트레이스로 지형 법선을 산출해 pitch/roll(yaw 없음) 반환.
+	// 채굴기(MinerMachine)이고 풋프린트가 raw 경사일 때만 비영(非零). 평지·Foundation·다른 머신·미베이크면
+	// ZeroRotator(=틸트 없음, 회귀 0). yaw는 호출자가 별도 합성(OJJ_GetMachinePlacementTransform).
+	FRotator OJJ_GetMachineTiltRotation(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
+
+	// [2단계] 배치 트랜스폼(위치+회전 일관 산출). 회전 = yaw(90°×step) ∘ 지형 틸트(채굴기-경사만).
+	// 위치 = GetMachinePlacementLocation(틸트 적용 AABB로 Z 재안착). 라이브 배치(BuildController)가 단일 적용.
+	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
+	FTransform OJJ_GetMachinePlacementTransform(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
+
+private:
+	// [2단계 내부] 풋프린트 4코너 하향 라인트레이스(BakeBuildableCells 동일 채널·머신/자원/Foundation 무시)로
+	// 지형 평면 법선 + 중심 높이 산출. 4코너 전부 히트해야 true(void면 false → 틸트 미적용). yaw 무관(월드 XY 코너).
+	bool OJJ_ComputeFootprintTerrainPlane(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps,
+		FVector& OutNormal, float& OutCenterZ) const;
+
+public:
+
 	// 셀이 그리드 유효 범위 ([0, GridSize.X) × [0, GridSize.Y)) 내인지 검사
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
 	bool IsValidGridCell(FIntPoint Cell) const;
@@ -724,6 +787,12 @@ public:
 	// 검증·배치가 "유효 지형 높이 없으면 거부"를 단일원으로 공유(회귀가드: 장부/평면 의미 불변).
 	bool OJJ_GetRawTerrainSurfaceZ(FIntPoint Cell, float& OutSurfaceZ) const;
 
+	// [절벽 다리] 여러 월드 XY에서 지형 표면 Z를 하향 라인트레이스 — 베이크와 동일 채널 + ignore(머신/컨베이어/
+	// 자원(WaterArea)/Foundation). 셀 대표값(OJJ_GetRawTerrainSurfaceZ=baked 5점 최고점)과 달리 다리 실제 XY의 벽면
+	// 깊이를 반영(급경사 코너별 정확), WaterArea 박스에 안 걸림. ignore 목록 1회 구축 후 N점 재사용(코너 4점 — 성능).
+	// 각 점: 히트면 OutZ[i]=지형Z·OutHit[i]=true, 미스(void)면 OutHit[i]=false.
+	void OJJ_TraceTerrainZAtWorldXY(const TArray<FVector2D>& WorldXYs, TArray<float>& OutZ, TArray<bool>& OutHit) const;
+
 	// #249 경로가 raw-terrain 지형추종 대상인지 판정(검증 OJJ_CollectConveyorReservedCells와 배치 OJJ_TryPlaceConveyor가
 	// 동일 소스 참조 → 분기 불일치 방지). 조건: ① 베이크 GroundZ 유효 ② 전 셀 valid grid ③ Foundation 셀 0개
 	// (all-raw — 혼합은 이번 패스 거부) ④ 셀 간 GroundZ 변화 존재(평탄 raw는 기존 uniform 평면 경로 유지 → 회귀 0).
@@ -760,6 +829,10 @@ public:
 	// 그리드 셀 비주얼 갱신 — 현재 상태(bVisualizationActive/bForceShowBlocked) 기준으로 초록(가능)/빨강(blocked)
 	// per-cell ISM 재적재. void 셀은 양쪽 다 제외. 클리어 후 재적재라 진입/퇴장 반복에도 중복·잔존 없음.
 	void RefreshGridVisual();
+
+	// [그리드 색상 2단계] 든 머신/모드의 지형규칙 주입 + 필요 시 recolor. 시그니처(Mode/raw/water) 동일하면
+	// 스킵(창고↔제련 등 동일 규칙 전환 시 90k 풀갱신 회피). 다르면 bVisualizationActive일 때 RefreshGridVisual.
+	void OJJ_UpdateGridColorRule(EOJJGridColorMode Mode, bool bAllowRawGround, bool bAllowWater);
 
 	// 디버그(OJJ.Grid.ShowBlocked) — 빌드모드와 무관하게 오버레이 강제 표시 토글.
 	void SetForceShowBlocked(bool bShow);
@@ -1135,6 +1208,12 @@ bool OJJ_BuildConveyorPlacementPath(
 	// 평판 Foundation CDO의 슬래브(엔진 Cube)를 호버 풋프린트에 반투명으로 그린다. UpdateSlabVisual 산식 재현.
 	// 평판 전용(램프는 호출하지 않음). MID 미비 시 안전하게 고스트 숨김.
 	void OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize, bool bValid);
+
+	// 램프 Foundation 고스트 — 경사 Deck를 RampFoundation::UpdateSlabVisual 산식(빗변 스케일 + pitch 틸트)으로
+	// 재현해 반투명 미리보기. EffRotSteps/RiseSteps는 호버 Fit 결과(CDO 비변형 — 가상 OJJ_ComputeSnapLift로 Z).
+	// 평판 OJJ_ShowGhostForFoundation은 평면 박스라 경사 형상 부적합 → 램프 전용 경로. MID 미비 시 안전 숨김.
+	void OJJ_ShowGhostForRamp(AOJJ_Foundation* RampCDO, FIntPoint Origin, FIntPoint EffSize,
+		int32 EffRotSteps, int32 RiseSteps, bool bValid);
 
 	// [#184] 사다리 고스트 — 자유 배치(그리드 셀 스냅 아님). 바닥 월드위치 + ClimbHeight로 엔진 Cube 얇은 세로
 	// 박스 고스트를 그린다(실제 사다리 ISM 타일과 독립 — 깔끔한 위치/높이 인디케이터). bValid → 초록/빨강 오버레이.

@@ -46,7 +46,10 @@ enum class EOJJ_BuildPlacementMode : uint8
 	TeleCommunicationTower,
 	// [#184] 사다리 모드 — C키. 커서로 Foundation 변 조준 → 그 변 바깥 지면에 사다리 배치(자유 배치, 그리드
 	// 장부 미등록). ⚠️ 맨 끝 append 유지(BP enum 값 직렬화 — 중간 삽입 금지).
-	Ladder
+	Ladder,
+	// [공용키 Z] 마우스 초기화 — 들고 있던 placement 고스트 취소, 빌드모드 유지. 호버/클릭 무동작.
+	// ⚠️ 맨 끝 append 유지(BP enum 값 직렬화 — 중간 삽입 금지).
+	None
 };
 
 /**
@@ -246,6 +249,10 @@ public:
 	// 배치 모드 전환. 전환 시 진행 중 컨베이어 드래그를 취소하고 호버 갱신.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void SetPlacementMode(EOJJ_BuildPlacementMode NewMode);
+
+	// [그리드 색상 2단계] 현재 PlacementMode(+머신 CDO 지형규칙)를 그리드 색상 규칙으로 주입. EnterBuildMode 진입·
+	// SetPlacementMode 전환 시 호출. 비머신 모드(Foundation/Conveyor/Pipe/PowerLine/Demolish/None)는 명시 분기.
+	void UpdateGridColorForCurrentMode();
 
 	UFUNCTION(BlueprintPure, Category = "BuildController")
 	EOJJ_BuildPlacementMode GetPlacementMode() const { return PlacementMode; }
