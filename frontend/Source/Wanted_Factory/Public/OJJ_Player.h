@@ -407,6 +407,9 @@ public:
 	void ClearWarehouse();
 
 	UFUNCTION(Exec)
+	void Give(const FString& ItemID, int32 Count);
+
+	UFUNCTION(Exec)
 	void TriggerPlanetEvent(const FString& EventName, float Severity = 1.0f, float DurationSeconds = -1.0f);
 
 protected:

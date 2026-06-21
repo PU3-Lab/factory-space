@@ -12,6 +12,7 @@ namespace
 constexpr TCHAR AgentRequestType[] = TEXT("agent.request");
 constexpr TCHAR AgentResponseType[] = TEXT("agent.response");
 constexpr TCHAR AgentErrorType[] = TEXT("agent.error");
+constexpr TCHAR AgentProgressType[] = TEXT("agent.progress");
 constexpr TCHAR QuestGeneratorAgentId[] = TEXT("quest_generator");
 constexpr TCHAR OperatorGuideAgentId[] = TEXT("operator_guide");
 constexpr TCHAR QuestSampleRequestId[] = TEXT("request-quest-sample");
@@ -282,6 +283,18 @@ void UFactoryAgentClientSubsystem::HandleSocketMessage(const FString& Message)
 			Agent,
 			FactoryAgentJsonUtils::GetStringField(ErrorObject, TEXT("code")),
 			FactoryAgentJsonUtils::GetStringField(ErrorObject, TEXT("message")),
+			Message);
+		return;
+	}
+
+	if (Type == AgentProgressType)
+	{
+		const TSharedPtr<FJsonObject> PayloadObject = FactoryAgentJsonUtils::GetObjectField(RootObject, TEXT("payload"));
+		OnAgentProgressReceived.Broadcast(
+			RequestId,
+			Agent,
+			FactoryAgentJsonUtils::GetStringField(PayloadObject, TEXT("stage")),
+			FactoryAgentJsonUtils::GetStringField(PayloadObject, TEXT("message")),
 			Message);
 		return;
 	}

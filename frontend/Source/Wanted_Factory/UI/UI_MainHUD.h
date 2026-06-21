@@ -16,6 +16,7 @@ public:
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
     virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+    virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
     UFUNCTION()
     void OnToggleGuideClicked();
@@ -74,6 +75,7 @@ protected:
 private:
     class UUI_DialogueBalloon* FindDialogueBalloon() const;
     void ShowGuideResponseInDialogueBalloon(const FString& Message) const;
+    void ClearGuideDialogueBalloon() const;
 
     UFUNCTION()
     void HandleWeatherChanged(const FPlanetWeatherState& WeatherState);
@@ -93,6 +95,9 @@ private:
 
     UFUNCTION()
     void HandleOnOperatorGuideResponse(const FString& RequestId, const FString& Agent, const FString& PayloadJson, const FString& RawMessage);
+
+    UFUNCTION()
+    void HandleOnOperatorGuideProgress(const FString& RequestId, const FString& Agent, const FString& Stage, const FString& Message, const FString& RawMessage);
 
     UFUNCTION()
     void HandleOnOperatorGuideError(const FString& RequestId, const FString& Agent, const FString& ErrorCode, const FString& ErrorMessage, const FString& RawMessage);

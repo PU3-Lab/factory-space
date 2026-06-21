@@ -1750,6 +1750,53 @@ void AOJJ_Player::ClearWarehouse()
 		bSaved ? TEXT("true") : TEXT("false"));
 }
 
+void AOJJ_Player::Give(const FString& ItemID, int32 Count)
+{
+	if (ItemID.TrimStartAndEnd().IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Give] ItemID is empty. Usage: give iron_ingot 10"));
+		return;
+	}
+
+	if (Count <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Give] Count must be greater than 0. Usage: give iron_ingot 10"));
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>()
+		: nullptr;
+	if (!WarehouseSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Give] PlayerWarehouseSubsystem not found."));
+		return;
+	}
+
+	const FName TargetItemID(*ItemID.TrimStartAndEnd());
+	if (!WarehouseSubsystem->AddItem(TargetItemID, Count))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Give] Failed to add item. ItemID=%s Count=%d"), *TargetItemID.ToString(), Count);
+		return;
+	}
+
+	bool bSaved = false;
+	if (GameInstance)
+	{
+		if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+		{
+			bSaved = SaveSubsystem->SaveCurrentGame();
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[Give] Added %s x%d to warehouse. NewCount=%d Saved=%s"),
+		*TargetItemID.ToString(),
+		Count,
+		WarehouseSubsystem->GetItemCount(TargetItemID),
+		bSaved ? TEXT("true") : TEXT("false"));
+}
+
 void AOJJ_Player::TriggerPlanetEvent(const FString& EventName, float Severity, float DurationSeconds)
 {
 	UWorld* World = GetWorld();

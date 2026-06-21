@@ -32,6 +32,7 @@ void UUI_MainHUD::NativeConstruct()
         if (UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>())
         {
             AgentClient->OnAgentResponseReceived.AddDynamic(this, &UUI_MainHUD::HandleOnOperatorGuideResponse);
+            AgentClient->OnAgentProgressReceived.AddDynamic(this, &UUI_MainHUD::HandleOnOperatorGuideProgress);
             AgentClient->OnAgentErrorReceived.AddDynamic(this, &UUI_MainHUD::HandleOnOperatorGuideError);
         }
     }
@@ -66,6 +67,7 @@ void UUI_MainHUD::NativeDestruct()
         if (UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>())
         {
             AgentClient->OnAgentResponseReceived.RemoveDynamic(this, &UUI_MainHUD::HandleOnOperatorGuideResponse);
+            AgentClient->OnAgentProgressReceived.RemoveDynamic(this, &UUI_MainHUD::HandleOnOperatorGuideProgress);
             AgentClient->OnAgentErrorReceived.RemoveDynamic(this, &UUI_MainHUD::HandleOnOperatorGuideError);
         }
     }
@@ -112,32 +114,32 @@ void UUI_MainHUD::HandleWeatherChanged(const FPlanetWeatherState& WeatherState)
 
 void UUI_MainHUD::RefreshWeatherText(const FPlanetWeatherState& WeatherState)
 {
-    const TCHAR* WindLabel = TEXT("Calm");
+    const TCHAR* WindLabel = TEXT("고요");
     if (WeatherState.WindSpeed >= 0.75f)
     {
-        WindLabel = TEXT("Storm");
+        WindLabel = TEXT("폭풍");
     }
     else if (WeatherState.WindSpeed >= 0.5f)
     {
-        WindLabel = TEXT("Strong");
+        WindLabel = TEXT("강풍");
     }
     else if (WeatherState.WindSpeed >= 0.25f)
     {
-        WindLabel = TEXT("Breeze");
+        WindLabel = TEXT("산들바람");
     }
 
-    const TCHAR* RainLabel = TEXT("Clear");
+    const TCHAR* RainLabel = TEXT("맑음");
     if (WeatherState.Rainfall >= 0.75f)
     {
-        RainLabel = TEXT("Heavy rain");
+        RainLabel = TEXT("폭우");
     }
     else if (WeatherState.Rainfall >= 0.5f)
     {
-        RainLabel = TEXT("Rain");
+        RainLabel = TEXT("비");
     }
     else if (WeatherState.Rainfall > 0.0f)
     {
-        RainLabel = TEXT("Drizzle");
+        RainLabel = TEXT("이슬비");
     }
 
     if (TXT_WindSpeed)
@@ -172,12 +174,12 @@ void UUI_MainHUD::RefreshPlanetEventUI(EPlanetEventType EventType, float Severit
     FLinearColor EventColor(0.15f, 0.15f, 0.15f, 0.75f);
     if (EventType == EPlanetEventType::MagneticStorm)
     {
-        EventText = FString::Printf(TEXT("Magnetic storm %.0f%%"), Severity * 100.0f);
+        EventText = FString::Printf(TEXT("자기 폭풍 발생 %.0f%%"), Severity * 100.0f);
         EventColor = FLinearColor(0.1f, 0.45f, 0.55f, 0.9f);
     }
     else if (EventType == EPlanetEventType::SandStorm)
     {
-        EventText = FString::Printf(TEXT("Sand storm %.0f%%"), Severity * 100.0f);
+        EventText = FString::Printf(TEXT("모래 폭풍 발생 %.0f%%"), Severity * 100.0f);
         EventColor = FLinearColor(0.55f, 0.34f, 0.12f, 0.9f);
     }
 
@@ -211,7 +213,7 @@ void UUI_MainHUD::ToggleAIGuideWindow()
         B_ChatBackground->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         if (TXT_ToggleText)
         {
-            TXT_ToggleText->SetText(FText::FromString(TEXT("Close QnA")));
+            TXT_ToggleText->SetText(FText::FromString(TEXT("QnA 닫기")));
         }
 
         if (PC)
@@ -230,7 +232,7 @@ void UUI_MainHUD::ToggleAIGuideWindow()
         B_ChatBackground->SetVisibility(ESlateVisibility::Collapsed);
         if (TXT_ToggleText)
         {
-            TXT_ToggleText->SetText(FText::FromString(TEXT("Open QnA")));
+            TXT_ToggleText->SetText(FText::FromString(TEXT("QnA 열기")));
         }
 
         if (PC)
@@ -250,6 +252,17 @@ FReply UUI_MainHUD::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FK
 {
     if (InKeyEvent.GetKey() == EKeys::Slash)
     {
+        if (InKeyEvent.IsShiftDown())
+        {
+            return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+        }
+
+        if (IsGuideWindowOpen())
+        {
+            ClearGuideDialogueBalloon();
+            return FReply::Handled();
+        }
+
         ToggleAIGuideWindow();
         return FReply::Handled();
     }
@@ -262,8 +275,8 @@ FReply UUI_MainHUD::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FK
             if (SubNotify)
             {
                 SubNotify->AddToViewport(100);
-                SubNotify->PlayNotify(TEXT("[Sub] Bring 10 iron ingots"), TEXT("Iron ingot x5, Copper ore x20, Credit +15"));
-                UE_LOG(LogTemp, Log, TEXT("[Quest] Forced sub quest notify test succeeded."));
+                SubNotify->PlayNotify(TEXT("[서브] 철 주괴 10개 가져오기"), TEXT("철 주괴 x5, 구리 광석 x20, 크레딧 +15"));
+                UE_LOG(LogTemp, Log, TEXT("[퀘스트] 서브 퀘스트 알림 테스트 강제 구동 성공"));
             }
         }
 
@@ -271,6 +284,30 @@ FReply UUI_MainHUD::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FK
     }
 
     return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
+
+FReply UUI_MainHUD::NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    FReply Reply = Super::NativeOnPreviewMouseButtonDown(InGeometry, InMouseEvent);
+
+    if (InMouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+    {
+        return Reply;
+    }
+
+    if (!IsGuideWindowOpen() || !B_ChatBackground)
+    {
+        return Reply;
+    }
+
+    const FVector2D MousePosition = InMouseEvent.GetScreenSpacePosition();
+    if (!B_ChatBackground->GetCachedGeometry().IsUnderLocation(MousePosition))
+    {
+        return Reply;
+    }
+
+    ClearGuideDialogueBalloon();
+    return Reply;
 }
 
 void UUI_MainHUD::HandleOnTextCommitted(const FText& Text, ETextCommit::Type CommitType)
@@ -300,7 +337,7 @@ void UUI_MainHUD::HandleOnTextCommitted(const FText& Text, ETextCommit::Type Com
 
     if (!AgentClient->SendOperatorGuideQuestion(QuestionStr, TEXT("unreal-ui-001")))
     {
-        const FString ErrorMessage = TEXT("Failed to send AI guide request.");
+        const FString ErrorMessage = TEXT("AI 가이드 요청 전송에 실패했습니다.");
         if (TXT_GuideResponse)
         {
             TXT_GuideResponse->SetText(FText::FromString(ErrorMessage));
@@ -313,10 +350,10 @@ void UUI_MainHUD::HandleOnTextCommitted(const FText& Text, ETextCommit::Type Com
     ET_OperatorInput->SetText(FText::GetEmpty());
     if (TXT_GuideResponse)
     {
-        TXT_GuideResponse->SetText(FText::FromString(TEXT("Thinking...")));
+        TXT_GuideResponse->SetText(FText::FromString(TEXT("분석 중...")));
     }
 
-    ShowGuideResponseInDialogueBalloon(TEXT("Thinking..."));
+    ShowGuideResponseInDialogueBalloon(TEXT("분석 중..."));
 
     if (IsGuideWindowOpen())
     {
@@ -351,6 +388,27 @@ void UUI_MainHUD::HandleOnOperatorGuideResponse(const FString& RequestId, const 
     }
 }
 
+void UUI_MainHUD::HandleOnOperatorGuideProgress(const FString& RequestId, const FString& Agent, const FString& Stage, const FString& Message, const FString& RawMessage)
+{
+    if (Agent != TEXT("operator_guide"))
+    {
+        return;
+    }
+
+    const FString ProgressMessage = Message.TrimStartAndEnd();
+    if (ProgressMessage.IsEmpty())
+    {
+        return;
+    }
+
+    if (TXT_GuideResponse)
+    {
+        TXT_GuideResponse->SetText(FText::FromString(ProgressMessage));
+    }
+
+    ShowGuideResponseInDialogueBalloon(ProgressMessage);
+}
+
 void UUI_MainHUD::HandleOnOperatorGuideError(const FString& RequestId, const FString& Agent, const FString& ErrorCode, const FString& ErrorMessage, const FString& RawMessage)
 {
     if (Agent != TEXT("operator_guide"))
@@ -358,7 +416,7 @@ void UUI_MainHUD::HandleOnOperatorGuideError(const FString& RequestId, const FSt
         return;
     }
 
-    const FString CombinedMessage = ErrorCode.IsEmpty() ? ErrorMessage : FString::Printf(TEXT("%s: %s"), *ErrorCode, *ErrorMessage);
+    const FString CombinedMessage = TEXT("AI에 문제가 생겨 응답이 불가능합니다.");
     if (TXT_GuideResponse)
     {
         TXT_GuideResponse->SetText(FText::FromString(CombinedMessage));
@@ -392,6 +450,14 @@ void UUI_MainHUD::ShowGuideResponseInDialogueBalloon(const FString& Message) con
     }
 }
 
+void UUI_MainHUD::ClearGuideDialogueBalloon() const
+{
+    if (UUI_DialogueBalloon* DialogueBalloon = FindDialogueBalloon())
+    {
+        DialogueBalloon->ClearExternalDialogue();
+    }
+}
+
 void UUI_MainHUD::OnRequestQuestsClicked()
 {
     if (WBP_QuestWindow)
@@ -400,6 +466,6 @@ void UUI_MainHUD::OnRequestQuestsClicked()
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("[HUD] WBP_QuestWindow instance is missing."));
+        UE_LOG(LogTemp, Warning, TEXT("[HUD] WBP_QuestWindow 인스턴스가 없습니다."));
     }
 }
