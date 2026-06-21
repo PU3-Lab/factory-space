@@ -1,5 +1,5 @@
 #include "UI/UI_QuestWindow.h"
-
+#include "Components/VerticalBox.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
