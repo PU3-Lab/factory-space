@@ -16,6 +16,7 @@
 #include "MachineBase.h"
 #include "Materials/MaterialInterface.h"
 #include "OJJ_Foundation.h"
+#include "OJJ_Ladder.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Pipe.h"
 #include "Resource/ResourceBase.h"
@@ -2524,6 +2525,76 @@ int32 AOJJ_Grid::OJJ_CountOccupiedFoundationCells(AActor* Foundation) const
 		if (bRealOccupant || OJJ_GetPipeAtCell(Cell)) { ++Occupied; }
 	}
 	return Occupied;
+}
+
+void AOJJ_Grid::OJJ_RegisterLadder(AOJJ_Ladder* Ladder)
+{
+	if (!Ladder)
+	{
+		return;
+	}
+	// 사다리 BottomLocation = 벽면 라인(Foundation edge 셀 ↔ 지면 셀 중점). 전방(+X)=inward(Foundation 방향,
+	// GetStepOffDirection). ±반칸 오프셋으로 양쪽 셀 중심을 집어 지면 셀(철거 키)·기댄 Foundation 셀을 transform
+	// 만으로 재계산 — 배치/로드 공통(세이브에 링크 저장 불필요). 로드 시점엔 Foundation이 먼저 복원돼 조회 성립.
+	const FVector Bottom = Ladder->GetActorLocation();
+	const FVector Inward = Ladder->GetStepOffDirection(); // 정규화 +X(Foundation 향함)
+	const FIntPoint GroundCell = WorldToGrid(Bottom - Inward * (CellSize * 0.5f));
+	const FIntPoint FoundationCell = WorldToGrid(Bottom + Inward * (CellSize * 0.5f));
+	OJJ_LadderCells.Add(GroundCell, Ladder);
+	Ladder->OJJ_SetOwningFoundation(GetFoundationAtCell(FoundationCell));
+	Ladder->OJJ_SetRegisteredGrid(this); // EndPlay 자동 해제용 역참조.
+}
+
+void AOJJ_Grid::OJJ_UnregisterLadder(AOJJ_Ladder* Ladder)
+{
+	if (!Ladder)
+	{
+		return;
+	}
+	for (auto It = OJJ_LadderCells.CreateIterator(); It; ++It)
+	{
+		if (!It.Value().IsValid() || It.Value().Get() == Ladder)
+		{
+			It.RemoveCurrent(); // 본인 + stale 동시 청소.
+		}
+	}
+}
+
+AOJJ_Ladder* AOJJ_Grid::OJJ_GetLadderAtCell(FIntPoint Cell) const
+{
+	// TMultiMap — 셀에 다중 사다리 가능. 첫 유효 사다리 반환(철거는 1회 1개, 다시 클릭하면 다음 것). stale 무시.
+	TArray<TWeakObjectPtr<AOJJ_Ladder>> Candidates;
+	OJJ_LadderCells.MultiFind(Cell, Candidates);
+	for (const TWeakObjectPtr<AOJJ_Ladder>& Candidate : Candidates)
+	{
+		if (Candidate.IsValid())
+		{
+			return Candidate.Get();
+		}
+	}
+	return nullptr;
+}
+
+void AOJJ_Grid::OJJ_DestroyLaddersOnFoundation(AActor* Foundation)
+{
+	if (!Foundation)
+	{
+		return;
+	}
+	// 맵 변경(Destroy→EndPlay→OJJ_UnregisterLadder)이 순회를 깨지 않게 먼저 수집 후 파괴.
+	TArray<AOJJ_Ladder*> ToDestroy;
+	for (const TPair<FIntPoint, TWeakObjectPtr<AOJJ_Ladder>>& Pair : OJJ_LadderCells)
+	{
+		AOJJ_Ladder* Ladder = Pair.Value.Get();
+		if (Ladder && Ladder->OJJ_GetOwningFoundation() == Foundation)
+		{
+			ToDestroy.Add(Ladder);
+		}
+	}
+	for (AOJJ_Ladder* Ladder : ToDestroy)
+	{
+		Ladder->Destroy(); // EndPlay가 OJJ_UnregisterLadder로 맵에서 제거.
+	}
 }
 
 bool AOJJ_Grid::IsCellOnFoundation(FIntPoint Cell) const

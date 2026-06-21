@@ -15,8 +15,11 @@
 #include "Camera/PlayerCameraManager.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
+#include "OJJ_CharacterSelectionSubsystem.h"
+#include "OJJ_CharacterAppearanceData.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 #include "InputAction.h"
@@ -75,6 +78,9 @@ AOJJ_Player::AOJJ_Player()
 void AOJJ_Player::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// [게임진입] 선택 캐릭터 외형 적용 — 다른 setup 전에 먼저(메시/ABP 확정 후 입력/카메라 등 진행).
+	ApplySelectedCharacterAppearance();
 
 	// 걷기 속도를 권위 있게 적용(BP CharacterMovement의 MaxWalkSpeed 기본값을 덮음 — 단일 출처).
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
@@ -152,6 +158,60 @@ void AOJJ_Player::BeginPlay()
 	}
 	
 	ConnectFactoryAgentClient();
+}
+
+void AOJJ_Player::ApplySelectedCharacterAppearance()
+{
+	// [게임진입] 선택 서브시스템값 → DataAsset 매핑 → GetMesh() 스왑. 어느 단계든 미존재면 안전 스킵
+	// (AppearanceData 미할당/서브시스템 없음/항목 없음 → BP 기본 메시 유지). 외형만 — 로직 BP는 단일 유지.
+	if (!AppearanceData)
+	{
+		return;
+	}
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!GameInstance)
+	{
+		return;
+	}
+	UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>();
+	if (!Selection)
+	{
+		return;
+	}
+	const FOJJ_CharacterAppearance* Appearance = AppearanceData->Appearances.Find(Selection->GetSelectedCharacter());
+	if (!Appearance)
+	{
+		return;
+	}
+	USkeletalMeshComponent* MeshComp = GetMesh();
+	if (!MeshComp)
+	{
+		return;
+	}
+	// 메시·ABP 각각 비어 있으면 해당 스왑 스킵(부분 지정 허용 — 스켈레톤 동일 시 메시만, 다르면 ABP까지).
+	if (Appearance->SkeletalMesh)
+	{
+		MeshComp->SetSkeletalMeshAsset(Appearance->SkeletalMesh);
+	}
+	if (Appearance->AnimClass)
+	{
+		MeshComp->SetAnimInstanceClass(Appearance->AnimClass);
+	}
+}
+
+void AOJJ_Player::OJJ_DebugSetCharacter(int32 CharacterIndex)
+{
+	// [게임진입 테스트] 콘솔 디버그 — 서브시스템 값 설정 후 즉시 재스왑(BeginPlay 외 런타임 반영 검증).
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
+		{
+			Selection->SetSelectedCharacter(
+				CharacterIndex == 1 ? EOJJ_CharacterType::Woman : EOJJ_CharacterType::Man);
+			ApplySelectedCharacterAppearance();
+			UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] DebugSetCharacter=%d 적용"), CharacterIndex);
+		}
+	}
 }
 
 void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -342,6 +402,21 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 
 		// 발 밑 Z로 상/하단 도달 판정. ClimbReachMargin 여유로 경계 떨림 방지(도달은 살짝 일찍).
 		const float FeetZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+
+		// [#184] top 직전 Finish 마무리 몽타주 트리거(도착 순간 EndClimb 재생은 늦음 — 올라서기가 도착과
+		// 맞물리게 미리 시작). 올라가는 중(Axis.Y>0)에만. 한 등반당 1회(bFinishPlaying). ⚠️ 짧은 사다리는
+		// ClimbHeight*0.5로 클램프 — 안 그러면 RemainingToTop이 시작부터 작아 BeginClimb 직후 트리거됨.
+		if (Axis.Y > 0.f && !bFinishPlaying && LadderFinishMontage)
+		{
+			const float RemainingToTop = CurrentLadder->GetClimbTopZ() - FeetZ;
+			const float EffectiveTrigger = FMath::Min(FinishTriggerDistance, CurrentLadder->GetClimbHeight() * 0.5f);
+			if (RemainingToTop <= EffectiveTrigger)
+			{
+				PlayAnimMontage(LadderFinishMontage);
+				bFinishPlaying = true;
+			}
+		}
+
 		if (Axis.Y > 0.f && FeetZ >= CurrentLadder->GetClimbTopZ() - ClimbReachMargin)
 		{
 			EndClimb(/*bStepOffTop=*/true);
@@ -408,6 +483,7 @@ void AOJJ_Player::BeginClimb(AOJJ_Ladder* Ladder)
 
 	CurrentLadder = Ladder;
 	bClimbing = true;
+	bFinishPlaying = false; // [#184] 새 등반 시작 — Finish 마무리 몽타주 재트리거 허용
 	UE_LOG(LogTemp, Verbose, TEXT("[Climb] BeginClimb Bottom=%.1f Top=%.1f"),
 		Ladder->GetClimbBottomZ(), Ladder->GetClimbTopZ());
 
@@ -440,6 +516,8 @@ void AOJJ_Player::EndClimb(bool bStepOffTop)
 	AOJJ_Ladder* Ladder = CurrentLadder;
 	CurrentLadder = nullptr;
 	bClimbing = false;
+	// [#184] Finish 마무리 몽타주는 top 도착 '이전'에 Move() 거리트리거(FinishTriggerDistance)로 이미 재생됨
+	// — 여기서 재생하면 늦으므로(올라선 뒤 또 올라서기) 두지 않는다. bFinishPlaying은 다음 BeginClimb에서 리셋.
 
 	// 상단 도달: Foundation 상면으로 '부드럽게' 보간 안착(StepOffDuration). 즉시 텔레포트는 순간이동 느낌이라
 	// 짧은 lerp로 부드럽게 + 보간 중 입력 잠금(진동 방지). 완료 시 Walking 복귀 + 쿨다운(Tick에서).
@@ -553,6 +631,7 @@ void AOJJ_Player::AbortClimb()
 	CurrentLadder = nullptr;
 	bClimbing = false;
 	bSteppingOff = false;
+	bFinishPlaying = false; // [#184] 비정상 청산 — 다음 등반서 Finish 재트리거 허용
 	ResumeWalkingWithCooldown();
 }
 
