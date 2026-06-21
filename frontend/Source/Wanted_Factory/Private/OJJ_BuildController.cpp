@@ -1357,7 +1357,12 @@ void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHi
 	}
 	else
 	{
-		TargetGrid->OJJ_HideGhost();
+		// 램프 고스트: 평판 박스가 아니라 경사 Deck 메시로(OJJ_ShowGhostForRamp). 색 판정은 평판과 동일 단일원.
+		FString RampGhostReason;
+		const bool bRampGhostValid = Fit.bValid && TargetGrid->CanPlaceFoundation(Fit.Origin, Fit.EffSize, RampGhostReason);
+		TargetGrid->OJJ_ShowGhostForRamp(
+			ActiveClass.GetDefaultObject(), Fit.Origin, Fit.EffSize,
+			Fit.EffectiveRotationSteps, Fit.RiseSteps, bRampGhostValid);
 	}
 	// ??蹂닿컯: 諛⑺뼢 異쒖쿂 ?쒖떆 ???먮룞(?댁썐 ??넂?? vs ?섎룞(R) ?댁썝?붿쓽 UX 諛⑹뼱. ?됲뙋? 異쒖쿂媛 鍮꾩뼱
 	// ?덉뼱 臾대줈洹??ㅽ뙵 0), ?⑦봽留?? 蹂寃???1以?
