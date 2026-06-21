@@ -1,9 +1,9 @@
 #include "UI/UI_QuestWindow.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
-#include "Components/VerticalBox.h"
 #include "Engine/GameInstance.h"
 #include "UI_QuestNotify.h"
+#include "Components/Border.h"
 
 void UUI_QuestWindow::NativeConstruct()
 {
@@ -53,7 +53,7 @@ void UUI_QuestWindow::NativeConstruct()
 
 void UUI_QuestWindow::ToggleQuestWindow()
 {
-    if (!VB_QuestLayout)
+    if (!B_QuestBg)
     {
         return;
     }
@@ -65,7 +65,7 @@ void UUI_QuestWindow::ToggleQuestWindow()
     }
     else
     {
-        VB_QuestLayout->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        B_QuestBg->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         bIsQuestWindowOpen = true;
         K2_PlayQuestAnimation(true);
     }

@@ -26,9 +26,9 @@ public:
 
 protected:
     // --- 퀘스트 레이아웃 컴포넌트 바인딩 ---
-    UPROPERTY(meta = (BindWidget)) class UVerticalBox* VB_QuestLayout;
     UPROPERTY(meta = (BindWidget)) class UVerticalBox* VB_MainQuestZone;
     UPROPERTY(meta = (BindWidget)) class UVerticalBox* VB_SubQuestZone;
+    UPROPERTY(meta = (BindWidget)) class UBorder* B_QuestBg;
     
     UPROPERTY(meta = (BindWidget)) class UButton* BTN_RequestQuests;
 
