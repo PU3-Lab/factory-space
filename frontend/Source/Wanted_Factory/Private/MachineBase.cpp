@@ -179,11 +179,8 @@ AMachineBase::AMachineBase()
 	if (MaterialAsset.Succeeded())
 	{
 		MeshComponent->SetMaterial(0, MaterialAsset.Object);
-		StateIndicatorMaterialInstance = UMaterialInstanceDynamic::Create(MaterialAsset.Object, this);
-		StateIndicatorComponent->SetMaterial(0, StateIndicatorMaterialInstance);
+		StateIndicatorComponent->SetMaterial(0, MaterialAsset.Object);
 	}
-
-	UpdateStateIndicator();
 }
 
 void AMachineBase::ApplyMachineData(const FMachineTableRow& MachineData)
@@ -886,6 +883,11 @@ void AMachineBase::UpdateStateIndicator()
 
 	if (!StateIndicatorMaterialInstance)
 	{
+		if (HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject))
+		{
+			return;
+		}
+
 		UMaterialInterface* BaseMaterial = StateIndicatorComponent->GetMaterial(0);
 		if (BaseMaterial)
 		{

@@ -17,6 +17,7 @@
 #include "MachineBase.h"
 #include "OJJ_Grid.h"
 #include "Conveyor.h"
+#include "UObject/ConstructorHelpers.h"
 #include "Machines/PowerGridNode.h"
 #include "Machines/PowerLine.h"
 #include "Machines/PowerPlant.h"
@@ -182,7 +183,11 @@ AOJJ_BuildController::AOJJ_BuildController()
 	WarehouseClass = AWarehousePort::StaticClass();
 	MoldingMachineClass = AMoldingMachine::StaticClass();
 	SynthesizerClass = ASynthesizer::StaticClass();
-	TeleCommunicationTowerClass = ATeleCommunicationTower::StaticClass();
+	static ConstructorHelpers::FClassFinder<AMachineBase> TeleCommunicationTowerBlueprintClass(
+		TEXT("/Game/BluePrints/BP_TeleCommunicationTower"));
+	TeleCommunicationTowerClass = TeleCommunicationTowerBlueprintClass.Succeeded()
+		? TeleCommunicationTowerBlueprintClass.Class
+		: TSubclassOf<AMachineBase>(ATeleCommunicationTower::StaticClass());
 	// [#184] ?щ떎由?湲곕낯 ?대옒??BP 誘몄????? ??C++ AOJJ_Ladder. BP ?놁씠??C??諛곗튂 ?숈옉.
 	LadderClass = AOJJ_Ladder::StaticClass();
 }
