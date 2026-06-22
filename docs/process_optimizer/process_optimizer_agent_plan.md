@@ -259,3 +259,112 @@ LLM은 그 근거를 바탕으로 플레이어가 이해할 수 있는 최적화
 플레이어가 승인한 변경만 Unreal이 실행하며, 적용 항목별 이전 상태를 실행 기록으로 남겨 안전하게 되돌릴 수 있습니다.
 또한 적용 후 실제 생산 결과를 다시 측정해 예상과 차이가 나면 자동으로 덮어쓰지 않고 최신 상태 기준의 새 계획을 제안합니다.
 ```
+
+## 14. LangGraph 구조
+
+최종 `process_optimizer`는 전용 LangGraph를 사용한다.
+
+현재 `process_optimizer`는 공통 `AgentPipeline`의 단일 leaf agent로 등록되어 있고, 추천 응답 뼈대와 fallback만 가진 상태다. 하지만 최종 구조에는 상태 분석, 계획 승인, Unreal 실행 결과, 되돌리기, 효과 재측정처럼 서로 다른 상태와 조건 분기가 있다. 따라서 `operator_guide`처럼 공통 pipeline만 재사용하기보다 `material_generation`처럼 전용 graph를 두는 편이 책임과 흐름을 명확하게 만든다.
+
+```text
+Top-level Orchestrator
+-> process_optimizer 선택
+-> ProcessOptimizerGraph 실행
+```
+
+전용 그래프의 분석 흐름은 다음과 같다.
+
+```text
+START
+-> validate_factory_state
+-> calculate_metrics
+-> detect_bottlenecks
+-> build_optimization_candidates
+-> validate_command_candidates
+-> estimate_effects
+-> build_llm_explanation_prompt
+-> call_llm
+-> validate_plan_schema
+-> return_preview_plan
+-> END
+```
+
+플레이어 승인 이후에는 별도 실행 흐름을 사용한다.
+
+```text
+START
+-> validate_approval
+-> verify_factory_revision
+-> validate_selected_actions
+-> create_execution_record
+-> emit_unreal_commands
+-> receive_execution_result
+-> measure_actual_effect
+-> analyze_measurement
+-> return_execution_result_or_reanalysis
+-> END
+```
+
+되돌리기 흐름은 실행 기록과 현재 상태의 충돌을 먼저 확인한다.
+
+```text
+START
+-> load_execution_record
+-> compare_current_state_with_recorded_after_state
+-> conflict_check
+-> emit_inverse_commands
+-> receive_undo_result
+-> return_undo_result
+-> END
+```
+
+## 15. 시스템 프롬프트 역할
+
+시스템 프롬프트는 LLM이 수치를 임의로 만들거나 허용되지 않은 명령을 제안하지 않도록 역할을 제한한다.
+
+```text
+- 제공된 계산 결과와 상태 근거만 사용한다.
+- 계산 결과에 없는 수치나 효과를 만들어내지 않는다.
+- 허용 명령 목록 밖의 행동을 제안하지 않는다.
+- 최대 3개의 변경 항목만 제안한다.
+- 승인 전에는 실행 완료처럼 표현하지 않는다.
+- 예상 효과와 실제 측정 결과를 구분한다.
+- 불확실한 배치 변경은 신뢰도와 확인 필요 항목을 표시한다.
+- 정해진 JSON schema만 출력한다.
+- 플레이어가 이해할 수 있는 공장 운영 언어로 이유를 설명한다.
+```
+
+LLM은 다음 항목을 생성한다.
+
+```text
+- 계획 제목과 요약
+- 변경 항목별 이유와 우선순위 설명
+- 플레이어에게 보여 줄 예상 효과 설명
+- 측정 결과가 예상과 다를 때의 원인 설명
+```
+
+LLM은 다음 항목을 결정하지 않는다.
+
+```text
+- 병목 점수와 생산량 계산
+- 허용 명령 여부
+- 장비/컨베이어의 실제 배치 가능 여부
+- 실제 월드 상태 변경
+- 되돌리기 충돌 여부
+```
+
+## 16. RAG 사용 여부
+
+기본 최적화 구조에는 RAG를 넣지 않는다.
+
+`operator_guide`는 장비 매뉴얼과 레시피 설명을 검색해 답변하는 Agent이므로 CSV 기반 RAG가 필요하다. 반면 `process_optimizer`의 핵심 질문은 "현재 공장에서 어디가 병목인가"와 "무엇을 바꾸면 효율이 개선되는가"다. 이 답은 검색된 문서보다 Unreal이 보낸 최신 공장 상태와 코드 기반 계산이 결정해야 한다.
+
+```text
+operator_guide
+-> CSV/pgvector RAG + 현재 상태 참고 + LLM 답변
+
+process_optimizer
+-> 최신 공장 상태 + 게임 규칙/수치 계산 + LLM 계획 설명
+```
+
+향후 장비 권장 비율이나 튜토리얼 설명을 추가 근거로 보여 줄 필요가 생기면 RAG를 보조 정보로 사용할 수 있다. 하지만 병목 판단, 명령 생성, 실행 승인, 되돌리기 판단은 RAG 결과에 의존하지 않는다.
