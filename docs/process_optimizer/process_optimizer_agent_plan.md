@@ -456,3 +456,201 @@ process_optimizer는 LLM이 공장을 직접 조작하는 구조가 아닙니다
 Middleware가 플레이어 승인, 버전 충돌, 실행 안전성을 통제합니다.
 LLM은 검증된 결과를 플레이어가 이해하기 쉬운 최적화 계획으로 설명하는 역할만 맡습니다.
 ```
+
+## 18. Unreal WebSocket JSON 계약
+
+최적화 Agent는 기존 `/ws/agent` WebSocket envelope를 사용한다. 각 요청은 `request_id`, `session_id`, `client_id`, `agent: "process_optimizer"`를 공통으로 포함한다.
+
+### 18.1 분석 요청
+
+Unreal은 플레이어가 최적화 버튼을 눌렀을 때 현재 공장 snapshot과 `factoryRevision`을 보낸다.
+
+```json
+{
+  "type": "agent.request",
+  "request_id": "optimizer-analysis-001",
+  "session_id": "player-session-001",
+  "client_id": "unreal-client",
+  "agent": "process_optimizer",
+  "payload": {
+    "operation": "analyze",
+    "goal": "balance"
+  },
+  "context": {
+    "language": "ko",
+    "mode": "gameplay",
+    "factoryRevision": 12,
+    "factory_state": {}
+  }
+}
+```
+
+`factory_state`의 상세 schema는 구현 단계에서 Unreal 데이터 구조와 맞추되, 최소한 장비, 레시피, 입출력 inventory, 전력, 컨베이어 연결, 생산 지표를 포함해야 한다.
+
+### 18.2 계획 미리보기 응답
+
+백엔드는 아직 실행하지 않은 preview 계획을 반환한다. Unreal은 이 응답을 바탕으로 대상 장비와 컨베이어를 하이라이트한다.
+
+```json
+{
+  "type": "agent.response",
+  "request_id": "optimizer-analysis-001",
+  "agent": "process_optimizer",
+  "payload": {
+    "status": "preview",
+    "plan_id": "optimizer-plan-001",
+    "factoryRevision": 12,
+    "goal": "balance",
+    "summary": "입력 부족으로 멈춘 제련기부터 복구하는 계획입니다.",
+    "changes": [],
+    "expected_effect": {},
+    "expires_at": "2026-06-22T12:00:00Z"
+  }
+}
+```
+
+### 18.3 승인 및 실행 요청
+
+Unreal은 플레이어가 전체 또는 선택 항목 적용을 승인한 경우에만 실행 요청을 보낸다.
+
+```json
+{
+  "type": "agent.request",
+  "request_id": "optimizer-apply-001",
+  "session_id": "player-session-001",
+  "client_id": "unreal-client",
+  "agent": "process_optimizer",
+  "payload": {
+    "operation": "apply",
+    "plan_id": "optimizer-plan-001",
+    "approved_change_ids": ["change-01", "change-02"],
+    "approval": true
+  },
+  "context": {
+    "factoryRevision": 12,
+    "factory_state": {}
+  }
+}
+```
+
+### 18.4 실행 및 Undo 결과
+
+실행 결과는 각 변경 항목의 성공, 실패, 실패 사유를 포함한다. Undo는 `plan_id`와 최신 공장 상태를 함께 보내며, 충돌 시 역방향 명령을 실행하지 않는다.
+
+```json
+{
+  "type": "agent.request",
+  "request_id": "optimizer-undo-001",
+  "session_id": "player-session-001",
+  "client_id": "unreal-client",
+  "agent": "process_optimizer",
+  "payload": {
+    "operation": "undo",
+    "plan_id": "optimizer-plan-001"
+  },
+  "context": {
+    "factoryRevision": 13,
+    "factory_state": {}
+  }
+}
+```
+
+```json
+{
+  "type": "agent.response",
+  "request_id": "optimizer-apply-001",
+  "agent": "process_optimizer",
+  "payload": {
+    "status": "partially_applied",
+    "plan_id": "optimizer-plan-001",
+    "factoryRevisionBefore": 12,
+    "factoryRevisionAfter": 13,
+    "change_results": [],
+    "next_action": "reanalyze"
+  }
+}
+```
+
+## 19. 실행 일관성 규칙
+
+### 19.1 부분 실패
+
+여러 변경 중 일부가 실패했을 때 성공한 변경을 자동으로 되돌리지 않는다. 성공한 변경은 실제 결과와 함께 실행 기록에 남기고, Unreal이 보낸 최신 상태와 새 `factoryRevision`을 기준으로 재분석을 제안한다.
+
+```text
+3개 변경 중 2개 성공, 1개 실패
+-> 성공한 2개는 execution record에 저장
+-> 실패한 항목의 Unreal 오류 코드를 change_result에 기록
+-> 전체 자동 Undo는 하지 않음
+-> 최신 factory_state 기준 reanalyze preview 반환
+```
+
+이 원칙은 성공한 변경이 이미 플레이어의 공장에 유효한 개선일 수 있고, 실패 원인이 배치 공간이나 순간 자원 부족처럼 새 상태를 다시 계산해야 하는 문제일 수 있기 때문이다.
+
+### 19.2 중복 실행 방지
+
+`plan_id`와 각 `change_id`를 멱등 키로 사용한다. 같은 승인 요청이 네트워크 재시도나 UI 중복 클릭으로 다시 들어와도 이미 완료된 변경은 재실행하지 않고 기존 결과를 반환한다.
+
+```text
+동일 plan_id + change_id + factoryRevision
+-> 기존 execution record 조회
+-> 완료된 change_result 반환
+-> Unreal 명령 재전송 금지
+```
+
+### 19.3 계획 유효 기간
+
+미리보기 계획은 생성 시점의 `factoryRevision`과 짧은 유효 기간을 가진다. 기본 유효 기간은 5분으로 두고, 구현 단계에서 설정값으로 관리한다.
+
+```text
+승인 시 검증
+1. plan_id 존재 여부
+2. expires_at 경과 여부
+3. 요청 factoryRevision과 preview factoryRevision 일치 여부
+4. 최신 factory_state 검증
+
+하나라도 실패
+-> 실행하지 않음
+-> plan_expired 또는 revision_conflict 반환
+-> 최신 상태로 재분석 안내
+```
+
+## 20. 테스트 시나리오와 성공 기준
+
+구현 완료는 단위 테스트뿐 아니라 Unreal WebSocket 계약을 통과하는 smoke test로 확인한다.
+
+| 시나리오 | 검증 내용 | 성공 기준 |
+| --- | --- | --- |
+| 입력 부족 병목 | 입력 inventory가 0인 장비를 분석 | 입력 부족 원인과 허용된 개선 후보를 반환하며, 승인 전에는 명령을 보내지 않는다. |
+| 출력 적체 | 출력 저장소 포화 또는 컨베이어 막힘 상태 | 적체 지표와 개선 우선순위를 반환한다. |
+| 승인 없는 실행 | preview 후 approval 없이 apply 시도 | `approval_required`로 차단하고 실행 기록과 Unreal 명령이 생성되지 않는다. |
+| revision 충돌 | preview 뒤 플레이어가 공장을 수정 | `revision_conflict`를 반환하고 예전 계획을 실행하지 않는다. |
+| 부분 실패 | 여러 명령 중 일부만 Unreal에서 실패 | 성공 변경만 기록하고, 자동 Undo 없이 재분석을 안내한다. |
+| 중복 실행 | 같은 `plan_id`와 `change_id`를 재전송 | Unreal 명령을 한 번만 보내고 기존 결과를 반환한다. |
+| Undo 충돌 | 적용 후 플레이어가 대상 장비를 직접 수정 | 자동 Undo를 막고 충돌 사유와 재분석 안내를 반환한다. |
+| 프롬프트 인젝션 | 내부 지시 공개 또는 임의 장비 삭제 요청 | 내부 정보를 노출하지 않으며 허용되지 않은 명령이 생성되지 않는다. |
+| 효과 측정 | 적용 후 30초 및 3 production cycle 경과 | 예상 효과와 실제 지표를 함께 반환하고, 악화 시 새 계획을 제안한다. |
+
+### 20.1 최종 완료 기준
+
+```text
+- 모든 Tool 단위 테스트가 통과한다.
+- 분석, preview, 승인 실행, 부분 실패, Undo, 효과 측정 WebSocket smoke test가 통과한다.
+- 승인 없는 요청, revision 충돌, 만료된 계획, 중복 실행이 Unreal 변경 없이 차단된다.
+- LLM 장애 시에도 실행 명령을 만들지 않고 안전한 오류 응답을 반환한다.
+- 실제 Unreal 데모에서 계획 미리보기, 선택 적용, 실행 결과, Undo 충돌 안내가 확인된다.
+```
+
+## 21. 최종 구현 범위와 확장 범위
+
+이번 최종 구현 범위는 분석, 최대 3개 개선안 preview, 플레이어 승인 실행, 변경 기록 기반 Undo, 효과 측정, 재분석까지다.
+
+아래 항목은 현재 최종 구현 범위에 포함하지 않고 향후 확장으로 남긴다.
+
+```text
+- 여러 최적화안의 시뮬레이션 비교
+- 플레이어별 최적화 성향 학습
+- 장기 생산 통계 기반 개선
+- 협동 플레이 권한 관리
+- 자동 승인 모드
+```
