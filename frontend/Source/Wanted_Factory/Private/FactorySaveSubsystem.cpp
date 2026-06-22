@@ -12,6 +12,8 @@
 #include "Machines/EscapePod.h"
 #include "Machines/MachineSubsystem.h"
 #include "Machines/PowerLine.h"
+#include "Machines/WarehousePort.h"
+#include "Misc/CoreDelegates.h"
 #include "OJJ_Foundation.h"
 #include "OJJ_Grid.h"
 #include "OJJ_Ladder.h"
@@ -64,6 +66,43 @@ namespace
 		return FIntPoint((MaxCell.X - MinCell.X) + 1, (MaxCell.Y - MinCell.Y) + 1);
 	}
 
+	FIntPoint ResolveMachineOriginForSave(const AOJJ_Grid* Grid, const AMachineBase* Machine, int32 RotationSteps)
+	{
+		if (!Grid || !Machine)
+		{
+			return FIntPoint(INT_MIN, INT_MIN);
+		}
+
+		const FIntPoint RegisteredOrigin = Grid->GetMachineOrigin(const_cast<AMachineBase*>(Machine));
+		if (RegisteredOrigin.X != INT_MIN && RegisteredOrigin.Y != INT_MIN)
+		{
+			return RegisteredOrigin;
+		}
+
+		const FIntPoint CursorCell = Grid->WorldToGrid(Machine->GetActorLocation());
+		const FIntPoint EffectiveFootprint = AOJJ_Grid::EffectiveSize(Machine->GetMachineSize(), RotationSteps);
+		return AOJJ_Grid::OJJ_OriginFromCursorCellForSize(CursorCell, EffectiveFootprint);
+	}
+
+	FIntPoint ResolveFoundationOriginForSave(const AOJJ_Grid* Grid, const AOJJ_Foundation* Foundation)
+	{
+		if (!Grid || !Foundation)
+		{
+			return FIntPoint::ZeroValue;
+		}
+
+		if (const TArray<FIntPoint>* FoundationCells = Grid->GetFoundationCells(const_cast<AOJJ_Foundation*>(Foundation)))
+		{
+			if (FoundationCells->Num() > 0)
+			{
+				return FindMinCell(*FoundationCells);
+			}
+		}
+
+		const FIntPoint CursorCell = Grid->WorldToGrid(Foundation->GetActorLocation());
+		return AOJJ_Grid::OJJ_OriginFromCursorCellForSize(CursorCell, Foundation->GetFoundationSize());
+	}
+
 	template <typename ActorType>
 	void DestroyActorsOfType(UWorld* World)
 	{
@@ -97,8 +136,18 @@ namespace
 	}
 }
 
+void UFactorySaveSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+	FCoreDelegates::OnPreExit.AddUObject(this, &UFactorySaveSubsystem::HandlePreExitSave);
+	FWorldDelegates::OnWorldBeginTearDown.AddUObject(this, &UFactorySaveSubsystem::HandleWorldBeginTearDown);
+}
+
 void UFactorySaveSubsystem::Deinitialize()
 {
+	HandlePreExitSave();
+	FCoreDelegates::OnPreExit.RemoveAll(this);
+	FWorldDelegates::OnWorldBeginTearDown.RemoveAll(this);
 	StopAutoSaveTimer();
 	CachedPlayer.Reset();
 	Super::Deinitialize();
@@ -113,6 +162,7 @@ void UFactorySaveSubsystem::HandlePlayerReady(AOJJ_Player* Player)
 
 	CachedPlayer = Player;
 	bIsResettingToNewGame = false;
+	bHasHandledShutdownSave = false;
 	if (!bHasLoadedInitialState)
 	{
 		LoadCurrentGame();
@@ -198,7 +248,8 @@ bool UFactorySaveSubsystem::SaveCurrentGame()
 	for (int32 Index = 0; Index < Machines.Num(); ++Index)
 	{
 		AMachineBase* Machine = Machines[Index];
-		const FIntPoint Origin = Grid->GetMachineOrigin(Machine);
+		const int32 RotationSteps = RotationToSteps(Machine->GetActorRotation());
+		const FIntPoint Origin = ResolveMachineOriginForSave(Grid, Machine, RotationSteps);
 		if (Origin.X == INT_MIN || Origin.Y == INT_MIN)
 		{
 			continue;
@@ -208,10 +259,14 @@ bool UFactorySaveSubsystem::SaveCurrentGame()
 		SavedMachine.InstanceId = Index;
 		SavedMachine.ClassPath = Machine->GetClass()->GetPathName();
 		SavedMachine.Origin = Origin;
-		SavedMachine.RotationSteps = RotationToSteps(Machine->GetActorRotation());
+		SavedMachine.RotationSteps = RotationSteps;
 		SavedMachine.Transform = Machine->GetActorTransform();
 		SavedMachine.bOccupancyOnly = Machine->OJJ_RequiresOccupancyOnlyRegistration();
 		Machine->GetSaveState(SavedMachine.InputInventory, SavedMachine.OutputBuffer, SavedMachine.CurrentDurability);
+		if (const AWarehousePort* WarehousePort = Cast<AWarehousePort>(Machine))
+		{
+			SavedMachine.SelectedOutputItemId = WarehousePort->GetSelectedOutputItem();
+		}
 		SaveGame->Machines.Add(SavedMachine);
 		MachineIds.Add(Machine, SavedMachine.InstanceId);
 	}
@@ -220,16 +275,13 @@ bool UFactorySaveSubsystem::SaveCurrentGame()
 	{
 		if (AOJJ_Foundation* Foundation = *It)
 		{
-			const TArray<FIntPoint>* FoundationCells = Grid->GetFoundationCells(Foundation);
-			if (!FoundationCells || FoundationCells->Num() == 0)
-			{
-				continue;
-			}
-
 			FFactorySavedFoundationData SavedFoundation;
+			const TArray<FIntPoint>* FoundationCells = Grid->GetFoundationCells(Foundation);
 			SavedFoundation.ClassPath = Foundation->GetClass()->GetPathName();
-			SavedFoundation.Origin = FindMinCell(*FoundationCells);
-			SavedFoundation.Size = FindSizeFromCells(*FoundationCells);
+			SavedFoundation.Origin = ResolveFoundationOriginForSave(Grid, Foundation);
+			SavedFoundation.Size = (FoundationCells && FoundationCells->Num() > 0)
+				? FindSizeFromCells(*FoundationCells)
+				: Foundation->GetFoundationSize();
 			SavedFoundation.RotationSteps = RotationToSteps(Foundation->GetActorRotation());
 			SavedFoundation.Transform = Foundation->GetActorTransform();
 			SavedFoundation.SurfaceZ = Foundation->GetActorLocation().Z + Foundation->GetThickness();
@@ -373,6 +425,14 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 		}
 	}
 
+	for (AEscapePod* ExistingEscapePod : ExistingEscapePods)
+	{
+		if (IsValid(ExistingEscapePod))
+		{
+			Grid->RemoveMachine(ExistingEscapePod);
+		}
+	}
+
 	TArray<AMachineBase*> MachinesToDestroy;
 	for (TActorIterator<AMachineBase> It(World); It; ++It)
 	{
@@ -477,7 +537,11 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 					bPlaced = Grid->TryPlaceMachine(Machine, SavedMachine.Origin, OutReason, SavedMachine.RotationSteps);
 					if (bPlaced)
 					{
-						Machine->SetActorTransform(SavedMachine.Transform);
+						const FTransform PlacementTransform =
+							Grid->OJJ_GetMachinePlacementTransform(Machine, SavedMachine.Origin, SavedMachine.RotationSteps);
+						Machine->SetActorLocationAndRotation(
+							PlacementTransform.GetLocation(),
+							PlacementTransform.GetRotation());
 					}
 				}
 
@@ -487,6 +551,10 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 						SavedMachine.InputInventory,
 						SavedMachine.OutputBuffer,
 						SavedMachine.CurrentDurability);
+					if (AWarehousePort* WarehousePort = Cast<AWarehousePort>(Machine))
+					{
+						WarehousePort->SetSelectedOutputItem(SavedMachine.SelectedOutputItemId);
+					}
 					RestoredMachines.Add(SavedMachine.InstanceId, Machine);
 				}
 				else
@@ -584,6 +652,13 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 			{
 				Ladder->OJJ_SetClimbHeight(SavedLadder.ClimbHeight);
 				Ladder->FinishSpawning(SavedLadder.Transform);
+				// [#184 철거] 로드 시에도 사다리 레이어 재등록 — 지면 셀 맵 + OwningFoundation 링크를 transform에서
+				// 재계산(세이브에 링크 저장 불필요). Foundation은 위 루프(452)에서 선복원돼 조회 성립 → 리로드 후에도
+				// 개별 철거 + Foundation 철거 cascade 정상.
+				if (Grid)
+				{
+					Grid->OJJ_RegisterLadder(Ladder);
+				}
 			}
 		}
 	}
@@ -607,6 +682,53 @@ bool UFactorySaveSubsystem::ResetToNewGame()
 	bHasLoadedInitialState = false;
 	bIsResettingToNewGame = true;
 	return UGameplayStatics::DeleteGameInSlot(SaveSlotName, 0);
+}
+
+bool UFactorySaveSubsystem::BackupCurrentGame()
+{
+	if (!SaveCurrentGame())
+	{
+		return false;
+	}
+
+	UFactorySaveGame* SaveGame = Cast<UFactorySaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlotName, 0));
+	if (!SaveGame)
+	{
+		return false;
+	}
+
+	return UGameplayStatics::SaveGameToSlot(SaveGame, BackupSlotName, 0);
+}
+
+bool UFactorySaveSubsystem::RestoreBackupGame()
+{
+	if (!UGameplayStatics::DoesSaveGameExist(BackupSlotName, 0))
+	{
+		return false;
+	}
+
+	UFactorySaveGame* BackupSave = Cast<UFactorySaveGame>(UGameplayStatics::LoadGameFromSlot(BackupSlotName, 0));
+	if (!BackupSave)
+	{
+		return false;
+	}
+
+	bHasLoadedInitialState = false;
+	bIsResettingToNewGame = true;
+	bHasHandledShutdownSave = false;
+
+	if (!UGameplayStatics::SaveGameToSlot(BackupSave, SaveSlotName, 0))
+	{
+		bIsResettingToNewGame = false;
+		return false;
+	}
+
+	return true;
+}
+
+bool UFactorySaveSubsystem::HasBackupGame() const
+{
+	return UGameplayStatics::DoesSaveGameExist(BackupSlotName, 0);
 }
 
 void UFactorySaveSubsystem::StartAutoSaveTimer()
@@ -669,5 +791,37 @@ void UFactorySaveSubsystem::ShowAutoSaveWarning() const
 			FMath::Max(0.5f, AutoSaveWarningLeadSeconds),
 			FColor::Yellow,
 			TEXT("1분마다 자동 저장됩니다. 곧 저장합니다..."));
+	}
+}
+
+void UFactorySaveSubsystem::HandlePreExitSave()
+{
+	if (bIsResettingToNewGame || bHasHandledShutdownSave)
+	{
+		return;
+	}
+
+	if (SaveCurrentGame())
+	{
+		bHasHandledShutdownSave = true;
+	}
+}
+
+void UFactorySaveSubsystem::HandleWorldBeginTearDown(UWorld* World)
+{
+	if (bIsResettingToNewGame || bHasHandledShutdownSave)
+	{
+		return;
+	}
+
+	AOJJ_Player* Player = CachedPlayer.Get();
+	if (!Player || Player->GetWorld() != World)
+	{
+		return;
+	}
+
+	if (SaveCurrentGame())
+	{
+		bHasHandledShutdownSave = true;
 	}
 }

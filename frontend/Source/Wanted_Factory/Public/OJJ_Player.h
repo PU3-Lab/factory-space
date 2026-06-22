@@ -16,6 +16,8 @@ class AOJJ_BuildCamera;
 class AOJJ_Ladder;
 class AMachineBase;
 class UUI_MachineInteract;
+class UAnimMontage;
+class UOJJ_CharacterAppearanceData;
 struct FInputActionValue;
 
 /**
@@ -58,8 +60,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Climb")
 	bool IsClimbing() const { return bClimbing; }
 
+	// [게임진입 테스트] 위젯 전 독립 검증용 콘솔 명령 — PIE 콘솔에 `OJJ_DebugSetCharacter 1`(Woman)/`0`(Man)
+	// 입력 시 선택 서브시스템 설정 + 즉시 재스왑(레벨 재진입 없이 확인). 2단계 위젯 붙으면 제거 가능.
+	UFUNCTION(Exec)
+	void OJJ_DebugSetCharacter(int32 CharacterIndex);
+
 protected:
 	virtual void BeginPlay() override;
+
+	// [게임진입] 선택 서브시스템(EOJJ_CharacterType)값으로 GetMesh()의 SkeletalMesh+AnimClass를 스왑(외형만 —
+	// 사다리/빌드/입력 로직 무영향, 단일 pawn 유지). AppearanceData/서브시스템/항목 미존재면 안전하게 스킵.
+	void ApplySelectedCharacterAppearance();
 
 	// step-off 부드러운 안착 보간(#184) 처리. 평상시엔 별 비용 없음(bSteppingOff 가드).
 	virtual void Tick(float DeltaSeconds) override;
@@ -110,6 +121,12 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> Camera;
+
+	// --- Character appearance (게임진입) ---
+	// 캐릭터 종류 → 외형(메시+ABP) 매핑 DataAsset. BeginPlay에서 선택 서브시스템값으로 GetMesh()를 스왑한다.
+	// 미할당이면 스왑 스킵(BP 기본 메시 유지) — 게임진입 흐름 미완성 단계에서도 안전. JJ가 BP_OJJ_Player에 DA 할당.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character")
+	TObjectPtr<UOJJ_CharacterAppearanceData> AppearanceData;
 
 	// --- Camera tuning ---
 	// 스크롤 줌 한 틱당 SpringArm 길이 변화량
@@ -259,6 +276,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
 	float ClimbEntryZTolerance = 80.f;
 
+	// [#184] 사다리 마무리(올라서기) 몽타주(예: AM_Man_Ladder_Finish, DefaultSlot). top 도착 '이전'에
+	// Move()의 FinishTriggerDistance 거리트리거로 1회 재생 — 올라서기가 실제 top 도착과 맞물리게(도착 순간
+	// 재생은 늦음). 미할당(nullptr)이면 몽타주 없이 기존 동작. ⚠️ ABP AnimGraph에 Slot 'DefaultSlot' 노드 필요.
+	// ⚠️ 몽타주 Root Motion OFF(캡슐 이동은 비행이 전담, 켜면 이중이동). Finish 루트높이(f0≈101) top 안착 PIE 확인.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb")
+	TObjectPtr<UAnimMontage> LadderFinishMontage = nullptr;
+
+	// [#184] top까지 남은 Z가 이 값 이하면 Finish 마무리 몽타주를 1회 재생(올라서기가 top 도착과 맞물리게).
+	// 몽타주가 '마무리(올라서기)'만 담으므로 작게 시작 — PIE 튜닝. ⚠️ 짧은 사다리는 ClimbHeight*0.5로 클램프(Move).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
+	float FinishTriggerDistance = 100.f;
+
 	// 현재 오르는 사다리(없으면 null). 등반 상태의 단일 진실원.
 	UPROPERTY(Transient)
 	TObjectPtr<AOJJ_Ladder> CurrentLadder;
@@ -276,6 +305,10 @@ protected:
 
 	// step-off 보간 상태(#184). 보간 중엔 이동 입력 잠금 + 비행(중력0) 유지, 완료 시 Walking+쿨다운.
 	bool bSteppingOff = false;
+
+	// [#184] Finish 마무리 몽타주 한 등반당 1회 재생 가드. FinishTriggerDistance 도달 시 set,
+	// BeginClimb/AbortClimb에서 clear. 미설정 시 매 프레임 재트리거되어 몽타주가 처음부터 반복("계속 나옴").
+	bool bFinishPlaying = false;
 	FVector StepOffStart = FVector::ZeroVector;
 	FVector StepOffTarget = FVector::ZeroVector;
 	float StepOffElapsed = 0.f;
@@ -309,6 +342,75 @@ protected:
 	// 빌드모드 진입/복귀 시 카메라 뷰타겟 블렌드 시간(초).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Build", meta = (ClampMin = "0.0"))
 	float CameraBlendTime = 0.4f;
+
+	// --- Intro 연출 (L_Planet 시네마틱 경유 진입) ---
+	// 누워있다 일어나는 getup 몽타주. BP_OJJ_Player에서 할당(경로 하드코딩 금지). 미할당이면 인트로 안전 스킵.
+	UPROPERTY(EditAnywhere, Category = "OJJ|Intro")
+	TObjectPtr<UAnimMontage> GetUpMontage;
+
+	// 몽타주 종료 후 블렌드해 도달할 3인칭 SpringArm 목표 길이(uu).
+	UPROPERTY(EditAnywhere, Category = "OJJ|Intro")
+	float IntroArmLength = 400.f;
+
+	// 1인칭(ArmLength 0)→3인칭(IntroArmLength) 카메라 블렌드 속도(FInterpTo). 클수록 빠르게 수렴.
+	UPROPERTY(EditAnywhere, Category = "OJJ|Intro")
+	float IntroBlendSpeed = 2.f;
+
+	// 몽타주 종료 후 카메라 블렌드 진행 중 플래그. Tick에서 SpringArm 길이를 IntroArmLength로 보간.
+	bool bBlendingCamera = false;
+
+	// [인트로 입력 잠금] PlayIntroSequence에서 DisableInput을 실제로 적용했는지. 복원(EnableInput)을 정확히 1:1로
+	// 짝지어 호출하기 위한 플래그 — PC가 null인 프레임에 DisableInput(null) 후 EnableInput(validPC)로 어긋나
+	// 입력이 영구 잠기던 soft-lock을 막는다(불균형 방지). TryRestoreIntroInput에서만 해제.
+	bool bIntroInputDisabled = false;
+
+	// [인트로 안전 여유] 안전 타임아웃 = (getup 몽타주 길이) + 이 여유(초). 몽타주의 자연 재생 + 카메라 블렌드를
+	// 절대 방해하지 않도록 절대시간(옛 6초)이 아니라 '몽타주 길이 기준'으로 잡는다. 이 여유는 몽타주 종료 후
+	// 카메라 블렌드(보통 수초) + 버퍼를 덮을 만큼. 진짜 비정상(델리게이트 미발화 등)일 때만 ForceFinishIntro 발동.
+	UPROPERTY(EditAnywhere, Category = "OJJ|Intro", meta = (ClampMin = "0.0"))
+	float IntroSafetyExtraSeconds = 8.f;
+
+	// 안전 타임아웃 타이머 핸들. 블렌드 정상 완료 시 ClearTimer로 취소(invalidate).
+	FTimerHandle IntroSafetyTimerHandle;
+
+	// [인트로 1인칭] getup 몽타주 동안 카메라를 부착할 메시 소켓 이름. 진짜 머리 시점(1인칭)을 위해
+	// GetMesh()의 이 소켓에 카메라를 SnapToTarget으로 붙인다. 메시에 소켓이 없으면(DoesSocketExist) 부착 스킵 →
+	// 기존 방식(ArmLength 0)으로 폴백. 메시 본/소켓 명명이 다르면 BP/디테일 패널에서 조정.
+	UPROPERTY(EditAnywhere, Category = "OJJ|Intro")
+	FName HeadSocketName = TEXT("HeadSocket");
+
+	// [인트로 1인칭] 카메라를 HeadSocket에 부착한 상태 여부. 블렌드 시작 시 원위치 복원 가드(중복 복원/미부착 복원 방지).
+	bool bCameraAttachedToHead = false;
+
+	// [인트로 1인칭] HeadSocket 부착 직전의 원래 부착 상태(복원용). 부모 컴포넌트(보통 SpringArm)·소켓·상대 트랜스폼을
+	// 저장해 블렌드 시작 시 그대로 되돌린다. 부모는 파괴 대비 weak.
+	TWeakObjectPtr<USceneComponent> IntroCameraOriginalParent;
+	FName IntroCameraOriginalSocket = NAME_None;
+	FTransform IntroCameraOriginalRelativeTransform = FTransform::Identity;
+
+	// 인트로 연출 시작 — 입력 잠금 + 1인칭(ArmLength 0) + getup 몽타주 재생 + 종료 델리게이트 바인드.
+	// GetUpMontage/SpringArm/AnimInstance 중 하나라도 null이면 안전 스킵(입력 복구 + 평소 플레이, 크래시 방지).
+	void PlayIntroSequence();
+
+	// getup 몽타주 종료 콜백(FOnMontageEnded). 카메라를 HeadSocket에서 떼 원위치 복원 후 3인칭 블렌드를 시작(Tick이 보간 담당).
+	void HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
+	// [인트로 1인칭] 카메라를 GetMesh()의 HeadSocket에 부착(머리 시점). 원래 부착 상태를 저장한다.
+	// 소켓 미존재/Camera·메시 null이면 부착 스킵(폴백: ArmLength 0 기존 방식 유지).
+	void AttachCameraToHeadSocket();
+
+	// [인트로 1인칭] 카메라를 HeadSocket에서 떼고 저장해둔 원래 부모/소켓/상대 트랜스폼으로 복원. 미부착이면 no-op.
+	void RestoreCameraFromHeadSocket();
+
+	// [인트로] 입력 복구(EnableInput) + 1회성 플래그(ShouldPlayIntro) 소거를 한곳에서. bIntroInputDisabled로
+	// DisableInput과 1:1 짝을 보장한다. PC가 아직 없으면 입력 복구를 보류하고 false 반환 → 호출부가 다음 틱 재시도
+	// (블렌드 종료/플래그 소거를 입력 복구 성공에 묶어 soft-lock을 원천 차단). 복구 완료/불필요 시 true.
+	bool TryRestoreIntroInput();
+
+	// [인트로 안전망] (몽타주 길이 + IntroSafetyExtraSeconds) 타이머 콜백 — 아직 인트로 잔여 상태(블렌드/입력잠금/
+	// 머리부착)면 재생 중 몽타주를 멈추고 카메라(원위치+IntroArmLength)·입력을 강제 복구한다. 정상 완료를 방해하지
+	// 않도록 몽타주 길이 기준으로 잡으며, 어떤 경로로도 입력이 영구 잠기지 않게 하는 최종 방어선(진짜 비정상 전용).
+	void ForceFinishIntro();
 
 	// --- Input handlers ---
 	void Move(const FInputActionValue& Value);
@@ -363,6 +465,15 @@ public:
 
 	UFUNCTION(Exec)
 	void ResetGame();
+
+	UFUNCTION(Exec)
+	void BackupAndResetGame();
+
+	UFUNCTION(Exec)
+	void RestoreBackupGame();
+
+	UFUNCTION(Exec)
+	void ClearWarehouse();
 
 	UFUNCTION(Exec)
 	void TriggerPlanetEvent(const FString& EventName, float Severity = 1.0f, float DurationSeconds = -1.0f);

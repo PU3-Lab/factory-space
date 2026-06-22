@@ -38,6 +38,9 @@ struct FFactorySavedMachineData
 
 	UPROPERTY()
 	float CurrentDurability = 0.0f;
+
+	UPROPERTY()
+	FName SelectedOutputItemId = NAME_None;
 };
 
 USTRUCT(BlueprintType)

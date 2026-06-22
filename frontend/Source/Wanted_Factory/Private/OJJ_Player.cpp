@@ -10,13 +10,20 @@
 #include "QuestManagerSubsystem.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "TimerManager.h"
+#include "Engine/World.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
+#include "OJJ_CharacterSelectionSubsystem.h"
+#include "OJJ_CharacterAppearanceData.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 #include "InputAction.h"
@@ -76,11 +83,19 @@ void AOJJ_Player::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// [게임진입] 선택 캐릭터 외형 적용 — 다른 setup 전에 먼저(메시/ABP 확정 후 입력/카메라 등 진행).
+	ApplySelectedCharacterAppearance();
+
+	// [L_Planet 인트로] 시네마틱(L_Cinematic) 경유 진입 시에만 getup 몽타주 + 카메라 1인칭→3인칭 연출.
+	// 디버그 직접진입(플래그 false)은 스킵하고 평소 플레이. 플래그는 연출 완료 시 PlayIntroSequence/Tick에서 소거(1회성).
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
-		if (UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>())
+		if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
 		{
-			WarehouseSubsystem->GrantInitialItems(InitialWarehouseItems);
+			if (Selection->GetShouldPlayIntro())
+			{
+				PlayIntroSequence();
+			}
 		}
 	}
 
@@ -160,6 +175,278 @@ void AOJJ_Player::BeginPlay()
 	}
 	
 	ConnectFactoryAgentClient();
+}
+
+void AOJJ_Player::ApplySelectedCharacterAppearance()
+{
+	// [게임진입] 선택 서브시스템값 → DataAsset 매핑 → GetMesh() 스왑. 어느 단계든 미존재면 안전 스킵
+	// (AppearanceData 미할당/서브시스템 없음/항목 없음 → BP 기본 메시 유지). 외형만 — 로직 BP는 단일 유지.
+	if (!AppearanceData)
+	{
+		return;
+	}
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!GameInstance)
+	{
+		return;
+	}
+	UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>();
+	if (!Selection)
+	{
+		return;
+	}
+	const FOJJ_CharacterAppearance* Appearance = AppearanceData->Appearances.Find(Selection->GetSelectedCharacter());
+	if (!Appearance)
+	{
+		return;
+	}
+	USkeletalMeshComponent* MeshComp = GetMesh();
+	if (!MeshComp)
+	{
+		return;
+	}
+	// 메시·ABP 각각 비어 있으면 해당 스왑 스킵(부분 지정 허용 — 스켈레톤 동일 시 메시만, 다르면 ABP까지).
+	if (Appearance->SkeletalMesh)
+	{
+		MeshComp->SetSkeletalMeshAsset(Appearance->SkeletalMesh);
+	}
+	if (Appearance->AnimClass)
+	{
+		MeshComp->SetAnimInstanceClass(Appearance->AnimClass);
+	}
+}
+
+void AOJJ_Player::PlayIntroSequence()
+{
+	// [L_Planet 인트로] 누워있다 일어나는 getup 몽타주 재생 + 카메라 1인칭(ArmLength 0) 시작. 몽타주 종료 시
+	// HandleMontageEnded가 bBlendingCamera를 켜고 Tick이 3인칭(IntroArmLength)으로 보간한다.
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+
+	// 안전 스킵: 필수 요소(몽타주/SpringArm/AnimInstance) 중 하나라도 없으면 연출 생략 + 평소 플레이(크래시 방지).
+	// 입력은 아직 잠그기 전이라 EnableInput은 멱등(혹시 모를 잔존 잠금 방어) + 플래그 소거로 다음 진입 재시도 방지.
+	if (!GetUpMontage || !SpringArm || !AnimInstance)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] 인트로 연출 스킵 — GetUpMontage/SpringArm/AnimInstance 중 누락. 평소 플레이로 진행. ")
+			TEXT("BP_OJJ_Player에 GetUpMontage 할당 및 ABP DefaultSlot 노드 확인."));
+		if (PC)
+		{
+			EnableInput(PC);
+		}
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
+			{
+				Selection->SetShouldPlayIntro(false);
+			}
+		}
+		return;
+	}
+
+	// 입력 잠금(연출 중 이동/카메라 차단) + 1인칭 시작. PC가 유효할 때만 잠그고 복원과 1:1 짝을 위해 플래그 기록.
+	// PC가 null인데 DisableInput(null)을 부르면 모든 컨트롤러에 broadcast되어 EnableInput(validPC)와 어긋난다 →
+	// 입력 잠금 자체를 PC 유효 시로 한정(이번 케이스에선 BeginPlay 시점 PC null 가능, 그때는 잠그지 않음).
+	if (PC)
+	{
+		DisableInput(PC);
+		bIntroInputDisabled = true;
+	}
+	SpringArm->TargetArmLength = 0.f;
+
+	// getup 몽타주 재생. Montage_Play는 실패 시 0을 반환(에셋 미로드/메시 비가시/블렌드웨이트 0 등). 그대로 두면
+	// 종료 델리게이트가 안 와 bBlendingCamera가 영영 false → 입력이 영구 잠김(soft-lock). 실패 시 3인칭 복귀 +
+	// 입력 복구 + 플래그 소거로 평소 플레이에 안전 수렴(Codex 리뷰 2026-06-22).
+	// 반환값(MontageLength)은 몽타주 길이(초, 기본 ReturnType=MontageLength) — 안전 타임아웃을 이 길이 기준으로 잡는다.
+	const float MontageLength = AnimInstance->Montage_Play(GetUpMontage);
+	if (MontageLength <= 0.f)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] 인트로 getup 몽타주 재생 실패 — 3인칭 복귀 + 평소 플레이. ABP DefaultSlot/몽타주 상태 확인."));
+		SpringArm->TargetArmLength = IntroArmLength;
+		TryRestoreIntroInput();
+		return;
+	}
+
+	// 몽타주 재생 성공 → 카메라를 메시 HeadSocket에 부착해 진짜 머리 시점(1인칭)으로 본다. 소켓 미존재 시
+	// 내부에서 부착 스킵 → 위에서 설정한 ArmLength 0 폴백이 그대로 유지된다(머리 위 내려보기 대신 SpringArm 원점).
+	// 재생 실패 경로에서는 호출되지 않아 별도 복원이 불필요(부착 자체가 없음).
+	AttachCameraToHeadSocket();
+
+	// [soft-lock 최종 방어] 안전 타임아웃 = 몽타주 길이 + 여유(블렌드+버퍼). 옛 절대 6초는 몽타주(MT_WakeUp)보다
+	// 짧아 재생 중에 터져 카메라/입력을 조기 복구하는 버그를 유발했다 → 몽타주 길이 기준으로 잡아 정상 재생·블렌드를
+	// 절대 방해하지 않게 한다. 정상 완료(Tick 블렌드 종료) 시 ClearTimer로 취소된다(진짜 비정상일 때만 발동).
+	const float SafetyDelay = MontageLength + IntroSafetyExtraSeconds;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			IntroSafetyTimerHandle, this, &AOJJ_Player::ForceFinishIntro, SafetyDelay, false);
+	}
+	UE_LOG(LogTemp, Log,
+		TEXT("[OJJ_Player] 인트로 시작 — 몽타주 길이 %.1fs, 안전 타임아웃 %.1fs(=%.1f+%.1f) 가동. 입력잠금=%d"),
+		MontageLength, SafetyDelay, MontageLength, IntroSafetyExtraSeconds, bIntroInputDisabled ? 1 : 0);
+
+	// 그 몽타주 인스턴스에 종료 델리게이트를 건다(FOnMontageEnded는 비동적 델리게이트).
+	FOnMontageEnded EndDelegate;
+	EndDelegate.BindUObject(this, &AOJJ_Player::HandleMontageEnded);
+	AnimInstance->Montage_SetEndDelegate(EndDelegate, GetUpMontage);
+}
+
+bool AOJJ_Player::TryRestoreIntroInput()
+{
+	// [인트로] 입력 복구 + 1회성 플래그 소거의 단일 출처. DisableInput을 실제 적용했을 때만(bIntroInputDisabled)
+	// EnableInput을 1:1로 호출 — 불균형/이중 호출 방지. PC가 아직 없으면 복구 보류 + false(호출부 다음 틱 재시도).
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (bIntroInputDisabled)
+	{
+		if (!PC)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[OJJ_Player] 인트로 입력 복구 보류 — 컨트롤러 아직 없음. 다음 틱/타임아웃에서 재시도."));
+			return false;
+		}
+		EnableInput(PC);
+
+		// 시네마틱(L_Cinematic) 경유 진입 시 위젯이 남긴 UI 입력모드/마우스 커서를 게임 전용으로 복원한다.
+		// EnableInput만으로는 PlayerController의 InputMode(UI)가 안 풀려 마우스+이동이 먹통이던 잠김을 차단(TPS=게임 전용).
+		PC->SetInputMode(FInputModeGameOnly());
+		PC->bShowMouseCursor = false;
+
+		bIntroInputDisabled = false;
+		UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] 인트로 입력 복구 완료(EnableInput + InputModeGameOnly)."));
+	}
+
+	// 1회성 인트로 플래그 소거 — 입력 복구가 보장된(또는 애초에 잠그지 않은) 뒤에만.
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
+		{
+			Selection->SetShouldPlayIntro(false);
+		}
+	}
+	return true;
+}
+
+void AOJJ_Player::ForceFinishIntro()
+{
+	// [soft-lock 최종 방어선] 안전 타임아웃 만료. 아직 인트로 잔여 상태면 카메라/입력을 강제 복구한다.
+	const bool bIntroPending = bBlendingCamera || bIntroInputDisabled || bCameraAttachedToHead;
+	if (!bIntroPending)
+	{
+		return; // 이미 정상 종료됨 — no-op.
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[OJJ_Player] 인트로 안전 타임아웃 만료 — 강제 카메라/입력 복구(soft-lock 방지). ")
+		TEXT("블렌드=%d 입력잠금=%d 머리부착=%d"),
+		bBlendingCamera ? 1 : 0, bIntroInputDisabled ? 1 : 0, bCameraAttachedToHead ? 1 : 0);
+
+	// 진짜 비정상(몽타주가 끝나지 않고 멈춤)으로 들어온 경우 — 재생 중인 getup 몽타주를 블렌드아웃으로 깔끔히 멈춰
+	// ABP가 locomotion으로 자연 전이되게 한다(중단 없이 두면 선 채로 미끄러지는 상태 꼬임 방지). 이미 끝났으면 no-op.
+	if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+	{
+		if (GetUpMontage && AnimInstance->Montage_IsPlaying(GetUpMontage))
+		{
+			AnimInstance->Montage_Stop(0.2f, GetUpMontage);
+		}
+	}
+
+	RestoreCameraFromHeadSocket();
+	if (SpringArm)
+	{
+		SpringArm->TargetArmLength = IntroArmLength;
+	}
+	bBlendingCamera = false;
+
+	// 입력 복구 시도. 만에 하나 아직 PC가 없어 실패하면(세션 비정상) 짧게 재무장해 끝까지 재시도한다(one-shot 누락 방지).
+	if (!TryRestoreIntroInput())
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(
+				IntroSafetyTimerHandle, this, &AOJJ_Player::ForceFinishIntro, 0.5f, false);
+		}
+	}
+}
+
+void AOJJ_Player::AttachCameraToHeadSocket()
+{
+	// [인트로 1인칭] 카메라를 GetMesh()의 HeadSocket에 부착(머리 본을 따라가며 1인칭 시점).
+	USkeletalMeshComponent* MeshComp = GetMesh();
+	if (!Camera || !MeshComp || !MeshComp->DoesSocketExist(HeadSocketName))
+	{
+		// 폴백: 소켓/카메라/메시 누락 시 부착 스킵 — 호출부의 ArmLength 0 기존 방식 유지(크래시 방지).
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] 인트로 머리 시점 부착 스킵 — Camera/메시 누락 또는 소켓 '%s' 미존재. ArmLength 0 폴백."),
+			*HeadSocketName.ToString());
+		return;
+	}
+
+	// 원래 부착 상태(부모·소켓·상대 트랜스폼) 저장 — 블렌드 시작 시 그대로 복원한다.
+	IntroCameraOriginalParent = Camera->GetAttachParent();
+	IntroCameraOriginalSocket = Camera->GetAttachSocketName();
+	IntroCameraOriginalRelativeTransform = Camera->GetRelativeTransform();
+
+	Camera->AttachToComponent(MeshComp, FAttachmentTransformRules::SnapToTargetIncludingScale, HeadSocketName);
+	bCameraAttachedToHead = true;
+}
+
+void AOJJ_Player::RestoreCameraFromHeadSocket()
+{
+	// [인트로 1인칭] 카메라를 HeadSocket에서 떼고 저장해둔 원래 부모/소켓/상대 트랜스폼으로 복원.
+	if (!bCameraAttachedToHead || !Camera)
+	{
+		return;
+	}
+
+	// 원래 부모(보통 SpringArm)로 복귀. weak가 유실됐으면 SpringArm으로 폴백(생성자 기본 부착 상태).
+	// 진단: 복원이 SpringArm->TargetArmLength를 건드리지 않음을 before/after로 확인(블렌드 미수렴 원인 배제용).
+	const float ArmBefore = SpringArm ? SpringArm->TargetArmLength : -1.f;
+	USceneComponent* OriginalParent = IntroCameraOriginalParent.Get();
+	if (!OriginalParent)
+	{
+		OriginalParent = SpringArm;
+	}
+	if (OriginalParent)
+	{
+		Camera->AttachToComponent(OriginalParent, FAttachmentTransformRules::KeepRelativeTransform, IntroCameraOriginalSocket);
+		Camera->SetRelativeTransform(IntroCameraOriginalRelativeTransform);
+	}
+
+	bCameraAttachedToHead = false;
+	IntroCameraOriginalParent = nullptr;
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[OJJ_Player] 카메라 HeadSocket 복원 — 부모=%s, ArmLength %.1f→%.1f(불변 기대)."),
+		OriginalParent ? *OriginalParent->GetName() : TEXT("null"),
+		ArmBefore, SpringArm ? SpringArm->TargetArmLength : -1.f);
+}
+
+void AOJJ_Player::HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+	// getup 몽타주 종료 → 카메라를 HeadSocket(머리 시점)에서 떼 원위치(SpringArm 소켓)로 복원한 뒤 3인칭 블렌드 시작.
+	// 복원 시점의 ArmLength는 0이라 카메라가 SpringArm 원점에 와 있고, Tick이 IntroArmLength로 당겨 3인칭으로 수렴.
+	// Montage_SetEndDelegate로 GetUpMontage 전용 바인드라 다른 몽타주로는 호출되지 않음(별도 필터 불필요).
+	UE_LOG(LogTemp, Log,
+		TEXT("[OJJ_Player] getup 몽타주 종료(bInterrupted=%d, ArmLength=%.1f) — 카메라 복원 후 3인칭 블렌드 시작."),
+		bInterrupted ? 1 : 0, SpringArm ? SpringArm->TargetArmLength : -1.f);
+	RestoreCameraFromHeadSocket();
+	bBlendingCamera = true;
+}
+
+void AOJJ_Player::OJJ_DebugSetCharacter(int32 CharacterIndex)
+{
+	// [게임진입 테스트] 콘솔 디버그 — 서브시스템 값 설정 후 즉시 재스왑(BeginPlay 외 런타임 반영 검증).
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
+		{
+			Selection->SetSelectedCharacter(
+				CharacterIndex == 1 ? EOJJ_CharacterType::Woman : EOJJ_CharacterType::Man);
+			ApplySelectedCharacterAppearance();
+			UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] DebugSetCharacter=%d 적용"), CharacterIndex);
+		}
+	}
 }
 
 void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -296,9 +583,9 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	}
 
 	PlayerInputComponent->BindKey(EKeys::M, IE_Pressed, this, &AOJJ_Player::SendOperatorGuideRequest);
-	PlayerInputComponent->BindKey(EKeys::Slash, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestRequest);
+	PlayerInputComponent->BindKey(EKeys::K, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestRequest);
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
-	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
+	PlayerInputComponent->BindKey(EKeys::Slash, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
 	PlayerInputComponent->BindKey(EKeys::Period, IE_Pressed, this, &AOJJ_Player::TriggerTutorialDialogueReveal);
 	// [옛 빌드 입력 경로 전수 정리] O(성형)/P(합성)/T(통신) 직행 BindKey는 카테고리 숫자키 슬롯이 완전 대체하여 제거.
@@ -350,6 +637,21 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 
 		// 발 밑 Z로 상/하단 도달 판정. ClimbReachMargin 여유로 경계 떨림 방지(도달은 살짝 일찍).
 		const float FeetZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+
+		// [#184] top 직전 Finish 마무리 몽타주 트리거(도착 순간 EndClimb 재생은 늦음 — 올라서기가 도착과
+		// 맞물리게 미리 시작). 올라가는 중(Axis.Y>0)에만. 한 등반당 1회(bFinishPlaying). ⚠️ 짧은 사다리는
+		// ClimbHeight*0.5로 클램프 — 안 그러면 RemainingToTop이 시작부터 작아 BeginClimb 직후 트리거됨.
+		if (Axis.Y > 0.f && !bFinishPlaying && LadderFinishMontage)
+		{
+			const float RemainingToTop = CurrentLadder->GetClimbTopZ() - FeetZ;
+			const float EffectiveTrigger = FMath::Min(FinishTriggerDistance, CurrentLadder->GetClimbHeight() * 0.5f);
+			if (RemainingToTop <= EffectiveTrigger)
+			{
+				PlayAnimMontage(LadderFinishMontage);
+				bFinishPlaying = true;
+			}
+		}
+
 		if (Axis.Y > 0.f && FeetZ >= CurrentLadder->GetClimbTopZ() - ClimbReachMargin)
 		{
 			EndClimb(/*bStepOffTop=*/true);
@@ -416,6 +718,7 @@ void AOJJ_Player::BeginClimb(AOJJ_Ladder* Ladder)
 
 	CurrentLadder = Ladder;
 	bClimbing = true;
+	bFinishPlaying = false; // [#184] 새 등반 시작 — Finish 마무리 몽타주 재트리거 허용
 	UE_LOG(LogTemp, Verbose, TEXT("[Climb] BeginClimb Bottom=%.1f Top=%.1f"),
 		Ladder->GetClimbBottomZ(), Ladder->GetClimbTopZ());
 
@@ -448,6 +751,8 @@ void AOJJ_Player::EndClimb(bool bStepOffTop)
 	AOJJ_Ladder* Ladder = CurrentLadder;
 	CurrentLadder = nullptr;
 	bClimbing = false;
+	// [#184] Finish 마무리 몽타주는 top 도착 '이전'에 Move() 거리트리거(FinishTriggerDistance)로 이미 재생됨
+	// — 여기서 재생하면 늦으므로(올라선 뒤 또 올라서기) 두지 않는다. bFinishPlaying은 다음 BeginClimb에서 리셋.
 
 	// 상단 도달: Foundation 상면으로 '부드럽게' 보간 안착(StepOffDuration). 즉시 텔레포트는 순간이동 느낌이라
 	// 짧은 lerp로 부드럽게 + 보간 중 입력 잠금(진동 방지). 완료 시 Walking 복귀 + 쿨다운(Tick에서).
@@ -512,6 +817,30 @@ void AOJJ_Player::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
+	// [L_Planet 인트로] getup 몽타주 종료 후 카메라를 1인칭(ArmLength 0)→3인칭(IntroArmLength)으로 부드럽게 블렌드.
+	// 아래 step-off early-return보다 먼저 처리해야 평상시에도 보간이 돈다(등반/step-off와 독립).
+	if (bBlendingCamera && SpringArm)
+	{
+		const float NewArm = FMath::FInterpTo(SpringArm->TargetArmLength, IntroArmLength, DeltaSeconds, IntroBlendSpeed);
+		SpringArm->TargetArmLength = NewArm;
+		if (FMath::Abs(NewArm - IntroArmLength) <= 1.f)
+		{
+			// 목표 근접 → 길이 확정. 단, 블렌드 종료/플래그 소거는 '입력 복구 성공'에 묶는다 — PC가 일시 null인
+			// 프레임이면 TryRestoreIntroInput이 false를 반환하고 bBlendingCamera를 유지해 다음 틱에 재시도한다
+			// (이전엔 EnableInput만 if(PC) 안에서 스킵되고 플래그는 소거돼 입력이 영구 잠기던 soft-lock을 차단).
+			SpringArm->TargetArmLength = IntroArmLength;
+			if (TryRestoreIntroInput())
+			{
+				bBlendingCamera = false;
+				if (UWorld* World = GetWorld())
+				{
+					World->GetTimerManager().ClearTimer(IntroSafetyTimerHandle);
+				}
+				UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] 인트로 카메라 블렌드 완료 — 3인칭 복귀 + 입력 복구."));
+			}
+		}
+	}
+
 	// 안전망: 등반 중 표시인데 사다리가 사라졌으면(파괴/GC로 CurrentLadder=null) 걷기 복귀 — 비행/중력0 고착 방지.
 	// 사다리 파괴/invalid(pending-kill 포함) 시에도 강제 청산 — AbortClimb이 Flying 해제 + GravityScale 복원 +
 	// bOrientRotationToMovement=true(BeginClimb에서 끈 것) 복원을 보장한다. TObjectPtr는 weak 아니라 stale 가능 →
@@ -561,6 +890,7 @@ void AOJJ_Player::AbortClimb()
 	CurrentLadder = nullptr;
 	bClimbing = false;
 	bSteppingOff = false;
+	bFinishPlaying = false; // [#184] 비정상 청산 — 다음 등반서 Finish 재트리거 허용
 	ResumeWalkingWithCooldown();
 }
 
@@ -877,6 +1207,14 @@ void AOJJ_Player::SetLadderModeShortcut()
 	}
 
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::Ladder);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectLadderMode"));
+		}
+	}
 }
 
 // [공용키 F] 평면 Foundation 직행. 레거시 BindKey라 IMC 게이팅 없음 → 빌드모드 가드 필수(Ladder/Demolish 패턴).
@@ -887,6 +1225,14 @@ void AOJJ_Player::SetFoundationModeShortcut()
 		return;
 	}
 	BuildController->OJJ_SelectFoundationKind(false);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectFlatFoundationMode"));
+		}
+	}
 }
 
 // [공용키 G] 경사 RampFoundation 직행.
@@ -897,6 +1243,14 @@ void AOJJ_Player::SetRampFoundationModeShortcut()
 		return;
 	}
 	BuildController->OJJ_SelectFoundationKind(true);
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->NotifyTutorialEvent(TEXT("SelectRampFoundationMode"));
+		}
+	}
 }
 
 // [공용키 Z] 마우스 초기화 — 들고 있던 placement 고스트 취소(None 모드), 빌드모드/배치된 액터는 그대로.
@@ -1294,6 +1648,10 @@ void AOJJ_Player::TriggerTutorialDialogueReveal()
 			{
 				QuestManager->RevealPendingTutorialStartDialogue();
 			}
+			else if (!QuestManager->AdvanceTutorialManualStep())
+			{
+				QuestManager->DismissTutorialCompletionDialogue();
+			}
 		}
 	}
 }
@@ -1543,6 +1901,13 @@ void AOJJ_Player::ResetGame()
 	UE_LOG(LogTemp, Log, TEXT("[ResetGame] Save reset requested. DeletedExistingSave=%s"),
 		bDeletedSave ? TEXT("true") : TEXT("false"));
 
+	if (UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>())
+	{
+		const int32 PreviousItemTypeCount = WarehouseSubsystem->GetStoredItems().Num();
+		WarehouseSubsystem->ClearWarehouse();
+		UE_LOG(LogTemp, Log, TEXT("[ResetGame] Warehouse cleared. PreviousItemTypes=%d"), PreviousItemTypeCount);
+	}
+
 	UWorld* World = GetWorld();
 	if (!World)
 	{
@@ -1557,6 +1922,91 @@ void AOJJ_Player::ResetGame()
 
 	UE_LOG(LogTemp, Log, TEXT("[ResetGame] Reopening level: %s"), *LevelName);
 	UGameplayStatics::OpenLevel(this, FName(*LevelName));
+}
+
+void AOJJ_Player::BackupAndResetGame()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UFactorySaveSubsystem* SaveSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UFactorySaveSubsystem>()
+		: nullptr;
+	if (!SaveSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BackupAndResetGame] FactorySaveSubsystem not found."));
+		return;
+	}
+
+	const bool bBackedUp = SaveSubsystem->BackupCurrentGame();
+	UE_LOG(LogTemp, Log, TEXT("[BackupAndResetGame] BackupRequested=%s"),
+		bBackedUp ? TEXT("true") : TEXT("false"));
+	if (!bBackedUp)
+	{
+		return;
+	}
+
+	ResetGame();
+}
+
+void AOJJ_Player::RestoreBackupGame()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UFactorySaveSubsystem* SaveSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UFactorySaveSubsystem>()
+		: nullptr;
+	if (!SaveSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[RestoreBackupGame] FactorySaveSubsystem not found."));
+		return;
+	}
+
+	const bool bRestored = SaveSubsystem->RestoreBackupGame();
+	UE_LOG(LogTemp, Log, TEXT("[RestoreBackupGame] BackupRestoreRequested=%s"),
+		bRestored ? TEXT("true") : TEXT("false"));
+	if (!bRestored)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FString LevelName = World->GetOutermost()->GetName();
+	if (LevelName.IsEmpty())
+	{
+		LevelName = UWorld::RemovePIEPrefix(World->GetMapName());
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[RestoreBackupGame] Reopening level: %s"), *LevelName);
+	UGameplayStatics::OpenLevel(this, FName(*LevelName));
+}
+
+void AOJJ_Player::ClearWarehouse()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>()
+		: nullptr;
+	if (!WarehouseSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ClearWarehouse] PlayerWarehouseSubsystem not found."));
+		return;
+	}
+
+	const int32 PreviousItemTypeCount = WarehouseSubsystem->GetStoredItems().Num();
+	WarehouseSubsystem->ClearWarehouse();
+
+	bool bSaved = false;
+	if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+	{
+		bSaved = SaveSubsystem->SaveCurrentGame();
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[ClearWarehouse] Warehouse cleared. PreviousItemTypes=%d Saved=%s"),
+		PreviousItemTypeCount,
+		bSaved ? TEXT("true") : TEXT("false"));
 }
 
 void AOJJ_Player::TriggerPlanetEvent(const FString& EventName, float Severity, float DurationSeconds)

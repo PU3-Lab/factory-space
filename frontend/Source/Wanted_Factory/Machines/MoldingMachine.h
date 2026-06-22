@@ -15,6 +15,7 @@ public:
 	// Sets default values for this actor's properties
 	AMoldingMachine();
 
+	virtual void ApplyMachineData(const FMachineTableRow& MachineData) override;
 	virtual bool AddItem(FName ItemID, int32 Count) override;
 	virtual void AddOutputItem(FName ItemID, int32 Count) override;
 	virtual bool CanAddToOutputBuffer(const FRecipeTable& Recipe) const override;

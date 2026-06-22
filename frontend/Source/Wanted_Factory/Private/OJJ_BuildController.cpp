@@ -811,9 +811,22 @@ void AOJJ_BuildController::UpdateDemolishHover()
 	}
 
 	// 鍮?? ?먮뒗 留?怨좎젙臾?愿묐㎘/WaterArea = AResourceBase)? 泥좉굅 ????꾨떂 ???섏씠?쇱씠???놁쓬.
+	// [#184 철거] 사다리 폴백 — Foundation 없어도 지면 셀 키로 잡아 호버 하이라이트 가능(클릭 철거와 동일 우선순위).
+	if (!Target)
+	{
+		Target = TargetGrid->OJJ_GetLadderAtCell(CursorCell);
+	}
+
 	if (!Target || Target->IsA<AResourceBase>())
 	{
 		TargetGrid->ClearHoverPreview();
+		return;
+	}
+
+	// [#184 철거] 사다리는 그리드 미등록이라 GetActorCells/FoundationCells에 없다 → 단일 지면 셀(CursorCell) 강조.
+	if (Cast<AOJJ_Ladder>(Target))
+	{
+		TargetGrid->OJJ_HighlightCellsInvalid({ CursorCell });
 		return;
 	}
 
@@ -877,9 +890,15 @@ void AOJJ_BuildController::DemolishUnderCursor()
 	{
 		Target = TargetGrid->GetFoundationAtCell(CursorCell);
 	}
+	// [#184 철거] 머신/파이프/Foundation 다음 우선순위로 사다리(그리드 미등록 자유액터) 폴백. 별도 사다리
+	// 레이어(지면 셀 키)라 Foundation이 사라진 떠 있는 사다리도 잡힌다.
 	if (!Target)
 	{
-		return; // 鍮?? 臾댁떆.
+		Target = TargetGrid->OJJ_GetLadderAtCell(CursorCell);
+	}
+	if (!Target)
+	{
+		return; //鍮?? 臾댁떆.
 	}
 
 	// 愿묐㎘/WaterArea(AResourceBase)??留?怨좎젙臾???泥좉굅 湲덉?.
@@ -978,6 +997,9 @@ void AOJJ_BuildController::DemolishUnderCursor()
 		FString OutReason;
 		if (TargetGrid->RemoveFoundation(Foundation, OutReason))
 		{
+			// [#184 철거 cascade] Foundation 위/인접 사다리 종속 삭제 — Foundation->Destroy() '이전'에 호출해야
+			// OwningFoundation 링크가 아직 유효(머신 cascade 패턴 미러). 안 하면 사다리가 공중에 고아로 남음.
+			TargetGrid->OJJ_DestroyLaddersOnFoundation(Foundation);
 			Foundation->Destroy();
 			bRemoved = true;
 		}
@@ -986,6 +1008,13 @@ void AOJJ_BuildController::DemolishUnderCursor()
 			// 嫄곕? ?ъ쑀 ?쒖떆 ??諛곗튂 嫄곕?(TryPlaceFoundation ?ㅽ뙣)? ?숈씪 梨꾨꼸(濡쒓렇). ?? ??嫄대Ъ N?.
 			UE_LOG(LogTemp, Warning, TEXT("[BuildController] Foundation 泥좉굅 嫄곕?: %s"), *OutReason);
 		}
+	}
+	else if (AOJJ_Ladder* Ladder = Cast<AOJJ_Ladder>(Target))
+	{
+		// [#184 철거] 떠 있는/지상 사다리 개별 철거 — 그리드 미등록이라 OJJ_GetLadderAtCell로 잡았다.
+		// 환불 없음(MVP 무료). Destroy → EndPlay가 OJJ_UnregisterLadder로 사다리 레이어 청소.
+		Ladder->Destroy();
+		bRemoved = true;
 	}
 
 	if (bRemoved)
@@ -1478,6 +1507,7 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 		*Origin.ToString(), EffSize.X, EffSize.Y, Fit.EffectiveRotationSteps,
 		FMath::RoundToInt(SnapLift / AOJJ_Grid::OJJ_FoundationSnapStep), *HeightSource,
 		Fit.DirectionSource.IsEmpty() ? TEXT("") : TEXT(", "), *Fit.DirectionSource);
+	NotifyTutorialQuestEvent(this, bRampFoundationSelected ? TEXT("PlaceRampFoundation") : TEXT("PlaceFlatFoundation"));
 
 	// F2-4 ?꾩냽 ?? ?뗮봽由고듃??源붾┛ Pawn???곷㈃?쇰줈 ?щ젮?쒖?(F3-2遺???蹂?SurfaceZ ???깅줉 ?곗씠?곕?
 	// 洹몃━?쒖뿉???쎌쓬). ?꾩냽 ??罹먯떆??由ъ뀑 ???? 洹몃?濡쒖뿬??鍮꾩＜??Z媛 ?곷㈃?쇰줈 諛붾뚮?濡?媛뺤젣 ?ъ쟻??
@@ -1811,6 +1841,10 @@ void AOJJ_BuildController::PlaceLadderAtCursor()
 	}
 	NewLadder->OJJ_SetClimbHeight(ClimbHeight);
 	NewLadder->FinishSpawning(SpawnXf);
+	// [#184 철거] 사다리 레이어 등록 — 지면 셀 → 사다리 맵 + 기댄 Foundation 링크 주입(transform에서 산출).
+	// 개별 철거(GetLadderAtCell) + Foundation 철거 cascade(OwningFoundation 매칭)의 단일 등록점.
+	TargetGrid->OJJ_RegisterLadder(NewLadder);
+	NotifyTutorialQuestEvent(this, TEXT("PlaceLadder"));
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] ?щ떎由?諛곗튂 ??height=%.1f loc=%s"), ClimbHeight, *BottomLoc.ToString());
 }
 

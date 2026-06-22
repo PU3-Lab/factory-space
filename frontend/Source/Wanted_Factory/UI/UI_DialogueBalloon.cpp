@@ -27,6 +27,12 @@ void UUI_DialogueBalloon::NativeConstruct()
 
 void UUI_DialogueBalloon::RefreshDialogueUI()
 {
+    if (bHasExternalDialogue)
+    {
+        DisplayCurrentLine();
+        return;
+    }
+
     CachedLines.Empty();
 
     if (!QuestSubsystem)
@@ -57,6 +63,11 @@ void UUI_DialogueBalloon::RefreshDialogueUI()
 
 void UUI_DialogueBalloon::HandleTutorialStepChanged(const FTutorialQuestStep& Step)
 {
+    if (bHasExternalDialogue)
+    {
+        return;
+    }
+
     if (QuestSubsystem && QuestSubsystem->HasPendingTutorialStartDialogue())
     {
         return;
@@ -70,6 +81,18 @@ void UUI_DialogueBalloon::HandleTutorialDialogueLogged(
     const FString& TriggerType,
     const TArray<FTutorialQuestDialogueLine>& Lines)
 {
+    if (bHasExternalDialogue)
+    {
+        return;
+    }
+
+    if (Lines.IsEmpty())
+    {
+        CachedLines.Empty();
+        DisplayCurrentLine();
+        return;
+    }
+
     if (TriggerType == TEXT("on_complete"))
     {
         CachedLines = Lines;
@@ -86,10 +109,48 @@ void UUI_DialogueBalloon::HandleTutorialDialogueLogged(
     DisplayCurrentLine();
 }
 
+void UUI_DialogueBalloon::ShowExternalDialogue(const FString& DialogueText)
+{
+    bHasExternalDialogue = !DialogueText.TrimStartAndEnd().IsEmpty();
+    ExternalDialogueText = bHasExternalDialogue ? DialogueText : FString();
+    DisplayCurrentLine();
+}
+
+void UUI_DialogueBalloon::ClearExternalDialogue()
+{
+    if (!bHasExternalDialogue && ExternalDialogueText.IsEmpty())
+    {
+        return;
+    }
+
+    bHasExternalDialogue = false;
+    ExternalDialogueText.Empty();
+    RefreshDialogueUI();
+}
+
 void UUI_DialogueBalloon::DisplayCurrentLine()
 {
+    if (bHasExternalDialogue)
+    {
+        SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+        if (DialogueContainer)
+        {
+            DialogueContainer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        }
+
+        if (TXT_Dialogue)
+        {
+            TXT_Dialogue->SetText(FText::FromString(ExternalDialogueText));
+        }
+
+        return;
+    }
+
     if (CachedLines.IsEmpty())
     {
+        SetVisibility(ESlateVisibility::Collapsed);
+
         if (DialogueContainer)
         {
             DialogueContainer->SetVisibility(ESlateVisibility::Collapsed);
@@ -102,6 +163,8 @@ void UUI_DialogueBalloon::DisplayCurrentLine()
 
         return;
     }
+
+    SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
     if (DialogueContainer)
     {
@@ -132,6 +195,12 @@ FReply UUI_DialogueBalloon::NativeOnPreviewMouseButtonDown(const FGeometry& InGe
     if (InMouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
     {
         return Reply;
+    }
+
+    if (bHasExternalDialogue)
+    {
+        ClearExternalDialogue();
+        return FReply::Handled();
     }
 
     if (!QuestSubsystem || !QuestSubsystem->HasPendingTutorialStartDialogue())
