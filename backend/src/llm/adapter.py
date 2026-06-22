@@ -62,37 +62,24 @@ class _HttpClient(Protocol):
         """Send JSON HTTP POST."""
 
 
-class _OpenAiMessage(Protocol):
-    content: str | None
+class _OpenAiResponse(Protocol):
+    output_text: str | None
 
 
-class _OpenAiChoice(Protocol):
-    message: _OpenAiMessage
-
-
-class _OpenAiCompletion(Protocol):
-    choices: list[_OpenAiChoice]
-
-
-class _OpenAiChatCompletions(Protocol):
+class _OpenAiResponses(Protocol):
     def create(
         self,
         *,
         model: str,
-        messages: list[dict[str, Any]],
+        input: list[dict[str, str]],
         temperature: float,
-        max_tokens: int | None = None,
-        max_completion_tokens: int | None = None,
-    ) -> _OpenAiCompletion:
-        """Create chat completion."""
-
-
-class _OpenAiChat(Protocol):
-    completions: _OpenAiChatCompletions
+        max_output_tokens: int,
+    ) -> _OpenAiResponse:
+        """Create an OpenAI Responses API response."""
 
 
 class _OpenAiClient(Protocol):
-    chat: _OpenAiChat
+    responses: _OpenAiResponses
 
 
 @dataclass(frozen=True)
@@ -163,7 +150,7 @@ class GoogleGenAiLLMAdapter:
 
 @dataclass(frozen=True)
 class OpenAILLMAdapter:
-    """OpenAI Chat Completions adapter using the official SDK."""
+    """OpenAI Responses API adapter using the official SDK."""
 
     slot: LLMModelSlot
     client: _OpenAiClient | None = None
@@ -177,7 +164,7 @@ class OpenAILLMAdapter:
         return self.invoke_messages([_user_message(prompt)])
 
     def invoke_messages(self, messages: list[dict[str, str]]) -> str | None:
-        """Return raw generated text from OpenAI chat messages."""
+        """Return raw generated text from OpenAI messages."""
 
         if not self.slot.api_key:
             return None
@@ -193,34 +180,24 @@ class OpenAILLMAdapter:
             if client is None:
                 return None
 
-            completion = client.chat.completions.create(
+            response = client.responses.create(
                 model=self.slot.model,
-                messages=messages,
+                input=messages,
+                max_output_tokens=self.max_output_tokens,
                 temperature=self.temperature,
-                **_openai_token_limit_kwargs(
-                    self.slot.model,
-                    self.max_output_tokens,
-                ),
             )
         except Exception as exc:
             logger.warning("OpenAI LLM call failed: %s", exc)
             return None
 
-        if completion is None:
+        if response is None:
             return None
-        try:
-            choices = completion.choices
-            if not choices:
-                return None
-            message = choices[0].message
-            content = message.content
-            if not isinstance(content, str):
-                return None
-            if not content.strip():
-                return None
-            return content
-        except (AttributeError, IndexError):
+        content = getattr(response, "output_text", None)
+        if not isinstance(content, str):
             return None
+        if not content.strip():
+            return None
+        return content
 
 
 @dataclass(frozen=True)
@@ -281,12 +258,6 @@ def _render_chat_messages(messages: list[dict[str, str]]) -> str:
         f"[{message.get('role', 'user').upper()}]\n{message.get('content', '')}"
         for message in messages
     )
-
-
-def _openai_token_limit_kwargs(model: str, max_output_tokens: int) -> dict[str, int]:
-    if model.startswith("gpt-5"):
-        return {"max_completion_tokens": max_output_tokens}
-    return {"max_tokens": max_output_tokens}
 
 
 def _create_google_client(api_key: str | None) -> _GoogleClient | None:

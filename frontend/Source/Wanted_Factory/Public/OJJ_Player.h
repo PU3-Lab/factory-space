@@ -343,6 +343,75 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Build", meta = (ClampMin = "0.0"))
 	float CameraBlendTime = 0.4f;
 
+	// --- Intro 연출 (L_Planet 시네마틱 경유 진입) ---
+	// 누워있다 일어나는 getup 몽타주. BP_OJJ_Player에서 할당(경로 하드코딩 금지). 미할당이면 인트로 안전 스킵.
+	UPROPERTY(EditAnywhere, Category = "OJJ|Intro")
+	TObjectPtr<UAnimMontage> GetUpMontage;
+
+	// 몽타주 종료 후 블렌드해 도달할 3인칭 SpringArm 목표 길이(uu).
+	UPROPERTY(EditAnywhere, Category = "OJJ|Intro")
+	float IntroArmLength = 400.f;
+
+	// 1인칭(ArmLength 0)→3인칭(IntroArmLength) 카메라 블렌드 속도(FInterpTo). 클수록 빠르게 수렴.
+	UPROPERTY(EditAnywhere, Category = "OJJ|Intro")
+	float IntroBlendSpeed = 2.f;
+
+	// 몽타주 종료 후 카메라 블렌드 진행 중 플래그. Tick에서 SpringArm 길이를 IntroArmLength로 보간.
+	bool bBlendingCamera = false;
+
+	// [인트로 입력 잠금] PlayIntroSequence에서 DisableInput을 실제로 적용했는지. 복원(EnableInput)을 정확히 1:1로
+	// 짝지어 호출하기 위한 플래그 — PC가 null인 프레임에 DisableInput(null) 후 EnableInput(validPC)로 어긋나
+	// 입력이 영구 잠기던 soft-lock을 막는다(불균형 방지). TryRestoreIntroInput에서만 해제.
+	bool bIntroInputDisabled = false;
+
+	// [인트로 안전 여유] 안전 타임아웃 = (getup 몽타주 길이) + 이 여유(초). 몽타주의 자연 재생 + 카메라 블렌드를
+	// 절대 방해하지 않도록 절대시간(옛 6초)이 아니라 '몽타주 길이 기준'으로 잡는다. 이 여유는 몽타주 종료 후
+	// 카메라 블렌드(보통 수초) + 버퍼를 덮을 만큼. 진짜 비정상(델리게이트 미발화 등)일 때만 ForceFinishIntro 발동.
+	UPROPERTY(EditAnywhere, Category = "OJJ|Intro", meta = (ClampMin = "0.0"))
+	float IntroSafetyExtraSeconds = 8.f;
+
+	// 안전 타임아웃 타이머 핸들. 블렌드 정상 완료 시 ClearTimer로 취소(invalidate).
+	FTimerHandle IntroSafetyTimerHandle;
+
+	// [인트로 1인칭] getup 몽타주 동안 카메라를 부착할 메시 소켓 이름. 진짜 머리 시점(1인칭)을 위해
+	// GetMesh()의 이 소켓에 카메라를 SnapToTarget으로 붙인다. 메시에 소켓이 없으면(DoesSocketExist) 부착 스킵 →
+	// 기존 방식(ArmLength 0)으로 폴백. 메시 본/소켓 명명이 다르면 BP/디테일 패널에서 조정.
+	UPROPERTY(EditAnywhere, Category = "OJJ|Intro")
+	FName HeadSocketName = TEXT("HeadSocket");
+
+	// [인트로 1인칭] 카메라를 HeadSocket에 부착한 상태 여부. 블렌드 시작 시 원위치 복원 가드(중복 복원/미부착 복원 방지).
+	bool bCameraAttachedToHead = false;
+
+	// [인트로 1인칭] HeadSocket 부착 직전의 원래 부착 상태(복원용). 부모 컴포넌트(보통 SpringArm)·소켓·상대 트랜스폼을
+	// 저장해 블렌드 시작 시 그대로 되돌린다. 부모는 파괴 대비 weak.
+	TWeakObjectPtr<USceneComponent> IntroCameraOriginalParent;
+	FName IntroCameraOriginalSocket = NAME_None;
+	FTransform IntroCameraOriginalRelativeTransform = FTransform::Identity;
+
+	// 인트로 연출 시작 — 입력 잠금 + 1인칭(ArmLength 0) + getup 몽타주 재생 + 종료 델리게이트 바인드.
+	// GetUpMontage/SpringArm/AnimInstance 중 하나라도 null이면 안전 스킵(입력 복구 + 평소 플레이, 크래시 방지).
+	void PlayIntroSequence();
+
+	// getup 몽타주 종료 콜백(FOnMontageEnded). 카메라를 HeadSocket에서 떼 원위치 복원 후 3인칭 블렌드를 시작(Tick이 보간 담당).
+	void HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
+	// [인트로 1인칭] 카메라를 GetMesh()의 HeadSocket에 부착(머리 시점). 원래 부착 상태를 저장한다.
+	// 소켓 미존재/Camera·메시 null이면 부착 스킵(폴백: ArmLength 0 기존 방식 유지).
+	void AttachCameraToHeadSocket();
+
+	// [인트로 1인칭] 카메라를 HeadSocket에서 떼고 저장해둔 원래 부모/소켓/상대 트랜스폼으로 복원. 미부착이면 no-op.
+	void RestoreCameraFromHeadSocket();
+
+	// [인트로] 입력 복구(EnableInput) + 1회성 플래그(ShouldPlayIntro) 소거를 한곳에서. bIntroInputDisabled로
+	// DisableInput과 1:1 짝을 보장한다. PC가 아직 없으면 입력 복구를 보류하고 false 반환 → 호출부가 다음 틱 재시도
+	// (블렌드 종료/플래그 소거를 입력 복구 성공에 묶어 soft-lock을 원천 차단). 복구 완료/불필요 시 true.
+	bool TryRestoreIntroInput();
+
+	// [인트로 안전망] (몽타주 길이 + IntroSafetyExtraSeconds) 타이머 콜백 — 아직 인트로 잔여 상태(블렌드/입력잠금/
+	// 머리부착)면 재생 중 몽타주를 멈추고 카메라(원위치+IntroArmLength)·입력을 강제 복구한다. 정상 완료를 방해하지
+	// 않도록 몽타주 길이 기준으로 잡으며, 어떤 경로로도 입력이 영구 잠기지 않게 하는 최종 방어선(진짜 비정상 전용).
+	void ForceFinishIntro();
+
 	// --- Input handlers ---
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
