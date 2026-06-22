@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from agents.pipeline import AgentPipeline
 from app import create_app
-from tests.harness import StubLLM, top_agent_decision
+from tests.harness import StubLLM
 from websocket_gateway import gateway
 
 
@@ -152,7 +152,7 @@ def test_agent_websocket_streams_progress_for_operator_guide() -> None:
         이 테스트는 최종 답변 전 `agent.progress`가 정확히 한 번씩만 도착하는지
         확인해 같은 말풍선이 반복되는 문제를 막습니다.
     """
-    llm = StubLLM([top_agent_decision("operator_guide"), None])
+    llm = StubLLM([None])
     pipeline = AgentPipeline(llm=llm)
 
     with TestClient(create_app()) as client:
