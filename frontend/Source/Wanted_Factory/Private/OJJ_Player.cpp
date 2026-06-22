@@ -10,6 +10,8 @@
 #include "QuestManagerSubsystem.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "TimerManager.h"
+#include "Engine/World.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
@@ -242,29 +244,27 @@ void AOJJ_Player::PlayIntroSequence()
 		return;
 	}
 
-	// 입력 잠금(연출 중 이동/카메라 차단) + 1인칭 시작.
-	DisableInput(PC);
+	// 입력 잠금(연출 중 이동/카메라 차단) + 1인칭 시작. PC가 유효할 때만 잠그고 복원과 1:1 짝을 위해 플래그 기록.
+	// PC가 null인데 DisableInput(null)을 부르면 모든 컨트롤러에 broadcast되어 EnableInput(validPC)와 어긋난다 →
+	// 입력 잠금 자체를 PC 유효 시로 한정(이번 케이스에선 BeginPlay 시점 PC null 가능, 그때는 잠그지 않음).
+	if (PC)
+	{
+		DisableInput(PC);
+		bIntroInputDisabled = true;
+	}
 	SpringArm->TargetArmLength = 0.f;
 
 	// getup 몽타주 재생. Montage_Play는 실패 시 0을 반환(에셋 미로드/메시 비가시/블렌드웨이트 0 등). 그대로 두면
 	// 종료 델리게이트가 안 와 bBlendingCamera가 영영 false → 입력이 영구 잠김(soft-lock). 실패 시 3인칭 복귀 +
 	// 입력 복구 + 플래그 소거로 평소 플레이에 안전 수렴(Codex 리뷰 2026-06-22).
-	if (AnimInstance->Montage_Play(GetUpMontage) <= 0.f)
+	// 반환값(MontageLength)은 몽타주 길이(초, 기본 ReturnType=MontageLength) — 안전 타임아웃을 이 길이 기준으로 잡는다.
+	const float MontageLength = AnimInstance->Montage_Play(GetUpMontage);
+	if (MontageLength <= 0.f)
 	{
 		UE_LOG(LogTemp, Warning,
 			TEXT("[OJJ_Player] 인트로 getup 몽타주 재생 실패 — 3인칭 복귀 + 평소 플레이. ABP DefaultSlot/몽타주 상태 확인."));
 		SpringArm->TargetArmLength = IntroArmLength;
-		if (PC)
-		{
-			EnableInput(PC);
-		}
-		if (UGameInstance* GameInstance = GetGameInstance())
-		{
-			if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
-			{
-				Selection->SetShouldPlayIntro(false);
-			}
-		}
+		TryRestoreIntroInput();
 		return;
 	}
 
@@ -273,10 +273,100 @@ void AOJJ_Player::PlayIntroSequence()
 	// 재생 실패 경로에서는 호출되지 않아 별도 복원이 불필요(부착 자체가 없음).
 	AttachCameraToHeadSocket();
 
+	// [soft-lock 최종 방어] 안전 타임아웃 = 몽타주 길이 + 여유(블렌드+버퍼). 옛 절대 6초는 몽타주(MT_WakeUp)보다
+	// 짧아 재생 중에 터져 카메라/입력을 조기 복구하는 버그를 유발했다 → 몽타주 길이 기준으로 잡아 정상 재생·블렌드를
+	// 절대 방해하지 않게 한다. 정상 완료(Tick 블렌드 종료) 시 ClearTimer로 취소된다(진짜 비정상일 때만 발동).
+	const float SafetyDelay = MontageLength + IntroSafetyExtraSeconds;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			IntroSafetyTimerHandle, this, &AOJJ_Player::ForceFinishIntro, SafetyDelay, false);
+	}
+	UE_LOG(LogTemp, Log,
+		TEXT("[OJJ_Player] 인트로 시작 — 몽타주 길이 %.1fs, 안전 타임아웃 %.1fs(=%.1f+%.1f) 가동. 입력잠금=%d"),
+		MontageLength, SafetyDelay, MontageLength, IntroSafetyExtraSeconds, bIntroInputDisabled ? 1 : 0);
+
 	// 그 몽타주 인스턴스에 종료 델리게이트를 건다(FOnMontageEnded는 비동적 델리게이트).
 	FOnMontageEnded EndDelegate;
 	EndDelegate.BindUObject(this, &AOJJ_Player::HandleMontageEnded);
 	AnimInstance->Montage_SetEndDelegate(EndDelegate, GetUpMontage);
+}
+
+bool AOJJ_Player::TryRestoreIntroInput()
+{
+	// [인트로] 입력 복구 + 1회성 플래그 소거의 단일 출처. DisableInput을 실제 적용했을 때만(bIntroInputDisabled)
+	// EnableInput을 1:1로 호출 — 불균형/이중 호출 방지. PC가 아직 없으면 복구 보류 + false(호출부 다음 틱 재시도).
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (bIntroInputDisabled)
+	{
+		if (!PC)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[OJJ_Player] 인트로 입력 복구 보류 — 컨트롤러 아직 없음. 다음 틱/타임아웃에서 재시도."));
+			return false;
+		}
+		EnableInput(PC);
+
+		// 시네마틱(L_Cinematic) 경유 진입 시 위젯이 남긴 UI 입력모드/마우스 커서를 게임 전용으로 복원한다.
+		// EnableInput만으로는 PlayerController의 InputMode(UI)가 안 풀려 마우스+이동이 먹통이던 잠김을 차단(TPS=게임 전용).
+		PC->SetInputMode(FInputModeGameOnly());
+		PC->bShowMouseCursor = false;
+
+		bIntroInputDisabled = false;
+		UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] 인트로 입력 복구 완료(EnableInput + InputModeGameOnly)."));
+	}
+
+	// 1회성 인트로 플래그 소거 — 입력 복구가 보장된(또는 애초에 잠그지 않은) 뒤에만.
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
+		{
+			Selection->SetShouldPlayIntro(false);
+		}
+	}
+	return true;
+}
+
+void AOJJ_Player::ForceFinishIntro()
+{
+	// [soft-lock 최종 방어선] 안전 타임아웃 만료. 아직 인트로 잔여 상태면 카메라/입력을 강제 복구한다.
+	const bool bIntroPending = bBlendingCamera || bIntroInputDisabled || bCameraAttachedToHead;
+	if (!bIntroPending)
+	{
+		return; // 이미 정상 종료됨 — no-op.
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[OJJ_Player] 인트로 안전 타임아웃 만료 — 강제 카메라/입력 복구(soft-lock 방지). ")
+		TEXT("블렌드=%d 입력잠금=%d 머리부착=%d"),
+		bBlendingCamera ? 1 : 0, bIntroInputDisabled ? 1 : 0, bCameraAttachedToHead ? 1 : 0);
+
+	// 진짜 비정상(몽타주가 끝나지 않고 멈춤)으로 들어온 경우 — 재생 중인 getup 몽타주를 블렌드아웃으로 깔끔히 멈춰
+	// ABP가 locomotion으로 자연 전이되게 한다(중단 없이 두면 선 채로 미끄러지는 상태 꼬임 방지). 이미 끝났으면 no-op.
+	if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+	{
+		if (GetUpMontage && AnimInstance->Montage_IsPlaying(GetUpMontage))
+		{
+			AnimInstance->Montage_Stop(0.2f, GetUpMontage);
+		}
+	}
+
+	RestoreCameraFromHeadSocket();
+	if (SpringArm)
+	{
+		SpringArm->TargetArmLength = IntroArmLength;
+	}
+	bBlendingCamera = false;
+
+	// 입력 복구 시도. 만에 하나 아직 PC가 없어 실패하면(세션 비정상) 짧게 재무장해 끝까지 재시도한다(one-shot 누락 방지).
+	if (!TryRestoreIntroInput())
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(
+				IntroSafetyTimerHandle, this, &AOJJ_Player::ForceFinishIntro, 0.5f, false);
+		}
+	}
 }
 
 void AOJJ_Player::AttachCameraToHeadSocket()
@@ -310,6 +400,8 @@ void AOJJ_Player::RestoreCameraFromHeadSocket()
 	}
 
 	// 원래 부모(보통 SpringArm)로 복귀. weak가 유실됐으면 SpringArm으로 폴백(생성자 기본 부착 상태).
+	// 진단: 복원이 SpringArm->TargetArmLength를 건드리지 않음을 before/after로 확인(블렌드 미수렴 원인 배제용).
+	const float ArmBefore = SpringArm ? SpringArm->TargetArmLength : -1.f;
 	USceneComponent* OriginalParent = IntroCameraOriginalParent.Get();
 	if (!OriginalParent)
 	{
@@ -323,6 +415,11 @@ void AOJJ_Player::RestoreCameraFromHeadSocket()
 
 	bCameraAttachedToHead = false;
 	IntroCameraOriginalParent = nullptr;
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[OJJ_Player] 카메라 HeadSocket 복원 — 부모=%s, ArmLength %.1f→%.1f(불변 기대)."),
+		OriginalParent ? *OriginalParent->GetName() : TEXT("null"),
+		ArmBefore, SpringArm ? SpringArm->TargetArmLength : -1.f);
 }
 
 void AOJJ_Player::HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted)
@@ -330,6 +427,9 @@ void AOJJ_Player::HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 	// getup 몽타주 종료 → 카메라를 HeadSocket(머리 시점)에서 떼 원위치(SpringArm 소켓)로 복원한 뒤 3인칭 블렌드 시작.
 	// 복원 시점의 ArmLength는 0이라 카메라가 SpringArm 원점에 와 있고, Tick이 IntroArmLength로 당겨 3인칭으로 수렴.
 	// Montage_SetEndDelegate로 GetUpMontage 전용 바인드라 다른 몽타주로는 호출되지 않음(별도 필터 불필요).
+	UE_LOG(LogTemp, Log,
+		TEXT("[OJJ_Player] getup 몽타주 종료(bInterrupted=%d, ArmLength=%.1f) — 카메라 복원 후 3인칭 블렌드 시작."),
+		bInterrupted ? 1 : 0, SpringArm ? SpringArm->TargetArmLength : -1.f);
 	RestoreCameraFromHeadSocket();
 	bBlendingCamera = true;
 }
@@ -725,19 +825,18 @@ void AOJJ_Player::Tick(float DeltaSeconds)
 		SpringArm->TargetArmLength = NewArm;
 		if (FMath::Abs(NewArm - IntroArmLength) <= 1.f)
 		{
-			// 목표 근접 → 확정 + 블렌드 종료 + 입력 복구 + 플래그 소거(1회성).
+			// 목표 근접 → 길이 확정. 단, 블렌드 종료/플래그 소거는 '입력 복구 성공'에 묶는다 — PC가 일시 null인
+			// 프레임이면 TryRestoreIntroInput이 false를 반환하고 bBlendingCamera를 유지해 다음 틱에 재시도한다
+			// (이전엔 EnableInput만 if(PC) 안에서 스킵되고 플래그는 소거돼 입력이 영구 잠기던 soft-lock을 차단).
 			SpringArm->TargetArmLength = IntroArmLength;
-			bBlendingCamera = false;
-			if (APlayerController* PC = Cast<APlayerController>(GetController()))
+			if (TryRestoreIntroInput())
 			{
-				EnableInput(PC);
-			}
-			if (UGameInstance* GameInstance = GetGameInstance())
-			{
-				if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
+				bBlendingCamera = false;
+				if (UWorld* World = GetWorld())
 				{
-					Selection->SetShouldPlayIntro(false);
+					World->GetTimerManager().ClearTimer(IntroSafetyTimerHandle);
 				}
+				UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] 인트로 카메라 블렌드 완료 — 3인칭 복귀 + 입력 복구."));
 			}
 		}
 	}

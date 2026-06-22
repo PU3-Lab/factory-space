@@ -255,6 +255,13 @@ class AgentPipeline:
             context = state["context"]
             payload = state["typedPayload"]
 
+            if envelope.agent == "operator_guide":
+                return {
+                    "routingPrompt": "",
+                    "routingRaw": envelope.agent,
+                    "selectedAgent": envelope.agent,
+                }
+
             routing_prompt = orchestrator.build_routing_prompt(
                 payload,
                 context,
