@@ -492,6 +492,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Machine | State")
 	void RefreshMachineState();
 
+	virtual void HandlePostRepair();
+
 	// 요인별 효율 배율 설정. Value는 0.01~100.0 클램프, NaN/Inf·빈 키는 무시. 같은 키 재설정 시 덮어씀.
 	UFUNCTION(BlueprintCallable, Category = "Machine | Planet Event")
 	void SetEfficiencyModifier(FName Key, float Value);

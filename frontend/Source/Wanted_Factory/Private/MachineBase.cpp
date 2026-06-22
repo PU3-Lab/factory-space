@@ -93,14 +93,15 @@ namespace
 			return;
 		}
 
-		if (UGameInstance* GameInstance = Machine->GetGameInstance())
+	if (UGameInstance* GameInstance = Machine->GetGameInstance())
+	{
+		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
 		{
-			if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
-			{
-				FactoryManager->UpdatePowerGrid();
-			}
+			FactoryManager->NotifyMachineChanged(Machine);
+			FactoryManager->UpdatePowerGrid();
 		}
 	}
+}
 }
 
 FVector AMachineBase::OJJ_ComputeMeshFitScale(const UStaticMesh* Mesh, FIntPoint GridSize, FVector MeshScaleMultiplier)
@@ -1182,6 +1183,7 @@ void AMachineBase::DamageDurability(float DamageAmount)
 	
 	OnDurabilityChanged.Broadcast(CurrentDurability, MaxDurability);
 	RefreshMachineState();
+	HandlePostRepair();
 	RequestPowerGridRefresh(this);
 }
 
@@ -1370,6 +1372,10 @@ void AMachineBase::RefreshMachineState()
 	}
 
 	UpdateStateIndicator();
+}
+
+void AMachineBase::HandlePostRepair()
+{
 }
 
 namespace EfficiencyKeys
