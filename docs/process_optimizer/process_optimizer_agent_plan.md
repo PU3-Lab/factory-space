@@ -410,3 +410,49 @@ error_or_fallback
 이후에도 코드 기반 명령 화이트리스트, 플레이어 승인, 공장 버전 검증,
 Unreal의 최종 월드 검증을 모두 통과한 변경만 실행하도록 설계했습니다.
 ```
+
+## 17. Tool 설계
+
+`process_optimizer`의 Tool은 LLM이 임의의 공장 조작을 만들지 못하도록, 분석과 실행에 필요한 데이터를 코드로 계산하고 검증하는 역할을 맡는다. Tool의 결과는 LangGraph state에 저장되고, LLM은 검증된 결과를 플레이어에게 설명하는 데만 사용한다.
+
+| Tool | 입력 | 출력 | 호출 시점 | 책임 |
+| --- | --- | --- | --- | --- |
+| `FactoryStateAnalyzerTool` | Unreal 공장 snapshot, `factoryRevision`, 최적화 목표 | 가동률, 입력 부족, 출력 적체, 전력, 컨베이어 혼잡, 생산량 지표 | 분석 시작 | 현재 공장의 상태를 계산 가능한 지표로 정리한다. |
+| `OptimizationPlannerTool` | 분석 지표, 병목 목록, 허용 명령 목록, 목표 | 최대 3개의 검증 전 변경 후보 | 병목 분석 후 | 목표에 맞는 개선 후보를 만들되, 허용 명령 밖의 행동은 만들지 않는다. |
+| `ExecutionRecordTool` | 승인된 변경 항목, 변경 전 상태, 변경 후 상태, revision | `plan_id`와 변경 대상별 실행 기록 | 실행 직전과 실행 결과 수신 후 | 전체 공장 snapshot 대신 실제 변경 대상만 기록해 선택적 되돌리기를 준비한다. |
+| `FactoryCommandTool` | 검증된 변경 항목, 최신 `factoryRevision`, 승인 정보 | Unreal command payload | 승인 및 실행 검증 후 | `set_recipe`, `move_machine`, `connect_conveyor` 등 화이트리스트 명령만 Unreal에 전달한다. |
+| `EffectMeasurementTool` | 적용 전 분석 지표, 적용 후 공장 상태, 관찰 시간, 생산 cycle 수 | 예상 효과 대비 실제 효과와 차이 | 적용 후 30초 및 3 production cycle 충족 후 | 실제 생산량, 적체, 유휴 장비 변화가 계획의 예상과 맞는지 측정한다. |
+| `UndoTool` | 실행 기록, 현재 변경 대상 상태, 최신 `factoryRevision` | 역방향 명령 또는 충돌 결과 | 플레이어의 되돌리기 요청 시 | 현재 상태가 기록된 `after` 값과 같은 경우에만 `before` 값으로 되돌리는 명령을 만든다. |
+
+### 17.1 Tool 호출 원칙
+
+```text
+- 분석 Tool은 플레이어가 최적화 분석을 요청했을 때만 전체 공장 snapshot을 사용한다.
+- 계획 Tool은 분석 결과와 코드에 고정된 허용 명령 목록만 입력으로 받는다.
+- 실행 Tool은 player approval과 최신 factoryRevision 검증이 끝난 뒤에만 호출한다.
+- Undo Tool은 플레이어의 명시적 요청이 있어야 호출하며, 충돌이 있으면 명령을 만들지 않는다.
+- Tool 결과는 LLM 출력보다 우선한다. LLM은 Tool 결과를 수정하거나 새로운 실행 명령을 추가할 수 없다.
+```
+
+### 17.2 LLM과 Tool의 경계
+
+```text
+LLM
+- 검증된 분석 결과를 플레이어 친화적인 계획, 우선순위, 예상 효과 설명으로 변환한다.
+- 실행 전/후 상태와 불확실성, 재분석 필요 여부를 자연어로 안내한다.
+
+Tool과 코드
+- 상태 분석, 병목 점수와 생산량 계산을 수행한다.
+- 실행 가능한 명령 후보와 역방향 명령을 만든다.
+- 허용 명령, 최대 변경 수, 승인, factoryRevision, 충돌 여부를 검증한다.
+- Unreal에 전달할 구조화된 명령 payload와 실행 기록을 만든다.
+```
+
+발표에서는 다음과 같이 설명한다.
+
+```text
+process_optimizer는 LLM이 공장을 직접 조작하는 구조가 아닙니다.
+코드 기반 Tool이 상태 분석과 명령 검증, 실행 기록, 효과 측정을 담당하고,
+Middleware가 플레이어 승인, 버전 충돌, 실행 안전성을 통제합니다.
+LLM은 검증된 결과를 플레이어가 이해하기 쉬운 최적화 계획으로 설명하는 역할만 맡습니다.
+```
