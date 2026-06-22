@@ -18,7 +18,9 @@ constexpr TCHAR OperatorGuideAgentId[] = TEXT("operator_guide");
 constexpr TCHAR QuestSampleRequestId[] = TEXT("request-quest-sample");
 constexpr TCHAR QuestSampleSessionId[] = TEXT("smoke-session");
 constexpr TCHAR QuestSampleClientId[] = TEXT("smoke-client");
-constexpr TCHAR OperatorGuideClientId[] = TEXT("unreal-ui-001");
+constexpr TCHAR OperatorGuideRequestId[] = TEXT("operator-guide-demo-multi-001");
+constexpr TCHAR OperatorGuideSessionId[] = TEXT("operator-guide-demo-session");
+constexpr TCHAR OperatorGuideClientId[] = TEXT("unreal-client");
 constexpr TCHAR DefaultSessionId[] = TEXT("dev-session");
 constexpr TCHAR DefaultClientId[] = TEXT("unreal-client");
 }
@@ -146,11 +148,18 @@ bool UFactoryAgentClientSubsystem::SendOperatorGuideQuestion(const FString& Ques
 	const TSharedPtr<FJsonObject> PayloadObject = MakeShared<FJsonObject>();
 	PayloadObject->SetStringField(TEXT("question"), TrimmedQuestion);
 
+	const TSharedPtr<FJsonObject> ContextObject = MakeShared<FJsonObject>();
+	ContextObject->SetStringField(TEXT("language"), TEXT("ko"));
+	ContextObject->SetStringField(TEXT("mode"), TEXT("gameplay"));
+
 	const TSharedPtr<FJsonObject> RequestObject = MakeShared<FJsonObject>();
 	RequestObject->SetStringField(TEXT("type"), AgentRequestType);
+	RequestObject->SetStringField(TEXT("request_id"), OperatorGuideRequestId);
+	RequestObject->SetStringField(TEXT("session_id"), OperatorGuideSessionId);
 	RequestObject->SetStringField(TEXT("client_id"), ClientId.IsEmpty() ? OperatorGuideClientId : ClientId);
 	RequestObject->SetStringField(TEXT("agent"), OperatorGuideAgentId);
 	RequestObject->SetObjectField(TEXT("payload"), PayloadObject.ToSharedRef());
+	RequestObject->SetObjectField(TEXT("context"), ContextObject.ToSharedRef());
 
 	return SendRawMessage(FactoryAgentJsonUtils::WriteJsonObject(RequestObject));
 }

@@ -1411,7 +1411,7 @@ void AOJJ_Player::SendOperatorGuideRequest()
 	}
 
 	const FString Question = TEXT("\uAE30\uC5B4 \uB9CC\uB4E4\uB824\uBA74 \uBB50\uAC00 \uD544\uC694\uD574?");
-	if (AgentClient->SendOperatorGuideQuestion(Question, TEXT("unreal-ui-001")))
+	if (AgentClient->SendOperatorGuideQuestion(Question, TEXT("unreal-client")))
 	{
 		UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] Sent operator guide request."));
 	}

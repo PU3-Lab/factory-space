@@ -335,7 +335,7 @@ void UUI_MainHUD::HandleOnTextCommitted(const FText& Text, ETextCommit::Type Com
         return;
     }
 
-    if (!AgentClient->SendOperatorGuideQuestion(QuestionStr, TEXT("unreal-ui-001")))
+    if (!AgentClient->SendOperatorGuideQuestion(QuestionStr, TEXT("unreal-client")))
     {
         const FString ErrorMessage = TEXT("AI 가이드 요청 전송에 실패했습니다.");
         if (TXT_GuideResponse)
