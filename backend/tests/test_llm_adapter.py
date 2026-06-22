@@ -54,30 +54,18 @@ class FakeGoogleClient:
         self.models = models
 
 
-class FakeOpenAiMessage:
-    def __init__(self, content: object) -> None:
-        self.content = content
+class FakeOpenAiResponse:
+    def __init__(self, output_text: object) -> None:
+        self.output_text = output_text
 
 
-class FakeOpenAiChoice:
-    def __init__(self, message: FakeOpenAiMessage) -> None:
-        self.message = message
-
-
-class FakeOpenAiCompletion:
-    def __init__(self, choices: list[FakeOpenAiChoice]) -> None:
-        self.choices = choices
-
-
-class FakeOpenAiChatCompletions:
+class FakeOpenAiResponses:
     def __init__(
         self,
-        response: FakeOpenAiCompletion | None = None,
+        response: FakeOpenAiResponse | None = None,
         error: Exception | None = None,
     ) -> None:
-        self.response = response or FakeOpenAiCompletion(
-            [FakeOpenAiChoice(FakeOpenAiMessage('{"summary":"ok"}'))]
-        )
+        self.response = response or FakeOpenAiResponse('{"summary":"ok"}')
         self.error = error
         self.calls: list[dict[str, Any]] = []
 
@@ -85,17 +73,15 @@ class FakeOpenAiChatCompletions:
         self,
         *,
         model: str,
-        messages: list[dict[str, Any]],
+        input: list[dict[str, str]],
+        max_output_tokens: int,
         temperature: float,
-        max_tokens: int | None = None,
-        max_completion_tokens: int | None = None,
-    ) -> FakeOpenAiCompletion:
+    ) -> FakeOpenAiResponse:
         self.calls.append(
             {
                 "model": model,
-                "messages": messages,
-                "max_tokens": max_tokens,
-                "max_completion_tokens": max_completion_tokens,
+                "input": input,
+                "max_output_tokens": max_output_tokens,
                 "temperature": temperature,
             }
         )
@@ -104,14 +90,9 @@ class FakeOpenAiChatCompletions:
         return self.response
 
 
-class FakeOpenAiChat:
-    def __init__(self, completions: FakeOpenAiChatCompletions) -> None:
-        self.completions = completions
-
-
-class FakeOpenAiClient:
-    def __init__(self, chat: FakeOpenAiChat) -> None:
-        self.chat = chat
+class FakeOpenAiResponsesClient:
+    def __init__(self, responses: FakeOpenAiResponses) -> None:
+        self.responses = responses
 
 
 class FakeHttpResponse:
@@ -315,11 +296,41 @@ def test_google_llm_adapter_returns_none_for_provider_error() -> None:
     assert adapter.invoke("prompt") is None
 
 
-def test_openai_llm_adapter_returns_response_text() -> None:
-    completions = FakeOpenAiChatCompletions(
-        FakeOpenAiCompletion([FakeOpenAiChoice(FakeOpenAiMessage('{"summary":"ok"}'))])
+def test_openai_llm_adapter_uses_responses_api() -> None:
+    responses = FakeOpenAiResponses()
+    client = FakeOpenAiResponsesClient(responses)
+    adapter = OpenAILLMAdapter(
+        LLMModelSlot(
+            name="default",
+            provider="openai",
+            model="gpt-5.4-nano",
+            api_key="openai-key",
+        ),
+        client=client,
+        max_output_tokens=64,
+        temperature=0.1,
     )
-    client = FakeOpenAiClient(FakeOpenAiChat(completions))
+    messages = [
+        {"role": "system", "content": "system prompt"},
+        {"role": "user", "content": "user prompt"},
+    ]
+
+    result = adapter.invoke_messages(messages)
+
+    assert result == '{"summary":"ok"}'
+    assert responses.calls == [
+        {
+            "model": "gpt-5.4-nano",
+            "input": messages,
+            "max_output_tokens": 64,
+            "temperature": 0.1,
+        }
+    ]
+
+
+def test_openai_llm_adapter_returns_response_text() -> None:
+    responses = FakeOpenAiResponses()
+    client = FakeOpenAiResponsesClient(responses)
     adapter = OpenAILLMAdapter(
         LLMModelSlot(
             name="fallback1",
@@ -336,20 +347,17 @@ def test_openai_llm_adapter_returns_response_text() -> None:
     result = adapter.invoke("prompt")
 
     assert result == '{"summary":"ok"}'
-    assert completions.calls[0] == {
+    assert responses.calls[0] == {
         "model": "gpt-4o-mini",
-        "messages": [{"role": "user", "content": "prompt"}],
-        "max_tokens": 64,
-        "max_completion_tokens": None,
+        "input": [{"role": "user", "content": "prompt"}],
+        "max_output_tokens": 64,
         "temperature": 0.1,
     }
 
 
-def test_openai_llm_adapter_uses_max_completion_tokens_for_gpt5_models() -> None:
-    completions = FakeOpenAiChatCompletions(
-        FakeOpenAiCompletion([FakeOpenAiChoice(FakeOpenAiMessage('{"summary":"ok"}'))])
-    )
-    client = FakeOpenAiClient(FakeOpenAiChat(completions))
+def test_openai_llm_adapter_uses_max_output_tokens_for_gpt5_models() -> None:
+    responses = FakeOpenAiResponses()
+    client = FakeOpenAiResponsesClient(responses)
     adapter = OpenAILLMAdapter(
         LLMModelSlot(
             name="default",
@@ -364,15 +372,12 @@ def test_openai_llm_adapter_uses_max_completion_tokens_for_gpt5_models() -> None
     result = adapter.invoke("prompt")
 
     assert result == '{"summary":"ok"}'
-    assert completions.calls[0]["max_tokens"] is None
-    assert completions.calls[0]["max_completion_tokens"] == 64
+    assert responses.calls[0]["max_output_tokens"] == 64
 
 
 def test_openai_llm_adapter_sends_system_and_user_messages() -> None:
-    completions = FakeOpenAiChatCompletions(
-        FakeOpenAiCompletion([FakeOpenAiChoice(FakeOpenAiMessage('{"summary":"ok"}'))])
-    )
-    client = FakeOpenAiClient(FakeOpenAiChat(completions))
+    responses = FakeOpenAiResponses()
+    client = FakeOpenAiResponsesClient(responses)
     adapter = OpenAILLMAdapter(
         LLMModelSlot(
             name="fallback1",
@@ -390,12 +395,12 @@ def test_openai_llm_adapter_sends_system_and_user_messages() -> None:
     result = adapter.invoke_messages(messages)
 
     assert result == '{"summary":"ok"}'
-    assert completions.calls[0]["messages"] == messages
+    assert responses.calls[0]["input"] == messages
 
 
 def test_openai_llm_adapter_returns_none_without_api_key() -> None:
-    completions = FakeOpenAiChatCompletions()
-    client = FakeOpenAiClient(FakeOpenAiChat(completions))
+    responses = FakeOpenAiResponses()
+    client = FakeOpenAiResponsesClient(responses)
     adapter = OpenAILLMAdapter(
         LLMModelSlot(
             name="fallback1",
@@ -407,12 +412,12 @@ def test_openai_llm_adapter_returns_none_without_api_key() -> None:
     )
 
     assert adapter.invoke("prompt") is None
-    assert completions.calls == []
+    assert responses.calls == []
 
 
 def test_openai_llm_adapter_returns_none_for_provider_error() -> None:
-    completions = FakeOpenAiChatCompletions(error=RuntimeError("provider failed"))
-    client = FakeOpenAiClient(FakeOpenAiChat(completions))
+    responses = FakeOpenAiResponses(error=RuntimeError("provider failed"))
+    client = FakeOpenAiResponsesClient(responses)
     adapter = OpenAILLMAdapter(
         LLMModelSlot(
             name="fallback1",
@@ -427,10 +432,8 @@ def test_openai_llm_adapter_returns_none_for_provider_error() -> None:
 
 
 def test_openai_llm_adapter_returns_none_for_empty_response_text() -> None:
-    completions = FakeOpenAiChatCompletions(
-        FakeOpenAiCompletion([FakeOpenAiChoice(FakeOpenAiMessage("   "))])
-    )
-    client = FakeOpenAiClient(FakeOpenAiChat(completions))
+    responses = FakeOpenAiResponses(FakeOpenAiResponse("   "))
+    client = FakeOpenAiResponsesClient(responses)
     adapter = OpenAILLMAdapter(
         LLMModelSlot(
             name="fallback1",
@@ -445,12 +448,10 @@ def test_openai_llm_adapter_returns_none_for_empty_response_text() -> None:
 
 
 def test_openai_llm_adapter_preserves_json_object_response_text() -> None:
-    completions = FakeOpenAiChatCompletions(
-        FakeOpenAiCompletion(
-            [FakeOpenAiChoice(FakeOpenAiMessage('  {"route":"operator_guide"}\n'))]
-        )
+    responses = FakeOpenAiResponses(
+        FakeOpenAiResponse('  {"route":"operator_guide"}\n')
     )
-    client = FakeOpenAiClient(FakeOpenAiChat(completions))
+    client = FakeOpenAiResponsesClient(responses)
     adapter = OpenAILLMAdapter(
         LLMModelSlot(
             name="fallback1",

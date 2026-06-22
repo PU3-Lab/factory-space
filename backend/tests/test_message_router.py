@@ -168,7 +168,6 @@ def test_pipeline_uses_prompt_based_operator_guide_sub_agent_routing() -> None:
             payload={"question": "How do I use this panel?"},
             request_id="request-operator-guide-routing",
             llm_responses=[
-                top_agent_decision("operator_guide"),
                 leaf_agent_decision("operator_guide.machine_help"),
                 None,
             ],
@@ -181,10 +180,9 @@ def test_pipeline_uses_prompt_based_operator_guide_sub_agent_routing() -> None:
         sub_agent="operator_guide.machine_help",
     )
     assert response["payload"]["topic"] == "machine"
-    assert "서버 전체 오케스트레이터" in llm.prompts[0]
-    assert "운영자 가이드 도메인 오케스트레이터" in llm.prompts[1]
-    assert "[ALLOWED_LEAF_AGENT_IDS]" in llm.prompts[1]
-    assert "[OUTPUT_CONTRACT]" in llm.prompts[1]
+    assert "운영자 가이드 도메인 오케스트레이터" in llm.prompts[0]
+    assert "[ALLOWED_LEAF_AGENT_IDS]" in llm.prompts[0]
+    assert "[OUTPUT_CONTRACT]" in llm.prompts[0]
 
 
 def test_pipeline_operator_guide_uses_llm_prompt_with_manual_csv_evidence() -> None:
@@ -195,7 +193,6 @@ def test_pipeline_operator_guide_uses_llm_prompt_with_manual_csv_evidence() -> N
             payload={"question": "제련기는 뭐야?"},
             request_id="request-operator-guide-manual-qa",
             llm_responses=[
-                top_agent_decision("operator_guide"),
                 leaf_agent_decision("operator_guide.machine_help"),
                 (
                     '{"final_answer":"LLM tutorial answer from CSV evidence.",'
@@ -226,6 +223,31 @@ def test_pipeline_operator_guide_uses_llm_prompt_with_manual_csv_evidence() -> N
     assert "equipment_smelter" in messages[1]["content"]
     assert "action_explain_equipment_role" in messages[1]["content"]
     assert "[OUTPUT_CONTRACT]" in messages[1]["content"]
+
+
+def test_pipeline_routes_valid_explicit_agent_without_top_level_llm() -> None:
+    llm = StubLLM([None])
+    pipeline = AgentPipeline(llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-explicit-agent-direct",
+            "agent": "operator_guide",
+            "payload": {
+                "question": "How do I use this panel?",
+                "sub_agent": "operator_guide.machine_help",
+            },
+        }
+    )
+
+    assert_agent_response(
+        response,
+        agent="operator_guide",
+        sub_agent="operator_guide.machine_help",
+    )
+    assert llm.prompts == []
+    assert len(llm.prompt_messages) == 1
 
 
 def test_pipeline_routes_explicit_agent_through_top_level_prompt() -> None:
