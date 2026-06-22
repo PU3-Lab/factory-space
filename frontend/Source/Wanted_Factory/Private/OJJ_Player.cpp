@@ -16,6 +16,8 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
 #include "OJJ_CharacterSelectionSubsystem.h"
@@ -81,6 +83,19 @@ void AOJJ_Player::BeginPlay()
 
 	// [게임진입] 선택 캐릭터 외형 적용 — 다른 setup 전에 먼저(메시/ABP 확정 후 입력/카메라 등 진행).
 	ApplySelectedCharacterAppearance();
+
+	// [L_Planet 인트로] 시네마틱(L_Cinematic) 경유 진입 시에만 getup 몽타주 + 카메라 1인칭→3인칭 연출.
+	// 디버그 직접진입(플래그 false)은 스킵하고 평소 플레이. 플래그는 연출 완료 시 PlayIntroSequence/Tick에서 소거(1회성).
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
+		{
+			if (Selection->GetShouldPlayIntro())
+			{
+				PlayIntroSequence();
+			}
+		}
+	}
 
 	// 걷기 속도를 권위 있게 적용(BP CharacterMovement의 MaxWalkSpeed 기본값을 덮음 — 단일 출처).
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
@@ -197,6 +212,126 @@ void AOJJ_Player::ApplySelectedCharacterAppearance()
 	{
 		MeshComp->SetAnimInstanceClass(Appearance->AnimClass);
 	}
+}
+
+void AOJJ_Player::PlayIntroSequence()
+{
+	// [L_Planet 인트로] 누워있다 일어나는 getup 몽타주 재생 + 카메라 1인칭(ArmLength 0) 시작. 몽타주 종료 시
+	// HandleMontageEnded가 bBlendingCamera를 켜고 Tick이 3인칭(IntroArmLength)으로 보간한다.
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+
+	// 안전 스킵: 필수 요소(몽타주/SpringArm/AnimInstance) 중 하나라도 없으면 연출 생략 + 평소 플레이(크래시 방지).
+	// 입력은 아직 잠그기 전이라 EnableInput은 멱등(혹시 모를 잔존 잠금 방어) + 플래그 소거로 다음 진입 재시도 방지.
+	if (!GetUpMontage || !SpringArm || !AnimInstance)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] 인트로 연출 스킵 — GetUpMontage/SpringArm/AnimInstance 중 누락. 평소 플레이로 진행. ")
+			TEXT("BP_OJJ_Player에 GetUpMontage 할당 및 ABP DefaultSlot 노드 확인."));
+		if (PC)
+		{
+			EnableInput(PC);
+		}
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
+			{
+				Selection->SetShouldPlayIntro(false);
+			}
+		}
+		return;
+	}
+
+	// 입력 잠금(연출 중 이동/카메라 차단) + 1인칭 시작.
+	DisableInput(PC);
+	SpringArm->TargetArmLength = 0.f;
+
+	// getup 몽타주 재생. Montage_Play는 실패 시 0을 반환(에셋 미로드/메시 비가시/블렌드웨이트 0 등). 그대로 두면
+	// 종료 델리게이트가 안 와 bBlendingCamera가 영영 false → 입력이 영구 잠김(soft-lock). 실패 시 3인칭 복귀 +
+	// 입력 복구 + 플래그 소거로 평소 플레이에 안전 수렴(Codex 리뷰 2026-06-22).
+	if (AnimInstance->Montage_Play(GetUpMontage) <= 0.f)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] 인트로 getup 몽타주 재생 실패 — 3인칭 복귀 + 평소 플레이. ABP DefaultSlot/몽타주 상태 확인."));
+		SpringArm->TargetArmLength = IntroArmLength;
+		if (PC)
+		{
+			EnableInput(PC);
+		}
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
+			{
+				Selection->SetShouldPlayIntro(false);
+			}
+		}
+		return;
+	}
+
+	// 몽타주 재생 성공 → 카메라를 메시 HeadSocket에 부착해 진짜 머리 시점(1인칭)으로 본다. 소켓 미존재 시
+	// 내부에서 부착 스킵 → 위에서 설정한 ArmLength 0 폴백이 그대로 유지된다(머리 위 내려보기 대신 SpringArm 원점).
+	// 재생 실패 경로에서는 호출되지 않아 별도 복원이 불필요(부착 자체가 없음).
+	AttachCameraToHeadSocket();
+
+	// 그 몽타주 인스턴스에 종료 델리게이트를 건다(FOnMontageEnded는 비동적 델리게이트).
+	FOnMontageEnded EndDelegate;
+	EndDelegate.BindUObject(this, &AOJJ_Player::HandleMontageEnded);
+	AnimInstance->Montage_SetEndDelegate(EndDelegate, GetUpMontage);
+}
+
+void AOJJ_Player::AttachCameraToHeadSocket()
+{
+	// [인트로 1인칭] 카메라를 GetMesh()의 HeadSocket에 부착(머리 본을 따라가며 1인칭 시점).
+	USkeletalMeshComponent* MeshComp = GetMesh();
+	if (!Camera || !MeshComp || !MeshComp->DoesSocketExist(HeadSocketName))
+	{
+		// 폴백: 소켓/카메라/메시 누락 시 부착 스킵 — 호출부의 ArmLength 0 기존 방식 유지(크래시 방지).
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] 인트로 머리 시점 부착 스킵 — Camera/메시 누락 또는 소켓 '%s' 미존재. ArmLength 0 폴백."),
+			*HeadSocketName.ToString());
+		return;
+	}
+
+	// 원래 부착 상태(부모·소켓·상대 트랜스폼) 저장 — 블렌드 시작 시 그대로 복원한다.
+	IntroCameraOriginalParent = Camera->GetAttachParent();
+	IntroCameraOriginalSocket = Camera->GetAttachSocketName();
+	IntroCameraOriginalRelativeTransform = Camera->GetRelativeTransform();
+
+	Camera->AttachToComponent(MeshComp, FAttachmentTransformRules::SnapToTargetIncludingScale, HeadSocketName);
+	bCameraAttachedToHead = true;
+}
+
+void AOJJ_Player::RestoreCameraFromHeadSocket()
+{
+	// [인트로 1인칭] 카메라를 HeadSocket에서 떼고 저장해둔 원래 부모/소켓/상대 트랜스폼으로 복원.
+	if (!bCameraAttachedToHead || !Camera)
+	{
+		return;
+	}
+
+	// 원래 부모(보통 SpringArm)로 복귀. weak가 유실됐으면 SpringArm으로 폴백(생성자 기본 부착 상태).
+	USceneComponent* OriginalParent = IntroCameraOriginalParent.Get();
+	if (!OriginalParent)
+	{
+		OriginalParent = SpringArm;
+	}
+	if (OriginalParent)
+	{
+		Camera->AttachToComponent(OriginalParent, FAttachmentTransformRules::KeepRelativeTransform, IntroCameraOriginalSocket);
+		Camera->SetRelativeTransform(IntroCameraOriginalRelativeTransform);
+	}
+
+	bCameraAttachedToHead = false;
+	IntroCameraOriginalParent = nullptr;
+}
+
+void AOJJ_Player::HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+	// getup 몽타주 종료 → 카메라를 HeadSocket(머리 시점)에서 떼 원위치(SpringArm 소켓)로 복원한 뒤 3인칭 블렌드 시작.
+	// 복원 시점의 ArmLength는 0이라 카메라가 SpringArm 원점에 와 있고, Tick이 IntroArmLength로 당겨 3인칭으로 수렴.
+	// Montage_SetEndDelegate로 GetUpMontage 전용 바인드라 다른 몽타주로는 호출되지 않음(별도 필터 불필요).
+	RestoreCameraFromHeadSocket();
+	bBlendingCamera = true;
 }
 
 void AOJJ_Player::OJJ_DebugSetCharacter(int32 CharacterIndex)
@@ -581,6 +716,31 @@ void AOJJ_Player::ResumeWalkingWithCooldown()
 void AOJJ_Player::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	// [L_Planet 인트로] getup 몽타주 종료 후 카메라를 1인칭(ArmLength 0)→3인칭(IntroArmLength)으로 부드럽게 블렌드.
+	// 아래 step-off early-return보다 먼저 처리해야 평상시에도 보간이 돈다(등반/step-off와 독립).
+	if (bBlendingCamera && SpringArm)
+	{
+		const float NewArm = FMath::FInterpTo(SpringArm->TargetArmLength, IntroArmLength, DeltaSeconds, IntroBlendSpeed);
+		SpringArm->TargetArmLength = NewArm;
+		if (FMath::Abs(NewArm - IntroArmLength) <= 1.f)
+		{
+			// 목표 근접 → 확정 + 블렌드 종료 + 입력 복구 + 플래그 소거(1회성).
+			SpringArm->TargetArmLength = IntroArmLength;
+			bBlendingCamera = false;
+			if (APlayerController* PC = Cast<APlayerController>(GetController()))
+			{
+				EnableInput(PC);
+			}
+			if (UGameInstance* GameInstance = GetGameInstance())
+			{
+				if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
+				{
+					Selection->SetShouldPlayIntro(false);
+				}
+			}
+		}
+	}
 
 	// 안전망: 등반 중 표시인데 사다리가 사라졌으면(파괴/GC로 CurrentLadder=null) 걷기 복귀 — 비행/중력0 고착 방지.
 	// 사다리 파괴/invalid(pending-kill 포함) 시에도 강제 청산 — AbortClimb이 Flying 해제 + GravityScale 복원 +
