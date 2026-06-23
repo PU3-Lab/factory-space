@@ -62,13 +62,13 @@ uv run python scripts/ws_test_operator_guide.py
 
 ```powershell
 cd C:\factory-space\backend
-uv run --env-file .env.prod python scripts/run_prod_server.py --port 18001
+uv run --env-file .env.prod python scripts/run_prod_server.py --port 18000
 ```
 
 이 경우 브라우저 주소도 포트만 바꾼다.
 
 ```text
-http://127.0.0.1:18001/agent-test
+http://127.0.0.1:18000/agent-test
 ```
 
 ## 4. 왜 bash scripts/run_server.sh가 안 될 수 있나
