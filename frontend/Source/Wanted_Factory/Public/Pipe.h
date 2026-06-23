@@ -63,6 +63,9 @@ protected:
 	TObjectPtr<UInstancedStaticMeshComponent> LiquidVisualInstances;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Components")
+	TObjectPtr<UInstancedStaticMeshComponent> EmptyTransitionVisualInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Components")
 	TObjectPtr<UInstancedStaticMeshComponent> FlowArrowInstances;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Components")
@@ -117,6 +120,15 @@ protected:
 	// 밀어 데크 밖에서 수직 전이한다. "모서리 안 닿는 최소"(≈ PipeRadius + α)로 PIE 다이얼. 기본 40(반경 30 + 10).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.0"))
 	float OJJ_PipeEdgeDropMargin = 40.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.01", ClampMax = "1.0"))
+	float TransitionLiquidRadiusRatio = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.01", ClampMax = "1.0"))
+	float TransitionLiquidLengthRatio = 0.96f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.0"))
+	float TransitionLiquidZOffset = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Material")
 	TObjectPtr<UMaterialInterface> PipeMaterialBase;
@@ -180,6 +192,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, Category = "Pipe|Flow")
 	TArray<FPipeLiquidSlot> LiquidSlots;
+
+	UPROPERTY(Transient)
+	TArray<FPipeLiquidSlot> PreviousVisualLiquidSlots;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Pipe|Flow")
 	TWeakObjectPtr<AMachineBase> SourceMachine;
@@ -267,6 +282,7 @@ private:
 	float GetSlotFillRatio(const FPipeLiquidSlot& Slot) const;
 	FVector GetSlotFlowDirection(int32 SlotIndex) const;
 	int32 FindClosestSlotIndexFromLocalLocation(const FVector& LocalLocation) const;
+	float GetSlotTransitionLength(int32 SlotIndex) const;
 	UMaterialInterface* GetPipeMaterial(bool bHasLiquid);
 	void ConfigureMaterialInstance(UMaterialInstanceDynamic* MaterialInstance, bool bHasLiquid) const;
 	FVector GetPathCentroidLocal() const;
