@@ -26,7 +26,11 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Quest|UI")
 	void ClearExternalDialogue();
-
+	
+	UPROPERTY(meta = (BindWidget))
+	class UEditableText* ET_OperatorInput;
+	
+	virtual void NativeDestruct() override;
 private:
 	UFUNCTION()
 	void HandleTutorialStepChanged(const FTutorialQuestStep& Step);
@@ -35,7 +39,16 @@ private:
 	void HandleTutorialDialogueLogged(const FString& QuestId, const FString& TriggerType, const TArray<FTutorialQuestDialogueLine>& Lines);
 
 	void DisplayCurrentLine();
+	
+	UFUNCTION()
+	void HandleOnTextCommitted(const FText& Text, ETextCommit::Type CommitType);
 
+	UFUNCTION()
+	void HandleOnOperatorGuideResponse(const FString& RequestId, const FString& Agent, const FString& PayloadJson, const FString& RawMessage);
+
+	UFUNCTION()
+	void HandleOnOperatorGuideError(const FString& RequestId, const FString& Agent, const FString& ErrorCode, const FString& ErrorMessage, const FString& RawMessage);
+	
 	UPROPERTY()
 	class UQuestManagerSubsystem* QuestSubsystem;
 
