@@ -6,6 +6,7 @@
 #include "FactoryManagerSubsystem.h"
 #include "MachineBase.h"
 #include "Machines/PowerGridNode.h"
+#include "Machines/PowerPlant.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
@@ -110,7 +111,27 @@ void APowerLine::UpdateLineVisual()
 
 	const FVector SourceLocation = GetEndpointLocationForActor(Source, EndpointHeightOffset);
 	const FVector TargetLocation = GetEndpointLocationForActor(Target, EndpointHeightOffset);
-	const FVector Delta = TargetLocation - SourceLocation;
+	FVector AdjustedSourceLocation = SourceLocation;
+	FVector AdjustedTargetLocation = TargetLocation;
+
+	if (Cast<APowerGridNode>(Source))
+	{
+		AdjustedSourceLocation.Z -= PowerGridNodeEndpointLowerOffset;
+	}
+	else if (Cast<APowerPlant>(Source))
+	{
+		AdjustedSourceLocation.Z -= PowerPlantEndpointLowerOffset;
+	}
+
+	if (Cast<APowerGridNode>(Target))
+	{
+		AdjustedTargetLocation.Z -= PowerGridNodeEndpointLowerOffset;
+	}
+	else if (Cast<APowerPlant>(Target))
+	{
+		AdjustedTargetLocation.Z -= PowerPlantEndpointLowerOffset;
+	}
+	const FVector Delta = AdjustedTargetLocation - AdjustedSourceLocation;
 	const float Length = Delta.Size();
 	if (Length <= UE_KINDA_SMALL_NUMBER)
 	{
@@ -118,10 +139,10 @@ void APowerLine::UpdateLineVisual()
 		return;
 	}
 
-	SetActorLocation(SourceLocation + (Delta * 0.5f));
+	SetActorLocation(AdjustedSourceLocation + (Delta * 0.5f));
 	SetActorRotation(FRotator::ZeroRotator);
 
-	const float HorizontalDistance = FVector::Dist2D(SourceLocation, TargetLocation);
+	const float HorizontalDistance = FVector::Dist2D(AdjustedSourceLocation, AdjustedTargetLocation);
 	const float SagDepth = FMath::Clamp(HorizontalDistance * SagRatio, 0.0f, MaxSagDepth);
 	const int32 SegmentCount = FMath::Clamp(
 		FMath::CeilToInt(Length / FMath::Max(SegmentTargetLength, 1.0f)),
@@ -136,8 +157,8 @@ void APowerLine::UpdateLineVisual()
 		UStaticMeshComponent* Segment = GetOrCreateLineSegment(SegmentIndex);
 		UpdateLineSegment(
 			Segment,
-			GetSagPoint(SourceLocation, TargetLocation, StartAlpha, SagDepth),
-			GetSagPoint(SourceLocation, TargetLocation, EndAlpha, SagDepth));
+			GetSagPoint(AdjustedSourceLocation, AdjustedTargetLocation, StartAlpha, SagDepth),
+			GetSagPoint(AdjustedSourceLocation, AdjustedTargetLocation, EndAlpha, SagDepth));
 		ApplyMaterialToSegment(Segment, bElectricallyConnected);
 	}
 

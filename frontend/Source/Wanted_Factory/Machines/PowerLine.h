@@ -56,6 +56,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line", meta = (ClampMin = "0.0"))
 	float EndpointHeightOffset = 20.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line", meta = (ClampMin = "0.0"))
+	float PowerGridNodeEndpointLowerOffset = 90.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line", meta = (ClampMin = "0.0"))
+	float PowerPlantEndpointLowerOffset = 45.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line", meta = (ClampMin = "0.1"))
 	float LineThickness = 4.0f;
 

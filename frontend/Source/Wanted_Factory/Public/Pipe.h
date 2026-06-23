@@ -66,6 +66,9 @@ protected:
 	TObjectPtr<UInstancedStaticMeshComponent> EmptyTransitionVisualInstances;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Components")
+	TObjectPtr<UInstancedStaticMeshComponent> TransitionShadowInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Components")
 	TObjectPtr<UInstancedStaticMeshComponent> FlowArrowInstances;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pipe|Components")
@@ -123,6 +126,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.01", ClampMax = "1.0"))
 	float TransitionLiquidRadiusRatio = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.01", ClampMax = "1.0"))
+	float FilledLiquidRadiusRatio = 0.985f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pipe|Visual", meta = (ClampMin = "0.01", ClampMax = "1.0"))
 	float TransitionLiquidLengthRatio = 0.96f;
@@ -195,6 +201,9 @@ protected:
 
 	UPROPERTY(Transient)
 	TArray<FPipeLiquidSlot> PreviousVisualLiquidSlots;
+
+	UPROPERTY(Transient)
+	TArray<FTransform> SegmentBaseTransforms;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Pipe|Flow")
 	TWeakObjectPtr<AMachineBase> SourceMachine;
