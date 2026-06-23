@@ -42,6 +42,9 @@
 #include "UI/UI_Inventory.h"
 #include "UI/UI_WarehouseInteract.h"
 #include "UI/UI_QuestWindow.h"
+#include "UI/UI_DialogueBalloon.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Components/EditableText.h"
 #include "Machines/MachineSubsystem.h"
 #include "Machines/LiquidTank.h"
 #include "Machines/WarehousePort.h"
@@ -1623,20 +1626,61 @@ void AOJJ_Player::TriggerHUDAIGuideToggle()
 {
 	if (BuildController && BuildController->IsInBuildMode()) return;
 
-	if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	// 뷰포트에 띄워진 대화창 인스턴스를 서칭합니다.
+	TArray<UUserWidget*> FoundWidgets;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, FoundWidgets, UUI_DialogueBalloon::StaticClass(), false);
+	if (FoundWidgets.IsEmpty()) return;
+
+	UUI_DialogueBalloon* DialogueBalloon = Cast<UUI_DialogueBalloon>(FoundWidgets[0]);
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!DialogueBalloon || !PC) return;
+
+	// 대화창 내부로 들어간 ET_OperatorInput(AI 입력창)의 가시성을 슬래시(/) 키로 다이렉트 토글 제어합니다!
+	if (DialogueBalloon->ET_OperatorInput)
 	{
-		// HUD 토글 함수 원격 호출
-		MainHUD->ToggleAIGuideWindow();
+		if (DialogueBalloon->ET_OperatorInput->GetVisibility() == ESlateVisibility::Collapsed)
+		{
+			DialogueBalloon->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			DialogueBalloon->ET_OperatorInput->SetVisibility(ESlateVisibility::Visible);
+          
+			PC->SetInputMode(FInputModeGameAndUI());
+			PC->bShowMouseCursor = true;
+			DialogueBalloon->ET_OperatorInput->SetFocus(); // 입력창 자동 포커싱
+		}
+		else
+		{
+			DialogueBalloon->ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
+          
+			PC->SetInputMode(FInputModeGameOnly());
+			PC->bShowMouseCursor = false;
+          
+			// AI 입력창을 닫을 때 외부 대화 텍스트(분석 중 등)도 깔끔하게 날려 초기화해 줍니다.
+			DialogueBalloon->ClearExternalDialogue(); 
+		}
 	}
 }
 
 void AOJJ_Player::TriggerTutorialDialogueReveal()
 {
-	if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
+	// UI_MainHUD 대신 월드에서 UI_DialogueBalloon을 직접 찾아 가이드창 오픈 여부를 검사합니다.
+	UWorld* World = GetWorld();
+	if (World)
 	{
-		if (MainHUD->IsGuideWindowOpen())
+		TArray<UUserWidget*> FoundWidgets;
+		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, FoundWidgets, UUI_DialogueBalloon::StaticClass(), false);
+		if (!FoundWidgets.IsEmpty())
 		{
-			return;
+			if (UUI_DialogueBalloon* DialogueBalloon = Cast<UUI_DialogueBalloon>(FoundWidgets[0]))
+			{
+				// 대화창 내의 AI 입력 칸이 켜져 있다면(QnA 진행 중이라면) 튜토리얼 자동 넘기기를 가드합니다.
+				if (DialogueBalloon->ET_OperatorInput && DialogueBalloon->ET_OperatorInput->GetVisibility() != ESlateVisibility::Collapsed)
+				{
+					return;
+				}
+			}
 		}
 	}
 
