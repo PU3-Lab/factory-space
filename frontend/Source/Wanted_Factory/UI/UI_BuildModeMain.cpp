@@ -171,7 +171,7 @@ void UUI_BuildModeMain::InitializeHotbarRegistry()
     // ⚡ [2. 전력 설치 모드 한글 이름표 완벽 바인딩]
     TArray<FHotbarSlotData>& PowerHotbar = SubModeHotbarRegistry.FindOrAdd(EBuildSubMode::Power);
     PowerHotbar.SetNum(10);
-    PowerHotbar[0] = { EOJJ_BuildPlacementMode::PowerLine,  TEXT("PowerLine"),  FText::FromString(TEXT("전력선")) };
+    PowerHotbar[0] = { EOJJ_BuildPlacementMode::PowerLine,  TEXT("Cable"),  FText::FromString(TEXT("전선")) };
     PowerHotbar[1] = { EOJJ_BuildPlacementMode::PowerNode,  TEXT("PowerGridNode"),  FText::FromString(TEXT("송전탑")) };
     PowerHotbar[2] = { EOJJ_BuildPlacementMode::PowerPlant, TEXT("PowerPlant"), FText::FromString(TEXT("기본 발전소")) };
     // 4~10번 자리는 미래에 구현될 수력, 화력 발전소 등을 위해 깔끔하게 빈 칸 유지
@@ -179,9 +179,9 @@ void UUI_BuildModeMain::InitializeHotbarRegistry()
     // 🏢 [3. 건물 설치 모드 한글 이름표 완벽 바인딩]
     TArray<FHotbarSlotData>& StructHotbar = SubModeHotbarRegistry.FindOrAdd(EBuildSubMode::Structure);
     StructHotbar.SetNum(10);
-    StructHotbar[0] = { EOJJ_BuildPlacementMode::Machine,                NAME_None, FText::FromString(TEXT("중앙거점")) };
+    StructHotbar[0] = { EOJJ_BuildPlacementMode::BaseCamp,               TEXT("BaseCamp"), FText::FromString(TEXT("중앙 거점")) };
     StructHotbar[1] = { EOJJ_BuildPlacementMode::TeleCommunicationTower, TEXT("TeleCommunicationTower"), FText::FromString(TEXT("통신탑")) };
-    StructHotbar[2] = { EOJJ_BuildPlacementMode::Machine,                NAME_None, FText::FromString(TEXT("신호 증폭기")) };
+    StructHotbar[2] = { EOJJ_BuildPlacementMode::SignalAmplifier,        TEXT("Signal_Amplifier"), FText::FromString(TEXT("신호증폭기")) };
     StructHotbar[8] = { EOJJ_BuildPlacementMode::Shield,                 TEXT("MagneticShield"),    FText::FromString(TEXT("차폐막")) };
 }
 
@@ -263,12 +263,6 @@ void UUI_BuildModeMain::ExecutePlacementMode(int32 SlotIndex)
     UQuestManagerSubsystem* QuestManager = GameInstance ? GameInstance->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
     if (!QuestManager) return;
 
-    if (FinalTargetSlot.SubsystemKey.IsNone() && FinalTargetSlot.DisplayName.EqualTo(FText::FromString(TEXT("중앙거점"))))
-    {
-        QuestManager->NotifyTutorialEvent(TEXT("SelectBaseCampMode"));
-        return;
-    }
-
     if (!FinalTargetSlot.SubsystemKey.IsNone())
     {
         FString EventString;
@@ -320,10 +314,12 @@ void UUI_BuildModeMain::UpdateSelectedPreview()
         case EOJJ_BuildPlacementMode::Pump:           TargetDTKey = TEXT("Pump"); break;
         case EOJJ_BuildPlacementMode::LiquidTank:     TargetDTKey = TEXT("LiquidTank"); break;
         case EOJJ_BuildPlacementMode::Pipe:           TargetDTKey = TEXT("Pipe"); break;
-        case EOJJ_BuildPlacementMode::PowerLine:      TargetDTKey = TEXT("PowerLine"); break;
+        case EOJJ_BuildPlacementMode::PowerLine:      TargetDTKey = TEXT("Cable"); break;
         case EOJJ_BuildPlacementMode::PowerNode:      TargetDTKey = TEXT("PowerGridNode"); break;
         case EOJJ_BuildPlacementMode::PowerPlant:     TargetDTKey = TEXT("PowerPlant"); break;
         case EOJJ_BuildPlacementMode::TeleCommunicationTower: TargetDTKey = TEXT("TeleCommunicationTower"); break;
+        case EOJJ_BuildPlacementMode::BaseCamp:      TargetDTKey = TEXT("BaseCamp"); break;
+        case EOJJ_BuildPlacementMode::SignalAmplifier: TargetDTKey = TEXT("Signal_Amplifier"); break;
         case EOJJ_BuildPlacementMode::Shield:         TargetDTKey = TEXT("MagneticShield"); break;
         default: break;
     }

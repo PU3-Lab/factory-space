@@ -39,8 +39,8 @@ constexpr TCHAR TutorialEventSelectPowerNodeMode[] = TEXT("SelectPowerGridNodeMo
 constexpr TCHAR TutorialEventSelectSmelterMode[] = TEXT("SelectSmelterMode");
 constexpr TCHAR TutorialEventSelectWarehouseMode[] = TEXT("SelectWarehouseMode");
 constexpr TCHAR TutorialEventSelectConveyorMode[] = TEXT("SelectConveyorMode");
-constexpr TCHAR TutorialEventSelectPowerLineMode[] = TEXT("SelectPowerLineMode");
-constexpr TCHAR TutorialEventPowerLineConnected[] = TEXT("PowerLineConnected");
+constexpr TCHAR TutorialEventSelectCableMode[] = TEXT("SelectCableMode");
+constexpr TCHAR TutorialEventCableConnected[] = TEXT("CableConnected");
 constexpr TCHAR TutorialEventWarehouseOutputItemSet[] = TEXT("WarehouseOutputItemSet");
 constexpr TCHAR TutorialEventSelectFlatFoundationMode[] = TEXT("SelectFlatFoundationMode");
 constexpr TCHAR TutorialEventSelectRampFoundationMode[] = TEXT("SelectRampFoundationMode");
@@ -295,11 +295,11 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	}
 	else if (QuestId == TEXT("TUT_POWER_005"))
 	{
-		SetEventRequirement(TutorialEventSelectPowerLineMode);
+		SetEventRequirement(TutorialEventSelectCableMode);
 	}
 	else if (QuestId == TEXT("TUT_POWER_006"))
 	{
-		SetEventRequirement(TutorialEventPowerLineConnected);
+		SetEventRequirement(TutorialEventCableConnected);
 	}
 	else if (QuestId == TEXT("TUT_LOGI_001"))
 	{
@@ -395,7 +395,7 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	}
 	else if (QuestId == TEXT("TUT_EXPAND_004"))
 	{
-		SetEventRequirement(TutorialEventPowerLineConnected);
+		SetEventRequirement(TutorialEventCableConnected);
 	}
 	else if (QuestId == TEXT("TUT_EXPAND_005"))
 	{
@@ -427,7 +427,7 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	}
 	else if (QuestId == TEXT("TUT_COMM_003"))
 	{
-		SetEventRequirement(TutorialEventPowerLineConnected);
+		SetEventRequirement(TutorialEventCableConnected);
 	}
 
 	return Requirement;
