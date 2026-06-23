@@ -32,6 +32,8 @@
 #include "Machines/TeleCommunicationTower.h"
 #include "Machines/WarehousePort.h"
 #include "Machines/EscapePod.h"
+#include "Machines/BaseCamp.h"
+#include "Machines/SignalAmplifier.h"
 #include "OJJ_Foundation.h"
 #include "OJJ_Ladder.h"
 #include "OJJ_ProtectionTower.h"
@@ -94,6 +96,10 @@ namespace
 			return TEXT("Synthesizer");
 		case EOJJ_BuildPlacementMode::TeleCommunicationTower:
 			return TEXT("TeleCommunicationTower");
+		case EOJJ_BuildPlacementMode::BaseCamp:
+			return TEXT("BaseCamp");
+		case EOJJ_BuildPlacementMode::SignalAmplifier:
+			return TEXT("Signal_Amplifier");
 		default:
 			return NAME_None;
 		}
@@ -183,11 +189,9 @@ AOJJ_BuildController::AOJJ_BuildController()
 	WarehouseClass = AWarehousePort::StaticClass();
 	MoldingMachineClass = AMoldingMachine::StaticClass();
 	SynthesizerClass = ASynthesizer::StaticClass();
-	static ConstructorHelpers::FClassFinder<AMachineBase> TeleCommunicationTowerBlueprintClass(
-		TEXT("/Game/BluePrints/BP_TeleCommunicationTower"));
-	TeleCommunicationTowerClass = TeleCommunicationTowerBlueprintClass.Succeeded()
-		? TeleCommunicationTowerBlueprintClass.Class
-		: TSubclassOf<AMachineBase>(ATeleCommunicationTower::StaticClass());
+	TeleCommunicationTowerClass = ATeleCommunicationTower::StaticClass();
+	BaseCampClass = ABaseCamp::StaticClass();
+	SignalAmplifierClass = ASignalAmplifier::StaticClass();
 	// [#184] ?щ떎由?湲곕낯 ?대옒??BP 誘몄????? ??C++ AOJJ_Ladder. BP ?놁씠??C??諛곗튂 ?숈옉.
 	LadderClass = AOJJ_Ladder::StaticClass();
 }
@@ -276,6 +280,16 @@ void AOJJ_BuildController::EnterBuildMode()
 	if (PlacementMode == EOJJ_BuildPlacementMode::TeleCommunicationTower && !TeleCommunicationTowerClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] TeleCommunicationTowerClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::BaseCamp && !BaseCampClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] BaseCampClass missing. EnterBuildMode stopped."));
+		return;
+	}
+	if (PlacementMode == EOJJ_BuildPlacementMode::SignalAmplifier && !SignalAmplifierClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BuildController] SignalAmplifierClass missing. EnterBuildMode stopped."));
 		return;
 	}
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor && !ConveyorClass)
@@ -407,6 +421,8 @@ void AOJJ_BuildController::RotateHoverClockwise()
 			&& PlacementMode != EOJJ_BuildPlacementMode::LiquidTank
 			&& PlacementMode != EOJJ_BuildPlacementMode::MoldingMachine
 			&& PlacementMode != EOJJ_BuildPlacementMode::Synthesizer
+			&& PlacementMode != EOJJ_BuildPlacementMode::BaseCamp
+			&& PlacementMode != EOJJ_BuildPlacementMode::SignalAmplifier
 			&& PlacementMode != EOJJ_BuildPlacementMode::Foundation))
 	{
 		return;
@@ -544,6 +560,16 @@ TSubclassOf<AMachineBase> AOJJ_BuildController::GetActiveMachineClass() const
 	if (PlacementMode == EOJJ_BuildPlacementMode::TeleCommunicationTower)
 	{
 		return TeleCommunicationTowerClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::BaseCamp)
+	{
+		return BaseCampClass;
+	}
+
+	if (PlacementMode == EOJJ_BuildPlacementMode::SignalAmplifier)
+	{
+		return SignalAmplifierClass;
 	}
 
 	return MachineClass;
@@ -1870,7 +1896,7 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::Machine:   ModeName = TEXT("Machine");   break;
 	case EOJJ_BuildPlacementMode::Conveyor:  ModeName = TEXT("Conveyor");  break;
 	case EOJJ_BuildPlacementMode::PowerNode: ModeName = TEXT("PowerNode"); break;
-	case EOJJ_BuildPlacementMode::PowerLine: ModeName = TEXT("PowerLine"); break;
+	case EOJJ_BuildPlacementMode::PowerLine: ModeName = TEXT("Cable"); break;
 	case EOJJ_BuildPlacementMode::Shield:    ModeName = TEXT("Shield");    break;
 	case EOJJ_BuildPlacementMode::PowerPlant: ModeName = TEXT("PowerPlant"); break;
 	case EOJJ_BuildPlacementMode::Grinder:   ModeName = TEXT("Grinder");    break;
@@ -1886,6 +1912,8 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	case EOJJ_BuildPlacementMode::Synthesizer: ModeName = TEXT("Synthesizer"); break;
 	case EOJJ_BuildPlacementMode::TeleCommunicationTower: ModeName = TEXT("TeleCommunicationTower"); break;
 	case EOJJ_BuildPlacementMode::Ladder:    ModeName = TEXT("Ladder");     break;
+	case EOJJ_BuildPlacementMode::BaseCamp:  ModeName = TEXT("BaseCamp");   break;
+	case EOJJ_BuildPlacementMode::SignalAmplifier: ModeName = TEXT("Signal_Amplifier"); break;
 	case EOJJ_BuildPlacementMode::None:      ModeName = TEXT("None");       break;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] Placement mode changed to %s"), ModeName);
@@ -2253,7 +2281,7 @@ void AOJJ_BuildController::CommitPowerLineDrag()
 	PowerLine->ConfigurePowerLine(SourceMachine, TargetMachine);
 	FactoryManager->UpdatePowerGrid();
 	PowerLine->UpdateLineVisual();
-	NotifyTutorialQuestEvent(this, TEXT("PowerLineConnected"));
+	NotifyTutorialQuestEvent(this, TEXT("CableConnected"));
 }
 
 void AOJJ_BuildController::AppendConveyorPathTo(FIntPoint TargetCell)

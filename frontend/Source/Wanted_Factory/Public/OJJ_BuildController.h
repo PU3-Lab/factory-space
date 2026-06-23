@@ -49,7 +49,9 @@ enum class EOJJ_BuildPlacementMode : uint8
 	Ladder,
 	// [공용키 Z] 마우스 초기화 — 들고 있던 placement 고스트 취소, 빌드모드 유지. 호버/클릭 무동작.
 	// ⚠️ 맨 끝 append 유지(BP enum 값 직렬화 — 중간 삽입 금지).
-	None
+	None,
+	BaseCamp,
+	SignalAmplifier
 };
 
 /**
@@ -155,6 +157,12 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
 	TSubclassOf<AMachineBase> TeleCommunicationTowerClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AMachineBase> BaseCampClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildController")
+	TSubclassOf<AMachineBase> SignalAmplifierClass;
 
 	// Foundation 모드에서 배치할 평판 클래스(AOJJ_Foundation 파생 BP 지정 가능). 머신이 아니므로
 	// GetActiveMachineClass/머신 배치 경로 비경유 — Conveyor/Demolish처럼 독립 분기(F1-b).
