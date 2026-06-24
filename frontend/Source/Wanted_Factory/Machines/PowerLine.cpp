@@ -7,7 +7,6 @@
 #include "MachineBase.h"
 #include "Machines/PowerGridNode.h"
 #include "Machines/PowerPlant.h"
-#include "Math/UnrealMathUtility.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Math/UnrealMathUtility.h"
@@ -65,7 +64,6 @@ void APowerLine::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	UpdateMaterialPulse();
-	UpdateConnectedMaterialAnimation();
 }
 
 void APowerLine::ConfigurePowerLine(AMachineBase* NewSourceMachine, AMachineBase* NewTargetMachine)
@@ -120,30 +118,28 @@ void APowerLine::UpdateLineVisual()
 		return;
 	}
 
-	const FVector SourceLocation = GetEndpointLocationForActor(Source, EndpointHeightOffset);
-	const FVector TargetLocation = GetEndpointLocationForActor(Target, EndpointHeightOffset);
-	FVector AdjustedSourceLocation = SourceLocation;
-	FVector AdjustedTargetLocation = TargetLocation;
+	FVector SourceLocation = GetEndpointLocationForActor(Source, EndpointHeightOffset);
+	FVector TargetLocation = GetEndpointLocationForActor(Target, EndpointHeightOffset);
 
 	if (Cast<APowerGridNode>(Source))
 	{
-		AdjustedSourceLocation.Z -= PowerGridNodeEndpointLowerOffset;
+		SourceLocation.Z -= PowerGridNodeEndpointLowerOffset;
 	}
 	else if (Cast<APowerPlant>(Source))
 	{
-		AdjustedSourceLocation.Z -= PowerPlantEndpointLowerOffset;
+		SourceLocation.Z -= PowerPlantEndpointLowerOffset;
 	}
 
 	if (Cast<APowerGridNode>(Target))
 	{
-		AdjustedTargetLocation.Z -= PowerGridNodeEndpointLowerOffset;
+		TargetLocation.Z -= PowerGridNodeEndpointLowerOffset;
 	}
 	else if (Cast<APowerPlant>(Target))
 	{
-		AdjustedTargetLocation.Z -= PowerPlantEndpointLowerOffset;
+		TargetLocation.Z -= PowerPlantEndpointLowerOffset;
 	}
 
-	const FVector Delta = AdjustedTargetLocation - AdjustedSourceLocation;
+	const FVector Delta = TargetLocation - SourceLocation;
 	const float Length = Delta.Size();
 	if (Length <= UE_KINDA_SMALL_NUMBER)
 	{
@@ -151,10 +147,10 @@ void APowerLine::UpdateLineVisual()
 		return;
 	}
 
-	SetActorLocation(AdjustedSourceLocation + (Delta * 0.5f));
+	SetActorLocation(SourceLocation + (Delta * 0.5f));
 	SetActorRotation(FRotator::ZeroRotator);
 
-	const float HorizontalDistance = FVector::Dist2D(AdjustedSourceLocation, AdjustedTargetLocation);
+	const float HorizontalDistance = FVector::Dist2D(SourceLocation, TargetLocation);
 	const float SagDepth = FMath::Clamp(HorizontalDistance * SagRatio, 0.0f, MaxSagDepth);
 	const int32 SegmentCount = FMath::Clamp(
 		FMath::CeilToInt(Length / FMath::Max(SegmentTargetLength, 1.0f)),
@@ -169,8 +165,8 @@ void APowerLine::UpdateLineVisual()
 		UStaticMeshComponent* Segment = GetOrCreateLineSegment(SegmentIndex);
 		UpdateLineSegment(
 			Segment,
-			GetSagPoint(AdjustedSourceLocation, AdjustedTargetLocation, StartAlpha, SagDepth),
-			GetSagPoint(AdjustedSourceLocation, AdjustedTargetLocation, EndAlpha, SagDepth));
+			GetSagPoint(SourceLocation, TargetLocation, StartAlpha, SagDepth),
+			GetSagPoint(SourceLocation, TargetLocation, EndAlpha, SagDepth));
 		ApplyMaterialToSegment(Segment, bElectricallyConnected);
 	}
 
@@ -195,10 +191,6 @@ bool APowerLine::IsElectricallyConnected() const
 	return false;
 }
 
-float APowerLine::GetConnectedPulseEmissiveStrength() const
-{
-	const UWorld* World = GetWorld();
-	if (!World)
 float APowerLine::GetCurrentConnectedEmissiveStrength() const
 {
 	const UWorld* World = GetWorld();
@@ -207,18 +199,12 @@ float APowerLine::GetCurrentConnectedEmissiveStrength() const
 		return ConnectedEmissiveStrength;
 	}
 
-	constexpr float PulsePeriodSeconds = 1.0f;
-	const float PulseAlpha = 0.5f + (0.5f * FMath::Sin((2.0f * PI * World->GetTimeSeconds()) / PulsePeriodSeconds));
-	const float PulseMultiplier = FMath::Lerp(
-		ConnectedPulseMinMultiplier,
-		ConnectedPulseMinMultiplier + ConnectedPulseAmplitude,
-		PulseAlpha);
 	const float PulseTime = (World->GetTimeSeconds() * ConnectedPulseFrequency) + PulsePhaseOffset;
 	const float PulseWave = 0.5f + (0.5f * FMath::Sin(PulseTime));
 	const float ShapedPulse = FMath::Square(PulseWave);
 	const float PulseMultiplier = FMath::Lerp(
 		ConnectedPulseMinMultiplier,
-		ConnectedPulseAmplitude,
+		ConnectedPulseMinMultiplier + ConnectedPulseAmplitude,
 		ShapedPulse);
 
 	return ConnectedEmissiveStrength * PulseMultiplier;
@@ -312,8 +298,8 @@ UMaterialInterface* APowerLine::GetPowerLineMaterial(bool bElectricallyConnected
 	TObjectPtr<UMaterialInstanceDynamic>& MaterialInstance = bElectricallyConnected
 		? ConnectedMaterialInstance
 		: DisconnectedMaterialInstance;
-	UMaterialInterface* BaseMaterial = nullptr;
 
+	UMaterialInterface* BaseMaterial = nullptr;
 	if (bElectricallyConnected)
 	{
 		BaseMaterial = ConnectedLineMaterial
@@ -327,17 +313,12 @@ UMaterialInterface* APowerLine::GetPowerLineMaterial(bool bElectricallyConnected
 			: (LineMaterialBase ? LineMaterialBase.Get() : UMaterial::GetDefaultMaterial(MD_Surface));
 	}
 
-	if (!MaterialInstance)
-	{
-		MaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
-	}
-	else if (MaterialInstance->Parent != BaseMaterial)
+	if (!MaterialInstance || MaterialInstance->Parent != BaseMaterial)
 	{
 		MaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
 	}
 
 	ConfigureMaterialInstance(MaterialInstance, bElectricallyConnected);
-
 	return MaterialInstance.Get();
 }
 
@@ -351,7 +332,6 @@ void APowerLine::ConfigureMaterialInstance(
 	}
 
 	const FLinearColor LineColor = bElectricallyConnected ? ConnectedLineColor : DisconnectedLineColor;
-	const float EmissiveStrength = bElectricallyConnected ? GetConnectedPulseEmissiveStrength() : 0.0f;
 	const float EmissiveStrength = bElectricallyConnected ? GetCurrentConnectedEmissiveStrength() : 0.0f;
 	const FLinearColor EmissiveColor = LineColor * EmissiveStrength;
 
@@ -365,21 +345,11 @@ void APowerLine::ConfigureMaterialInstance(
 	MaterialInstance->SetScalarParameterValue(TEXT("PulseAlpha"), bElectricallyConnected ? EmissiveStrength : 0.0f);
 }
 
-void APowerLine::UpdateConnectedMaterialAnimation()
-{
-	if (!ConnectedMaterialInstance)
-	{
-		return;
-	}
-
-	ConfigureMaterialInstance(ConnectedMaterialInstance, IsElectricallyConnected());
-}
-
 void APowerLine::UpdateMaterialPulse()
 {
 	if (ConnectedMaterialInstance)
 	{
-		ConfigureMaterialInstance(ConnectedMaterialInstance, true);
+		ConfigureMaterialInstance(ConnectedMaterialInstance, IsElectricallyConnected());
 	}
 }
 
