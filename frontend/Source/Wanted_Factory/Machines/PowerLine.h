@@ -43,6 +43,7 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual void Tick(float DeltaSeconds) override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Power Line")
 	TObjectPtr<USceneComponent> Root;
@@ -55,6 +56,12 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line", meta = (ClampMin = "0.0"))
 	float EndpointHeightOffset = 20.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line", meta = (ClampMin = "0.0"))
+	float PowerGridNodeEndpointLowerOffset = 90.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line", meta = (ClampMin = "0.0"))
+	float PowerPlantEndpointLowerOffset = 110.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line", meta = (ClampMin = "0.1"))
 	float LineThickness = 4.0f;
@@ -75,7 +82,13 @@ protected:
 	FLinearColor DisconnectedLineColor = FLinearColor::Black;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material", meta = (ClampMin = "0.0"))
-	float ConnectedEmissiveStrength = 2.5f;
+	float ConnectedEmissiveStrength = 4.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material", meta = (ClampMin = "0.0"))
+	float ConnectedPulseAmplitude = 1.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ConnectedPulseMinMultiplier = 0.2f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Sag", meta = (ClampMin = "0.0"))
 	float SagRatio = 0.035f;
@@ -100,12 +113,14 @@ protected:
 
 private:
 	bool IsElectricallyConnected() const;
+	float GetConnectedPulseEmissiveStrength() const;
 	FVector GetSagPoint(const FVector& SourceLocation, const FVector& TargetLocation, float Alpha, float SagDepth) const;
 	UStaticMeshComponent* GetOrCreateLineSegment(int32 SegmentIndex);
 	void HideUnusedLineSegments(int32 UsedSegmentCount);
 	void UpdateLineSegment(UStaticMeshComponent* Segment, const FVector& StartLocation, const FVector& EndLocation);
 	UMaterialInterface* GetPowerLineMaterial(bool bElectricallyConnected);
 	void ConfigureMaterialInstance(UMaterialInstanceDynamic* MaterialInstance, bool bElectricallyConnected) const;
+	void UpdateMaterialPulse();
 	void ApplyMaterialToSegment(UStaticMeshComponent* Segment, bool bElectricallyConnected);
 	void RegisterToFactoryManager();
 	void UnregisterFromFactoryManager();
