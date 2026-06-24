@@ -61,6 +61,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Climb")
 	bool IsClimbing() const { return bClimbing; }
 
+	// [#368] ABP_Man 점프/falling 상태 진입 게이트 — ABP 전이를 raw IsFalling 대신 이 getter로 교체한다.
+	// true = 실제 낙하(하강 중 + 하강속도 FallAnimVelocityThreshold 초과). 낮은 턱 짧은 낙하는 false.
+	// ⚠️ public 필수(IsClimbing과 동일) — ABP_Man은 AOJJ_Player 서브클래스가 아니라 protected면 BP 호출 불가(codex P1).
+	UFUNCTION(BlueprintPure, Category = "OJJ|Animation")
+	bool ShouldPlayFallAnim() const;
+
 	// [게임진입 테스트] 위젯 전 독립 검증용 콘솔 명령 — PIE 콘솔에 `OJJ_DebugSetCharacter 1`(Woman)/`0`(Man)
 	// 입력 시 선택 서브시스템 설정 + 즉시 재스왑(레벨 재진입 없이 확인). 2단계 위젯 붙으면 제거 가능.
 	UFUNCTION(Exec)
@@ -207,6 +213,12 @@ protected:
 	// PIE 다이얼 확정값(2026-06-24). BP override 대신 C++ 단일 출처(멀티플레이 silent fail 방지) — 재튜닝 시 여기서.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Animation", meta = (ClampMin = "0.0"))
 	float JumpAnimStartPosition = 0.3f;
+
+	// [#368] falling 애니 진입 하강속도 임계(uu/s, 양수). raw IsFalling만으론 낮은 턱 내려갈 때도 잠깐 true라
+	// ABP가 점프/falling 포즈로 진입한다 → 이보다 빠르게 하강(Velocity.Z < -이값)할 때만 진짜 낙하로 본다.
+	// 낮은 턱(짧은 낙하)은 착지 전 속도가 작아 미만 → 진입 안 함. 기본 400 = PIE 확정값(2026-06-24).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Animation", meta = (ClampMin = "0.0"))
+	float FallAnimVelocityThreshold = 400.f;
 
 	// [#357] 입력 시 PlaySlotAnimationAsDynamicMontage가 만든 점프 슬롯 몽타주 핸들(런타임 전용) — Landed에서
 	// 이 몽타주만 StopAnimMontage로 끊어 착지 잔상 제거(다른 몽타주 영향 0). 매 점프 갱신, 종료 후 stale은 no-op.
