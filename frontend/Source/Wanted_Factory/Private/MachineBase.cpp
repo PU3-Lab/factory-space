@@ -949,34 +949,7 @@ bool AMachineBase::IsOutputBufferFull() const
 		}
 	}
 
-	if (!StateIndicatorMaterialInstance)
-	{
-		if (HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject))
-		{
-			return;
-		}
-
-		UMaterialInterface* BaseMaterial = StateIndicatorComponent->GetMaterial(0);
-		if (BaseMaterial)
-		{
-			BaseMaterial = BaseMaterial->GetMaterial();
-		}
-		if (!BaseMaterial)
-		{
-			BaseMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
-		}
-		StateIndicatorMaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
-		StateIndicatorComponent->SetMaterial(0, StateIndicatorMaterialInstance);
-	}
-
-	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("Color"), IndicatorColor);
-	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), IndicatorColor);
-	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("Tint"), IndicatorColor);
-	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), IndicatorColor);
-	StateIndicatorMaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), StateIndicatorEmissiveStrength);
-	StateIndicatorMaterialInstance->SetScalarParameterValue(TEXT("Opacity"), IndicatorColor.A);
-	StateIndicatorMaterialInstance->SetScalarParameterValue(TEXT("Alpha"), IndicatorColor.A);
-	StateIndicatorComponent->MarkRenderStateDirty();
+	return MachineState == EMachineState::Blocked;
 }
 
 void AMachineBase::UpdateDebugTextFacingPlayer()
