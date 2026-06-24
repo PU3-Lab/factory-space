@@ -270,6 +270,9 @@ protected:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Durability")
 	bool bDisableWhenBroken = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Durability")
+	bool bInfiniteDurability = false;
 	
 	// 전력
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Power")

@@ -14,6 +14,7 @@ ALiquidTank::ALiquidTank()
 	MachineType = TEXT("LiquidTank");
 	bNeedPower = false;
 	bDisableWhenBroken = true;
+	bInfiniteDurability = true;
 	InputPortCount = 1;
 	OutputPortCount = 1;
 	InputBufferCount = 0;
