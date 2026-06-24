@@ -82,16 +82,16 @@ protected:
 	FLinearColor DisconnectedLineColor = FLinearColor::Black;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material", meta = (ClampMin = "0.0"))
-	float ConnectedEmissiveStrength = 2.5f;
+	float ConnectedEmissiveStrength = 4.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material", meta = (ClampMin = "0.0"))
-	float ConnectedPulseFrequency = 3.0f;
+	float ConnectedPulseAmplitude = 1.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ConnectedPulseMinMultiplier = 0.2f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material", meta = (ClampMin = "0.0"))
-	float ConnectedPulseAmplitude = 1.15f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material", meta = (ClampMin = "0.0"))
-	float ConnectedPulseMinMultiplier = 0.55f;
+	float ConnectedPulseFrequency = 6.283185307f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Sag", meta = (ClampMin = "0.0"))
 	float SagRatio = 0.035f;
@@ -123,7 +123,7 @@ private:
 	void UpdateLineSegment(UStaticMeshComponent* Segment, const FVector& StartLocation, const FVector& EndLocation);
 	UMaterialInterface* GetPowerLineMaterial(bool bElectricallyConnected);
 	void ConfigureMaterialInstance(UMaterialInstanceDynamic* MaterialInstance, bool bElectricallyConnected) const;
-	void UpdateConnectedMaterialAnimation();
+	void UpdateMaterialPulse();
 	void ApplyMaterialToSegment(UStaticMeshComponent* Segment, bool bElectricallyConnected);
 	void RegisterToFactoryManager();
 	void UnregisterFromFactoryManager();
