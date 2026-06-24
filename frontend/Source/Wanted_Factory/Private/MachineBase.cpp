@@ -179,11 +179,12 @@ AMachineBase::AMachineBase()
 	if (MaterialAsset.Succeeded())
 	{
 		MeshComponent->SetMaterial(0, MaterialAsset.Object);
-		StateIndicatorMaterialInstance = UMaterialInstanceDynamic::Create(MaterialAsset.Object, this);
-		StateIndicatorComponent->SetMaterial(0, StateIndicatorMaterialInstance);
+		// [상태등 MID 저장버그 — Chan 합의] 상태등은 정적 베이스 머티리얼만 지정한다. MID는 런타임
+		// (UpdateStateIndicator의 lazy 경로)에서 생성 — 생성자/에디터 construction에서 MID를 만들어 private
+		// UPROPERTY에 보관하면 BP(차폐장 BP_OJJ_ProtectionTower 등) 저장 시 직렬화 에러로 저장이 막힌다.
+		// 베이스만 SetMaterial 해두면 런타임 lazy 경로가 GetMaterial(0)으로 베이스를 복구해 MID를 만든다.
+		StateIndicatorComponent->SetMaterial(0, MaterialAsset.Object);
 	}
-
-	UpdateStateIndicator();
 }
 
 void AMachineBase::ApplyMachineData(const FMachineTableRow& MachineData)
@@ -837,6 +838,17 @@ void AMachineBase::UpdateDebugBufferText()
 
 void AMachineBase::UpdateStateIndicator()
 {
+	// [상태등 MID 저장버그 — Chan 합의] 에디터 construction(OnConstruction)에서는 MID 생성/갱신을 건너뛴다.
+	// 에디터에서 만든 UMaterialInstanceDynamic을 private UPROPERTY에 들고 있으면 BP(차폐장 BP_OJJ_ProtectionTower
+	// 등) 저장 시 직렬화 에러로 막힌다. HasActorBegunPlay()=false(construction/에디터)면 no-op, 런타임
+	// (BeginPlay→RefreshMachineState / Tick)에서만 동작. ⚠️ AMachineBase::BeginPlay가 Super::BeginPlay()를 먼저
+	// 호출하므로 이후 RefreshMachineState 시점엔 HasBegunPlay=true(엔진 AActor::BeginPlay 말미 설정). 트레이드오프:
+	// 에디터 프리뷰 상태등 색 미표시(런타임/플레이 시만 — Chan 합의).
+	if (!HasActorBegunPlay())
+	{
+		return;
+	}
+
 	if (!StateIndicatorComponent)
 	{
 		return;
