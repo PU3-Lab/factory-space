@@ -78,7 +78,9 @@ AOJJ_Player::AOJJ_Player()
 	Movement->bOrientRotationToMovement = true;          // 이동 방향으로 본체 회전
 	Movement->RotationRate = FRotator(0.f, 540.f, 0.f);
 	Movement->MaxWalkSpeed = WalkSpeed;                  // 기존 하드코딩 600 → 걷기 속도(단일 출처). BeginPlay에서 재확정.
-	Movement->JumpZVelocity = 500.f;
+	// [#357] 점프 높이 = JumpZVelocity. BP_OJJ_Player override 대신 C++ 단일 출처(메모리 원칙: BP override는
+	// 멀티플레이 silent fail 위험 — 서버/클라 생성자값 보장). BP의 JumpZVelocity override는 제거해 이 값 상속.
+	Movement->JumpZVelocity = 400.f;
 	Movement->AirControl = 0.35f;
 }
 
@@ -728,6 +730,10 @@ void AOJJ_Player::BeginClimb(AOJJ_Ladder* Ladder)
 	UE_LOG(LogTemp, Verbose, TEXT("[Climb] BeginClimb Bottom=%.1f Top=%.1f"),
 		Ladder->GetClimbBottomZ(), Ladder->GetClimbTopZ());
 
+	// [#357] 점프 직후 사다리 진입은 Landed를 거치지 않고 아래에서 MOVE_Flying로 전환되므로, 점프 슬롯 애니가
+	// 등반 포즈를 덮을 수 있다 — 진입 시 명시 정지(codex P2).
+	StopJumpMontage();
+
 	// 사다리 마주보게 1회 정렬: 캐릭터는 사다리 바깥쪽에 서서 안쪽(GetStepOffDirection=+X, 벽/Foundation)을
 	// 바라봐야 한다. yaw만(pitch/roll 0). 메시/애니 방향 보정은 LadderFacingYawOffset(PIE 튜닝)로 더한다.
 	const float FaceYaw = Ladder->GetStepOffDirection().Rotation().Yaw + LadderFacingYawOffset;
@@ -981,7 +987,30 @@ void AOJJ_Player::StartJumpAction(const FInputActionValue& Value)
 		return;
 	}
 
+	// [#357 P2-①] 점프가 실제 수락될 때만 슬롯 애니를 재생하려면 CanJump()를 Jump() '전에' 판정한다(Jump()이
+	// bPressedJump 등 상태를 바꾸기 전, 깨끗한 지상 상태 기준). 공중 재입력(이미 점프 중/낙하 중 추가 점프 불가)은
+	// Jump()이 no-op이라 — 이 가드가 없으면 가짜 공중 점프 애니가 나간다(codex P2-①).
+	const bool bJumpAccepted = CanJump();
+
 	Jump();
+
+	// [#357] 점프 수락 순간 도약 애니를 DefaultSlot로 즉시 재생 — ABP 스테이트머신의 IsFalling 진입은 발이
+	// 땅에서 떨어진 뒤라 한 박자 늦다(서서 뜬 뒤 점프 포즈). 슬롯 동적 몽타주가 스테이트머신 출력을 덮어 입력
+	// 순간 점프 포즈가 나간다(LadderFinish 슬롯 패턴 공용, 스테이트머신 무수정). 단일 시퀀스 한계 보정:
+	// ① 준비동작(무릎 구부림)은 JumpAnimStartPosition으로 건너뛰어 2단 점프 느낌 제거 ② 착지 잔상은 Landed에서
+	// ActiveJumpMontage를 끊어 제거. 미수락/미할당/AnimInstance 없으면 안전 스킵(기존 동작).
+	if (bJumpAccepted && JumpAnim)
+	{
+		if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+		{
+			// 인자: BlendIn/Out + PlayRate 1 / LoopCount 1 / BlendOutTrigger -1(끝에서 자동) / StartPosition(준비동작 스킵).
+			// [P2-②] 반환 핸들을 직접 캐시(UE5.7은 UAnimMontage* 반환) → Landed에서 이 몽타주만 정지. 재생 실패 시
+			// nullptr이라 Landed 정지 스킵(GetCurrentActiveMontage는 다른 몽타주를 잡을 수 있어 미사용).
+			ActiveJumpMontage = AnimInstance->PlaySlotAnimationAsDynamicMontage(
+				JumpAnim, TEXT("DefaultSlot"), JumpAnimBlendInTime, JumpAnimBlendOutTime,
+				1.0f, 1, -1.0f, JumpAnimStartPosition);
+		}
+	}
 
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -990,6 +1019,26 @@ void AOJJ_Player::StartJumpAction(const FInputActionValue& Value)
 			QuestManager->NotifyMainQuestInputAction(TEXT("Jump"));
 			QuestManager->NotifyTutorialEvent(TEXT("InputAction"), TEXT("Jump"));
 		}
+	}
+}
+
+void AOJJ_Player::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+
+	// [#357] 착지 즉시 점프 슬롯 애니를 끊어 locomotion 복귀(통짜 시퀀스가 착지까지 나가 서서 미끄러지는 잔상 제거).
+	StopJumpMontage();
+}
+
+void AOJJ_Player::StopJumpMontage()
+{
+	// [#357] 점프 슬롯 애니(ActiveJumpMontage)가 재생 중이면 정지 — 착지(Landed)뿐 아니라 사다리 진입 등 Landed를
+	// 거치지 않는 상태 전환에서도 점프 포즈가 다음 동작(등반)을 덮지 않게 한다(codex P2). 인자 명시 → 점프 슬롯만
+	// 정지(다른 몽타주 영향 0), 몽타주 BlendOut으로 부드럽게. 이미 끝났거나 미재생이면 no-op(LadderFinish 선례).
+	if (ActiveJumpMontage)
+	{
+		StopAnimMontage(ActiveJumpMontage);
+		ActiveJumpMontage = nullptr;
 	}
 }
 
