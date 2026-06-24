@@ -97,6 +97,8 @@ namespace
 		{
 			if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
 			{
+				FactoryManager->NotifyMachineChanged(Machine);
+				FactoryManager->RebuildCachedData();
 				FactoryManager->UpdatePowerGrid();
 			}
 		}
@@ -898,6 +900,11 @@ void AMachineBase::UpdateStateIndicator()
 
 	if (!StateIndicatorMaterialInstance)
 	{
+		if (HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject))
+		{
+			return;
+		}
+
 		UMaterialInterface* BaseMaterial = StateIndicatorComponent->GetMaterial(0);
 		if (BaseMaterial)
 		{
@@ -1173,15 +1180,22 @@ bool AMachineBase::TransferOutputByPort(int32 OutputPortIndex, FName ItemID, int
 
 bool AMachineBase::isBroken() const
 {
+	if (bInfiniteDurability)
+	{
+		return false;
+	}
+
 	return CurrentDurability <= 0.f;
 }
 
 void AMachineBase::DamageDurability(float DamageAmount)
 {
-	if (DamageAmount <= 0.f)
+	if (bInfiniteDurability || DamageAmount <= 0.f)
 	{
 		return; 
 	}
+
+	const bool bWasBroken = isBroken();
 	
 	CurrentDurability = FMath::Clamp(CurrentDurability - DamageAmount, 0.f, MaxDurability);
 	
@@ -1192,7 +1206,10 @@ void AMachineBase::DamageDurability(float DamageAmount)
 	
 	OnDurabilityChanged.Broadcast(CurrentDurability, MaxDurability);
 	RefreshMachineState();
-	RequestPowerGridRefresh(this);
+	if (bWasBroken != isBroken())
+	{
+		RequestPowerGridRefresh(this);
+	}
 }
 
 void AMachineBase::RepairDurability(float RepairAmount)
@@ -1201,6 +1218,8 @@ void AMachineBase::RepairDurability(float RepairAmount)
 	{
 		return;
 	}
+
+	const bool bWasBroken = isBroken();
 		
 	CurrentDurability = FMath::Clamp(CurrentDurability + RepairAmount, 0.f, MaxDurability);
 	
@@ -1211,7 +1230,11 @@ void AMachineBase::RepairDurability(float RepairAmount)
 	
 	OnDurabilityChanged.Broadcast(CurrentDurability, MaxDurability);
 	RefreshMachineState();
-	RequestPowerGridRefresh(this);
+	HandlePostRepair();
+	if (bWasBroken != isBroken())
+	{
+		RequestPowerGridRefresh(this);
+	}
 }
 
 int32 AMachineBase::GetMaxRepairCostQty() const
@@ -1221,6 +1244,11 @@ int32 AMachineBase::GetMaxRepairCostQty() const
 
 int32 AMachineBase::GetRepairCostQtyForCurrentDurability() const
 {
+	if (bInfiniteDurability)
+	{
+		return 0;
+	}
+
 	const int32 MaxRepairCostQty = GetMaxRepairCostQty();
 	if (MaxRepairCostQty <= 0 || MaxDurability <= 0.f)
 	{
@@ -1238,6 +1266,11 @@ int32 AMachineBase::GetRepairCostQtyForCurrentDurability() const
 
 bool AMachineBase::RepairUsingWarehouse()
 {
+	if (bInfiniteDurability)
+	{
+		return false;
+	}
+
 	if (RepairCostItemID.IsNone())
 	{
 		return false;
@@ -1380,6 +1413,10 @@ void AMachineBase::RefreshMachineState()
 	}
 
 	UpdateStateIndicator();
+}
+
+void AMachineBase::HandlePostRepair()
+{
 }
 
 namespace EfficiencyKeys

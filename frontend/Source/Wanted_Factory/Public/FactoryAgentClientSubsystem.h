@@ -22,6 +22,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnFactoryAgentClosed, int32, Sta
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnFactoryAgentRawMessage, const FString&, RawMessage);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FOnFactoryAgentResponse, const FString&, RequestId, const FString&, Agent, const FString&, PayloadJson, const FString&, RawMessage);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(FOnFactoryAgentError, const FString&, RequestId, const FString&, Agent, const FString&, ErrorCode, const FString&, ErrorMessage, const FString&, RawMessage);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(FOnFactoryAgentProgress, const FString&, RequestId, const FString&, Agent, const FString&, Stage, const FString&, Message, const FString&, RawMessage);
 
 UCLASS()
 class WANTED_FACTORY_API UFactoryAgentClientSubsystem : public UGameInstanceSubsystem
@@ -49,6 +50,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Factory Agent|Messages")
 	FOnFactoryAgentError OnAgentErrorReceived;
+
+	UPROPERTY(BlueprintAssignable, Category = "Factory Agent|Messages")
+	FOnFactoryAgentProgress OnAgentProgressReceived;
 
 	virtual void Deinitialize() override;
 

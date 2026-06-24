@@ -68,6 +68,25 @@ float ANuclearPowerPlant::CalculatePowerOutput() const
 	return UraniumPowerOutput;
 }
 
+void ANuclearPowerPlant::HandlePostRepair()
+{
+	if (isBroken() || MachineState == EMachineState::Disabled)
+	{
+		return;
+	}
+
+	if (bIsProcessingFuel)
+	{
+		RequestPowerGridRefresh();
+		return;
+	}
+
+	if (QueuedFuelItems.Num() > 0 || InputInventory.FindRef(UraniumItemName) > 0)
+	{
+		StartNextFuelProcessing();
+	}
+}
+
 void ANuclearPowerPlant::StartNextFuelProcessing()
 {
 	if (QueuedFuelItems.Num() <= 0)
@@ -121,6 +140,7 @@ void ANuclearPowerPlant::RequestPowerGridRefresh() const
 	{
 		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
 		{
+			FactoryManager->NotifyMachineChanged(const_cast<ANuclearPowerPlant*>(this));
 			FactoryManager->UpdatePowerGrid();
 		}
 	}
