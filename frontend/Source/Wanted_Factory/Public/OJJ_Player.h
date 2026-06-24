@@ -276,17 +276,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
 	float ClimbEntryZTolerance = 80.f;
 
-	// [#184] 사다리 마무리(올라서기) 몽타주(예: AM_Man_Ladder_Finish, DefaultSlot). top 도착 '이전'에
+	// [#184/#343] 사다리 마무리(올라서기) 몽타주(예: AM_Man_Ladder_Finish, DefaultSlot). top 도착 '이전'에
 	// Move()의 FinishTriggerDistance 거리트리거로 1회 재생 — 올라서기가 실제 top 도착과 맞물리게(도착 순간
 	// 재생은 늦음). 미할당(nullptr)이면 몽타주 없이 기존 동작. ⚠️ ABP AnimGraph에 Slot 'DefaultSlot' 노드 필요.
-	// ⚠️ 몽타주 Root Motion OFF(캡슐 이동은 비행이 전담, 켜면 이중이동). Finish 루트높이(f0≈101) top 안착 PIE 확인.
+	// ⚠️ 몽타주 Root Motion OFF(캡슐 이동은 비행이 전담, 켜면 이중이동). #343 옵션A: Finish hips를 Loop 높이(128.4)로
+	// 평탄화(상승 0)해 캡슐 비행과 가산되지 않게 함 → '올라서기'는 평탄 hips 위 팔/다리 오버레이로 표현.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb")
 	TObjectPtr<UAnimMontage> LadderFinishMontage = nullptr;
 
-	// [#184] top까지 남은 Z가 이 값 이하면 Finish 마무리 몽타주를 1회 재생(올라서기가 top 도착과 맞물리게).
-	// 몽타주가 '마무리(올라서기)'만 담으므로 작게 시작 — PIE 튜닝. ⚠️ 짧은 사다리는 ClimbHeight*0.5로 클램프(Move).
+	// [#184/#343] 긴 사다리에서 top까지 남은 Z가 이 값 이하면 Finish를 1회 재생. 또한 짧은 사다리 분기 기준:
+	// ClimbHeight < FinishTriggerDistance면 Finish 아예 스킵(Loop+step-off만). 옵션A에서 150 권장(BP에서 설정).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
-	float FinishTriggerDistance = 100.f;
+	float FinishTriggerDistance = 150.f;
 
 	// 현재 오르는 사다리(없으면 null). 등반 상태의 단일 진실원.
 	UPROPERTY(Transient)

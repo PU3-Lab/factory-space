@@ -641,14 +641,17 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 		// 발 밑 Z로 상/하단 도달 판정. ClimbReachMargin 여유로 경계 떨림 방지(도달은 살짝 일찍).
 		const float FeetZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 
-		// [#184] top 직전 Finish 마무리 몽타주 트리거(도착 순간 EndClimb 재생은 늦음 — 올라서기가 도착과
-		// 맞물리게 미리 시작). 올라가는 중(Axis.Y>0)에만. 한 등반당 1회(bFinishPlaying). ⚠️ 짧은 사다리는
-		// ClimbHeight*0.5로 클램프 — 안 그러면 RemainingToTop이 시작부터 작아 BeginClimb 직후 트리거됨.
-		if (Axis.Y > 0.f && !bFinishPlaying && LadderFinishMontage)
+		// [#184/#343 옵션A] 긴 사다리만 마지막 FinishTriggerDistance 구간에서 Finish(올라서기 오버레이) 1회 재생.
+		// 짧은 사다리(ClimbHeight < FinishTriggerDistance)는 Finish 아예 스킵 — Loop만 + step-off 안착으로 종료
+		// (BeginClimb 직후 즉시트리거/허공 올라서기 방지). 옛 min(dist, ClimbHeight*0.5) 클램프는 "어쨌든 재생"
+		// 방식이라 폐기. Finish hips는 평탄화(Loop 높이 고정)라 캡슐 비행이 수직 전담 → 포즈 가산 상승 0(이중튐 없음).
+		// 올라서기 = 평탄 hips 위 팔/다리 모션 오버레이. ⚠️ 몽타주 Root Motion OFF 유지(이동은 비행 전담).
+		// bFinishPlaying = 한 등반당 1회 가드(BeginClimb/AbortClimb에서 리셋).
+		if (Axis.Y > 0.f && !bFinishPlaying && LadderFinishMontage
+			&& CurrentLadder->GetClimbHeight() >= FinishTriggerDistance)
 		{
 			const float RemainingToTop = CurrentLadder->GetClimbTopZ() - FeetZ;
-			const float EffectiveTrigger = FMath::Min(FinishTriggerDistance, CurrentLadder->GetClimbHeight() * 0.5f);
-			if (RemainingToTop <= EffectiveTrigger)
+			if (RemainingToTop <= FinishTriggerDistance)
 			{
 				PlayAnimMontage(LadderFinishMontage);
 				bFinishPlaying = true;
@@ -756,6 +759,13 @@ void AOJJ_Player::EndClimb(bool bStepOffTop)
 	bClimbing = false;
 	// [#184] Finish 마무리 몽타주는 top 도착 '이전'에 Move() 거리트리거(FinishTriggerDistance)로 이미 재생됨
 	// — 여기서 재생하면 늦으므로(올라선 뒤 또 올라서기) 두지 않는다. bFinishPlaying은 다음 BeginClimb에서 리셋.
+	// [#343 codex교차검증 #5] Finish 몽타주(4s)가 마운트(~0.58s)보다 길어, 정지하지 않으면 step-off/초기 걷기에
+	// 팔·다리 올라서기 모션이 덧씌워진다(평탄화로 수직 튐은 없으나 포즈 잔상). top 도달 = 마운트 완료이므로
+	// 여기서 블렌드아웃. 인자 명시 → Finish가 활성일 때만 정지(다른 몽타주 영향 없음). 하단 종료 시엔 미재생이라 no-op.
+	if (LadderFinishMontage)
+	{
+		StopAnimMontage(LadderFinishMontage);
+	}
 
 	// 상단 도달: Foundation 상면으로 '부드럽게' 보간 안착(StepOffDuration). 즉시 텔레포트는 순간이동 느낌이라
 	// 짧은 lerp로 부드럽게 + 보간 중 입력 잠금(진동 방지). 완료 시 Walking 복귀 + 쿨다운(Tick에서).
