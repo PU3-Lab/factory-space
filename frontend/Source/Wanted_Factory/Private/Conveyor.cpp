@@ -842,10 +842,11 @@ void AConveyor::RefreshItemVisualInstances()
 		const FVector StartLocation = ResolveItemVisualStartLocation(SlotIndex);
 		const FVector EndLocation = GetSlotLocalCenter(SlotIndex);
 		const FVector ItemLocation = FMath::Lerp(StartLocation, EndLocation, MoveAlpha);
+		const FRotator ItemRotation = ResolveItemVisualRotation(SlotIndex, StartLocation, EndLocation, MoveAlpha);
 		FConveyorDesiredVisual& DesiredVisual = DesiredVisuals.AddDefaulted_GetRef();
 		DesiredVisual.VisualId = ItemVisualIds[SlotIndex];
 		DesiredVisual.ItemId = ItemId;
-		DesiredVisual.Transform = BuildItemVisualTransform(ItemId, ItemLocation, BaseItemScale);
+		DesiredVisual.Transform = BuildItemVisualTransform(ItemId, ItemLocation, ItemRotation, BaseItemScale);
 	}
 
 	const UWorld* World = GetWorld();
@@ -859,10 +860,15 @@ void AConveyor::RefreshItemVisualInstances()
 			? RawAlpha
 			: FMath::Pow(RawAlpha, ItemVisualLerpExponent);
 		const FVector ItemLocation = FMath::Lerp(DepartingVisual.StartLocation, DepartingVisual.EndLocation, VisualAlpha);
+		const FVector TravelDirection = DepartingVisual.EndLocation - DepartingVisual.StartLocation;
 		FConveyorDesiredVisual& DesiredVisual = DesiredVisuals.AddDefaulted_GetRef();
 		DesiredVisual.VisualId = DepartingVisual.VisualId;
 		DesiredVisual.ItemId = DepartingVisual.ItemId;
-		DesiredVisual.Transform = BuildItemVisualTransform(DepartingVisual.ItemId, ItemLocation, BaseItemScale);
+		DesiredVisual.Transform = BuildItemVisualTransform(
+			DepartingVisual.ItemId,
+			ItemLocation,
+			TravelDirection.IsNearlyZero() ? FRotator::ZeroRotator : TravelDirection.Rotation(),
+			BaseItemScale);
 	}
 
 	TSet<int32> DesiredVisualIds;
@@ -1108,7 +1114,11 @@ UStaticMesh* AConveyor::ResolveItemStaticMesh(FName ItemId) const
 		: Resource->StaticMeshAsset.LoadSynchronous();
 }
 
-FTransform AConveyor::BuildItemVisualTransform(FName ItemId, const FVector& ItemLocation, float BaseItemScale) const
+FTransform AConveyor::BuildItemVisualTransform(
+	FName ItemId,
+	const FVector& ItemLocation,
+	const FRotator& ItemRotation,
+	float BaseItemScale) const
 {
 	FVector AdjustedLocation = ItemLocation;
 	FVector ItemScale(BaseItemScale, BaseItemScale, BaseItemScale);
@@ -1121,7 +1131,64 @@ FTransform AConveyor::BuildItemVisualTransform(FName ItemId, const FVector& Item
 		AdjustedLocation.Z += PowderVisualZOffsetAdjustment;
 	}
 
-	return FTransform(FRotator::ZeroRotator, AdjustedLocation, ItemScale);
+	return FTransform(ItemRotation, AdjustedLocation, ItemScale);
+}
+
+FRotator AConveyor::ResolveItemVisualRotation(
+	int32 SlotIndex,
+	const FVector& StartLocation,
+	const FVector& EndLocation,
+	float MoveAlpha) const
+{
+	const FVector MovementDelta = EndLocation - StartLocation;
+	const FVector IncomingDirection = ResolveItemVisualTravelDirection(SlotIndex, true);
+	const FVector OutgoingDirection = ResolveItemVisualTravelDirection(SlotIndex, false);
+	if (!MovementDelta.IsNearlyZero() && !IncomingDirection.IsNearlyZero() && !OutgoingDirection.IsNearlyZero())
+	{
+		const FQuat IncomingQuat = IncomingDirection.Rotation().Quaternion();
+		const FQuat OutgoingQuat = OutgoingDirection.Rotation().Quaternion();
+		return FQuat::Slerp(IncomingQuat, OutgoingQuat, FMath::Clamp(MoveAlpha, 0.0f, 1.0f)).Rotator();
+	}
+
+	const FVector TravelDirection = !OutgoingDirection.IsNearlyZero() ? OutgoingDirection : IncomingDirection;
+	if (!TravelDirection.IsNearlyZero())
+	{
+		return TravelDirection.Rotation();
+	}
+
+	const FVector FallbackDirection = EndLocation - StartLocation;
+	if (!FallbackDirection.IsNearlyZero())
+	{
+		return FallbackDirection.Rotation();
+	}
+
+	const FVector SlotDirection = OutgoingDirection.IsNearlyZero() ? IncomingDirection : OutgoingDirection;
+	return SlotDirection.IsNearlyZero() ? FRotator::ZeroRotator : SlotDirection.Rotation();
+}
+
+FVector AConveyor::ResolveItemVisualTravelDirection(int32 SlotIndex, bool bUseIncomingSide) const
+{
+	if (OccupiedGridCells.Num() == 0)
+	{
+		return FVector::ForwardVector;
+	}
+
+	if (bUseIncomingSide)
+	{
+		if (SlotIndex <= 0)
+		{
+			return GetSlotLocalCenter(0) - GetIncomingItemLocalCenter();
+		}
+
+		return GetSlotLocalCenter(SlotIndex) - GetSlotLocalCenter(SlotIndex - 1);
+	}
+
+	if (SlotIndex >= OccupiedGridCells.Num() - 1)
+	{
+		return GetOutgoingItemLocalCenter() - GetSlotLocalCenter(OccupiedGridCells.Num() - 1);
+	}
+
+	return GetSlotLocalCenter(SlotIndex + 1) - GetSlotLocalCenter(SlotIndex);
 }
 
 float AConveyor::GetCurrentMoveAlpha() const

@@ -76,6 +76,25 @@ float AThermalPowerPlant::CalculatePowerOutput() const
 	return ActiveFuelPowerOutput;
 }
 
+void AThermalPowerPlant::HandlePostRepair()
+{
+	if (isBroken() || MachineState == EMachineState::Disabled)
+	{
+		return;
+	}
+
+	if (!ActiveFuelItem.IsNone())
+	{
+		RequestPowerGridRefresh();
+		return;
+	}
+
+	if (!GetBufferedFuelItem().IsNone())
+	{
+		StartNextFuelProcessing();
+	}
+}
+
 bool AThermalPowerPlant::IsValidFuel(FName ItemID) const
 {
 	return ItemID == CoalItemName || ItemID == PetroliumItemName;
@@ -132,6 +151,7 @@ void AThermalPowerPlant::RequestPowerGridRefresh() const
 	{
 		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
 		{
+			FactoryManager->NotifyMachineChanged(const_cast<AThermalPowerPlant*>(this));
 			FactoryManager->UpdatePowerGrid();
 		}
 	}

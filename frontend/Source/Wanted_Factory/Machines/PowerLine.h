@@ -90,6 +90,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float ConnectedPulseMinMultiplier = 0.2f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material", meta = (ClampMin = "0.0"))
+	float ConnectedPulseFrequency = 3.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material", meta = (ClampMin = "0.0"))
+	float ConnectedPulseAmplitude = 1.15f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Material", meta = (ClampMin = "0.0"))
+	float ConnectedPulseMinMultiplier = 0.55f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Sag", meta = (ClampMin = "0.0"))
 	float SagRatio = 0.035f;
 
@@ -114,6 +123,7 @@ protected:
 private:
 	bool IsElectricallyConnected() const;
 	float GetConnectedPulseEmissiveStrength() const;
+	float GetCurrentConnectedEmissiveStrength() const;
 	FVector GetSagPoint(const FVector& SourceLocation, const FVector& TargetLocation, float Alpha, float SagDepth) const;
 	UStaticMeshComponent* GetOrCreateLineSegment(int32 SegmentIndex);
 	void HideUnusedLineSegments(int32 UsedSegmentCount);
@@ -121,6 +131,7 @@ private:
 	UMaterialInterface* GetPowerLineMaterial(bool bElectricallyConnected);
 	void ConfigureMaterialInstance(UMaterialInstanceDynamic* MaterialInstance, bool bElectricallyConnected) const;
 	void UpdateMaterialPulse();
+	void UpdateConnectedMaterialAnimation();
 	void ApplyMaterialToSegment(UStaticMeshComponent* Segment, bool bElectricallyConnected);
 	void RegisterToFactoryManager();
 	void UnregisterFromFactoryManager();
@@ -130,4 +141,7 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> DisconnectedMaterialInstance;
+
+	UPROPERTY(Transient)
+	float PulsePhaseOffset = 0.0f;
 };

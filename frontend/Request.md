@@ -58,3 +58,12 @@
     - 위젯 생성 시 `GetCurrentTutorialQuestStep`, `GetLastTutorialDialogueLog`로 초기값 반영
     - 이후 `OnTutorialStepChanged`에서 제목/설명 갱신
     - `OnTutorialDialogueLogged`에서 스카이 대사 영역 갱신
+### 5. 창고 아이템 지급용 exec 추가
+- 작성자: 이찬
+- 작성일: 2026-06-22
+- 요청 대상: 이동진
+- 요청 내용: 디버그 및 테스트 편의를 위해 콘솔에서 창고에 아이템을 바로 넣을 수 있는 exec 명령을 추가해 주세요. `give iron_ingot 10`처럼 입력하면 창고에 해당 아이템 10개가 지급되는 형태입니다.
+- 참고 사항:
+  - `AOJJ_Player::Give(const FString& ItemID, int32 Count)`
+  - `UPlayerWarehouseSubsystem::AddItem(FName ItemID, int32 Count)`
+  - 사용 예시: `give iron_ingot 10`

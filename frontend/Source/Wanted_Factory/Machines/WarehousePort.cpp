@@ -13,6 +13,7 @@ AWarehousePort::AWarehousePort()
 	MachineType = TEXT("WarehousePort");
 	bNeedPower = false;
 	bDisableWhenBroken = true;
+	bInfiniteDurability = true;
 
 	static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
 		TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData"));

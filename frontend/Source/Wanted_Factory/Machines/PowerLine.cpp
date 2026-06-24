@@ -10,6 +10,7 @@
 #include "Math/UnrealMathUtility.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Math/UnrealMathUtility.h"
 #include "UObject/ConstructorHelpers.h"
 
 APowerLine::APowerLine()
@@ -37,6 +38,8 @@ APowerLine::APowerLine()
 		LineMaterialBase = BasicShapeMaterial.Object;
 		LineMesh->SetMaterial(0, LineMaterialBase);
 	}
+
+	PulsePhaseOffset = FMath::FRandRange(0.0f, 2.0f * PI);
 }
 
 void APowerLine::BeginPlay()
@@ -62,6 +65,7 @@ void APowerLine::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	UpdateMaterialPulse();
+	UpdateConnectedMaterialAnimation();
 }
 
 void APowerLine::ConfigurePowerLine(AMachineBase* NewSourceMachine, AMachineBase* NewTargetMachine)
@@ -195,6 +199,10 @@ float APowerLine::GetConnectedPulseEmissiveStrength() const
 {
 	const UWorld* World = GetWorld();
 	if (!World)
+float APowerLine::GetCurrentConnectedEmissiveStrength() const
+{
+	const UWorld* World = GetWorld();
+	if (!World || ConnectedEmissiveStrength <= 0.0f)
 	{
 		return ConnectedEmissiveStrength;
 	}
@@ -205,6 +213,13 @@ float APowerLine::GetConnectedPulseEmissiveStrength() const
 		ConnectedPulseMinMultiplier,
 		ConnectedPulseMinMultiplier + ConnectedPulseAmplitude,
 		PulseAlpha);
+	const float PulseTime = (World->GetTimeSeconds() * ConnectedPulseFrequency) + PulsePhaseOffset;
+	const float PulseWave = 0.5f + (0.5f * FMath::Sin(PulseTime));
+	const float ShapedPulse = FMath::Square(PulseWave);
+	const float PulseMultiplier = FMath::Lerp(
+		ConnectedPulseMinMultiplier,
+		ConnectedPulseAmplitude,
+		ShapedPulse);
 
 	return ConnectedEmissiveStrength * PulseMultiplier;
 }
@@ -337,6 +352,7 @@ void APowerLine::ConfigureMaterialInstance(
 
 	const FLinearColor LineColor = bElectricallyConnected ? ConnectedLineColor : DisconnectedLineColor;
 	const float EmissiveStrength = bElectricallyConnected ? GetConnectedPulseEmissiveStrength() : 0.0f;
+	const float EmissiveStrength = bElectricallyConnected ? GetCurrentConnectedEmissiveStrength() : 0.0f;
 	const FLinearColor EmissiveColor = LineColor * EmissiveStrength;
 
 	MaterialInstance->SetVectorParameterValue(TEXT("Color"), LineColor);
@@ -346,6 +362,17 @@ void APowerLine::ConfigureMaterialInstance(
 	MaterialInstance->SetScalarParameterValue(TEXT("Opacity"), LineColor.A);
 	MaterialInstance->SetScalarParameterValue(TEXT("Alpha"), LineColor.A);
 	MaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), EmissiveStrength);
+	MaterialInstance->SetScalarParameterValue(TEXT("PulseAlpha"), bElectricallyConnected ? EmissiveStrength : 0.0f);
+}
+
+void APowerLine::UpdateConnectedMaterialAnimation()
+{
+	if (!ConnectedMaterialInstance)
+	{
+		return;
+	}
+
+	ConfigureMaterialInstance(ConnectedMaterialInstance, IsElectricallyConnected());
 }
 
 void APowerLine::UpdateMaterialPulse()
