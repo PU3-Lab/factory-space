@@ -10,7 +10,7 @@ import sys
 import urllib.request
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 from urllib.error import URLError
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -19,10 +19,26 @@ from websockets.asyncio.client import connect
 DEFAULT_BASE_URL = "http://127.0.0.1:18000"
 DEFAULT_WS_PATH = "/ws/agent"
 EXTERNAL_PROVIDER_OPT_IN = "FACTORY_SMOKE_EXTERNAL_PROVIDER"
+FORBIDDEN_EXECUTION_COMMANDS = (
+    "set_recipe",
+    "set_machine_enabled",
+    "connect_conveyor",
+    "disconnect_conveyor",
+    "move_machine",
+    "place_machine",
+    "remove_machine",
+)
+FORBIDDEN_EXECUTION_PAYLOAD_KEYS = ("command", "commands", "execution_commands")
 
 
 class SmokeError(AssertionError):
     """Raised when a smoke check fails."""
+
+
+class WebSocketReceiver(Protocol):
+    """Minimal WebSocket interface used while waiting for terminal messages."""
+
+    async def recv(self) -> str | bytes: ...
 
 
 @dataclass(frozen=True)
@@ -36,6 +52,9 @@ class SmokeCase:
     expected_sub_agent: str | None = None
     expected_quest_count: int | None = None
     expected_error_code: str | None = None
+    expected_factory_revision: int | None = None
+    expected_highlight_targets: tuple[str, ...] | None = None
+    reject_execution_commands: bool = False
     transport: str = "websocket"
 
 
@@ -155,6 +174,40 @@ def validate_case_response(case: SmokeCase, response: dict[str, Any]) -> None:
                 f"got {quest_count}"
             )
 
+    if (
+        case.expected_factory_revision is not None
+        or case.expected_highlight_targets is not None
+        or case.reject_execution_commands
+    ):
+        payload = response.get("payload")
+        if not isinstance(payload, dict):
+            raise SmokeError(f"{case.name}: expected response payload object")
+
+        if (
+            case.expected_factory_revision is not None
+            and payload.get("factoryRevision") != case.expected_factory_revision
+        ):
+            raise SmokeError(
+                f"{case.name}: expected factoryRevision "
+                f"{case.expected_factory_revision}, got {payload.get('factoryRevision')}"
+            )
+
+        if case.expected_highlight_targets is not None:
+            ui_hints = payload.get("ui_hints")
+            highlight_targets = (
+                ui_hints.get("highlight_targets") if isinstance(ui_hints, dict) else None
+            )
+            if not isinstance(highlight_targets, list) or not all(
+                target in highlight_targets for target in case.expected_highlight_targets
+            ):
+                raise SmokeError(
+                    f"{case.name}: expected highlight targets "
+                    f"{list(case.expected_highlight_targets)}, got {highlight_targets}"
+                )
+
+        if case.reject_execution_commands:
+            _validate_no_execution_commands(case.name, payload)
+
 
 async def run_profile(profile: SmokeProfile, base_url: str, ws_path: str) -> int:
     """Run one smoke profile and return a process-style exit code."""
@@ -237,20 +290,28 @@ async def request_websocket_case(
                 await websocket.send(case.message)
             else:
                 await websocket.send(json.dumps(case.message))
-            raw_response = await websocket.recv()
+            return await receive_terminal_response(websocket)
     except OSError as exc:
         raise SmokeError(f"{case.name}: websocket request failed: {exc}") from exc
 
-    try:
-        response = json.loads(raw_response)
-    except json.JSONDecodeError as exc:
-        raise SmokeError(
-            f"{case.name}: response was not valid JSON: {raw_response}"
-        ) from exc
 
-    if not isinstance(response, dict):
-        raise SmokeError(f"{case.name}: response must be an object, got {response}")
-    return response
+async def receive_terminal_response(websocket: WebSocketReceiver) -> dict[str, Any]:
+    """Skip progress events and return the final agent response or error."""
+
+    while True:
+        raw_response = await websocket.recv()
+        try:
+            response = json.loads(raw_response)
+        except json.JSONDecodeError as exc:
+            raise SmokeError(
+                f"websocket response was not valid JSON: {raw_response}"
+            ) from exc
+
+        if not isinstance(response, dict):
+            raise SmokeError(f"websocket response must be an object, got {response}")
+
+        if response.get("type") in {"agent.response", "agent.error"}:
+            return response
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -305,11 +366,29 @@ def _agent_response_cases() -> tuple[SmokeCase, ...]:
                 "session_id": "smoke-session",
                 "client_id": "smoke-client",
                 "agent": "process_optimizer",
-                "payload": {"machines": [{"id": "assembler-1", "utilization": 0.91}]},
+                "payload": {
+                    "operation": "analyze",
+                    "goal": "balance",
+                    "factoryRevision": 1,
+                    "factory_state": {
+                        "machines": [
+                            {
+                                "id": "smelter_1",
+                                "type": "smelter",
+                                "status": "operating",
+                                "operating_rate": 0.5,
+                                "inputs": [{"item_id": "iron_ore", "amount": 0.0}],
+                            }
+                        ]
+                    },
+                },
             },
             expected_type="agent.response",
             expected_agent="process_optimizer",
             expected_sub_agent="process_optimizer",
+            expected_factory_revision=1,
+            expected_highlight_targets=("smelter_1",),
+            reject_execution_commands=True,
         ),
         SmokeCase(
             name="operator_guide",
@@ -383,6 +462,19 @@ def _quest_count(response: dict[str, Any]) -> int | None:
     if not isinstance(quests, list):
         return None
     return len(quests)
+
+
+def _validate_no_execution_commands(name: str, payload: dict[str, Any]) -> None:
+    """Reject raw Unreal execution commands in a suggestion-only smoke response."""
+
+    payload_json = json.dumps(payload, ensure_ascii=False).lower()
+    for command in FORBIDDEN_EXECUTION_COMMANDS:
+        if command in payload_json:
+            raise SmokeError(f"{name}: forbidden execution command {command}")
+
+    for key in FORBIDDEN_EXECUTION_PAYLOAD_KEYS:
+        if f'"{key}"' in payload_json:
+            raise SmokeError(f"{name}: forbidden execution command payload key {key}")
 
 
 if __name__ == "__main__":
