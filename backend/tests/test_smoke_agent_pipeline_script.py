@@ -43,6 +43,44 @@ def test_local_profile_exercises_all_agent_paths() -> None:
     assert "payload" not in quest_case.message
 
 
+def test_local_process_optimizer_case_declares_response_contract() -> None:
+    """Process Optimizer smoke 케이스가 Unreal 응답 핵심 계약을 선언하는지 검증합니다."""
+    process_case = smoke.build_profile("local").cases[0]
+
+    assert process_case.expected_factory_revision == 1
+    assert process_case.expected_highlight_targets == ("smelter_1",)
+    assert process_case.reject_execution_commands is True
+
+
+def test_response_validation_rejects_execution_command_in_optimizer_suggestion() -> None:
+    """제안 응답에 자동 실행 명령이 섞이면 smoke 검증이 실패해야 합니다."""
+    case = smoke.SmokeCase(
+        name="process optimizer",
+        message={"type": "agent.request"},
+        expected_type="agent.response",
+        expected_agent="process_optimizer",
+        expected_factory_revision=1,
+        expected_highlight_targets=("smelter_1",),
+        reject_execution_commands=True,
+    )
+
+    with pytest.raises(smoke.SmokeError, match="forbidden execution command"):
+        smoke.validate_case_response(
+            case,
+            {
+                "type": "agent.response",
+                "agent": "process_optimizer",
+                "payload": {
+                    "factoryRevision": 1,
+                    "suggestions": [
+                        {"recommended_action": "set_recipe smelter_1 iron_plate"}
+                    ],
+                    "ui_hints": {"highlight_targets": ["smelter_1"]},
+                },
+            },
+        )
+
+
 def test_provider_profile_requires_explicit_opt_in() -> None:
     profile = smoke.build_profile("providers")
 
@@ -199,3 +237,24 @@ def test_response_validation_rejects_wrong_quest_count() -> None:
         assert "expected 5 quests" in str(exc)
     else:
         raise AssertionError("Expected SmokeError")
+
+
+def test_terminal_response_reader_skips_progress_messages() -> None:
+    """Smoke Runner가 진행 메시지 뒤의 최종 응답을 받아야 합니다."""
+
+    class FakeWebSocket:
+        def __init__(self) -> None:
+            self.messages = iter(
+                [
+                    '{"type":"agent.progress","payload":{"stage":"rag_search"}}',
+                    '{"type":"agent.response","agent":"operator_guide","payload":{}}',
+                ]
+            )
+
+        async def recv(self) -> str:
+            return next(self.messages)
+
+    response = asyncio.run(smoke.receive_terminal_response(FakeWebSocket()))
+
+    assert response["type"] == "agent.response"
+    assert response["agent"] == "operator_guide"
