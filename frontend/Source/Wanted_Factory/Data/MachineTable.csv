@@ -32,6 +32,7 @@ MoldingMachine_Lv1,MoldingMachine,성형기,1,iron_ingot,10,1000,10,1,1,1,1,4,3,
 MoldingMachine_Lv2,MoldingMachine,성형기,2,iron_ingot,10,1000,10,1,1,1,1,4,3,/Game/Assets/UIImg/Machine/MoldingMachine_Lv2.MoldingMachine_Lv2,/Game/SSR/Machine/MoldingMachine/Lv2/SM_MoldingMachine_Lv2.SM_MoldingMachine_Lv2,/Game/SSR/Machine/MoldingMachine/Lv2/M_MoldingMachine_Lv2.M_MoldingMachine_Lv2
 MoldingMachine_Lv3,MoldingMachine,성형기,3,iron_ingot,10,1000,10,1,1,1,1,4,3,/Game/Assets/UIImg/Machine/MoldingMachine_Lv3.MoldingMachine_Lv3,/Game/SSR/Machine/MoldingMachine/Lv3/SM_MoldingMachine_Lv3.SM_MoldingMachine_Lv3,/Game/SSR/Machine/MoldingMachine/Lv3/M_MoldingMachine_Lv3.M_MoldingMachine_Lv3
 TeleCommunicationTower,TeleCommunicationTower,통신탑,1,iron_ingot,1,1000,10,0,0,0,0,3,3,/Game/Assets/UIImg/etc/telecommunicationtower.telecommunicationtower,/Game/Assets/TeleCommunication_Tower/SM_TeleCommunication_Tower.SM_TeleCommunication_Tower,/Game/Assets/TeleCommunication_Tower/M_Telecommunication_Tower.M_Telecommunication_Tower
-EscapePod,EscapePid,탈출 포드,1,,0,1000,0,0,0,0,0,4,4,/Game/Assets/UIImg/etc/Cable.Cable,,
-Cable,Cable,전선,1,,,,,,,,,,,,,
-BaseCamp,BaseCamp,중앙거점,1,,,,,,,,,,,/Game/Assets/UIImg/Machine/BaseCamp.BaseCamp,/Game/Assets/Machine/BaseCamp/SM_BaseCamp.SM_BaseCamp,/Game/Assets/Machine/BaseCamp/M_BaseCamp.M_BaseCamp
+EscapePod,EscapePid,탈출 포드,1,,0,1000,0,0,0,0,0,4,4,,,
+Cable,Cable,전선,1,,,,,,,,,,,/Game/Assets/UIImg/etc/Cable.Cable,,
+BaseCamp,BaseCamp,중앙거점,1,iron_ingot,1,1000,10,0,0,0,0,7,7,/Game/Assets/UIImg/Machine/BaseCamp.BaseCamp,/Game/Assets/Machine/BaseCamp/SM_BaseCamp.SM_BaseCamp,/Game/Assets/Machine/BaseCamp/M_BaseCamp.M_BaseCamp
+Signal_Amplifier,Signal_Amplifier,신호증폭기,3,iron_ingot,1,1000,10,0,0,0,0,7,7,/Game/Assets/UIImg/etc/Signal_Amplifier.Signal_Amplifier,/Game/Assets/Machine/Signal_Amplifier/SM_Signal_Amplifier.SM_Signal_Amplifier,/Game/Assets/Machine/Signal_Amplifier/M_Signal_Amplifier.M_Signal_Amplifier

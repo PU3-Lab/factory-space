@@ -311,7 +311,9 @@ private:
 	const FResourceData* FindResourceData(FName ItemId) const;
 	bool IsPowderItem(FName ItemId) const;
 	UStaticMesh* ResolveItemStaticMesh(FName ItemId) const;
-	FTransform BuildItemVisualTransform(FName ItemId, const FVector& ItemLocation, float BaseItemScale) const;
+	FTransform BuildItemVisualTransform(FName ItemId, const FVector& ItemLocation, const FRotator& ItemRotation, float BaseItemScale) const;
+	FRotator ResolveItemVisualRotation(int32 SlotIndex, const FVector& StartLocation, const FVector& EndLocation, float MoveAlpha) const;
+	FVector ResolveItemVisualTravelDirection(int32 SlotIndex, bool bUseIncomingSide) const;
 	float GetCurrentMoveAlpha() const;
 	FVector GetCellLocalCenter(FIntPoint Cell) const;
 	// [OJJ F3.7-0, F3.8''' 노드화] 노드(셀 경계)/셀 중심 로컬 Z 조회 — 빈 배열/무효 인덱스는 0

@@ -943,7 +943,6 @@ void UFactoryManagerSubsystem::SupplyPowerToComponent(
 		}
 
 		ComponentConsumers.Add(Machine);
-		SuppliedConsumers.Add(Machine);
 	}
 
 	float ComponentDemandPower = 0.0f;
@@ -972,6 +971,7 @@ void UFactoryManagerSubsystem::SupplyPowerToComponent(
 		if (RemainingPower + 0.01f >= RequiredPower)
 		{
 			DesiredConsumerPower.FindOrAdd(Consumer) = RequiredPower;
+			SuppliedConsumers.Add(Consumer);
 			RemainingPower -= RequiredPower;
 		}
 	}

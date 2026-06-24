@@ -42,6 +42,9 @@
 #include "UI/UI_Inventory.h"
 #include "UI/UI_WarehouseInteract.h"
 #include "UI/UI_QuestWindow.h"
+#include "UI/UI_DialogueBalloon.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Components/EditableText.h"
 #include "Machines/MachineSubsystem.h"
 #include "Machines/LiquidTank.h"
 #include "Machines/WarehousePort.h"
@@ -75,7 +78,9 @@ AOJJ_Player::AOJJ_Player()
 	Movement->bOrientRotationToMovement = true;          // 이동 방향으로 본체 회전
 	Movement->RotationRate = FRotator(0.f, 540.f, 0.f);
 	Movement->MaxWalkSpeed = WalkSpeed;                  // 기존 하드코딩 600 → 걷기 속도(단일 출처). BeginPlay에서 재확정.
-	Movement->JumpZVelocity = 500.f;
+	// [#357] 점프 높이 = JumpZVelocity. BP_OJJ_Player override 대신 C++ 단일 출처(메모리 원칙: BP override는
+	// 멀티플레이 silent fail 위험 — 서버/클라 생성자값 보장). BP의 JumpZVelocity override는 제거해 이 값 상속.
+	Movement->JumpZVelocity = 400.f;
 	Movement->AirControl = 0.35f;
 }
 
@@ -638,14 +643,17 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 		// 발 밑 Z로 상/하단 도달 판정. ClimbReachMargin 여유로 경계 떨림 방지(도달은 살짝 일찍).
 		const float FeetZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 
-		// [#184] top 직전 Finish 마무리 몽타주 트리거(도착 순간 EndClimb 재생은 늦음 — 올라서기가 도착과
-		// 맞물리게 미리 시작). 올라가는 중(Axis.Y>0)에만. 한 등반당 1회(bFinishPlaying). ⚠️ 짧은 사다리는
-		// ClimbHeight*0.5로 클램프 — 안 그러면 RemainingToTop이 시작부터 작아 BeginClimb 직후 트리거됨.
-		if (Axis.Y > 0.f && !bFinishPlaying && LadderFinishMontage)
+		// [#184/#343 옵션A] 긴 사다리만 마지막 FinishTriggerDistance 구간에서 Finish(올라서기 오버레이) 1회 재생.
+		// 짧은 사다리(ClimbHeight < FinishTriggerDistance)는 Finish 아예 스킵 — Loop만 + step-off 안착으로 종료
+		// (BeginClimb 직후 즉시트리거/허공 올라서기 방지). 옛 min(dist, ClimbHeight*0.5) 클램프는 "어쨌든 재생"
+		// 방식이라 폐기. Finish hips는 평탄화(Loop 높이 고정)라 캡슐 비행이 수직 전담 → 포즈 가산 상승 0(이중튐 없음).
+		// 올라서기 = 평탄 hips 위 팔/다리 모션 오버레이. ⚠️ 몽타주 Root Motion OFF 유지(이동은 비행 전담).
+		// bFinishPlaying = 한 등반당 1회 가드(BeginClimb/AbortClimb에서 리셋).
+		if (Axis.Y > 0.f && !bFinishPlaying && LadderFinishMontage
+			&& CurrentLadder->GetClimbHeight() >= FinishTriggerDistance)
 		{
 			const float RemainingToTop = CurrentLadder->GetClimbTopZ() - FeetZ;
-			const float EffectiveTrigger = FMath::Min(FinishTriggerDistance, CurrentLadder->GetClimbHeight() * 0.5f);
-			if (RemainingToTop <= EffectiveTrigger)
+			if (RemainingToTop <= FinishTriggerDistance)
 			{
 				PlayAnimMontage(LadderFinishMontage);
 				bFinishPlaying = true;
@@ -722,6 +730,10 @@ void AOJJ_Player::BeginClimb(AOJJ_Ladder* Ladder)
 	UE_LOG(LogTemp, Verbose, TEXT("[Climb] BeginClimb Bottom=%.1f Top=%.1f"),
 		Ladder->GetClimbBottomZ(), Ladder->GetClimbTopZ());
 
+	// [#357] 점프 직후 사다리 진입은 Landed를 거치지 않고 아래에서 MOVE_Flying로 전환되므로, 점프 슬롯 애니가
+	// 등반 포즈를 덮을 수 있다 — 진입 시 명시 정지(codex P2).
+	StopJumpMontage();
+
 	// 사다리 마주보게 1회 정렬: 캐릭터는 사다리 바깥쪽에 서서 안쪽(GetStepOffDirection=+X, 벽/Foundation)을
 	// 바라봐야 한다. yaw만(pitch/roll 0). 메시/애니 방향 보정은 LadderFacingYawOffset(PIE 튜닝)로 더한다.
 	const float FaceYaw = Ladder->GetStepOffDirection().Rotation().Yaw + LadderFacingYawOffset;
@@ -753,6 +765,13 @@ void AOJJ_Player::EndClimb(bool bStepOffTop)
 	bClimbing = false;
 	// [#184] Finish 마무리 몽타주는 top 도착 '이전'에 Move() 거리트리거(FinishTriggerDistance)로 이미 재생됨
 	// — 여기서 재생하면 늦으므로(올라선 뒤 또 올라서기) 두지 않는다. bFinishPlaying은 다음 BeginClimb에서 리셋.
+	// [#343 codex교차검증 #5] Finish 몽타주(4s)가 마운트(~0.58s)보다 길어, 정지하지 않으면 step-off/초기 걷기에
+	// 팔·다리 올라서기 모션이 덧씌워진다(평탄화로 수직 튐은 없으나 포즈 잔상). top 도달 = 마운트 완료이므로
+	// 여기서 블렌드아웃. 인자 명시 → Finish가 활성일 때만 정지(다른 몽타주 영향 없음). 하단 종료 시엔 미재생이라 no-op.
+	if (LadderFinishMontage)
+	{
+		StopAnimMontage(LadderFinishMontage);
+	}
 
 	// 상단 도달: Foundation 상면으로 '부드럽게' 보간 안착(StepOffDuration). 즉시 텔레포트는 순간이동 느낌이라
 	// 짧은 lerp로 부드럽게 + 보간 중 입력 잠금(진동 방지). 완료 시 Walking 복귀 + 쿨다운(Tick에서).
@@ -968,7 +987,30 @@ void AOJJ_Player::StartJumpAction(const FInputActionValue& Value)
 		return;
 	}
 
+	// [#357 P2-①] 점프가 실제 수락될 때만 슬롯 애니를 재생하려면 CanJump()를 Jump() '전에' 판정한다(Jump()이
+	// bPressedJump 등 상태를 바꾸기 전, 깨끗한 지상 상태 기준). 공중 재입력(이미 점프 중/낙하 중 추가 점프 불가)은
+	// Jump()이 no-op이라 — 이 가드가 없으면 가짜 공중 점프 애니가 나간다(codex P2-①).
+	const bool bJumpAccepted = CanJump();
+
 	Jump();
+
+	// [#357] 점프 수락 순간 도약 애니를 DefaultSlot로 즉시 재생 — ABP 스테이트머신의 IsFalling 진입은 발이
+	// 땅에서 떨어진 뒤라 한 박자 늦다(서서 뜬 뒤 점프 포즈). 슬롯 동적 몽타주가 스테이트머신 출력을 덮어 입력
+	// 순간 점프 포즈가 나간다(LadderFinish 슬롯 패턴 공용, 스테이트머신 무수정). 단일 시퀀스 한계 보정:
+	// ① 준비동작(무릎 구부림)은 JumpAnimStartPosition으로 건너뛰어 2단 점프 느낌 제거 ② 착지 잔상은 Landed에서
+	// ActiveJumpMontage를 끊어 제거. 미수락/미할당/AnimInstance 없으면 안전 스킵(기존 동작).
+	if (bJumpAccepted && JumpAnim)
+	{
+		if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+		{
+			// 인자: BlendIn/Out + PlayRate 1 / LoopCount 1 / BlendOutTrigger -1(끝에서 자동) / StartPosition(준비동작 스킵).
+			// [P2-②] 반환 핸들을 직접 캐시(UE5.7은 UAnimMontage* 반환) → Landed에서 이 몽타주만 정지. 재생 실패 시
+			// nullptr이라 Landed 정지 스킵(GetCurrentActiveMontage는 다른 몽타주를 잡을 수 있어 미사용).
+			ActiveJumpMontage = AnimInstance->PlaySlotAnimationAsDynamicMontage(
+				JumpAnim, TEXT("DefaultSlot"), JumpAnimBlendInTime, JumpAnimBlendOutTime,
+				1.0f, 1, -1.0f, JumpAnimStartPosition);
+		}
+	}
 
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -978,6 +1020,35 @@ void AOJJ_Player::StartJumpAction(const FInputActionValue& Value)
 			QuestManager->NotifyTutorialEvent(TEXT("InputAction"), TEXT("Jump"));
 		}
 	}
+}
+
+void AOJJ_Player::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+
+	// [#357] 착지 즉시 점프 슬롯 애니를 끊어 locomotion 복귀(통짜 시퀀스가 착지까지 나가 서서 미끄러지는 잔상 제거).
+	StopJumpMontage();
+}
+
+void AOJJ_Player::StopJumpMontage()
+{
+	// [#357] 점프 슬롯 애니(ActiveJumpMontage)가 재생 중이면 정지 — 착지(Landed)뿐 아니라 사다리 진입 등 Landed를
+	// 거치지 않는 상태 전환에서도 점프 포즈가 다음 동작(등반)을 덮지 않게 한다(codex P2). 인자 명시 → 점프 슬롯만
+	// 정지(다른 몽타주 영향 0), 몽타주 BlendOut으로 부드럽게. 이미 끝났거나 미재생이면 no-op(LadderFinish 선례).
+	if (ActiveJumpMontage)
+	{
+		StopAnimMontage(ActiveJumpMontage);
+		ActiveJumpMontage = nullptr;
+	}
+}
+
+bool AOJJ_Player::ShouldPlayFallAnim() const
+{
+	// [#368] ABP 점프/falling 상태 진입 게이트 — raw IsFalling은 낮은 턱 내려갈 때도 잠깐 true라 점프 포즈가
+	// 뜬다. 하강 중(IsFalling)이면서 하강 속도가 임계 초과(Velocity.Z < -임계)일 때만 진짜 낙하로 본다.
+	// ⚠️ Velocity.Z 부호: 하강 = 음수. 낮은 턱(짧은 낙하)은 착지 전 속도가 작아 false → 진입 안 함.
+	const UCharacterMovementComponent* Move = GetCharacterMovement();
+	return Move && Move->IsFalling() && Move->Velocity.Z < -FallAnimVelocityThreshold;
 }
 
 void AOJJ_Player::ToggleBuild(const FInputActionValue& Value)
@@ -1411,7 +1482,7 @@ void AOJJ_Player::SendOperatorGuideRequest()
 	}
 
 	const FString Question = TEXT("\uAE30\uC5B4 \uB9CC\uB4E4\uB824\uBA74 \uBB50\uAC00 \uD544\uC694\uD574?");
-	if (AgentClient->SendOperatorGuideQuestion(Question, TEXT("unreal-ui-001")))
+	if (AgentClient->SendOperatorGuideQuestion(Question, TEXT("unreal-client")))
 	{
 		UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] Sent operator guide request."));
 	}
@@ -1623,20 +1694,61 @@ void AOJJ_Player::TriggerHUDAIGuideToggle()
 {
 	if (BuildController && BuildController->IsInBuildMode()) return;
 
-	if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	// 뷰포트에 띄워진 대화창 인스턴스를 서칭합니다.
+	TArray<UUserWidget*> FoundWidgets;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, FoundWidgets, UUI_DialogueBalloon::StaticClass(), false);
+	if (FoundWidgets.IsEmpty()) return;
+
+	UUI_DialogueBalloon* DialogueBalloon = Cast<UUI_DialogueBalloon>(FoundWidgets[0]);
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!DialogueBalloon || !PC) return;
+
+	// 대화창 내부로 들어간 ET_OperatorInput(AI 입력창)의 가시성을 슬래시(/) 키로 다이렉트 토글 제어합니다!
+	if (DialogueBalloon->ET_OperatorInput)
 	{
-		// HUD 토글 함수 원격 호출
-		MainHUD->ToggleAIGuideWindow();
+		if (DialogueBalloon->ET_OperatorInput->GetVisibility() == ESlateVisibility::Collapsed)
+		{
+			DialogueBalloon->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			DialogueBalloon->ET_OperatorInput->SetVisibility(ESlateVisibility::Visible);
+          
+			PC->SetInputMode(FInputModeGameAndUI());
+			PC->bShowMouseCursor = true;
+			DialogueBalloon->ET_OperatorInput->SetFocus(); // 입력창 자동 포커싱
+		}
+		else
+		{
+			DialogueBalloon->ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
+          
+			PC->SetInputMode(FInputModeGameOnly());
+			PC->bShowMouseCursor = false;
+          
+			// AI 입력창을 닫을 때 외부 대화 텍스트(분석 중 등)도 깔끔하게 날려 초기화해 줍니다.
+			DialogueBalloon->ClearExternalDialogue(); 
+		}
 	}
 }
 
 void AOJJ_Player::TriggerTutorialDialogueReveal()
 {
-	if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
+	// UI_MainHUD 대신 월드에서 UI_DialogueBalloon을 직접 찾아 가이드창 오픈 여부를 검사합니다.
+	UWorld* World = GetWorld();
+	if (World)
 	{
-		if (MainHUD->IsGuideWindowOpen())
+		TArray<UUserWidget*> FoundWidgets;
+		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, FoundWidgets, UUI_DialogueBalloon::StaticClass(), false);
+		if (!FoundWidgets.IsEmpty())
 		{
-			return;
+			if (UUI_DialogueBalloon* DialogueBalloon = Cast<UUI_DialogueBalloon>(FoundWidgets[0]))
+			{
+				// 대화창 내의 AI 입력 칸이 켜져 있다면(QnA 진행 중이라면) 튜토리얼 자동 넘기기를 가드합니다.
+				if (DialogueBalloon->ET_OperatorInput && DialogueBalloon->ET_OperatorInput->GetVisibility() != ESlateVisibility::Collapsed)
+				{
+					return;
+				}
+			}
 		}
 	}
 
@@ -2006,6 +2118,53 @@ void AOJJ_Player::ClearWarehouse()
 
 	UE_LOG(LogTemp, Log, TEXT("[ClearWarehouse] Warehouse cleared. PreviousItemTypes=%d Saved=%s"),
 		PreviousItemTypeCount,
+		bSaved ? TEXT("true") : TEXT("false"));
+}
+
+void AOJJ_Player::Give(const FString& ItemID, int32 Count)
+{
+	if (ItemID.TrimStartAndEnd().IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Give] ItemID is empty. Usage: give iron_ingot 10"));
+		return;
+	}
+
+	if (Count <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Give] Count must be greater than 0. Usage: give iron_ingot 10"));
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	UPlayerWarehouseSubsystem* WarehouseSubsystem = GameInstance
+		? GameInstance->GetSubsystem<UPlayerWarehouseSubsystem>()
+		: nullptr;
+	if (!WarehouseSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Give] PlayerWarehouseSubsystem not found."));
+		return;
+	}
+
+	const FName TargetItemID(*ItemID.TrimStartAndEnd());
+	if (!WarehouseSubsystem->AddItem(TargetItemID, Count))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Give] Failed to add item. ItemID=%s Count=%d"), *TargetItemID.ToString(), Count);
+		return;
+	}
+
+	bool bSaved = false;
+	if (GameInstance)
+	{
+		if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+		{
+			bSaved = SaveSubsystem->SaveCurrentGame();
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[Give] Added %s x%d to warehouse. NewCount=%d Saved=%s"),
+		*TargetItemID.ToString(),
+		Count,
+		WarehouseSubsystem->GetItemCount(TargetItemID),
 		bSaved ? TEXT("true") : TEXT("false"));
 }
 

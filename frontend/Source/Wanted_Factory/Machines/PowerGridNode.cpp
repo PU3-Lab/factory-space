@@ -13,6 +13,7 @@ APowerGridNode::APowerGridNode()
 	MachineType = TEXT("PowerGridNode");
 	bNeedPower = false;
 	bDisableWhenBroken = true;
+	bInfiniteDurability = true;
 	MeshScaleMultiplier = FVector(1.0f, 1.0f, 3.0f);
 }
 
