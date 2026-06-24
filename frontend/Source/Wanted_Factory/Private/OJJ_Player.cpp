@@ -1042,6 +1042,15 @@ void AOJJ_Player::StopJumpMontage()
 	}
 }
 
+bool AOJJ_Player::ShouldPlayFallAnim() const
+{
+	// [#368] ABP 점프/falling 상태 진입 게이트 — raw IsFalling은 낮은 턱 내려갈 때도 잠깐 true라 점프 포즈가
+	// 뜬다. 하강 중(IsFalling)이면서 하강 속도가 임계 초과(Velocity.Z < -임계)일 때만 진짜 낙하로 본다.
+	// ⚠️ Velocity.Z 부호: 하강 = 음수. 낮은 턱(짧은 낙하)은 착지 전 속도가 작아 false → 진입 안 함.
+	const UCharacterMovementComponent* Move = GetCharacterMovement();
+	return Move && Move->IsFalling() && Move->Velocity.Z < -FallAnimVelocityThreshold;
+}
+
 void AOJJ_Player::ToggleBuild(const FInputActionValue& Value)
 {
 	if (!BuildController)
