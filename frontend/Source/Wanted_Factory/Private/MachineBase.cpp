@@ -2,15 +2,16 @@
 #include "MachineBase.h"
 
 #include "Camera/PlayerCameraManager.h"
+#include "Components/BillboardComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/Texture2D.h"
 #include "FactoryManagerSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "Machines/MachineSubsystem.h"
 #include "Materials/Material.h"
-#include "Materials/MaterialInstanceDynamic.h"
-#include "Materials/MaterialInterface.h"
 #include "PlanetEventManagerSubsystem.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "RecipeManagerSubsystem.h"
@@ -150,6 +151,23 @@ AMachineBase::AMachineBase()
 	StateIndicatorComponent->SetVisibleInRayTracing(false);
 	StateIndicatorComponent->SetRelativeLocation(StateIndicatorOffset);
 	StateIndicatorComponent->SetRelativeScale3D(StateIndicatorScale);
+	StateIndicatorComponent->SetHiddenInGame(true);
+
+	StateIndicatorIconComponent = CreateDefaultSubobject<UBillboardComponent>(TEXT("StateIndicatorIcon"));
+	StateIndicatorIconComponent->SetupAttachment(Root);
+	StateIndicatorIconComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	StateIndicatorIconComponent->SetHiddenInGame(false);
+	StateIndicatorIconComponent->SetRelativeLocation(StateIndicatorOffset);
+	StateIndicatorIconComponent->SetRelativeScale3D(StateIndicatorScale);
+
+	StateIndicatorLightComponent = CreateDefaultSubobject<UPointLightComponent>(TEXT("StateIndicatorLight"));
+	StateIndicatorLightComponent->SetupAttachment(Root);
+	StateIndicatorLightComponent->SetCastShadows(false);
+	StateIndicatorLightComponent->SetVisibility(false);
+	StateIndicatorLightComponent->SetHiddenInGame(true);
+	StateIndicatorLightComponent->SetRelativeLocation(StateIndicatorOffset);
+	StateIndicatorLightComponent->SetIntensity(StateIndicatorLightIntensity);
+	StateIndicatorLightComponent->SetAttenuationRadius(StateIndicatorLightRadius);
 
 	// 메쉬 방향 보정: 머신 메쉬의 시각적 입출력부가 논리 포트 방향(액터 forward 기반)과 -90° Yaw
 	// 어긋나는 문제(전 머신 균일, PIE 관찰 확정)를 +90° 회전으로 상쇄. RelativeRotation은 자식 메쉬만
@@ -177,14 +195,28 @@ AMachineBase::AMachineBase()
 	{
 		StateIndicatorComponent->SetStaticMesh(SphereMesh.Object);
 	}
+	ConstructorHelpers::FObjectFinder<UTexture2D> ElectricityWarningIconAsset(
+		TEXT("/Game/Assets/UIImg/Warning/Electricity_Warning_Outline.Electricity_Warning_Outline"));
+	if (ElectricityWarningIconAsset.Succeeded())
+	{
+		ElectricityWarningIcon = ElectricityWarningIconAsset.Object;
+	}
+	ConstructorHelpers::FObjectFinder<UTexture2D> DurabilityWarningIconAsset(
+		TEXT("/Game/Assets/UIImg/Warning/Durabililty_Warning_Outline.Durabililty_Warning_Outline"));
+	if (DurabilityWarningIconAsset.Succeeded())
+	{
+		DurabilityWarningIcon = DurabilityWarningIconAsset.Object;
+	}
+	ConstructorHelpers::FObjectFinder<UTexture2D> MaxBufferWarningIconAsset(
+		TEXT("/Game/Assets/UIImg/Warning/MaxBuffer_Warning_Outline.MaxBuffer_Warning_Outline"));
+	if (MaxBufferWarningIconAsset.Succeeded())
+	{
+		MaxBufferWarningIcon = MaxBufferWarningIconAsset.Object;
+	}
 	ConstructorHelpers::FObjectFinder<UMaterial> MaterialAsset(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	if (MaterialAsset.Succeeded())
 	{
 		MeshComponent->SetMaterial(0, MaterialAsset.Object);
-		// [상태등 MID 저장버그 — Chan 합의] 상태등은 정적 베이스 머티리얼만 지정한다. MID는 런타임
-		// (UpdateStateIndicator의 lazy 경로)에서 생성 — 생성자/에디터 construction에서 MID를 만들어 private
-		// UPROPERTY에 보관하면 BP(차폐장 BP_OJJ_ProtectionTower 등) 저장 시 직렬화 에러로 저장이 막힌다.
-		// 베이스만 SetMaterial 해두면 런타임 lazy 경로가 GetMaterial(0)으로 베이스를 복구해 MID를 만든다.
 		StateIndicatorComponent->SetMaterial(0, MaterialAsset.Object);
 	}
 }
@@ -430,6 +462,7 @@ bool AMachineBase::AddItem(FName ItemID, int32 Count)
 	}
 
 	UpdateDebugBufferText();
+	UpdateStateIndicator();
 	TryStartProcess();
 	
 	return true;
@@ -652,6 +685,7 @@ void AMachineBase::ConsumeIngredients(const FRecipeTable& Recipe)
 	}
 
 	UpdateDebugBufferText();
+	UpdateStateIndicator();
 }
 
 void AMachineBase::AddOutputItem(FName ItemID, int32 Count)
@@ -666,6 +700,7 @@ void AMachineBase::AddOutputItem(FName ItemID, int32 Count)
 	if (CurrentCount + Count > MaxBufferPerItem)
 	{
 		MachineState = EMachineState::Blocked;
+		UpdateStateIndicator();
 		
 		LOG_SSR_W(TEXT("Output Buffer Full : %s %d / %d"),
 			*ItemID.ToString(),
@@ -686,6 +721,7 @@ void AMachineBase::AddOutputItem(FName ItemID, int32 Count)
 	);
 
 	UpdateDebugBufferText();
+	UpdateStateIndicator();
 }
 
 bool AMachineBase::CanAddToOutputBuffer(const FRecipeTable& Recipe) const
@@ -741,6 +777,7 @@ bool AMachineBase::TakeOutputItem(FName ItemID, int32 Count)
 	}
 
 	UpdateDebugBufferText();
+	UpdateStateIndicator();
 
 	return true;
 }
@@ -840,61 +877,75 @@ void AMachineBase::UpdateDebugBufferText()
 
 void AMachineBase::UpdateStateIndicator()
 {
-	// [상태등 MID 저장버그 — Chan 합의] 에디터 construction(OnConstruction)에서는 MID 생성/갱신을 건너뛴다.
-	// 에디터에서 만든 UMaterialInstanceDynamic을 private UPROPERTY에 들고 있으면 BP(차폐장 BP_OJJ_ProtectionTower
-	// 등) 저장 시 직렬화 에러로 막힌다. HasActorBegunPlay()=false(construction/에디터)면 no-op, 런타임
-	// (BeginPlay→RefreshMachineState / Tick)에서만 동작. ⚠️ AMachineBase::BeginPlay가 Super::BeginPlay()를 먼저
-	// 호출하므로 이후 RefreshMachineState 시점엔 HasBegunPlay=true(엔진 AActor::BeginPlay 말미 설정). 트레이드오프:
-	// 에디터 프리뷰 상태등 색 미표시(런타임/플레이 시만 — Chan 합의).
-	if (!HasActorBegunPlay())
+	if (!StateIndicatorComponent && !StateIndicatorIconComponent)
 	{
 		return;
 	}
 
-	if (!StateIndicatorComponent)
-	{
-		return;
-	}
-
-	StateIndicatorComponent->SetVisibility(bShowStateIndicator);
 	FVector IndicatorLocation = StateIndicatorOffset;
 	if (MeshComponent)
 	{
 		IndicatorLocation.Z = FMath::Max(IndicatorLocation.Z, MeshComponent->Bounds.BoxExtent.Z + 40.0f);
 	}
-	StateIndicatorComponent->SetRelativeLocation(IndicatorLocation);
-	StateIndicatorComponent->SetRelativeScale3D(StateIndicatorScale);
-	if (!bShowStateIndicator)
+	if (StateIndicatorComponent)
 	{
-		return;
+		StateIndicatorComponent->SetVisibility(false);
+		StateIndicatorComponent->SetHiddenInGame(true);
+		StateIndicatorComponent->SetRelativeLocation(IndicatorLocation);
+		StateIndicatorComponent->SetRelativeScale3D(StateIndicatorScale);
 	}
 
-	FLinearColor IndicatorColor = IdleIndicatorColor;
-	switch (MachineState)
+	UTexture2D* WarningIcon = nullptr;
+	FLinearColor WarningLightColor = FLinearColor::White;
+	if (MaxDurability > 0.0f && CurrentDurability / MaxDurability <= LowDurabilityWarningRatio)
 	{
-	case EMachineState::Working:
-		IndicatorColor = WorkingIndicatorColor;
-		break;
-	case EMachineState::NoPower:
-		IndicatorColor = NoPowerIndicatorColor;
-		break;
-	case EMachineState::Blocked:
-		IndicatorColor = BlockedIndicatorColor;
-		break;
-	case EMachineState::Disabled:
-		IndicatorColor = DisabledIndicatorColor;
-		break;
-	case EMachineState::Idle:
-	default:
-		break;
+		WarningIcon = DurabilityWarningIcon.Get();
+		WarningLightColor = DurabilityWarningLightColor;
+	}
+	else if (NeedsPower() && !HasEnoughPower())
+	{
+		WarningIcon = ElectricityWarningIcon.Get();
+		WarningLightColor = ElectricityWarningLightColor;
+	}
+	else if (IsOutputBufferFull())
+	{
+		WarningIcon = MaxBufferWarningIcon.Get();
+		WarningLightColor = MaxBufferWarningLightColor;
 	}
 
-	if (!StateIndicatorMaterialInstance)
+	const bool bShowWarningIcon = bShowStateIndicator && WarningIcon != nullptr;
+	if (StateIndicatorIconComponent)
 	{
-		if (UMaterialInstanceDynamic* ExistingMID =
-			Cast<UMaterialInstanceDynamic>(StateIndicatorComponent->GetMaterial(0)))
+		StateIndicatorIconComponent->SetVisibility(bShowWarningIcon);
+		StateIndicatorIconComponent->SetHiddenInGame(!bShowWarningIcon);
+		StateIndicatorIconComponent->SetRelativeLocation(IndicatorLocation);
+		StateIndicatorIconComponent->SetRelativeScale3D(StateIndicatorScale);
+		if (WarningIcon)
 		{
-			StateIndicatorMaterialInstance = ExistingMID;
+			StateIndicatorIconComponent->SetSprite(WarningIcon);
+		}
+	}
+	if (StateIndicatorLightComponent)
+	{
+		const bool bShowWarningLight = bShowWarningIcon && bEnableStateIndicatorLight;
+		StateIndicatorLightComponent->SetVisibility(bShowWarningLight);
+		StateIndicatorLightComponent->SetHiddenInGame(!bShowWarningLight);
+		StateIndicatorLightComponent->SetRelativeLocation(IndicatorLocation);
+		StateIndicatorLightComponent->SetLightColor(WarningLightColor);
+		StateIndicatorLightComponent->SetIntensity(StateIndicatorLightIntensity);
+		StateIndicatorLightComponent->SetAttenuationRadius(StateIndicatorLightRadius);
+	}
+
+	return;
+}
+
+bool AMachineBase::IsOutputBufferFull() const
+{
+	for (const TPair<FName, int32>& Output : OutputBuffer)
+	{
+		if (!Output.Key.IsNone() && Output.Value >= MaxBufferPerItem)
+		{
+			return true;
 		}
 	}
 
@@ -1025,6 +1076,7 @@ bool AMachineBase::TransferOutputToMachine(AMachineBase* TargetMachine, FName It
 		LOG_SSR_W(TEXT("TransferOutputToMachine Failed : AddItem Failed"));
 		OutputBuffer.FindOrAdd(ItemID) += Count;
 		UpdateDebugBufferText();
+		UpdateStateIndicator();
 		return false;
 	}
 	
