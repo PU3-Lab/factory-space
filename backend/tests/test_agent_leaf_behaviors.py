@@ -45,7 +45,7 @@ def test_process_optimizer_prompt_excludes_request_id(context: AgentContext) -> 
 
     prompt = agent.build_prompt({"machines": [{"id": "m-1"}]}, context)
 
-    assert "공장 snapshot에서 공정 병목" in prompt
+    assert "수석 매니저" in prompt
     assert "m-1" in prompt
     assert context.request_id not in prompt
 
@@ -59,7 +59,7 @@ def test_process_optimizer_fallback_counts_direct_machine_snapshot(
 
     assert result.agent == "process_optimizer"
     assert result.metadata == {"fallback": True}
-    assert "2개 설비" in result.payload["recommendations"][0]["reason"]
+    assert "2개 설비" in result.payload["summary"]
 
 
 def test_process_optimizer_fallback_counts_nested_factory_state(
@@ -69,7 +69,7 @@ def test_process_optimizer_fallback_counts_nested_factory_state(
 
     result = agent.fallback({"factory_state": {"machines": [{"id": "m-1"}]}}, context)
 
-    assert "1개 설비" in result.payload["recommendations"][0]["reason"]
+    assert "1개 설비" in result.payload["summary"]
 
 
 def test_material_creation_agent_contract(

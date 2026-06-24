@@ -16,6 +16,7 @@
 #include "MachineBase.h"
 #include "Materials/MaterialInterface.h"
 #include "OJJ_Foundation.h"
+#include "OJJ_RampFoundation.h"
 #include "OJJ_Ladder.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Pipe.h"
@@ -397,9 +398,31 @@ bool OJJ_ValidateConveyorSlopePath(
 		}
 
 		// STEP(인접쌍): 둘 다 raw = 300, 그 외(둘 다 Foundation OR 경계) = 100.
+		// #352 경계 직결 금지: raw 지면↔Foundation 경계쌍(bCellIsFoundation 전환)은 ① Foundation 셀이
+		// RampFoundation이고 ② 경계 실제 ΔZ가 near-level(≈0)일 때만 통과시킨다. 그 외 전부 거부:
+		//   · 평지 Foundation(비램프): 상면 = 평면+Thickness(45)+N×100 이라 맨땅보다 항상 ≥45uu 위 →
+		//     바로 이으면 경사 벨트가 그 단차만큼 슬래브를 뚫고 올라간다(관통).
+		//   · 램프라도 높은끝/측면으로 땅에서 진입(codex P2): 경계 ΔZ가 ~100uu라 같은 관통 재발 — 클래스만으로
+		//     허용하면 안 됨. 낮은끝(r=0)만 #261 지면 클램프(OJJ_TryPlaceFoundationPerCell)로 ΔZ≈0이라
+		//     정당한 우회 진입점. 그래서 클래스(Cast)에 더해 경계 ΔZ near-level을 함께 확인한다.
+		// (평지 N=0의 45uu도 막아 시각 클리핑 제거, 사용자 결정 2026-06-24.)
 		for (int32 Index = 1; Index < N; ++Index)
 		{
 			const bool bBothRaw = !bCellIsFoundation[Index] && !bCellIsFoundation[Index - 1];
+			const bool bBoundary = bCellIsFoundation[Index] != bCellIsFoundation[Index - 1];
+			if (bBoundary)
+			{
+				// 경계의 Foundation 셀(둘 중 bCellIsFoundation=true). 램프 + 경계 ΔZ near-level일 때만 통과.
+				const FIntPoint FoundationCell = bCellIsFoundation[Index] ? PathCells[Index] : PathCells[Index - 1];
+				const bool bRampBoundary = Cast<AOJJ_RampFoundation>(Grid->GetFoundationAtCell(FoundationCell)) != nullptr;
+				const float BoundaryDeltaZ = FMath::Abs(OutCellZs[Index] - OutCellZs[Index - 1]);
+				constexpr float BoundaryLevelTolZ = 1.0f; // 부동소수 오차 흡수용(램프 낮은끝은 #261 클램프로 ΔZ≈0).
+				if (!bRampBoundary || BoundaryDeltaZ > BoundaryLevelTolZ)
+				{
+					OutReason = TEXT("땅↔Foundation 직접 컨베이어 금지 — RampFoundation 낮은끝으로 연결하세요.");
+					return false;
+				}
+			}
 			const float PairLimit = FMath::Max(1.0f,
 				bBothRaw ? Grid->OJJ_GetMaxSlopeStepZ() : Grid->OJJ_GetMaxConveyorStepZ());
 			if (FMath::Abs(OutCellZs[Index] - OutCellZs[Index - 1]) > PairLimit + KINDA_SMALL_NUMBER)

@@ -225,6 +225,30 @@ def test_pipeline_operator_guide_uses_llm_prompt_with_manual_csv_evidence() -> N
     assert "[OUTPUT_CONTRACT]" in messages[1]["content"]
 
 
+def test_pipeline_operator_guide_falls_back_on_non_json_llm_response() -> None:
+    response, _ = run_pipeline_scenario(
+        PipelineScenario(
+            name="operator guide non json fallback",
+            agent="operator_guide",
+            payload={"question": "?쒕젴湲곕뒗 萸먯빞?"},
+            request_id="request-operator-guide-non-json",
+            llm_responses=[
+                leaf_agent_decision("operator_guide.machine_help"),
+                "분쇄기는 고체 자원을 분말로 바꾸는 장비예요.",
+            ],
+        )
+    )
+
+    assert_agent_response(
+        response,
+        agent="operator_guide",
+        sub_agent="operator_guide.machine_help",
+    )
+    assert response["payload"]["topic"] == "machine"
+    assert response["payload"]["metadata"]["fallback"] is True
+    assert response["payload"]["metadata"]["fallbackReason"] == "json_decode_failed"
+
+
 def test_pipeline_routes_valid_explicit_agent_without_top_level_llm() -> None:
     llm = StubLLM([None])
     pipeline = AgentPipeline(llm=llm)
@@ -251,12 +275,7 @@ def test_pipeline_routes_valid_explicit_agent_without_top_level_llm() -> None:
 
 
 def test_pipeline_routes_explicit_agent_through_top_level_prompt() -> None:
-    llm = StubLLM(
-        [
-            top_agent_decision("process_optimizer"),
-            None,
-        ]
-    )
+    llm = StubLLM([None])
     pipeline = AgentPipeline(llm=llm)
 
     response = pipeline.run(
@@ -269,10 +288,9 @@ def test_pipeline_routes_explicit_agent_through_top_level_prompt() -> None:
     )
 
     assert_agent_response(response, agent="process_optimizer")
-    assert len(llm.prompts) == 2
-    assert "서버 전체 오케스트레이터" in llm.prompts[0]
-    assert "[REQUEST_HINT]\nagent: process_optimizer" in llm.prompts[0]
-    assert "공장 snapshot에서 공정 병목" in llm.prompts[1]
+    assert len(llm.prompts) == 1
+    assert "[REQUEST_HINT]\nagent: process_optimizer" not in llm.prompts[0]
+    assert response["payload"]["status"] == "suggestion"
 
 
 def test_pipeline_treats_explicit_agent_as_top_level_prompt_hint_only() -> None:
@@ -291,12 +309,8 @@ def test_pipeline_treats_explicit_agent_as_top_level_prompt_hint_only() -> None:
         }
     )
 
-    assert_agent_response(
-        response,
-        agent="operator_guide",
-        sub_agent="operator_guide.machine_help",
-    )
-    assert "[REQUEST_HINT]\nagent: process_optimizer" in llm.prompts[0]
+    assert_agent_error(response, code="INVALID_SUB_AGENT")
+    assert response["agent"] == "process_optimizer"
 
 
 def test_pipeline_rejects_json_top_level_routing_output() -> None:
@@ -308,13 +322,12 @@ def test_pipeline_rejects_json_top_level_routing_output() -> None:
         {
             "type": "agent.request",
             "request_id": "request-json-routing-output",
-            "agent": "process_optimizer",
             "payload": {"machines": [{"id": "m-1"}]},
         }
     )
 
     assert_agent_error(response, code="ROUTING_UNAVAILABLE")
-    assert response["agent"] == "process_optimizer"
+    assert response["agent"] is None
 
 
 def test_pipeline_includes_safe_details_for_invalid_top_level_routing_output() -> None:
@@ -474,10 +487,8 @@ def test_pipeline_returns_error_for_invalid_envelope() -> None:
 def test_cache_key_separates_context() -> None:
     llm = StubLLM(
         [
-            top_agent_decision("process_optimizer"),
-            '{"result":"site-a"}',
-            top_agent_decision("process_optimizer"),
-            '{"result":"site-b"}',
+            '{"final_answer":"site-a","actions":[],"question":"x","topic":"machine"}',
+            '{"final_answer":"site-b","actions":[],"question":"x","topic":"machine"}',
         ]
     )
     pipeline = AgentPipeline(llm=llm)
@@ -486,8 +497,11 @@ def test_cache_key_separates_context() -> None:
         {
             "type": "agent.request",
             "request_id": "request-cache-a",
-            "agent": "process_optimizer",
-            "payload": {"machines": []},
+            "agent": "operator_guide",
+            "payload": {
+                "question": "x",
+                "sub_agent": "operator_guide.machine_help",
+            },
             "context": {"site": "a"},
         }
     )
@@ -495,13 +509,24 @@ def test_cache_key_separates_context() -> None:
         {
             "type": "agent.request",
             "request_id": "request-cache-b",
-            "agent": "process_optimizer",
-            "payload": {"machines": []},
+            "agent": "operator_guide",
+            "payload": {
+                "question": "x",
+                "sub_agent": "operator_guide.machine_help",
+            },
             "context": {"site": "b"},
         }
     )
 
-    assert first["payload"]["result"] == "site-a"
-    assert second["payload"]["result"] == "site-b"
-    assert_agent_response(first, agent="process_optimizer")
-    assert_agent_response(second, agent="process_optimizer")
+    assert first["payload"]["final_answer"] == "site-a"
+    assert second["payload"]["final_answer"] == "site-b"
+    assert_agent_response(
+        first,
+        agent="operator_guide",
+        sub_agent="operator_guide.machine_help",
+    )
+    assert_agent_response(
+        second,
+        agent="operator_guide",
+        sub_agent="operator_guide.machine_help",
+    )

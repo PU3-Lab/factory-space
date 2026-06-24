@@ -20,6 +20,7 @@ public:
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual float CalculatePowerOutput() const override;
+	virtual void HandlePostRepair() override;
 
 	void StartNextFuelProcessing();
 	void FinishFuelProcessing();

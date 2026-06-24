@@ -6,13 +6,15 @@
 #include "FactoryManagerSubsystem.h"
 #include "MachineBase.h"
 #include "Machines/PowerGridNode.h"
+#include "Machines/PowerPlant.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Math/UnrealMathUtility.h"
 #include "UObject/ConstructorHelpers.h"
 
 APowerLine::APowerLine()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
@@ -35,6 +37,8 @@ APowerLine::APowerLine()
 		LineMaterialBase = BasicShapeMaterial.Object;
 		LineMesh->SetMaterial(0, LineMaterialBase);
 	}
+
+	PulsePhaseOffset = FMath::FRandRange(0.0f, 2.0f * PI);
 }
 
 void APowerLine::BeginPlay()
@@ -54,6 +58,12 @@ void APowerLine::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 	UpdateLineVisual();
+}
+
+void APowerLine::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	UpdateMaterialPulse();
 }
 
 void APowerLine::ConfigurePowerLine(AMachineBase* NewSourceMachine, AMachineBase* NewTargetMachine)
@@ -108,8 +118,27 @@ void APowerLine::UpdateLineVisual()
 		return;
 	}
 
-	const FVector SourceLocation = GetEndpointLocationForActor(Source, EndpointHeightOffset);
-	const FVector TargetLocation = GetEndpointLocationForActor(Target, EndpointHeightOffset);
+	FVector SourceLocation = GetEndpointLocationForActor(Source, EndpointHeightOffset);
+	FVector TargetLocation = GetEndpointLocationForActor(Target, EndpointHeightOffset);
+
+	if (Cast<APowerGridNode>(Source))
+	{
+		SourceLocation.Z -= PowerGridNodeEndpointLowerOffset;
+	}
+	else if (Cast<APowerPlant>(Source))
+	{
+		SourceLocation.Z -= PowerPlantEndpointLowerOffset;
+	}
+
+	if (Cast<APowerGridNode>(Target))
+	{
+		TargetLocation.Z -= PowerGridNodeEndpointLowerOffset;
+	}
+	else if (Cast<APowerPlant>(Target))
+	{
+		TargetLocation.Z -= PowerPlantEndpointLowerOffset;
+	}
+
 	const FVector Delta = TargetLocation - SourceLocation;
 	const float Length = Delta.Size();
 	if (Length <= UE_KINDA_SMALL_NUMBER)
@@ -160,6 +189,25 @@ bool APowerLine::IsElectricallyConnected() const
 	}
 
 	return false;
+}
+
+float APowerLine::GetCurrentConnectedEmissiveStrength() const
+{
+	const UWorld* World = GetWorld();
+	if (!World || ConnectedEmissiveStrength <= 0.0f)
+	{
+		return ConnectedEmissiveStrength;
+	}
+
+	const float PulseTime = (World->GetTimeSeconds() * ConnectedPulseFrequency) + PulsePhaseOffset;
+	const float PulseWave = 0.5f + (0.5f * FMath::Sin(PulseTime));
+	const float ShapedPulse = FMath::Square(PulseWave);
+	const float PulseMultiplier = FMath::Lerp(
+		ConnectedPulseMinMultiplier,
+		ConnectedPulseMinMultiplier + ConnectedPulseAmplitude,
+		ShapedPulse);
+
+	return ConnectedEmissiveStrength * PulseMultiplier;
 }
 
 FVector APowerLine::GetSagPoint(
@@ -247,29 +295,30 @@ void APowerLine::UpdateLineSegment(
 
 UMaterialInterface* APowerLine::GetPowerLineMaterial(bool bElectricallyConnected)
 {
-	if (bElectricallyConnected && ConnectedLineMaterial)
-	{
-		return ConnectedLineMaterial;
-	}
-
-	if (!bElectricallyConnected && DisconnectedLineMaterial)
-	{
-		return DisconnectedLineMaterial;
-	}
-
-	UMaterialInterface* BaseMaterial = LineMaterialBase
-		? LineMaterialBase.Get()
-		: UMaterial::GetDefaultMaterial(MD_Surface);
 	TObjectPtr<UMaterialInstanceDynamic>& MaterialInstance = bElectricallyConnected
 		? ConnectedMaterialInstance
 		: DisconnectedMaterialInstance;
 
-	if (!MaterialInstance)
+	UMaterialInterface* BaseMaterial = nullptr;
+	if (bElectricallyConnected)
+	{
+		BaseMaterial = ConnectedLineMaterial
+			? ConnectedLineMaterial.Get()
+			: (LineMaterialBase ? LineMaterialBase.Get() : UMaterial::GetDefaultMaterial(MD_Surface));
+	}
+	else
+	{
+		BaseMaterial = DisconnectedLineMaterial
+			? DisconnectedLineMaterial.Get()
+			: (LineMaterialBase ? LineMaterialBase.Get() : UMaterial::GetDefaultMaterial(MD_Surface));
+	}
+
+	if (!MaterialInstance || MaterialInstance->Parent != BaseMaterial)
 	{
 		MaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
 	}
-	ConfigureMaterialInstance(MaterialInstance, bElectricallyConnected);
 
+	ConfigureMaterialInstance(MaterialInstance, bElectricallyConnected);
 	return MaterialInstance.Get();
 }
 
@@ -283,7 +332,7 @@ void APowerLine::ConfigureMaterialInstance(
 	}
 
 	const FLinearColor LineColor = bElectricallyConnected ? ConnectedLineColor : DisconnectedLineColor;
-	const float EmissiveStrength = bElectricallyConnected ? ConnectedEmissiveStrength : 0.0f;
+	const float EmissiveStrength = bElectricallyConnected ? GetCurrentConnectedEmissiveStrength() : 0.0f;
 	const FLinearColor EmissiveColor = LineColor * EmissiveStrength;
 
 	MaterialInstance->SetVectorParameterValue(TEXT("Color"), LineColor);
@@ -293,6 +342,15 @@ void APowerLine::ConfigureMaterialInstance(
 	MaterialInstance->SetScalarParameterValue(TEXT("Opacity"), LineColor.A);
 	MaterialInstance->SetScalarParameterValue(TEXT("Alpha"), LineColor.A);
 	MaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), EmissiveStrength);
+	MaterialInstance->SetScalarParameterValue(TEXT("PulseAlpha"), bElectricallyConnected ? EmissiveStrength : 0.0f);
+}
+
+void APowerLine::UpdateMaterialPulse()
+{
+	if (ConnectedMaterialInstance)
+	{
+		ConfigureMaterialInstance(ConnectedMaterialInstance, IsElectricallyConnected());
+	}
 }
 
 void APowerLine::ApplyMaterialToSegment(UStaticMeshComponent* Segment, bool bElectricallyConnected)
