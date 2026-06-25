@@ -21,46 +21,6 @@
 
 using namespace UIInteractHelpers;
 
-// [JJ #296 빌드수정] 이 익명 헬퍼가 두 .cpp(UI_MachineInteract / UI_WarehouseInteract)에
-// 바이트 동일하게 중복돼 unity(jumbo) 빌드 C2084(재정의) 충돌을 일으켰습니다.
-// UI/UIInteractDisplayHelpers.h(namespace UIInteractHelpers)로 추출했습니다.
-// 아래 블록은 확인 후 삭제해도 됩니다(공용 헤더가 대체). — Chan 확인 요망
-// namespace
-// {
-// FText GetResourceDisplayText(const UDataTable* ResourceDataTable, FName ItemName)
-// {
-//     if (ItemName.IsNone())
-//     {
-//         return FText::GetEmpty();
-//     }
-//
-//     if (ResourceDataTable)
-//     {
-//         if (const FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("GetResourceDisplayText")))
-//         {
-//             if (!RowData->DisplayName.IsEmpty())
-//             {
-//                 return FText::FromString(RowData->DisplayName);
-//             }
-//         }
-//     }
-//
-//     return FText::FromName(ItemName);
-// }
-//
-// FText GetMachineDisplayText(UMachineSubsystem* MachineSubsystem, FName MachineTypeName)
-// {
-//     if (MachineSubsystem)
-//     {
-//         return MachineSubsystem->GetMachineDisplayName(MachineTypeName);
-//     }
-//
-//     return MachineTypeName.IsNone() ? FText::GetEmpty() : FText::FromName(MachineTypeName);
-// }
-// }
-
-
-
 UUI_WarehouseInteract::UUI_WarehouseInteract(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
 {
@@ -87,6 +47,18 @@ void UUI_WarehouseInteract::SetTargetMachine(AMachineBase* InMachine)
     
     if (TargetMachine)
     {
+        const ESlateVisibility FeatureVisibility = TargetMachine->IsInfiniteDurability() ? ESlateVisibility::Hidden : ESlateVisibility::Visible;
+        
+        // 1. 내구도 및 수리 버튼 숨김 제어 (위치 고정)
+        if (PB_Durability)          PB_Durability->SetVisibility(FeatureVisibility);
+        if (TXT_DurabilityPercent)  TXT_DurabilityPercent->SetVisibility(FeatureVisibility);
+        if (BTN_Repair)             BTN_Repair->SetVisibility(FeatureVisibility);
+        
+        // 2. 생산 진행도 UI 숨김 제어 (위치 고정)
+        if (PB_CraftingProgress)    PB_CraftingProgress->SetVisibility(FeatureVisibility);
+        if (TXT_ProgressPercent)    TXT_ProgressPercent->SetVisibility(FeatureVisibility);
+
+        // --- 이하 기존 창고/유체탱크 세팅 로직 동일 ---
         if (AWarehousePort* WarehousePort = Cast<AWarehousePort>(TargetMachine))
         {
             ManualDroppedOutputItemID = WarehousePort->GetSelectedOutputItem();
