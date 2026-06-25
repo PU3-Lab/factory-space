@@ -115,31 +115,31 @@ protected:
 	float EventVisualInterpSpeed = 1.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
-	FLinearColor MagneticStormSunColor = FLinearColor(0.42f, 0.72f, 0.82f, 1.0f);
+	FLinearColor MagneticStormSunColor = FLinearColor(0.62f, 0.34f, 0.95f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
 	FLinearColor SandStormSunColor = FLinearColor(1.0f, 0.72f, 0.45f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
-	FLinearColor MagneticStormFogColor = FLinearColor(0.18f, 0.34f, 0.42f, 1.0f);
+	FLinearColor MagneticStormFogColor = FLinearColor(0.16f, 0.08f, 0.28f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
 	FLinearColor SandStormFogColor = FLinearColor(0.78f, 0.58f, 0.35f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
-	FVector MagneticStormCameraColorScale = FVector(0.92f, 0.97f, 1.03f);
+	FVector MagneticStormCameraColorScale = FVector(1.02f, 0.94f, 1.08f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
 	FVector SandStormCameraColorScale = FVector(1.1f, 0.9f, 0.72f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.0"))
-	float MagneticStormFogDensityBonus = 0.005f;
+	float MagneticStormFogDensityBonus = 0.006f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.0"))
 	float SandStormFogDensityBonus = 0.035f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.0"))
-	float MagneticStormSunIntensityScale = 0.75f;
+	float MagneticStormSunIntensityScale = 0.72f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.0"))
 	float SandStormSunIntensityScale = 0.65f;
