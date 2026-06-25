@@ -101,22 +101,6 @@ void AOJJ_Player::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// [게임진입] 선택 캐릭터 외형 적용 — 다른 setup 전에 먼저(메시/ABP 확정 후 입력/카메라 등 진행).
-	ApplySelectedCharacterAppearance();
-
-	// [L_Planet 인트로] 시네마틱(L_Cinematic) 경유 진입 시에만 getup 몽타주 + 카메라 1인칭→3인칭 연출.
-	// 디버그 직접진입(플래그 false)은 스킵하고 평소 플레이. 플래그는 연출 완료 시 PlayIntroSequence/Tick에서 소거(1회성).
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
-		{
-			if (Selection->GetShouldPlayIntro())
-			{
-				PlayIntroSequence();
-			}
-		}
-	}
-
 	// 걷기 속도를 권위 있게 적용(BP CharacterMovement의 MaxWalkSpeed 기본값을 덮음 — 단일 출처).
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
@@ -194,6 +178,24 @@ void AOJJ_Player::BeginPlay()
 	
 	UpdateNightSpotLightVisibility();
 	ConnectFactoryAgentClient();
+
+	// [게임진입] 선택 캐릭터 외형 적용 — 세이브 로드(HandlePlayerReady→LoadCurrentGame)가 SetSelectedCharacter로
+	// 캐릭터를 복원한 뒤 적용되도록 BeginPlay 말미로 이동(메시/ABP 확정). 외형/입력/카메라 setup은 메시와 무관해 안전.
+	ApplySelectedCharacterAppearance();
+
+	// [L_Planet 인트로] 시네마틱(L_Cinematic) 경유 진입 시에만 getup 몽타주 + 카메라 1인칭→3인칭 연출.
+	// 외형 확정 직후 재생(올바른 ABP에서 getup 몽타주). 디버그 직접진입(플래그 false)은 스킵하고 평소 플레이.
+	// 플래그는 연출 완료 시 PlayIntroSequence/Tick에서 소거(1회성).
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
+		{
+			if (Selection->GetShouldPlayIntro())
+			{
+				PlayIntroSequence();
+			}
+		}
+	}
 }
 
 void AOJJ_Player::ApplySelectedCharacterAppearance()
