@@ -8,7 +8,6 @@ from agents.new_material_generator import NewMaterialGeneratorAgent
 from agents.operator_guide.machine_help import MachineHelpAgent
 from agents.operator_guide.recipe_explainer import RecipeExplainerAgent
 from agents.operator_guide.troubleshooter import TroubleshooterAgent
-from agents.process_optimizer.agent import ProcessOptimizerAgent
 from agents.quest_generator.economy_quest import EconomyQuestAgent
 from agents.quest_generator.production_quest import ProductionQuestAgent
 
@@ -52,7 +51,6 @@ def create_default_agent_router() -> AgentRouter:
 
     router = AgentRouter()
     for agent in (
-        ProcessOptimizerAgent(),
         MaterialCreationAgent(),
         NewMaterialGeneratorAgent(),
         RecipeExplainerAgent(),

@@ -1,6 +1,8 @@
-"""Tests for process optimizer agent."""
+﻿"""Tests for process optimizer agent."""
 
 from __future__ import annotations
+
+import json
 
 import pytest
 from pydantic import ValidationError
@@ -39,6 +41,9 @@ def test_process_optimizer_payload_schema() -> None:
     )
     assert p2.operation == "analyze"
     assert p2.goal == "throughput"
+
+    p_apply = ProcessOptimizerPayload.model_validate({"operation": "apply"})
+    assert p_apply.operation == "apply"
 
     p3 = ProcessOptimizerPayload.model_validate({})
     assert p3.operation == "analyze"
@@ -131,14 +136,86 @@ def test_process_optimizer_state_update_accepts_empty_factory_state() -> None:
     assert process_optimizer_memory.get_state(session_id) == {}
 
 
+def test_process_optimizer_analyze_uses_llm_for_player_explanation() -> None:
+    """분석/명령 검증은 코드가 하고, 플레이어용 설명만 LLM으로 보강한다."""
+    llm_response = json.dumps(
+        {
+            "summary": "제련기 입력 부족을 먼저 풀어 생산 흐름을 회복하는 계획입니다.",
+            "player_message": "변경 대상을 확인한 뒤 적용할 항목을 승인하세요.",
+            "change_explanations": [
+                {
+                    "id": "suggest_input_smelter_1",
+                    "reason": "smelter_1은 원자재가 없어 낮은 가동률로 병목이 됩니다.",
+                    "priority_explanation": "입력 부족을 해소해야 뒤 공정도 함께 살아납니다.",
+                    "expected_effect_text": "철광석 공급이 회복되면 제련기 가동률이 개선됩니다.",
+                }
+            ],
+        },
+        ensure_ascii=False,
+    )
+    pipeline = AgentPipeline(llm=StubLLM([llm_response]))
+
+    res = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "req-process-llm-explain",
+            "session_id": "session-process-llm-explain",
+            "client_id": "unreal",
+            "agent": "process_optimizer",
+            "payload": {
+                "operation": "analyze",
+                "goal": "balance",
+                "factoryRevision": 1,
+                "factory_state": {
+                    "machines": [
+                        {
+                            "id": "smelter_1",
+                            "type": "smelter",
+                            "status": "operating",
+                            "operating_rate": 0.2,
+                            "inputs": [
+                                {
+                                    "item_id": "iron_ore",
+                                    "amount": 0.0,
+                                    "max_amount": 100.0,
+                                }
+                            ],
+                        }
+                    ],
+                    "conveyors": [],
+                    "power_grid": {"produced": 100.0, "consumed": 50.0},
+                },
+            },
+        }
+    )
+
+    assert res["type"] == "agent.response"
+    assert res["payload"]["status"] == "preview"
+    assert res["payload"]["summary"] == "제련기 입력 부족을 먼저 풀어 생산 흐름을 회복하는 계획입니다."
+    assert res["payload"]["player_message"] == "변경 대상을 확인한 뒤 적용할 항목을 승인하세요."
+    assert res["payload"]["changes"][0]["reason"] == "smelter_1은 원자재가 없어 낮은 가동률로 병목이 됩니다."
+    assert res["payload"]["metadata"]["llm"] == "used"
+
+
 def test_process_optimizer_analyze_fallback_or_mock() -> None:
-    """Ensure analyze request correctly sets up and fallback returns suggestion structure."""
+    """Ensure analyze requests use the v2 preview graph and session memory."""
     pipeline = AgentPipeline(llm=StubLLM(["process_optimizer", None]))
     session_id = "session-analyze-test"
     process_optimizer_memory.clear(session_id)
 
     # Put state in memory beforehand
-    state = {"machines": [{"id": "m1"}]}
+    state = {
+        "machines": [
+            {
+                "id": "m1",
+                "type": "smelter",
+                "status": "operating",
+                "inputs": [{"item_id": "iron_ore", "amount": 0.0}],
+            }
+        ],
+        "conveyors": [],
+        "power_grid": {"produced": 50.0, "consumed": 10.0},
+    }
     process_optimizer_memory.update(session_id, state, 10)
 
     # Run analyze request (without LLM mocking, should trigger fallback when LLM fails or fallback node runs)
@@ -157,18 +234,34 @@ def test_process_optimizer_analyze_fallback_or_mock() -> None:
     # Should fall back to process_optimizer fallback structure
     assert res.get("type") == "agent.response", f"Pipeline error details: {res}"
     assert res["agent"] == "process_optimizer"
+    assert res["payload"]["status"] == "preview"
+    assert res["payload"]["factoryRevision"] == 10
     assert "summary" in res["payload"]
+    assert "changes" in res["payload"]
     assert "suggestions" in res["payload"]
-    # Confirm it referenced the 1 machine in memory
-    assert "1개 설비" in res["payload"]["summary"]
 
 
 def test_process_optimizer_analyze_defaults_when_operation_omitted() -> None:
-    """operation을 생략하면 ProcessOptimizerPayload 기본값처럼 analyze 요청으로 처리합니다."""
+    """operation???앸왂?섎㈃ ProcessOptimizerPayload 湲곕낯媛믪쿂??analyze ?붿껌?쇰줈 泥섎━?⑸땲??"""
     pipeline = AgentPipeline(llm=StubLLM(["process_optimizer", None]))
     session_id = "session-analyze-default-operation"
     process_optimizer_memory.clear(session_id)
-    process_optimizer_memory.update(session_id, {"machines": [{"id": "m1"}]}, 10)
+    process_optimizer_memory.update(
+        session_id,
+        {
+            "machines": [
+                {
+                    "id": "m1",
+                    "type": "smelter",
+                    "status": "operating",
+                    "inputs": [{"item_id": "iron_ore", "amount": 0.0}],
+                }
+            ],
+            "conveyors": [],
+            "power_grid": {"produced": 50.0, "consumed": 10.0},
+        },
+        10,
+    )
 
     request_msg = {
         "type": "agent.request",
@@ -183,7 +276,7 @@ def test_process_optimizer_analyze_defaults_when_operation_omitted() -> None:
 
     assert res.get("type") == "agent.response", f"Pipeline error details: {res}"
     assert res["agent"] == "process_optimizer"
-    assert res["payload"]["status"] == "suggestion"
+    assert res["payload"]["status"] == "preview"
     assert res["payload"]["goal"] == "balance"
 
 
@@ -235,7 +328,7 @@ def test_process_optimizer_analyze_uses_payload_revision_and_state() -> None:
 
     assert res.get("type") == "agent.response", f"Pipeline error details: {res}"
     assert res["agent"] == "process_optimizer"
-    assert res["payload"]["status"] == "suggestion"
+    assert res["payload"]["status"] == "preview"
     assert res["payload"]["factoryRevision"] == 12
     assert res["payload"]["goal"] == "congestion_relief"
     assert "constructor_1" in res["payload"]["ui_hints"]["highlight_targets"]
@@ -253,7 +346,6 @@ def test_agent_direct_methods() -> None:
     process_optimizer_memory.update("session-direct", {"machines": [{"id": "m1"}]}, 15)
 
     prompt = agent.build_prompt({"goal": "throughput"}, context)
-    assert "수석 매니저" in prompt
     assert "m1" in prompt
     assert "throughput" in prompt
     assert "15" in prompt
@@ -264,7 +356,7 @@ def test_agent_direct_methods() -> None:
 
 
 def test_unreal_websocket_contract_sample_validation() -> None:
-    """Unreal 계약 샘플 JSON이 실제 Pydantic 스키마 및 검증 모델을 정상 통과하는지 확인합니다."""
+    """Validate every Unreal sample request against the current payload schemas."""
     import json
     import os
 
@@ -274,17 +366,23 @@ def test_unreal_websocket_contract_sample_validation() -> None:
     with open(sample_path, encoding="utf-8") as f:
         data = json.load(f)
 
-    # Envelope 구조 간접 체크
-    assert data["type"] == "agent.request"
-    assert data["agent"] == "process_optimizer"
+    expected_samples = {
+        "analyze_request": "analyze",
+        "apply_request": "apply",
+        "undo_request": "undo",
+        "measure_request": "measure",
+    }
+    assert set(expected_samples).issubset(data.keys())
 
-    # 1. Payload 검증
-    payload_data = data["payload"]
-    payload_obj = ProcessOptimizerPayload.model_validate(payload_data)
-    assert payload_obj.operation == "analyze"
-    assert payload_obj.goal == "congestion_relief"
+    for sample_key, expected_operation in expected_samples.items():
+        envelope = data[sample_key]
+        assert envelope["type"] == "agent.request"
+        assert envelope["agent"] == "process_optimizer"
+        payload_obj = ProcessOptimizerPayload.model_validate(envelope["payload"])
+        assert payload_obj.operation == expected_operation
 
-    # 2. Payload 내의 factoryRevision 및 factory_state 구조 검증
+    payload_data = data["analyze_request"]["payload"]
+    assert payload_data["goal"] == "congestion_relief"
     assert payload_data["factoryRevision"] == 12
 
     from agents.process_optimizer.schemas import FactoryState
@@ -292,7 +390,6 @@ def test_unreal_websocket_contract_sample_validation() -> None:
     state_data = payload_data["factory_state"]
     state_obj = FactoryState.model_validate(state_data)
 
-    # 세부 필드들이 Pydantic 기본값과 extra 파싱을 통해 정확하게 로드되었는지 검증
     assert len(state_obj.machines) == 2
     assert state_obj.machines[0].id == "constructor_1"
     assert state_obj.machines[0].operating_rate == 0.55
@@ -305,7 +402,6 @@ def test_unreal_websocket_contract_sample_validation() -> None:
 
     assert state_obj.power_grid.produced == 120.0
     assert state_obj.power_grid.consumed == 90.0
-
 
 def test_process_optimizer_invalid_payload_validation() -> None:
     """Validate that invalid factory_state or factoryRevision raises validation error."""
@@ -345,3 +441,4 @@ def test_process_optimizer_invalid_payload_validation() -> None:
     res = pipeline.run(request_msg_negative_rev)
     assert res.get("type") == "agent.error"
     assert "INVALID_REQUEST_PAYLOAD" in res["error"]["code"]
+

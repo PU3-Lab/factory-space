@@ -39,7 +39,6 @@ def test_default_agent_router_contains_leaf_agents() -> None:
         "operator_guide.machine_help",
         "operator_guide.recipe_explainer",
         "operator_guide.troubleshooter",
-        "process_optimizer",
         "quest_generator.economy_quest",
         "quest_generator.production_quest",
     ]

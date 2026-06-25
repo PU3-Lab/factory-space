@@ -3,19 +3,17 @@
 from __future__ import annotations
 
 from agents.pipeline import AgentPipeline
-from tests.harness import StubLLM, assert_agent_response, top_agent_decision
+from tests.harness import StubLLM, assert_agent_response
 
 
 def test_pipeline_adds_recent_operator_guide_turns_to_followup_prompt() -> None:
     llm = StubLLM(
         [
-            top_agent_decision("operator_guide"),
             (
                 '{"final_answer":"A crusher breaks resources down.",'
                 '"actions":[],"question":"What is a crusher?",'
                 '"topic":"machine"}'
             ),
-            top_agent_decision("operator_guide"),
             (
                 '{"final_answer":"For iron ingots, check the smelter flow first.",'
                 '"actions":[],"question":"Does it help with iron ingots?",'

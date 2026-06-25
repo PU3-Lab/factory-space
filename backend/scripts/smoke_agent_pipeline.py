@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import copy
 import json
 import os
 import sys
@@ -54,6 +55,7 @@ class SmokeCase:
     expected_error_code: str | None = None
     expected_factory_revision: int | None = None
     expected_highlight_targets: tuple[str, ...] | None = None
+    expected_status: str | None = None
     reject_execution_commands: bool = False
     transport: str = "websocket"
 
@@ -177,11 +179,21 @@ def validate_case_response(case: SmokeCase, response: dict[str, Any]) -> None:
     if (
         case.expected_factory_revision is not None
         or case.expected_highlight_targets is not None
+        or case.expected_status is not None
         or case.reject_execution_commands
     ):
         payload = response.get("payload")
         if not isinstance(payload, dict):
             raise SmokeError(f"{case.name}: expected response payload object")
+
+        if (
+            case.expected_status is not None
+            and payload.get("status") != case.expected_status
+        ):
+            raise SmokeError(
+                f"{case.name}: expected status {case.expected_status}, "
+                f"got {payload.get('status')}"
+            )
 
         if (
             case.expected_factory_revision is not None
@@ -222,13 +234,40 @@ async def run_profile(profile: SmokeProfile, base_url: str, ws_path: str) -> int
         return 0
 
     websocket_url = build_websocket_url(base_url, ws_path)
-    for case in profile.cases:
+    last_plan_id = None
+
+    cases = list(profile.cases)
+    if profile.name in ("local", "providers"):
+        cases.extend(_v2_process_optimizer_cases())
+
+    for case in cases:
+        msg = copy.deepcopy(case.message)
+        if isinstance(msg, dict) and last_plan_id:
+            def replace_placeholder(d):
+                if isinstance(d, dict):
+                    for k, v in d.items():
+                        if v == "{PLAN_ID}":
+                            d[k] = last_plan_id
+                        else:
+                            replace_placeholder(v)
+                elif isinstance(d, list):
+                    for i, v in enumerate(d):
+                        if v == "{PLAN_ID}":
+                            d[i] = last_plan_id
+                        else:
+                            replace_placeholder(v)
+            replace_placeholder(msg)
+
         if case.transport == "http_health":
             response = check_health(base_url)
         elif case.transport == "http_agent_connection_manifest":
             response = check_agent_connection_manifest(base_url)
         else:
-            response = await request_websocket_case(websocket_url, case)
+            response = await request_websocket_case(websocket_url, case, msg)
+            if isinstance(response, dict):
+                payload = response.get("payload")
+                if isinstance(payload, dict) and payload.get("plan_id"):
+                    last_plan_id = payload.get("plan_id")
         validate_case_response(case, response)
         print(f"PASS {profile.name}/{case.name}")
 
@@ -281,15 +320,17 @@ def check_agent_connection_manifest(base_url: str) -> dict[str, Any]:
 async def request_websocket_case(
     websocket_url: str,
     case: SmokeCase,
+    message: dict[str, Any] | str | None = None,
 ) -> dict[str, Any]:
     """Send one WebSocket smoke message and parse the JSON response."""
 
+    outbound_message = case.message if message is None else message
     try:
         async with connect(websocket_url) as websocket:
-            if isinstance(case.message, str):
-                await websocket.send(case.message)
+            if isinstance(outbound_message, str):
+                await websocket.send(outbound_message)
             else:
-                await websocket.send(json.dumps(case.message))
+                await websocket.send(json.dumps(outbound_message))
             return await receive_terminal_response(websocket)
     except OSError as exc:
         raise SmokeError(f"{case.name}: websocket request failed: {exc}") from exc
@@ -379,7 +420,9 @@ def _agent_response_cases() -> tuple[SmokeCase, ...]:
                                 "operating_rate": 0.5,
                                 "inputs": [{"item_id": "iron_ore", "amount": 0.0}],
                             }
-                        ]
+                        ],
+                        "conveyors": [],
+                        "power_grid": {"produced": 100, "consumed": 50}
                     },
                 },
             },
@@ -388,6 +431,7 @@ def _agent_response_cases() -> tuple[SmokeCase, ...]:
             expected_sub_agent="process_optimizer",
             expected_factory_revision=1,
             expected_highlight_targets=("smelter_1",),
+            expected_status="preview",
             reject_execution_commands=True,
         ),
         SmokeCase(
@@ -434,6 +478,195 @@ def _agent_response_cases() -> tuple[SmokeCase, ...]:
             expected_type="agent.response",
             expected_agent="new_material_generator",
             expected_sub_agent="new_material_generator",
+        ),
+    )
+
+
+def _v2_process_optimizer_cases() -> tuple[SmokeCase, ...]:
+    return (
+        # 1. 주기 상태 업데이트 -> session memory 갱신, 공장 변경 없음
+        SmokeCase(
+            name="process_optimizer_state_update",
+            message={
+                "type": "agent.request",
+                "request_id": "req-smoke-v2-state-update",
+                "session_id": "smoke-session",
+                "client_id": "smoke-client",
+                "agent": "process_optimizer",
+                "payload": {
+                    "operation": "state_update",
+                    "goal": "balance",
+                    "factoryRevision": 1,
+                    "factory_state": {
+                        "machines": [],
+                        "conveyors": [],
+                        "power_grid": {"produced": 100, "consumed": 50},
+                    },
+                },
+            },
+            expected_type="agent.response",
+            expected_agent="process_optimizer",
+            expected_factory_revision=1,
+            expected_status="success",
+            reject_execution_commands=True,
+        ),
+        # 2. approval 없는 apply -> approval_required
+        SmokeCase(
+            name="process_optimizer_apply_no_app",
+            message={
+                "type": "agent.request",
+                "request_id": "req-smoke-v2-apply-no-app",
+                "session_id": "smoke-session",
+                "client_id": "smoke-client",
+                "agent": "process_optimizer",
+                "payload": {
+                    "operation": "apply",
+                    "plan_id": "{PLAN_ID}",
+                    "factoryRevision": 1,
+                    "approval": False
+                }
+            },
+            expected_type="agent.response",
+            expected_agent="process_optimizer",
+            expected_status="approval_required",
+        ),
+        # 3. 정상 apply -> command payload 반환
+        SmokeCase(
+            name="process_optimizer_apply_success",
+            message={
+                "type": "agent.request",
+                "request_id": "req-smoke-v2-apply-success",
+                "session_id": "smoke-session",
+                "client_id": "smoke-client",
+                "agent": "process_optimizer",
+                "payload": {
+                    "operation": "apply",
+                    "plan_id": "{PLAN_ID}",
+                    "factoryRevision": 1,
+                    "approval": True,
+                    "approved_change_ids": ["suggest_input_smelter_1"],
+                    "factory_state": {
+                        "machines": [
+                            {
+                                "id": "smelter_1",
+                                "type": "smelter",
+                                "status": "operating",
+                                "operating_rate": 0.5,
+                                "inputs": [{"item_id": "iron_ore", "amount": 0.0}],
+                            }
+                        ],
+                        "conveyors": [],
+                        "power_grid": {"produced": 100, "consumed": 50}
+                    }
+                }
+            },
+            expected_type="agent.response",
+            expected_agent="process_optimizer",
+            expected_status="execute_ready",
+        ),
+        # 4. factoryRevision 변경 -> revision_conflict
+        SmokeCase(
+            name="process_optimizer_apply_conflict",
+            message={
+                "type": "agent.request",
+                "request_id": "req-smoke-v2-apply-conflict",
+                "session_id": "smoke-session",
+                "client_id": "smoke-client",
+                "agent": "process_optimizer",
+                "payload": {
+                    "operation": "apply",
+                    "plan_id": "{PLAN_ID}",
+                    "factoryRevision": 2,
+                    "approval": True
+                }
+            },
+            expected_type="agent.response",
+            expected_agent="process_optimizer",
+            expected_status="revision_conflict",
+        ),
+        # 5. undo 충돌 -> undo_conflict
+        SmokeCase(
+            name="process_optimizer_undo_conflict",
+            message={
+                "type": "agent.request",
+                "request_id": "req-smoke-v2-undo-conflict",
+                "session_id": "smoke-session",
+                "client_id": "smoke-client",
+                "agent": "process_optimizer",
+                "payload": {
+                    "operation": "undo",
+                    "plan_id": "{PLAN_ID}",
+                    "factory_state": {
+                        "machines": [
+                            {
+                                "id": "smelter_1",
+                                "type": "smelter",
+                                "status": "operating",
+                                "recipe_id": "copper_ingot"
+                            }
+                        ],
+                        "conveyors": []
+                    }
+                }
+            },
+            expected_type="agent.response",
+            expected_agent="process_optimizer",
+            expected_status="undo_conflict",
+        ),
+        # 6. measure 준비 전 -> measurement_not_ready (주기 1회)
+        SmokeCase(
+            name="process_optimizer_measure_not_ready",
+            message={
+                "type": "agent.request",
+                "request_id": "req-smoke-v2-measure-not-ready",
+                "session_id": "smoke-session",
+                "client_id": "smoke-client",
+                "agent": "process_optimizer",
+                "payload": {
+                    "operation": "measure",
+                    "plan_id": "{PLAN_ID}",
+                    "production_cycles": 1,
+                    "factory_state": {
+                        "machines": [{"id": "smelter_1", "type": "smelter", "status": "operating"}],
+                        "conveyors": []
+                    }
+                }
+            },
+            expected_type="agent.response",
+            expected_agent="process_optimizer",
+            expected_status="measurement_not_ready",
+        ),
+        # 7. measure 완료 -> measurement summary 반환
+        SmokeCase(
+            name="process_optimizer_measure_ready",
+            message={
+                "type": "agent.request",
+                "request_id": "req-smoke-v2-measure-ready",
+                "session_id": "smoke-session",
+                "client_id": "smoke-client",
+                "agent": "process_optimizer",
+                "payload": {
+                    "operation": "measure",
+                    "plan_id": "{PLAN_ID}",
+                    "production_cycles": 5,
+                    "current_time": "2030-01-01T00:00:00Z",
+                    "factory_state": {
+                        "machines": [
+                            {
+                                "id": "smelter_1",
+                                "type": "smelter",
+                                "status": "operating",
+                                "operating_rate": 1.0,
+                                "inputs": [{"item_id": "iron_ore", "amount": 10.0, "max_amount": 10.0}]
+                            }
+                        ],
+                        "conveyors": []
+                    }
+                }
+            },
+            expected_type="agent.response",
+            expected_agent="process_optimizer",
+            expected_status="measurement_ready",
         ),
     )
 

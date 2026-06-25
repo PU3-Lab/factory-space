@@ -9,6 +9,7 @@
 
 class USpringArmComponent;
 class UCameraComponent;
+class USpotLightComponent;
 class UInputMappingContext;
 class UInputAction;
 class AOJJ_BuildController;
@@ -144,6 +145,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> Camera;
+
+	// 야간(18시~06시) 전방 시야 확보용 스포트라이트. 플레이어 앞에 붙어 밤에만 켠다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Light")
+	TObjectPtr<USpotLightComponent> NightSpotLight;
 
 	// --- Character appearance (게임진입) ---
 	// 캐릭터 종류 → 외형(메시+ABP) 매핑 DataAsset. BeginPlay에서 선택 서브시스템값으로 GetMesh()를 스왑한다.
@@ -281,6 +286,13 @@ protected:
 	// 스프린트(Shift) 중 속도.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (ClampMin = "0.0"))
 	float SprintSpeed = 600.f;
+
+	// 야간 전방 조명 on/off 시간대. 18시 이상 또는 6시 미만일 때 조명을 켠다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Light", meta = (ClampMin = "0", ClampMax = "23"))
+	int32 NightLightStartHour24 = 18;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Light", meta = (ClampMin = "0", ClampMax = "23"))
+	int32 NightLightEndHour24 = 6;
 
 	// --- 사다리 등반 (#184) ---
 	// 등반 중 수직 이동 속도(MaxFlySpeed). W/S로 위/아래.
@@ -469,6 +481,7 @@ protected:
 	void ForceFinishIntro();
 
 	// --- Input handlers ---
+	void UpdateNightSpotLightVisibility();
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void Zoom(const FInputActionValue& Value);

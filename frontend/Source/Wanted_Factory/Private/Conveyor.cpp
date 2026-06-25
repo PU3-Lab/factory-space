@@ -11,10 +11,12 @@
 #include "Engine/StaticMesh.h"
 #include "FactoryManagerSubsystem.h"
 #include "GameFramework/PlayerController.h"
+#include "Kismet/GameplayStatics.h"
 #include "MachineBase.h"
 #include "Materials/MaterialInterface.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "OJJ_BuildController.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "Resource/ResourceData.h"
 #include "TimerManager.h"
@@ -107,6 +109,24 @@ float CornerToYaw90(FIntPoint PreviousDirection, FIntPoint NextDirection)
 	}
 	return 270.0f;   // SX > 0 && SY < 0
 }
+
+bool IsBuildModeActive(const AActor* WorldContextActor)
+{
+	if (!WorldContextActor)
+	{
+		return false;
+	}
+
+	const UWorld* World = WorldContextActor->GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	const AOJJ_BuildController* BuildController =
+		Cast<AOJJ_BuildController>(UGameplayStatics::GetActorOfClass(World, AOJJ_BuildController::StaticClass()));
+	return BuildController && BuildController->IsInBuildMode();
+}
 }
 
 AConveyor::AConveyor()
@@ -190,14 +210,8 @@ void AConveyor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	const int32 CurrentFlowArrowPhase = GetFlowArrowPhase();
-	if (CurrentFlowArrowPhase != LastFlowArrowPhase)
-	{
-		LastFlowArrowPhase = CurrentFlowArrowPhase;
-		RebuildVisuals();
-	}
-
 	RefreshItemVisualInstances();
+	RefreshFlowArrowInstances();
 	UpdateFlowArrowMaterial();
 	if (bShowDebugStateText)
 	{
@@ -211,6 +225,7 @@ void AConveyor::OnConstruction(const FTransform& Transform)
 
 	LastFlowArrowPhase = GetFlowArrowPhase();
 	RebuildVisuals();
+	RefreshFlowArrowInstances();
 	RefreshItemVisualInstances();
 	UpdateFlowArrowMaterial();
 	UpdateDebugStateText();
@@ -231,6 +246,7 @@ void AConveyor::BeginPlay()
 
 	LastFlowArrowPhase = GetFlowArrowPhase();
 	RestartItemMoveTimer();
+	RefreshFlowArrowInstances();
 	RefreshItemVisualInstances();
 	UpdateFlowArrowMaterial();
 	UpdateDebugTextFacingPlayer();
@@ -499,11 +515,6 @@ void AConveyor::RebuildVisuals()
 	{
 		CornerSegmentInstances->ClearInstances();
 	}
-	if (FlowArrowInstances)
-	{
-		FlowArrowInstances->ClearInstances();
-	}
-
 	if (!StraightSegmentInstances || !CornerSegmentInstances || PathCells.Num() == 0)
 	{
 		return;
@@ -556,30 +567,6 @@ void AConveyor::RebuildVisuals()
 			(CurrentCell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
 			ZOffset + OJJ_GetPathCellLocalZByIndex(Index));
 
-		const int32 ArrowSpacing = FMath::Max(1, FlowArrowSpacing);
-		const int32 ArrowPhase = ArrowSpacing > 1 ? GetFlowArrowPhase() % ArrowSpacing : 0;
-		if (FlowArrowInstances
-			&& bShowFlowArrows
-			&& VisualDirection != FIntPoint::ZeroValue
-			&& (Index % ArrowSpacing) == ArrowPhase)
-		{
-			const float ArrowDeltaZ = bHasNext
-				? (OJJ_GetPathCellLocalZByIndex(Index + 1) - OJJ_GetPathCellLocalZByIndex(Index))
-				: (OJJ_GetPathCellLocalZByIndex(Index) - OJJ_GetPathCellLocalZByIndex(Index - 1));
-			const FVector ArrowDirection(
-				static_cast<float>(VisualDirection.X) * CellSize,
-				static_cast<float>(VisualDirection.Y) * CellSize,
-				ArrowDeltaZ);
-			const FVector SafeArrowDirection = ArrowDirection.GetSafeNormal();
-			if (!SafeArrowDirection.IsNearlyZero())
-			{
-				const FVector ArrowLocation = LocalLocation + FVector(0.0f, 0.0f, SegmentHeight + FlowArrowHeightOffset);
-				const FRotator ArrowRotation = FRotationMatrix::MakeFromZ(SafeArrowDirection).Rotator();
-				FlowArrowInstances->AddInstance(
-					FTransform(ArrowRotation, ArrowLocation, FVector(FMath::Max(0.01f, FlowArrowScale))));
-			}
-		}
-
 		if (bIsCorner)
 		{
 			// ㄱ자 코너 메시: XZ평면 수직 벽 → Roll 90(X축)로 XY바닥에 눕히고 진행면을 위로.
@@ -628,6 +615,42 @@ void AConveyor::RebuildVisuals()
 		const FVector StraightScale =
 			FVector(StraightUniform) * (FVector::OneVector + (SlopeLength - 1.0f) * MeshFlowAxis);
 		StraightSegmentInstances->AddInstance(FTransform(StraightQuat, LocalLocation, StraightScale));
+	}
+}
+
+void AConveyor::RefreshFlowArrowInstances()
+{
+	if (!FlowArrowInstances)
+	{
+		return;
+	}
+
+	FlowArrowInstances->ClearInstances();
+
+	if (!bShowFlowArrows || PathCells.Num() == 0)
+	{
+		return;
+	}
+
+	const int32 ArrowSpacing = FMath::Max(1, FlowArrowSpacing);
+	const float ArrowScaleMultiplier = IsBuildModeActive(this) ? BuildModeFlowArrowScaleMultiplier : 1.0f;
+	const float ArrowScaleValue = FMath::Max(0.01f, FlowArrowScale * ArrowScaleMultiplier);
+	const float ArrowStartPosition = PathCells.Num() > 1 ? 1.0f : 0.0f;
+	const float PathOffset = GetFlowArrowPathOffset();
+	const float ArrowPathLength = PathCells.Num() <= 1 ? 0.0f : static_cast<float>(PathCells.Num() - 1);
+
+	for (float PathPosition = ArrowStartPosition + PathOffset; PathPosition <= ArrowPathLength; PathPosition += ArrowSpacing)
+	{
+		const FVector ArrowDirection = GetFlowArrowDirectionAtPathPosition(PathPosition);
+		if (ArrowDirection.IsNearlyZero())
+		{
+			continue;
+		}
+
+		const FVector ArrowLocation = GetFlowArrowLocationAtPathPosition(PathPosition)
+			+ FVector(0.0f, 0.0f, SegmentHeight + FlowArrowHeightOffset);
+		const FRotator ArrowRotation = FRotationMatrix::MakeFromZ(ArrowDirection).Rotator();
+		FlowArrowInstances->AddInstance(FTransform(ArrowRotation, ArrowLocation, FVector(ArrowScaleValue)));
 	}
 }
 
@@ -1234,6 +1257,69 @@ FVector AConveyor::GetSlotLocalCenter(int32 SlotIndex) const
 	return GetCellLocalCenter(OccupiedGridCells[SlotIndex]);
 }
 
+FVector AConveyor::GetPathCellLocalCenterByIndex(int32 PathIndex) const
+{
+	if (!PathCells.IsValidIndex(PathIndex))
+	{
+		return FVector(0.0f, 0.0f, ZOffset);
+	}
+
+	const FVector Centroid = GetPathCentroidLocal();
+	const FIntPoint Cell = PathCells[PathIndex];
+	return FVector(
+		(Cell.X * CellSize) + (CellSize * 0.5f) - Centroid.X,
+		(Cell.Y * CellSize) + (CellSize * 0.5f) - Centroid.Y,
+		ZOffset + OJJ_GetPathCellLocalZByIndex(PathIndex));
+}
+
+FVector AConveyor::GetFlowArrowLocationAtPathPosition(float PathPosition) const
+{
+	if (PathCells.Num() == 0)
+	{
+		return FVector::ZeroVector;
+	}
+
+	const int32 PathCount = PathCells.Num();
+	const float MaxPathPosition = PathCount <= 1 ? 1.0f : static_cast<float>(PathCount - 1);
+	const float ClampedPosition = FMath::Clamp(PathPosition, 0.0f, MaxPathPosition);
+	const int32 StartIndex = FMath::Clamp(FMath::FloorToInt(ClampedPosition), 0, PathCount - 1);
+	const float SegmentAlpha = ClampedPosition - FMath::FloorToFloat(ClampedPosition);
+
+	const FVector StartLocation = GetPathCellLocalCenterByIndex(StartIndex);
+	if (PathCount == 1)
+	{
+		return StartLocation;
+	}
+
+	const FVector EndLocation = StartIndex >= PathCount - 1
+		? StartLocation
+		: GetPathCellLocalCenterByIndex(StartIndex + 1);
+	return FMath::Lerp(StartLocation, EndLocation, SegmentAlpha);
+}
+
+FVector AConveyor::GetFlowArrowDirectionAtPathPosition(float PathPosition) const
+{
+	if (PathCells.Num() == 0)
+	{
+		return FVector::ZeroVector;
+	}
+
+	if (PathCells.Num() == 1)
+	{
+		return FVector::ForwardVector;
+	}
+
+	const int32 PathCount = PathCells.Num();
+	const float ClampedPosition = FMath::Clamp(PathPosition, 0.0f, static_cast<float>(PathCount - 1));
+	const int32 StartIndex = FMath::Clamp(FMath::FloorToInt(ClampedPosition), 0, PathCount - 1);
+	if (StartIndex >= PathCount - 1)
+	{
+		return (GetPathCellLocalCenterByIndex(PathCount - 1) - GetPathCellLocalCenterByIndex(PathCount - 2)).GetSafeNormal();
+	}
+
+	return (GetPathCellLocalCenterByIndex(StartIndex + 1) - GetPathCellLocalCenterByIndex(StartIndex)).GetSafeNormal();
+}
+
 FVector AConveyor::GetIncomingItemLocalCenter() const
 {
 	if (OccupiedGridCells.Num() == 0)
@@ -1333,6 +1419,45 @@ bool AConveyor::HasVisibleItems() const
 	}
 
 	return false;
+}
+
+bool AConveyor::ShouldAnimateFlowArrows() const
+{
+	if ((SourceMachine.IsValid() && SourceMachine->GetMachineState() == EMachineState::Disabled)
+		|| (TargetMachine.IsValid() && TargetMachine->GetMachineState() == EMachineState::Disabled))
+	{
+		return false;
+	}
+
+	if ((SourceMachine.IsValid() && SourceMachine->GetMachineState() == EMachineState::NoPower)
+		|| (TargetMachine.IsValid() && TargetMachine->GetMachineState() == EMachineState::NoPower))
+	{
+		return false;
+	}
+
+	if (IsOutputBlocked())
+	{
+		return false;
+	}
+
+	return HasVisibleItems()
+		|| DepartingVisuals.Num() > 0
+		|| (SourceMachine.IsValid() && SourceMachine->GetMachineState() == EMachineState::Working)
+		|| (TargetMachine.IsValid() && TargetMachine->GetMachineState() == EMachineState::Working);
+}
+
+float AConveyor::GetFlowArrowPathOffset() const
+{
+	if (!ShouldAnimateFlowArrows())
+	{
+		return 0.0f;
+	}
+
+	const UWorld* World = GetWorld();
+	const float Interval = FMath::Max(0.01f, FlowArrowStepInterval);
+	const float WorldTime = World ? World->GetTimeSeconds() : 0.0f;
+	const float ArrowSpacing = static_cast<float>(FMath::Max(1, FlowArrowSpacing));
+	return FMath::Fmod(WorldTime / Interval, ArrowSpacing);
 }
 
 int32 AConveyor::GetFlowArrowPhase() const
