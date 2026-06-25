@@ -187,14 +187,16 @@ public:
 		bool& bOutPendingTutorialStartDialogueReveal,
 		FString& OutLastTutorialDialogueQuestId,
 		FString& OutLastTutorialDialogueTriggerType,
-		TArray<FTutorialQuestDialogueLine>& OutLastTutorialDialogueLines) const;
+		TArray<FTutorialQuestDialogueLine>& OutLastTutorialDialogueLines,
+		TMap<FString, int32>& OutTutorialProgressCounts) const;
 	void RestoreTutorialSaveState(
 		bool bInTutorialQuestTestActive,
 		const FString& InCurrentTutorialQuestId,
 		bool bInPendingTutorialStartDialogueReveal,
 		const FString& InLastTutorialDialogueQuestId,
 		const FString& InLastTutorialDialogueTriggerType,
-		const TArray<FTutorialQuestDialogueLine>& InLastTutorialDialogueLines);
+		const TArray<FTutorialQuestDialogueLine>& InLastTutorialDialogueLines,
+		const TMap<FString, int32>& InTutorialProgressCounts);
 
 	UFUNCTION(BlueprintCallable, Category = "Quest|Main")
 	bool SetCurrentMainQuestIndex(int32 NewIndex);
@@ -254,6 +256,12 @@ public:
 	void GetLastTutorialDialogueLog(FString& OutQuestId, FString& OutTriggerType, TArray<FTutorialQuestDialogueLine>& OutLines) const;
 
 	UFUNCTION(BlueprintPure, Category = "Quest|Tutorial")
+	bool GetTutorialStepProgress(const FString& QuestId, int32& OutCurrentCount, int32& OutRequiredCount) const;
+
+	UFUNCTION(BlueprintPure, Category = "Quest|Tutorial")
+	FString GetTutorialStepDisplayDescription(const FTutorialQuestStep& Step) const;
+
+	UFUNCTION(BlueprintPure, Category = "Quest|Tutorial")
 	bool HasPendingTutorialStartDialogue() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Quest|Tutorial")
@@ -302,6 +310,9 @@ private:
 
 	UPROPERTY()
 	TArray<FTutorialQuestDialogueLine> LastTutorialDialogueLines;
+
+	UPROPERTY()
+	TMap<FString, int32> TutorialProgressCounts;
 
 	void ActivateCurrentMainQuest();
 	void BindAgentClient();

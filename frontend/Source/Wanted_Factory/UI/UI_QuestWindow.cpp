@@ -233,8 +233,14 @@ void UUI_QuestWindow::DisplayTutorialStep(const FTutorialQuestStep& Step)
         return;
     }
 
+    UGameInstance* GI = GetGameInstance();
+    UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+
     TXT_MainQuestTitle->SetText(FText::FromString(Step.Title));
-    TXT_MainQuestDesc->SetText(FText::FromString(Step.Description));
+    TXT_MainQuestDesc->SetText(FText::FromString(
+        QuestManager
+            ? QuestManager->GetTutorialStepDisplayDescription(Step)
+            : Step.Description));
 }
 
 void UUI_QuestWindow::UpdateQuestZoneVisibility()

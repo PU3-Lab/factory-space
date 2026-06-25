@@ -30,6 +30,8 @@ public:
 	UPROPERTY(meta = (BindWidget))
 	class UEditableText* ET_OperatorInput;
 	
+	void ToggleAIGuide(class APlayerController* PC);
+	
 	virtual void NativeDestruct() override;
 private:
 	UFUNCTION()
