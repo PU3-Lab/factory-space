@@ -17,6 +17,7 @@
 #include "Camera/PlayerCameraManager.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Components/SpotLightComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -82,6 +83,18 @@ AOJJ_Player::AOJJ_Player()
 	// 멀티플레이 silent fail 위험 — 서버/클라 생성자값 보장). BP의 JumpZVelocity override는 제거해 이 값 상속.
 	Movement->JumpZVelocity = 400.f;
 	Movement->AirControl = 0.35f;
+
+	NightSpotLight = CreateDefaultSubobject<USpotLightComponent>(TEXT("NightSpotLight"));
+	NightSpotLight->SetupAttachment(RootComponent);
+	NightSpotLight->SetRelativeLocation(FVector(90.0f, 0.0f, 55.0f));
+	NightSpotLight->SetRelativeRotation(FRotator(-8.0f, 0.0f, 0.0f));
+	NightSpotLight->Intensity = 100.0f;
+	NightSpotLight->AttenuationRadius = 2200.0f;
+	NightSpotLight->InnerConeAngle = 18.0f;
+	NightSpotLight->OuterConeAngle = 36.0f;
+	NightSpotLight->bUseInverseSquaredFalloff = false;
+	NightSpotLight->LightFalloffExponent = 2.5f;
+	NightSpotLight->SetVisibility(false);
 }
 
 void AOJJ_Player::BeginPlay()
@@ -179,6 +192,7 @@ void AOJJ_Player::BeginPlay()
 		}
 	}
 	
+	UpdateNightSpotLightVisibility();
 	ConnectFactoryAgentClient();
 }
 
@@ -835,6 +849,7 @@ void AOJJ_Player::ResumeWalkingWithCooldown()
 void AOJJ_Player::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	UpdateNightSpotLightVisibility();
 
 	// [L_Planet 인트로] getup 몽타주 종료 후 카메라를 1인칭(ArmLength 0)→3인칭(IntroArmLength)으로 부드럽게 블렌드.
 	// 아래 step-off early-return보다 먼저 처리해야 평상시에도 보간이 돈다(등반/step-off와 독립).
@@ -895,6 +910,29 @@ void AOJJ_Player::Tick(float DeltaSeconds)
 	{
 		bSteppingOff = false;
 		ResumeWalkingWithCooldown();
+	}
+}
+
+void AOJJ_Player::UpdateNightSpotLightVisibility()
+{
+	if (!NightSpotLight)
+	{
+		return;
+	}
+
+	bool bShouldEnable = false;
+	if (const UWorld* World = GetWorld())
+	{
+		if (const UPlanetEventManagerSubsystem* EventManager = World->GetSubsystem<UPlanetEventManagerSubsystem>())
+		{
+			const int32 CurrentHour24 = EventManager->GetCurrentHour24();
+			bShouldEnable = CurrentHour24 >= NightLightStartHour24 || CurrentHour24 < NightLightEndHour24;
+		}
+	}
+
+	if (NightSpotLight->IsVisible() != bShouldEnable)
+	{
+		NightSpotLight->SetVisibility(bShouldEnable);
 	}
 }
 
