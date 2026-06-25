@@ -6,6 +6,7 @@
 #include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "Components/WidgetComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
 #include "FactoryManagerSubsystem.h"
@@ -15,6 +16,7 @@
 #include "PlanetEventManagerSubsystem.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "RecipeManagerSubsystem.h"
+#include "UI/StateIndicatorIconWidget.h"
 #include "Wanted_Factory.h"
 #include "Algo/Count.h"
 
@@ -156,9 +158,23 @@ AMachineBase::AMachineBase()
 	StateIndicatorIconComponent = CreateDefaultSubobject<UBillboardComponent>(TEXT("StateIndicatorIcon"));
 	StateIndicatorIconComponent->SetupAttachment(Root);
 	StateIndicatorIconComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	StateIndicatorIconComponent->SetHiddenInGame(false);
+	StateIndicatorIconComponent->SetVisibility(false);
+	StateIndicatorIconComponent->SetHiddenInGame(true);
 	StateIndicatorIconComponent->SetRelativeLocation(StateIndicatorOffset);
 	StateIndicatorIconComponent->SetRelativeScale3D(StateIndicatorScale);
+
+	StateIndicatorIconWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("StateIndicatorIconWidget"));
+	StateIndicatorIconWidgetComponent->SetupAttachment(Root);
+	StateIndicatorIconWidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	StateIndicatorIconWidgetComponent->SetWidgetSpace(EWidgetSpace::World);
+	StateIndicatorIconWidgetComponent->SetWidgetClass(UStateIndicatorIconWidget::StaticClass());
+	StateIndicatorIconWidgetComponent->SetDrawSize(FVector2D(StateIndicatorIconDrawSize, StateIndicatorIconDrawSize));
+	StateIndicatorIconWidgetComponent->SetTwoSided(true);
+	StateIndicatorIconWidgetComponent->SetPivot(FVector2D(0.5f, 0.5f));
+	StateIndicatorIconWidgetComponent->SetVisibility(false);
+	StateIndicatorIconWidgetComponent->SetHiddenInGame(true);
+	StateIndicatorIconWidgetComponent->SetRelativeLocation(StateIndicatorOffset);
+	StateIndicatorIconWidgetComponent->SetRelativeScale3D(StateIndicatorScale);
 
 	StateIndicatorLightComponent = CreateDefaultSubobject<UPointLightComponent>(TEXT("StateIndicatorLight"));
 	StateIndicatorLightComponent->SetupAttachment(Root);
@@ -370,6 +386,7 @@ void AMachineBase::OnConstruction(const FTransform& Transform)
 	UpdateDebugBufferText();
 	UpdateStateIndicator();
 	UpdateDebugTextFacingPlayer();
+	UpdateStateIndicatorFacingPlayer();
 }
 
 // Called every frame
@@ -401,6 +418,7 @@ void AMachineBase::Tick(float DeltaTime)
 	}
 
 	UpdateStateIndicator();
+	UpdateStateIndicatorFacingPlayer();
 }
 
 bool AMachineBase::CanPlace()
@@ -877,7 +895,7 @@ void AMachineBase::UpdateDebugBufferText()
 
 void AMachineBase::UpdateStateIndicator()
 {
-	if (!StateIndicatorComponent && !StateIndicatorIconComponent)
+	if (!StateIndicatorComponent && !StateIndicatorIconComponent && !StateIndicatorIconWidgetComponent)
 	{
 		return;
 	}
@@ -897,10 +915,18 @@ void AMachineBase::UpdateStateIndicator()
 
 	UTexture2D* WarningIcon = nullptr;
 	FLinearColor WarningLightColor = FLinearColor::White;
+	FLinearColor WarningIconTint = FLinearColor::White;
+	FLinearColor WarningGlowTint = FLinearColor::White;
+	float WarningIconScaleMultiplier = 1.0f;
 	if (MaxDurability > 0.0f && CurrentDurability / MaxDurability <= LowDurabilityWarningRatio)
 	{
 		WarningIcon = DurabilityWarningIcon.Get();
 		WarningLightColor = DurabilityWarningLightColor;
+		WarningIconTint = DurabilityWarningIconTint * DurabilityWarningIconBrightness;
+		WarningIconTint.A = DurabilityWarningIconTint.A;
+		WarningGlowTint = WarningIconTint;
+		WarningGlowTint.A = StateIndicatorIconGlowOpacity;
+		WarningIconScaleMultiplier = DurabilityWarningIconScaleMultiplier;
 	}
 	else if (NeedsPower() && !HasEnoughPower())
 	{
@@ -916,13 +942,31 @@ void AMachineBase::UpdateStateIndicator()
 	const bool bShowWarningIcon = bShowStateIndicator && WarningIcon != nullptr;
 	if (StateIndicatorIconComponent)
 	{
-		StateIndicatorIconComponent->SetVisibility(bShowWarningIcon);
-		StateIndicatorIconComponent->SetHiddenInGame(!bShowWarningIcon);
+		StateIndicatorIconComponent->SetVisibility(false);
+		StateIndicatorIconComponent->SetHiddenInGame(true);
 		StateIndicatorIconComponent->SetRelativeLocation(IndicatorLocation);
 		StateIndicatorIconComponent->SetRelativeScale3D(StateIndicatorScale);
-		if (WarningIcon)
+	}
+	if (StateIndicatorIconWidgetComponent)
+	{
+		StateIndicatorIconWidgetComponent->SetVisibility(bShowWarningIcon);
+		StateIndicatorIconWidgetComponent->SetHiddenInGame(!bShowWarningIcon);
+		StateIndicatorIconWidgetComponent->SetDrawSize(FVector2D(StateIndicatorIconDrawSize, StateIndicatorIconDrawSize));
+		StateIndicatorIconWidgetComponent->SetRelativeLocation(IndicatorLocation);
+		StateIndicatorIconWidgetComponent->SetRelativeScale3D(StateIndicatorScale * WarningIconScaleMultiplier);
+		if (bShowWarningIcon)
 		{
-			StateIndicatorIconComponent->SetSprite(WarningIcon);
+			StateIndicatorIconWidgetComponent->InitWidget();
+			if (UStateIndicatorIconWidget* IndicatorWidget =
+				Cast<UStateIndicatorIconWidget>(StateIndicatorIconWidgetComponent->GetWidget()))
+			{
+				IndicatorWidget->SetIndicatorIcon(
+					WarningIcon,
+					WarningIconTint,
+					bEnableStateIndicatorIconGlow,
+					WarningGlowTint,
+					StateIndicatorIconDrawSize);
+			}
 		}
 	}
 	if (StateIndicatorLightComponent)
@@ -949,7 +993,7 @@ bool AMachineBase::IsOutputBufferFull() const
 		}
 	}
 
-	return MachineState == EMachineState::Blocked;
+	return false;
 }
 
 void AMachineBase::UpdateDebugTextFacingPlayer()
@@ -986,6 +1030,40 @@ void AMachineBase::UpdateDebugTextFacingPlayer()
 
 	const float FacingYaw = ToCamera.Rotation().Yaw;
 	DebugBufferText->SetWorldRotation(FRotator(0.0f, FacingYaw, 0.0f));
+}
+
+void AMachineBase::UpdateStateIndicatorFacingPlayer()
+{
+	if (!StateIndicatorIconWidgetComponent || !StateIndicatorIconWidgetComponent->IsVisible())
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	APlayerController* PlayerController = World->GetFirstPlayerController();
+	if (!PlayerController)
+	{
+		return;
+	}
+
+	APlayerCameraManager* CameraManager = PlayerController->PlayerCameraManager;
+	if (!CameraManager)
+	{
+		return;
+	}
+
+	const FVector ToCamera = CameraManager->GetCameraLocation() - StateIndicatorIconWidgetComponent->GetComponentLocation();
+	if (ToCamera.IsNearlyZero())
+	{
+		return;
+	}
+
+	StateIndicatorIconWidgetComponent->SetWorldRotation(ToCamera.Rotation());
 }
 
 bool AMachineBase::TransferOutputToMachine(AMachineBase* TargetMachine, FName ItemID, int32 Count)

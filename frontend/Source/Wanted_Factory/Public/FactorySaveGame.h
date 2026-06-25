@@ -200,6 +200,9 @@ public:
 	TArray<FTutorialQuestDialogueLine> LastTutorialDialogueLines;
 
 	UPROPERTY()
+	TMap<FString, int32> TutorialProgressCounts;
+
+	UPROPERTY()
 	FPlanetTimeState TimeState;
 
 	UPROPERTY()

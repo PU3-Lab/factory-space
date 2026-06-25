@@ -11,6 +11,7 @@
 class UTextRenderComponent;
 class UBillboardComponent;
 class UPointLightComponent;
+class UWidgetComponent;
 class AOJJ_Grid;
 class UStaticMesh;
 class UTexture2D;
@@ -170,6 +171,9 @@ protected:
 	UBillboardComponent* StateIndicatorIconComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Components")
+	UWidgetComponent* StateIndicatorIconWidgetComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Components")
 	UPointLightComponent* StateIndicatorLightComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Debug")
@@ -218,7 +222,7 @@ protected:
 	FVector StateIndicatorOffset = FVector(0.0f, 0.0f, 400.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "0.01"))
-	FVector StateIndicatorScale = FVector(1.0f, 1.0f, 1.0f);
+	FVector StateIndicatorScale = FVector(0.5f, 0.5f, 0.5f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float LowDurabilityWarningRatio = 0.25f;
@@ -246,6 +250,24 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
 	FLinearColor DurabilityWarningLightColor = FLinearColor(0.75f, 0.85f, 1.0f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
+	bool bEnableStateIndicatorIconGlow = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "1.0"))
+	float StateIndicatorIconDrawSize = 256.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "1.0"))
+	float DurabilityWarningIconBrightness = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
+	FLinearColor DurabilityWarningIconTint = FLinearColor(0.95f, 1.0f, 1.0f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "1.0"))
+	float DurabilityWarningIconScaleMultiplier = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float StateIndicatorIconGlowOpacity = 0.8f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
 	FLinearColor MaxBufferWarningLightColor = FLinearColor(0.1f, 1.0f, 0.25f, 1.0f);
@@ -453,6 +475,8 @@ public:
 	void UpdateStateIndicator();
 
 	void UpdateDebugTextFacingPlayer();
+
+	void UpdateStateIndicatorFacingPlayer();
 
 	bool IsOutputBufferFull() const;
 	

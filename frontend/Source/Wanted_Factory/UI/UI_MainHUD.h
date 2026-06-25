@@ -107,7 +107,7 @@ protected:
     FLinearColor WindColor_Storm = FLinearColor(0.016f, 0.14f, 1.0f, 1.0f);
 
     UPROPERTY(EditDefaultsOnly, Category = "HUD|Icons|Event")
-    FLinearColor PlanetEventColor_Magnetic = FLinearColor(0.538f, 0.063f, 1.0f, 1.0f);
+    FLinearColor PlanetEventColor_Magnetic = FLinearColor(0.86f, 0.38f, 1.0f, 1.0f);
     UPROPERTY(EditDefaultsOnly, Category = "HUD|Icons|Event")
     FLinearColor PlanetEventColor_Sand = FLinearColor(1.0f, 0.224f, 0.048f, 1.0f);
 
@@ -125,7 +125,7 @@ protected:
 
     // [이벤트 캡슐] 진행 중 이벤트 캡슐(B_PlanetEvent) 색 — 자기폭풍 보라 / 모래폭풍 주황. (기존 하드코딩 teal/brown 대체)
     UPROPERTY(EditDefaultsOnly, Category = "HUD|StormRisk")
-    FLinearColor MagneticStormCapsuleColor = FLinearColor(0.45f, 0.2f, 0.7f, 0.9f);
+    FLinearColor MagneticStormCapsuleColor = FLinearColor(0.38f, 0.12f, 0.58f, 0.9f);
     UPROPERTY(EditDefaultsOnly, Category = "HUD|StormRisk")
     FLinearColor SandStormCapsuleColor = FLinearColor(0.7f, 0.4f, 0.12f, 0.9f);
 

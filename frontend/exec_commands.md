@@ -1,65 +1,66 @@
 # Exec Commands
 
+현재 게임에서 사용할 수 있는 `exec` 커맨드 정리 문서입니다.  
+이 문서에서는 `SetBuildMode`, `TutorialLog`를 제외한 항목만 다룹니다.
+
 ## ClearWarehouse
 
-- 紐⑹쟻: ?뚮젅?댁뼱 李쎄퀬????λ맂 紐⑤뱺 臾쇱옄瑜??쒓굅?섍퀬 利됱떆 ??ν빀?덈떎.
-- ?ㅼ젣 ?낅젰: `ClearWarehouse`
-- 濡쒓렇: ?깃났 ??Output Log??`[ClearWarehouse] Warehouse cleared.` 硫붿떆吏媛 異쒕젰?⑸땲??
-- 援ы쁽 ?꾩튂: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
-
-寃뚯엫 肄붾뱶 湲곗??쇰줈 ?꾩옱 ?ъ슜 以묒씤 `exec` 而ㅻ㎤??以? `SetBuildMode`, `TutorialLog`瑜?類 紐⑸줉?낅땲??
+- 목적: 창고에 들어 있는 모든 아이템을 비워 테스트 상태를 빠르게 초기화합니다.
+- 명령어: `ClearWarehouse`
+- 확인 방법: Output Log에 `[ClearWarehouse] Warehouse cleared.` 로그가 출력됩니다.
+- 구현 위치: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
 
 ## TutorialAdvance
 
-- 紐⑹쟻: ?꾩옱 ?쒗넗由ъ뼹 ?섏뒪?몃? ?뚯뒪?몄슜?쇰줈 利됱떆 ?꾨즺 泥섎━?⑸땲??
-- ?ㅼ젣 ?낅젰: `TutorialAdvance`
-- 援ы쁽 ?꾩튂: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
+- 목적: 현재 튜토리얼 퀘스트를 테스트용으로 즉시 완료 처리합니다.
+- 명령어: `TutorialAdvance`
+- 구현 위치: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
 
 ## SetMachineLevel
 
-- 紐⑹쟻: ?뱀젙 癒몄떊 ??낆쓽 ?덈꺼??吏?뺥븳 媛믪쑝濡?諛붾줈 ?ㅼ젙?⑸땲??
-- ?몄옄:
-  - `MachineTypeName`: 癒몄떊 ????대쫫
-  - `NewLevel`: 1 ?댁긽??紐⑺몴 ?덈꺼
-- ?ㅼ젣 ?낅젰: `SetMachineLevel <MachineTypeName> <NewLevel>`
-- ?덉떆: `SetMachineLevel Smelter 3`
-- 援ы쁽 ?꾩튂: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
+- 목적: 특정 머신 타입의 레벨을 지정한 값으로 바로 설정합니다.
+- 인자:
+  - `MachineTypeName`: 머신 타입 이름
+  - `NewLevel`: 목표 레벨, `1` 이상
+- 명령어: `SetMachineLevel <MachineTypeName> <NewLevel>`
+- 예시: `SetMachineLevel Smelter 3`
+- 구현 위치: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
 
 ## UpgradeMachineLevel
 
-- 紐⑹쟻: ?뱀젙 癒몄떊 ??낆쓽 ?덈꺼???먰븯???잛닔留뚰겮 ?щ┰?덈떎.
-- ?몄옄:
-  - `MachineTypeName`: 癒몄떊 ????대쫫
-  - `UpgradeCount`: ?щ┫ ?잛닔, ?앸왂 ??`1`
-- ?ㅼ젣 ?낅젰: `UpgradeMachineLevel <MachineTypeName> [UpgradeCount]`
-- ?덉떆: `UpgradeMachineLevel Smelter 2`
-- 援ы쁽 ?꾩튂: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
+- 목적: 특정 머신 타입의 레벨을 원하는 횟수만큼 올립니다.
+- 인자:
+  - `MachineTypeName`: 머신 타입 이름
+  - `UpgradeCount`: 올릴 횟수, 기본값 `1`
+- 명령어: `UpgradeMachineLevel <MachineTypeName> [UpgradeCount]`
+- 예시: `UpgradeMachineLevel Smelter 2`
+- 구현 위치: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
 
 ## ResetGame
 
-- 紐⑹쟻: ????곗씠?곕? 珥덇린?뷀븳 ???꾩옱 ?덈꺼???ㅼ떆 ?쎈땲??
-- ?ㅼ젣 ?낅젰: `ResetGame`
-- 援ы쁽 ?꾩튂: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
+- 목적: 저장 데이터를 초기화한 뒤 현재 레벨을 다시 엽니다.
+- 명령어: `ResetGame`
+- 구현 위치: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
 
 ## TriggerPlanetEvent
 
-- 紐⑹쟻: ?됱꽦 ?대깽?몃? 媛뺤젣濡??쒖옉?섍굅??醫낅즺?⑸땲??
-- ?몄옄:
+- 목적: 행성 이벤트를 강제로 시작하거나 종료합니다.
+- 인자:
   - `EventName`: `magnetic`, `magneticstorm`, `sand`, `sandstorm`, `none`, `clear`
-  - `Severity`: ?대깽??媛뺣룄, ?앸왂 ??`1.0`
-  - `DurationSeconds`: 吏???쒓컙, ?앸왂 ??`-1.0`
-- ?ㅼ젣 ?낅젰: `TriggerPlanetEvent <EventName> [Severity] [DurationSeconds]`
-- ?덉떆: `TriggerPlanetEvent magnetic 1.5 30`
-- 鍮꾧퀬: `none` ?먮뒗 `clear`瑜??ｌ쑝硫??꾩옱 ?쒖꽦 ?대깽?몃? 醫낅즺?⑸땲??
-- 援ы쁽 ?꾩튂: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
+  - `Severity`: 이벤트 강도, 기본값 `1.0`
+  - `DurationSeconds`: 지속 시간, 기본값 `-1.0`
+- 명령어: `TriggerPlanetEvent <EventName> [Severity] [DurationSeconds]`
+- 예시: `TriggerPlanetEvent magnetic 1.5 30`
+- 비고: `none` 또는 `clear`를 입력하면 현재 활성 이벤트를 종료합니다.
+- 구현 위치: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
 
 ## Give
 
-- 목적: 창고에 원하는 아이템을 즉시 지급해 테스트에 사용합니다.
+- 목적: 테스트용으로 원하는 아이템을 창고에 즉시 지급합니다.
 - 인자:
   - `ItemID`: 지급할 아이템 ID
   - `Count`: 지급할 개수, `1` 이상
-- 실제 입력: `Give <ItemID> <Count>`
+- 명령어: `Give <ItemID> <Count>`
 - 예시: `Give iron_ingot 10`
-- 로그: 성공 시 Output Log에 `[Give] Added iron_ingot x10 to warehouse.` 형태의 메시지가 출력됩니다.
+- 확인 방법: Output Log에 `[Give] Added iron_ingot x10 to warehouse.` 형태의 로그가 출력됩니다.
 - 구현 위치: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`

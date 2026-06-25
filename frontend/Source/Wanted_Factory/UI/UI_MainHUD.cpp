@@ -105,46 +105,46 @@ void UUI_MainHUD::HandleWeatherChanged(const FPlanetWeatherState& WeatherState)
 
 void UUI_MainHUD::RefreshWeatherText(const FPlanetWeatherState& WeatherState)
 {
-    const TCHAR* WindLabel = TEXT("Calm");
+    const TCHAR* WindLabel = TEXT("고요함");
     UTexture2D* WindTex = WindIcon_Calm;
     FLinearColor WindCol = WindColor_Calm;
     if (WeatherState.WindSpeed >= 0.75f)
     {
-        WindLabel = TEXT("Storm");
+        WindLabel = TEXT("폭풍");
         WindTex = WindIcon_Storm;
         WindCol = WindColor_Storm;
     }
     else if (WeatherState.WindSpeed >= 0.5f)
     {
-        WindLabel = TEXT("Strong");
+        WindLabel = TEXT("강풍");
         WindTex = WindIcon_Strong;
         WindCol = WindColor_Strong;
     }
     else if (WeatherState.WindSpeed >= 0.25f)
     {
-        WindLabel = TEXT("Breeze");
+        WindLabel = TEXT("산들바람");
         WindTex = WindIcon_Breeze;
         WindCol = WindColor_Breeze;
     }
 
-    const TCHAR* RainLabel = TEXT("Clear");
+    const TCHAR* RainLabel = TEXT("맑음");
     UTexture2D* RainTex = RainfallIcon_Clear;
     FLinearColor RainCol = RainColor_Clear;
     if (WeatherState.Rainfall >= 0.75f)
     {
-        RainLabel = TEXT("Heavy rain");
+        RainLabel = TEXT("폭우");
         RainTex = RainfallIcon_Heavy;
         RainCol = RainColor_Heavy;
     }
     else if (WeatherState.Rainfall >= 0.5f)
     {
-        RainLabel = TEXT("Rain");
+        RainLabel = TEXT("비");
         RainTex = RainfallIcon_Rain;
         RainCol = RainColor_Rain;
     }
     else if (WeatherState.Rainfall > 0.0f)
     {
-        RainLabel = TEXT("Drizzle");
+        RainLabel = TEXT("이슬비");
         RainTex = RainfallIcon_Drizzle;
         RainCol = RainColor_Drizzle;
     }
@@ -223,6 +223,19 @@ void UUI_MainHUD::RefreshPlanetEventUI(EPlanetEventType EventType, float Severit
     }
 
     FString EventText;
+    FString SeverityLabel = TEXT("\uC57D\uD568");
+    if (Severity >= 0.85f)
+    {
+        SeverityLabel = TEXT("\uADF9\uC2EC");
+    }
+    else if (Severity >= 0.6f)
+    {
+        SeverityLabel = TEXT("\uAC15\uD568");
+    }
+    else if (Severity >= 0.3f)
+    {
+        SeverityLabel = TEXT("\uBCF4\uD1B5");
+    }
     FLinearColor EventColor(0.15f, 0.15f, 0.15f, 0.9f); // 캡슐 배경(B_PlanetEvent) 색
     UTexture2D* EventTex = nullptr;
     FLinearColor EventIconCol = FLinearColor::White;     // 아이콘(IMG_PlanetEvent) 틴트 — 캡슐색과 별개
@@ -239,6 +252,15 @@ void UUI_MainHUD::RefreshPlanetEventUI(EPlanetEventType EventType, float Severit
         EventColor = SandStormCapsuleColor;
         EventTex = PlanetEventIcon_Sand;
         EventIconCol = PlanetEventColor_Sand;
+    }
+
+    if (EventType == EPlanetEventType::MagneticStorm)
+    {
+        EventText = FString::Printf(TEXT("\uC790\uAE30\uD3ED\uD48D %s"), *SeverityLabel);
+    }
+    else if (EventType == EPlanetEventType::SandStorm)
+    {
+        EventText = FString::Printf(TEXT("\uBAA8\uB798\uD3ED\uD48D %s"), *SeverityLabel);
     }
 
     if (TXT_PlanetEvent)
