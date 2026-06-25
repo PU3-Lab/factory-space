@@ -333,3 +333,10 @@ void UUI_MainHUD::OnRequestQuestsClicked()
         UE_LOG(LogTemp, Warning, TEXT("[HUD] WBP_QuestWindow instance is missing."));
     }
 }
+void UUI_MainHUD::CloseQuestWindow()
+{
+    if (WBP_QuestWindow)
+    {
+        WBP_QuestWindow->CloseQuestWindow();
+    }
+}

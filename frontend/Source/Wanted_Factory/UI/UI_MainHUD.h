@@ -24,7 +24,7 @@ public:
 
     UFUNCTION()
     void OnRequestQuestsClicked();
-
+    void CloseQuestWindow();
 protected:
     UPROPERTY(meta = (BindWidget))
     class UUI_QuestWindow* WBP_QuestWindow;

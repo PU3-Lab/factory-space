@@ -44,6 +44,7 @@
 #include "UI/UI_WarehouseInteract.h"
 #include "UI/UI_QuestWindow.h"
 #include "UI/UI_DialogueBalloon.h"
+#include "UI/UI_SynthesizerInteract.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Components/EditableText.h"
 #include "Machines/MachineSubsystem.h"
@@ -1542,9 +1543,11 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
     QuickFixMode.SetWidgetToFocus(nullptr); 
     PC->SetInputMode(QuickFixMode);
 
+    // 이미 켜져 있을 때 끄고 탈출하는 가드 조건에 합성기 위젯 인스턴스도 병합합니다.
     if (bIsInventoryOpen || 
         (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()) ||
-        (WarehouseInteractWidgetInstance && WarehouseInteractWidgetInstance->IsInViewport()))
+        (WarehouseInteractWidgetInstance && WarehouseInteractWidgetInstance->IsInViewport()) ||
+        (SynthesizerInteractWidgetInstance && SynthesizerInteractWidgetInstance->IsInViewport()))
     {
        if (MachineInteractWidgetInstance.IsValid())
        {
@@ -1556,6 +1559,13 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
        {
           WarehouseInteractWidgetInstance->RemoveFromParent();
           WarehouseInteractWidgetInstance = nullptr;
+       }
+
+       // 합성기 끄기
+       if (SynthesizerInteractWidgetInstance)
+       {
+          SynthesizerInteractWidgetInstance->RemoveFromParent();
+          SynthesizerInteractWidgetInstance = nullptr;
        }
 
        if (InventoryWidgetInstance)
@@ -1582,7 +1592,8 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 
     AMachineBase* Machine = Cast<AMachineBase>(Hit.GetActor());
     if (!Machine) return;
-    // 바라본 기계가 창고포트 클래스이거나, '액체 탱크(ALiquidTank)' 클래스이거나, 이름에 Warehouse가 들어간다면
+
+    // 1. 창고 포트 및 액체 탱크 레이아웃 개방 분기
     if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
     {
        if (!WarehouseInteractWidgetClass)
@@ -1591,7 +1602,11 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
           return;
        }
 
-       // 이제 액체 탱크도 여기로 안전하게 들어와 UI_WarehouseInteract 창을 소환합니다
+       if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
+       {
+          MainHUD->CloseQuestWindow();
+       }
+
        UUI_WarehouseInteract* WHWidget = CreateWidget<UUI_WarehouseInteract>(PC, WarehouseInteractWidgetClass);
        if (WHWidget)
        {
@@ -1601,9 +1616,27 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
           WHWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
        }
     }
+    // 합성기 전용
+    else if (Machine->GetMachineType() == TEXT("Synthesizer"))
+    {
+       if (!SynthesizerInteractWidgetClass)
+       {
+          UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] SynthesizerInteractWidgetClass 미할당! BP에서 할당하세요."));
+          return;
+       }
+
+       UUI_SynthesizerInteract* SynWidget = CreateWidget<UUI_SynthesizerInteract>(PC, SynthesizerInteractWidgetClass);
+       if (SynWidget)
+       {
+          SynWidget->SetTargetMachine(Machine);
+          SynthesizerInteractWidgetInstance = SynWidget;
+          SynWidget->AddToViewport();
+          SynWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
+       }
+    }
+    // 3. 일반 기계 분기 (제련기, 분쇄기 등)
     else
     {
-       // 일반 기계(제련기, 분쇄기 등)라면 기존 일반 상호작용 UI 창
        if (!MachineInteractWidgetClass) return;
 
        UUI_MachineInteract* Widget = CreateWidget<UUI_MachineInteract>(PC, MachineInteractWidgetClass);
@@ -1615,6 +1648,7 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
           Widget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
        }
     }
+
     // 창고 포트뿐만 아니라 '액체 탱크' 계열 상호작용 시에도 우측에 인벤토리 생성
     if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
     {
@@ -1626,10 +1660,9 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
         if (InventoryWidgetInstance)
         {
            InventoryWidgetInstance->AdjustInventoryLayout(true); 
-
-        	InventoryWidgetInstance->AddToViewport(-1); 
-        	InventoryWidgetInstance->RefreshInventoryWindow();
-        	bIsInventoryOpen = true;
+           InventoryWidgetInstance->AddToViewport(-1); 
+           InventoryWidgetInstance->RefreshInventoryWindow();
+           bIsInventoryOpen = true;
 
            GetWorldTimerManager().SetTimer(
              InventoryRefreshTimerHandle, 
@@ -1658,11 +1691,18 @@ void AOJJ_Player::CloseMachineInteractWidget(APlayerController* PC)
 	}
 	MachineInteractWidgetInstance = nullptr;
 
-	// 2. 창고 전용 UI 창이 켜져 있었다면 부모에게서 떼어내고 클리어
+	// 2. 창고 전용 UI 창 끄기
 	if (WarehouseInteractWidgetInstance)
 	{
 		WarehouseInteractWidgetInstance->RemoveFromParent();
 		WarehouseInteractWidgetInstance = nullptr;
+	}
+
+	// 3. 합성기 UI 창 끄기
+	if (SynthesizerInteractWidgetInstance)
+	{
+		SynthesizerInteractWidgetInstance->RemoveFromParent();
+		SynthesizerInteractWidgetInstance = nullptr;
 	}
 
 	if (PC)
@@ -1674,6 +1714,12 @@ void AOJJ_Player::CloseMachineInteractWidget(APlayerController* PC)
 
 void AOJJ_Player::RestoreGameInputMode()
 {
+	if ((MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()) ||
+		(SynthesizerInteractWidgetInstance && SynthesizerInteractWidgetInstance->IsInViewport()))
+	{
+		return;
+	}
+	
 	// 스테일 브로드캐스트 가드 — 우리가 위젯 A를 닫고 새 위젯 B를 연 사이에 A의 지연된
 	// NativeDestruct가 broadcast될 수 있다. 현재 살아있는 위젯이 열려 있으면 그 상태를 건드리지 않는다
 	// (B의 weak 포인터/GameAndUI를 망가뜨리지 않도록).
@@ -1685,6 +1731,7 @@ void AOJJ_Player::RestoreGameInputMode()
 	// 멱등 — 우리 직접 닫기(CloseMachineInteractWidget)로 이미 복원된 뒤 지연 Destruct 브로드캐스트가
 	// 한 번 더 들어와도 사실상 no-op. weak 인스턴스 정리.
 	MachineInteractWidgetInstance = nullptr;
+	SynthesizerInteractWidgetInstance = nullptr;
 
 	// ⚠️ pawn 소멸 중 위젯 Destruct로 재진입할 수 있어 컨트롤러 유효성 체크(무효면 복원 스킵 —
 	//    복원 대상 자체가 없으므로 안전).
