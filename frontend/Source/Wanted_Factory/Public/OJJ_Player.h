@@ -281,11 +281,11 @@ protected:
 	// --- 이동 속도 ---
 	// 평상시 걷기 속도. BeginPlay에서 MaxWalkSpeed의 권위 있는 초기값으로 적용(BP CharacterMovement 기본값 덮음).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (ClampMin = "0.0"))
-	float WalkSpeed = 250.f;
+	float WalkSpeed = 175.f;
 
 	// 스프린트(Shift) 중 속도.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (ClampMin = "0.0"))
-	float SprintSpeed = 600.f;
+	float SprintSpeed = 420.f;
 
 	// 야간 전방 조명 on/off 시간대. 18시 이상 또는 6시 미만일 때 조명을 켠다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Light", meta = (ClampMin = "0", ClampMax = "23"))
@@ -297,7 +297,7 @@ protected:
 	// --- 사다리 등반 (#184) ---
 	// 등반 중 수직 이동 속도(MaxFlySpeed). W/S로 위/아래.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
-	float ClimbSpeed = 250.f;
+	float ClimbSpeed = 175.f;
 
 	// [#184] 등반 시작 시 캐릭터를 사다리 안쪽(GetStepOffDirection, +X) 바라보게 회전 + 이 오프셋을 더한다.
 	// 메시 기본 yaw 오프셋(보통 -90°)·애니 제작 방향 때문에 그대로면 옆을 볼 수 있어 PIE에서 ±90 조정용
