@@ -418,7 +418,7 @@ protected:
 
 	// 몽타주 종료 후 블렌드해 도달할 3인칭 SpringArm 목표 길이(uu).
 	UPROPERTY(EditAnywhere, Category = "OJJ|Intro")
-	float IntroArmLength = 400.f;
+	float IntroArmLength = 270.f;
 
 	// 1인칭(ArmLength 0)→3인칭(IntroArmLength) 카메라 블렌드 속도(FInterpTo). 클수록 빠르게 수렴.
 	UPROPERTY(EditAnywhere, Category = "OJJ|Intro")
