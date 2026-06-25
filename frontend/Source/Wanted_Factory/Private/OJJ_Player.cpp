@@ -1697,37 +1697,16 @@ void AOJJ_Player::TriggerHUDAIGuideToggle()
 	UWorld* World = GetWorld();
 	if (!World) return;
 
-	// 뷰포트에 띄워진 대화창 인스턴스를 서칭합니다.
 	TArray<UUserWidget*> FoundWidgets;
 	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, FoundWidgets, UUI_DialogueBalloon::StaticClass(), false);
 	if (FoundWidgets.IsEmpty()) return;
 
 	UUI_DialogueBalloon* DialogueBalloon = Cast<UUI_DialogueBalloon>(FoundWidgets[0]);
 	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!DialogueBalloon || !PC) return;
-
-	// 대화창 내부로 들어간 ET_OperatorInput(AI 입력창)의 가시성을 슬래시(/) 키로 다이렉트 토글 제어합니다!
-	if (DialogueBalloon->ET_OperatorInput)
+	
+	if (DialogueBalloon && PC)
 	{
-		if (DialogueBalloon->ET_OperatorInput->GetVisibility() == ESlateVisibility::Collapsed)
-		{
-			DialogueBalloon->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-			DialogueBalloon->ET_OperatorInput->SetVisibility(ESlateVisibility::Visible);
-          
-			PC->SetInputMode(FInputModeGameAndUI());
-			PC->bShowMouseCursor = true;
-			DialogueBalloon->ET_OperatorInput->SetFocus(); // 입력창 자동 포커싱
-		}
-		else
-		{
-			DialogueBalloon->ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
-          
-			PC->SetInputMode(FInputModeGameOnly());
-			PC->bShowMouseCursor = false;
-          
-			// AI 입력창을 닫을 때 외부 대화 텍스트(분석 중 등)도 깔끔하게 날려 초기화해 줍니다.
-			DialogueBalloon->ClearExternalDialogue(); 
-		}
+		DialogueBalloon->ToggleAIGuide(PC);
 	}
 }
 

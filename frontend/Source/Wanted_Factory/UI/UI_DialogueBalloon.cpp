@@ -14,19 +14,17 @@ void UUI_DialogueBalloon::NativeConstruct()
 
     SetIsFocusable(true);
     SetVisibility(ESlateVisibility::Visible);
-
-    // [AI 입력창 바인딩] 엔터키 입력 감지
+    
     if (ET_OperatorInput)
     {
+        ET_OperatorInput->OnTextCommitted.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnTextCommitted);
         ET_OperatorInput->OnTextCommitted.AddDynamic(this, &UUI_DialogueBalloon::HandleOnTextCommitted);
     }
 
-    UGameInstance* GI = GetGameInstance();
-    if (GI)
+    if (UGameInstance* GI = GetGameInstance())
     {
         QuestSubsystem = GI->GetSubsystem<UQuestManagerSubsystem>();
 
-        // [AI 웹소켓 서브시스템 바인딩] 응답 및 에러 리스너 등록
         UFactoryAgentClientSubsystem* AgentClient = GI->GetSubsystem<UFactoryAgentClientSubsystem>();
         if (AgentClient)
         {
@@ -63,8 +61,23 @@ void UUI_DialogueBalloon::NativeDestruct()
 //  플레이어가 엔터키를 쳤을 때 서버로 질문 전송
 void UUI_DialogueBalloon::HandleOnTextCommitted(const FText& Text, ETextCommit::Type CommitType)
 {
+    // 엔터키 커밋일 때만 로직 가동
     if (CommitType != ETextCommit::OnEnter) return;
+    
     const FString QuestionStr = Text.ToString().TrimStartAndEnd();
+    
+    // 엔터를 치면 내용 유무 상관없이 인풋창은 즉시 초기화 및 증발
+    ET_OperatorInput->SetText(FText::GetEmpty());
+    ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
+
+    // 포커스를 완벽하게 꺼내 캐릭터 조작 모드로 강제 복구
+    if (APlayerController* PC = GetOwningPlayer())
+    {
+        PC->SetInputMode(FInputModeGameOnly());
+        PC->bShowMouseCursor = false;
+    }
+
+    // 만약 아무것도 안 치고 엔터만 눌렀다면 가이드 요청 없이 닫기만 하고 마무리
     if (QuestionStr.IsEmpty()) return;
 
     UGameInstance* GI = GetGameInstance();
@@ -76,10 +89,7 @@ void UUI_DialogueBalloon::HandleOnTextCommitted(const FText& Text, ETextCommit::
         ShowExternalDialogue(TEXT("AI 가이드 요청 전송에 실패했습니다."));
         return;
     }
-
-    ET_OperatorInput->SetText(FText::GetEmpty());
     
-    // 기존 ShowExternalDialogue를 재활용하여 TXT_Dialogue 자리에 "분석 중..."을 띄웁니다
     ShowExternalDialogue(TEXT("분석 중...")); 
 }
 
@@ -109,7 +119,7 @@ void UUI_DialogueBalloon::HandleOnOperatorGuideError(const FString& RequestId, c
     
     FString CombinedMessage = ErrorCode.IsEmpty() ? ErrorMessage : FString::Printf(TEXT("%s: %s"), *ErrorCode, *ErrorMessage);
     
-    // 🎯 에러 메시지도 텍스트 박스에 깔끔하게 출력
+    // 에러 메시지도 텍스트 박스에 깔끔하게 출력
     ShowExternalDialogue(CombinedMessage);
 }
 
@@ -234,4 +244,48 @@ FReply UUI_DialogueBalloon::NativeOnPreviewMouseButtonDown(const FGeometry& InGe
     if (!QuestSubsystem || !QuestSubsystem->HasPendingTutorialStartDialogue()) return Reply;
     QuestSubsystem->RevealPendingTutorialStartDialogue();
     return FReply::Handled();
+}
+
+void UUI_DialogueBalloon::ToggleAIGuide(APlayerController* PC)
+{
+    if (!PC || !ET_OperatorInput) return;
+
+    // 1. 이미 AI 답변이 출력 중인 상태라면 원래 대사로 롤백
+    if (bHasExternalDialogue)
+    {
+        ClearExternalDialogue();
+        ET_OperatorInput->SetText(FText::GetEmpty());
+        ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
+        
+        PC->SetInputMode(FInputModeGameOnly());
+        PC->bShowMouseCursor = false;
+        return;
+    }
+
+    // 2. 일반 상태에서 / 키를 처음 눌렀을 때 (1타 활성화 보장)
+    if (ET_OperatorInput->GetVisibility() != ESlateVisibility::Visible)
+    {
+        SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        ET_OperatorInput->SetVisibility(ESlateVisibility::Visible);
+        
+        // 슬레이트 창 자체에 입력창 위젯 포커스를 다이렉트로 강제 주입합니다.
+        FInputModeGameAndUI InputModeData;
+        InputModeData.SetWidgetToFocus(ET_OperatorInput->GetCachedWidget());
+        InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+        PC->SetInputMode(InputModeData);
+        
+        PC->bShowMouseCursor = true;
+        ET_OperatorInput->SetFocus();
+        
+        // / 키 입력 로직이 텍스트 필드를 오염시켜 힌트텍스트를 지우던 버그를 강제 세척합니다.
+        ET_OperatorInput->SetText(FText::GetEmpty());
+    }
+    else
+    {
+        // 이미 켜져 있는 상태에서 다시 누르면 취소하고 탈출
+        ET_OperatorInput->SetText(FText::GetEmpty());
+        ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
+        PC->SetInputMode(FInputModeGameOnly());
+        PC->bShowMouseCursor = false;
+    }
 }
