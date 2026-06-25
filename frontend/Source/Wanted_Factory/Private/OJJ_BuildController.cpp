@@ -354,6 +354,7 @@ void AOJJ_BuildController::ExitBuildMode()
 	{
 		TargetGrid->SetVisualizationVisible(false);
 		TargetGrid->ClearHoverPreview();         // ?몃쾭 ? + ?몃쾭 ?붿궡???쒓굅
+		TargetGrid->ClearPlacedMachineArrows();
 		TargetGrid->OJJ_UpdateCharacterCellOverlay(TArray<FIntPoint>());  // 罹먮┃??? ?쒖떆 ?쒓굅(F2-4 ?꾩냽 ??
 	}
 	CharacterOverlayCells.Reset();

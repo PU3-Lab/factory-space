@@ -89,6 +89,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual", meta = (ClampMin = "0.01"))
 	float FlowArrowScale = 0.18f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual", meta = (ClampMin = "1.0"))
+	float BuildModeFlowArrowScaleMultiplier = 1.8f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Visual", meta = (ClampMin = "0.0"))
 	float FlowArrowHeightOffset = 18.0f;
 
@@ -296,6 +299,7 @@ public:
 
 private:
 	void RebuildVisuals();
+	void RefreshFlowArrowInstances();
 	void ResetItemSlots();
 	void RestartItemMoveTimer();
 	void StopItemMoveTimer();
@@ -326,8 +330,13 @@ private:
 	FVector GetIncomingItemLocalCenter() const;
 	FVector GetOutgoingItemLocalCenter() const;
 	FVector ResolveItemVisualStartLocation(int32 SlotIndex) const;
+	FVector GetPathCellLocalCenterByIndex(int32 PathIndex) const;
+	FVector GetFlowArrowLocationAtPathPosition(float PathPosition) const;
+	FVector GetFlowArrowDirectionAtPathPosition(float PathPosition) const;
 	int32 FindPreviousVisualSlotIndex(int32 VisualId) const;
 	bool HasVisibleItems() const;
+	bool ShouldAnimateFlowArrows() const;
+	float GetFlowArrowPathOffset() const;
 	FVector GetDebugTextLocalLocation() const;
 	FString BuildMovingItemSummary() const;
 	int32 GetFlowArrowPhase() const;

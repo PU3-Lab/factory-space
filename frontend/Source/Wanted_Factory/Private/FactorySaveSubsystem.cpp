@@ -244,7 +244,8 @@ bool UFactorySaveSubsystem::SaveCurrentGame()
 		SaveGame->bPendingTutorialStartDialogueReveal,
 		SaveGame->LastTutorialDialogueQuestId,
 		SaveGame->LastTutorialDialogueTriggerType,
-		SaveGame->LastTutorialDialogueLines);
+		SaveGame->LastTutorialDialogueLines,
+		SaveGame->TutorialProgressCounts);
 	SaveGame->TimeState = PlanetManager->GetTimeState();
 	SaveGame->WeatherState = PlanetManager->GetWeatherState();
 	SaveGame->EventState = PlanetManager->GetEventState();
@@ -432,7 +433,8 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 		SaveGame->bPendingTutorialStartDialogueReveal,
 		SaveGame->LastTutorialDialogueQuestId,
 		SaveGame->LastTutorialDialogueTriggerType,
-		SaveGame->LastTutorialDialogueLines);
+		SaveGame->LastTutorialDialogueLines,
+		SaveGame->TutorialProgressCounts);
 	PlanetManager->RestoreSaveState(SaveGame->TimeState, SaveGame->WeatherState, SaveGame->EventState);
 
 	DestroyActorsOfType<APowerLine>(World);
