@@ -16,6 +16,7 @@ class AOJJ_BuildCamera;
 class AOJJ_Ladder;
 class AMachineBase;
 class UUI_MachineInteract;
+class UUI_SynthesizerInteract;
 class UAnimMontage;
 class UAnimSequenceBase;
 class UOJJ_CharacterAppearanceData;
@@ -116,9 +117,15 @@ protected:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
 	TSubclassOf<class UUI_WarehouseInteract> WarehouseInteractWidgetClass;
-
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
+	TSubclassOf<UUserWidget> SynthesizerInteractWidgetClass;
+	
 	UPROPERTY()
 	class UUI_WarehouseInteract* WarehouseInteractWidgetInstance;
+	
+	UPROPERTY()
+	class UUI_SynthesizerInteract* SynthesizerInteractWidgetInstance;
 	bool bIsInventoryOpen = false;
 	void TriggerInventoryToggle();
 	void UpdateInventoryRealtime();
