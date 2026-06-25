@@ -17,6 +17,7 @@
 #include "MachineBase.h"
 #include "OJJ_Grid.h"
 #include "Conveyor.h"
+#include "UObject/ConstructorHelpers.h"
 #include "Machines/PowerGridNode.h"
 #include "Machines/PowerLine.h"
 #include "Machines/PowerPlant.h"

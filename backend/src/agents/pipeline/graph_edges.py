@@ -40,7 +40,6 @@ def wire_agent_graph(graph: StateGraph) -> None:
         },
     )
     for node in (
-        "validate_process_payload",
         "operator_guide.route_sub_agent",
         "quest_generator.route_sub_agent",
         "new_material_generator.route_sub_agent",
@@ -53,6 +52,16 @@ def wire_agent_graph(graph: StateGraph) -> None:
                 "error": "build_agent_error",
             },
         )
+    graph.add_conditional_edges(
+        "validate_process_payload",
+        route_process_optimizer,
+        {
+            "state_update": "process_optimizer_state_update",
+            "analyze": "cache_lookup",
+            "error": "build_agent_error",
+        },
+    )
+    graph.add_edge("process_optimizer_state_update", "build_agent_response")
     graph.add_conditional_edges(
         "cache_lookup",
         route_cache_result,
@@ -194,3 +203,17 @@ def route_tool_followup_result(
 
 def route_response_validation(state: AgentGraphState) -> Literal["valid", "error"]:
     return "error" if state.get("error") else "valid"
+
+
+def route_process_optimizer(
+    state: AgentGraphState,
+) -> Literal["state_update", "analyze", "error"]:
+    if state.get("error"):
+        return "error"
+    payload = state.get("typedPayload", {})
+    operation = payload.get("operation", "analyze")
+    if operation == "state_update":
+        return "state_update"
+    elif operation == "analyze":
+        return "analyze"
+    return "error"

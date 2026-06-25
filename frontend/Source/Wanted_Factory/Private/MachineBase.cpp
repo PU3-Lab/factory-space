@@ -2,15 +2,16 @@
 #include "MachineBase.h"
 
 #include "Camera/PlayerCameraManager.h"
+#include "Components/BillboardComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/Texture2D.h"
 #include "FactoryManagerSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "Machines/MachineSubsystem.h"
 #include "Materials/Material.h"
-#include "Materials/MaterialInstanceDynamic.h"
-#include "Materials/MaterialInterface.h"
 #include "PlanetEventManagerSubsystem.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "RecipeManagerSubsystem.h"
@@ -97,6 +98,8 @@ namespace
 		{
 			if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
 			{
+				FactoryManager->NotifyMachineChanged(Machine);
+				FactoryManager->RebuildCachedData();
 				FactoryManager->UpdatePowerGrid();
 			}
 		}
@@ -148,6 +151,23 @@ AMachineBase::AMachineBase()
 	StateIndicatorComponent->SetVisibleInRayTracing(false);
 	StateIndicatorComponent->SetRelativeLocation(StateIndicatorOffset);
 	StateIndicatorComponent->SetRelativeScale3D(StateIndicatorScale);
+	StateIndicatorComponent->SetHiddenInGame(true);
+
+	StateIndicatorIconComponent = CreateDefaultSubobject<UBillboardComponent>(TEXT("StateIndicatorIcon"));
+	StateIndicatorIconComponent->SetupAttachment(Root);
+	StateIndicatorIconComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	StateIndicatorIconComponent->SetHiddenInGame(false);
+	StateIndicatorIconComponent->SetRelativeLocation(StateIndicatorOffset);
+	StateIndicatorIconComponent->SetRelativeScale3D(StateIndicatorScale);
+
+	StateIndicatorLightComponent = CreateDefaultSubobject<UPointLightComponent>(TEXT("StateIndicatorLight"));
+	StateIndicatorLightComponent->SetupAttachment(Root);
+	StateIndicatorLightComponent->SetCastShadows(false);
+	StateIndicatorLightComponent->SetVisibility(false);
+	StateIndicatorLightComponent->SetHiddenInGame(true);
+	StateIndicatorLightComponent->SetRelativeLocation(StateIndicatorOffset);
+	StateIndicatorLightComponent->SetIntensity(StateIndicatorLightIntensity);
+	StateIndicatorLightComponent->SetAttenuationRadius(StateIndicatorLightRadius);
 
 	// 메쉬 방향 보정: 머신 메쉬의 시각적 입출력부가 논리 포트 방향(액터 forward 기반)과 -90° Yaw
 	// 어긋나는 문제(전 머신 균일, PIE 관찰 확정)를 +90° 회전으로 상쇄. RelativeRotation은 자식 메쉬만
@@ -175,15 +195,30 @@ AMachineBase::AMachineBase()
 	{
 		StateIndicatorComponent->SetStaticMesh(SphereMesh.Object);
 	}
+	ConstructorHelpers::FObjectFinder<UTexture2D> ElectricityWarningIconAsset(
+		TEXT("/Game/Assets/UIImg/Warning/Electricity_Warning_Outline.Electricity_Warning_Outline"));
+	if (ElectricityWarningIconAsset.Succeeded())
+	{
+		ElectricityWarningIcon = ElectricityWarningIconAsset.Object;
+	}
+	ConstructorHelpers::FObjectFinder<UTexture2D> DurabilityWarningIconAsset(
+		TEXT("/Game/Assets/UIImg/Warning/Durabililty_Warning_Outline.Durabililty_Warning_Outline"));
+	if (DurabilityWarningIconAsset.Succeeded())
+	{
+		DurabilityWarningIcon = DurabilityWarningIconAsset.Object;
+	}
+	ConstructorHelpers::FObjectFinder<UTexture2D> MaxBufferWarningIconAsset(
+		TEXT("/Game/Assets/UIImg/Warning/MaxBuffer_Warning_Outline.MaxBuffer_Warning_Outline"));
+	if (MaxBufferWarningIconAsset.Succeeded())
+	{
+		MaxBufferWarningIcon = MaxBufferWarningIconAsset.Object;
+	}
 	ConstructorHelpers::FObjectFinder<UMaterial> MaterialAsset(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	if (MaterialAsset.Succeeded())
 	{
 		MeshComponent->SetMaterial(0, MaterialAsset.Object);
-		StateIndicatorMaterialInstance = UMaterialInstanceDynamic::Create(MaterialAsset.Object, this);
-		StateIndicatorComponent->SetMaterial(0, StateIndicatorMaterialInstance);
+		StateIndicatorComponent->SetMaterial(0, MaterialAsset.Object);
 	}
-
-	UpdateStateIndicator();
 }
 
 void AMachineBase::ApplyMachineData(const FMachineTableRow& MachineData)
@@ -427,6 +462,7 @@ bool AMachineBase::AddItem(FName ItemID, int32 Count)
 	}
 
 	UpdateDebugBufferText();
+	UpdateStateIndicator();
 	TryStartProcess();
 	
 	return true;
@@ -649,6 +685,7 @@ void AMachineBase::ConsumeIngredients(const FRecipeTable& Recipe)
 	}
 
 	UpdateDebugBufferText();
+	UpdateStateIndicator();
 }
 
 void AMachineBase::AddOutputItem(FName ItemID, int32 Count)
@@ -663,6 +700,7 @@ void AMachineBase::AddOutputItem(FName ItemID, int32 Count)
 	if (CurrentCount + Count > MaxBufferPerItem)
 	{
 		MachineState = EMachineState::Blocked;
+		UpdateStateIndicator();
 		
 		LOG_SSR_W(TEXT("Output Buffer Full : %s %d / %d"),
 			*ItemID.ToString(),
@@ -683,6 +721,7 @@ void AMachineBase::AddOutputItem(FName ItemID, int32 Count)
 	);
 
 	UpdateDebugBufferText();
+	UpdateStateIndicator();
 }
 
 bool AMachineBase::CanAddToOutputBuffer(const FRecipeTable& Recipe) const
@@ -738,6 +777,7 @@ bool AMachineBase::TakeOutputItem(FName ItemID, int32 Count)
 	}
 
 	UpdateDebugBufferText();
+	UpdateStateIndicator();
 
 	return true;
 }
@@ -837,76 +877,79 @@ void AMachineBase::UpdateDebugBufferText()
 
 void AMachineBase::UpdateStateIndicator()
 {
-	if (!StateIndicatorComponent)
+	if (!StateIndicatorComponent && !StateIndicatorIconComponent)
 	{
 		return;
 	}
 
-	StateIndicatorComponent->SetVisibility(bShowStateIndicator);
 	FVector IndicatorLocation = StateIndicatorOffset;
 	if (MeshComponent)
 	{
 		IndicatorLocation.Z = FMath::Max(IndicatorLocation.Z, MeshComponent->Bounds.BoxExtent.Z + 40.0f);
 	}
-	StateIndicatorComponent->SetRelativeLocation(IndicatorLocation);
-	StateIndicatorComponent->SetRelativeScale3D(StateIndicatorScale);
-	if (!bShowStateIndicator)
+	if (StateIndicatorComponent)
 	{
-		return;
+		StateIndicatorComponent->SetVisibility(false);
+		StateIndicatorComponent->SetHiddenInGame(true);
+		StateIndicatorComponent->SetRelativeLocation(IndicatorLocation);
+		StateIndicatorComponent->SetRelativeScale3D(StateIndicatorScale);
 	}
 
-	FLinearColor IndicatorColor = IdleIndicatorColor;
-	switch (MachineState)
+	UTexture2D* WarningIcon = nullptr;
+	FLinearColor WarningLightColor = FLinearColor::White;
+	if (MaxDurability > 0.0f && CurrentDurability / MaxDurability <= LowDurabilityWarningRatio)
 	{
-	case EMachineState::Working:
-		IndicatorColor = WorkingIndicatorColor;
-		break;
-	case EMachineState::NoPower:
-		IndicatorColor = NoPowerIndicatorColor;
-		break;
-	case EMachineState::Blocked:
-		IndicatorColor = BlockedIndicatorColor;
-		break;
-	case EMachineState::Disabled:
-		IndicatorColor = DisabledIndicatorColor;
-		break;
-	case EMachineState::Idle:
-	default:
-		break;
+		WarningIcon = DurabilityWarningIcon.Get();
+		WarningLightColor = DurabilityWarningLightColor;
+	}
+	else if (NeedsPower() && !HasEnoughPower())
+	{
+		WarningIcon = ElectricityWarningIcon.Get();
+		WarningLightColor = ElectricityWarningLightColor;
+	}
+	else if (IsOutputBufferFull())
+	{
+		WarningIcon = MaxBufferWarningIcon.Get();
+		WarningLightColor = MaxBufferWarningLightColor;
 	}
 
-	if (!StateIndicatorMaterialInstance)
+	const bool bShowWarningIcon = bShowStateIndicator && WarningIcon != nullptr;
+	if (StateIndicatorIconComponent)
 	{
-		if (UMaterialInstanceDynamic* ExistingMID =
-			Cast<UMaterialInstanceDynamic>(StateIndicatorComponent->GetMaterial(0)))
+		StateIndicatorIconComponent->SetVisibility(bShowWarningIcon);
+		StateIndicatorIconComponent->SetHiddenInGame(!bShowWarningIcon);
+		StateIndicatorIconComponent->SetRelativeLocation(IndicatorLocation);
+		StateIndicatorIconComponent->SetRelativeScale3D(StateIndicatorScale);
+		if (WarningIcon)
 		{
-			StateIndicatorMaterialInstance = ExistingMID;
+			StateIndicatorIconComponent->SetSprite(WarningIcon);
+		}
+	}
+	if (StateIndicatorLightComponent)
+	{
+		const bool bShowWarningLight = bShowWarningIcon && bEnableStateIndicatorLight;
+		StateIndicatorLightComponent->SetVisibility(bShowWarningLight);
+		StateIndicatorLightComponent->SetHiddenInGame(!bShowWarningLight);
+		StateIndicatorLightComponent->SetRelativeLocation(IndicatorLocation);
+		StateIndicatorLightComponent->SetLightColor(WarningLightColor);
+		StateIndicatorLightComponent->SetIntensity(StateIndicatorLightIntensity);
+		StateIndicatorLightComponent->SetAttenuationRadius(StateIndicatorLightRadius);
+	}
+
+	return;
+}
+
+bool AMachineBase::IsOutputBufferFull() const
+{
+	for (const TPair<FName, int32>& Output : OutputBuffer)
+	{
+		if (!Output.Key.IsNone() && Output.Value >= MaxBufferPerItem)
+		{
+			return true;
 		}
 	}
 
-	if (!StateIndicatorMaterialInstance)
-	{
-		UMaterialInterface* BaseMaterial = StateIndicatorComponent->GetMaterial(0);
-		if (BaseMaterial)
-		{
-			BaseMaterial = BaseMaterial->GetMaterial();
-		}
-		if (!BaseMaterial)
-		{
-			BaseMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
-		}
-		StateIndicatorMaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
-		StateIndicatorComponent->SetMaterial(0, StateIndicatorMaterialInstance);
-	}
-
-	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("Color"), IndicatorColor);
-	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), IndicatorColor);
-	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("Tint"), IndicatorColor);
-	StateIndicatorMaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), IndicatorColor);
-	StateIndicatorMaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), StateIndicatorEmissiveStrength);
-	StateIndicatorMaterialInstance->SetScalarParameterValue(TEXT("Opacity"), IndicatorColor.A);
-	StateIndicatorMaterialInstance->SetScalarParameterValue(TEXT("Alpha"), IndicatorColor.A);
-	StateIndicatorComponent->MarkRenderStateDirty();
+	return MachineState == EMachineState::Blocked;
 }
 
 void AMachineBase::UpdateDebugTextFacingPlayer()
@@ -1006,6 +1049,7 @@ bool AMachineBase::TransferOutputToMachine(AMachineBase* TargetMachine, FName It
 		LOG_SSR_W(TEXT("TransferOutputToMachine Failed : AddItem Failed"));
 		OutputBuffer.FindOrAdd(ItemID) += Count;
 		UpdateDebugBufferText();
+		UpdateStateIndicator();
 		return false;
 	}
 	
@@ -1161,15 +1205,22 @@ bool AMachineBase::TransferOutputByPort(int32 OutputPortIndex, FName ItemID, int
 
 bool AMachineBase::isBroken() const
 {
+	if (bInfiniteDurability)
+	{
+		return false;
+	}
+
 	return CurrentDurability <= 0.f;
 }
 
 void AMachineBase::DamageDurability(float DamageAmount)
 {
-	if (DamageAmount <= 0.f)
+	if (bInfiniteDurability || DamageAmount <= 0.f)
 	{
 		return; 
 	}
+
+	const bool bWasBroken = isBroken();
 	
 	CurrentDurability = FMath::Clamp(CurrentDurability - DamageAmount, 0.f, MaxDurability);
 	
@@ -1180,7 +1231,10 @@ void AMachineBase::DamageDurability(float DamageAmount)
 	
 	OnDurabilityChanged.Broadcast(CurrentDurability, MaxDurability);
 	RefreshMachineState();
-	RequestPowerGridRefresh(this);
+	if (bWasBroken != isBroken())
+	{
+		RequestPowerGridRefresh(this);
+	}
 }
 
 void AMachineBase::RepairDurability(float RepairAmount)
@@ -1189,6 +1243,8 @@ void AMachineBase::RepairDurability(float RepairAmount)
 	{
 		return;
 	}
+
+	const bool bWasBroken = isBroken();
 		
 	CurrentDurability = FMath::Clamp(CurrentDurability + RepairAmount, 0.f, MaxDurability);
 	
@@ -1199,7 +1255,11 @@ void AMachineBase::RepairDurability(float RepairAmount)
 	
 	OnDurabilityChanged.Broadcast(CurrentDurability, MaxDurability);
 	RefreshMachineState();
-	RequestPowerGridRefresh(this);
+	HandlePostRepair();
+	if (bWasBroken != isBroken())
+	{
+		RequestPowerGridRefresh(this);
+	}
 }
 
 int32 AMachineBase::GetMaxRepairCostQty() const
@@ -1209,6 +1269,11 @@ int32 AMachineBase::GetMaxRepairCostQty() const
 
 int32 AMachineBase::GetRepairCostQtyForCurrentDurability() const
 {
+	if (bInfiniteDurability)
+	{
+		return 0;
+	}
+
 	const int32 MaxRepairCostQty = GetMaxRepairCostQty();
 	if (MaxRepairCostQty <= 0 || MaxDurability <= 0.f)
 	{
@@ -1226,6 +1291,11 @@ int32 AMachineBase::GetRepairCostQtyForCurrentDurability() const
 
 bool AMachineBase::RepairUsingWarehouse()
 {
+	if (bInfiniteDurability)
+	{
+		return false;
+	}
+
 	if (RepairCostItemID.IsNone())
 	{
 		return false;
@@ -1368,6 +1438,10 @@ void AMachineBase::RefreshMachineState()
 	}
 
 	UpdateStateIndicator();
+}
+
+void AMachineBase::HandlePostRepair()
+{
 }
 
 namespace EfficiencyKeys

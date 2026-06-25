@@ -17,6 +17,7 @@ class AOJJ_Ladder;
 class AMachineBase;
 class UUI_MachineInteract;
 class UAnimMontage;
+class UAnimSequenceBase;
 class UOJJ_CharacterAppearanceData;
 struct FInputActionValue;
 
@@ -60,6 +61,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Climb")
 	bool IsClimbing() const { return bClimbing; }
 
+	// [#368] ABP_Man 점프/falling 상태 진입 게이트 — ABP 전이를 raw IsFalling 대신 이 getter로 교체한다.
+	// true = 실제 낙하(하강 중 + 하강속도 FallAnimVelocityThreshold 초과). 낮은 턱 짧은 낙하는 false.
+	// ⚠️ public 필수(IsClimbing과 동일) — ABP_Man은 AOJJ_Player 서브클래스가 아니라 protected면 BP 호출 불가(codex P1).
+	UFUNCTION(BlueprintPure, Category = "OJJ|Animation")
+	bool ShouldPlayFallAnim() const;
+
 	// [게임진입 테스트] 위젯 전 독립 검증용 콘솔 명령 — PIE 콘솔에 `OJJ_DebugSetCharacter 1`(Woman)/`0`(Man)
 	// 입력 시 선택 서브시스템 설정 + 즉시 재스왑(레벨 재진입 없이 확인). 2단계 위젯 붙으면 제거 가능.
 	UFUNCTION(Exec)
@@ -77,6 +84,15 @@ protected:
 
 	// 폰 파괴/언포제스 시 열려 있던 머신 상호작용 위젯·입력모드를 정리(컨트롤러 무효 시 위젯 제거만).
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	// [#357] 착지 콜백 — 점프 슬롯 애니(ActiveJumpMontage)가 아직 재생 중이면 즉시 끊고 locomotion 복귀.
+	// 단일 시퀀스 Man_Jump가 착지까지 통짜로 나가 착지 후 서서 미끄러지는 잔상을 제거(LadderFinish의
+	// StopAnimMontage 선례 미러). Super 호출로 기본 착지 처리/OnLanded BP 이벤트 보존.
+	virtual void Landed(const FHitResult& Hit) override;
+
+	// [#357] 점프 슬롯 애니(ActiveJumpMontage) 정지 헬퍼 — Landed(착지)와 BeginClimb(사다리 진입, Landed 미경유)
+	// 양쪽에서 호출해 점프 포즈가 다음 동작을 덮지 않게 한다(codex P2). 미재생이면 no-op.
+	void StopJumpMontage();
 
 	// --- UI ---
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
@@ -177,6 +193,38 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_Jump;
 
+	// [#357] 점프 도약 애니(예: Man_Jump 시퀀스). 점프 입력 순간(StartJumpAction) DefaultSlot로 즉시 재생해
+	// "떠오른 뒤 늦게 재생"(ABP 스테이트머신이 IsFalling로 잡아 한 박자 늦음)을 해소 — LadderFinishMontage가
+	// "도착 순간 재생은 늦음"을 미리 트리거로 푼 것과 같은 슬롯 패턴. 스테이트머신 무수정(슬롯이 출력을 덮음).
+	// 시퀀스를 직접 받아 PlaySlotAnimationAsDynamicMontage로 재생 → 새 몽타주 에셋 불요(BP_OJJ_Player에서 Man_Jump 할당).
+	// 미할당(nullptr)이면 슬롯 재생 스킵(기존 동작 — 회귀 0). ⚠️ ABP AnimGraph에 'DefaultSlot' 노드 필요(LadderFinish 공용).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Animation")
+	TObjectPtr<UAnimSequenceBase> JumpAnim = nullptr;
+
+	// [#357] 점프 슬롯 블렌드 인/아웃(초). 도약은 스냅하게(짧은 인), 공중 전환은 부드럽게(아웃). PIE 다이얼.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Animation", meta = (ClampMin = "0.0"))
+	float JumpAnimBlendInTime = 0.05f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Animation", meta = (ClampMin = "0.0"))
+	float JumpAnimBlendOutTime = 0.2f;
+
+	// [#357] Man_Jump 재생 시작 위치(초) — 무릎 구부림 준비동작 구간을 건너뛰고 "도약 시작" 시점부터 재생.
+	// 단일 시퀀스라 처음부터 틀면 캐릭터는 이미 뜨는 중인데 애니는 웅크림부터 → 2단 점프 느낌. 기본값 0.3 =
+	// PIE 다이얼 확정값(2026-06-24). BP override 대신 C++ 단일 출처(멀티플레이 silent fail 방지) — 재튜닝 시 여기서.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Animation", meta = (ClampMin = "0.0"))
+	float JumpAnimStartPosition = 0.3f;
+
+	// [#368] falling 애니 진입 하강속도 임계(uu/s, 양수). raw IsFalling만으론 낮은 턱 내려갈 때도 잠깐 true라
+	// ABP가 점프/falling 포즈로 진입한다 → 이보다 빠르게 하강(Velocity.Z < -이값)할 때만 진짜 낙하로 본다.
+	// 낮은 턱(짧은 낙하)은 착지 전 속도가 작아 미만 → 진입 안 함. 기본 400 = PIE 확정값(2026-06-24).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Animation", meta = (ClampMin = "0.0"))
+	float FallAnimVelocityThreshold = 400.f;
+
+	// [#357] 입력 시 PlaySlotAnimationAsDynamicMontage가 만든 점프 슬롯 몽타주 핸들(런타임 전용) — Landed에서
+	// 이 몽타주만 StopAnimMontage로 끊어 착지 잔상 제거(다른 몽타주 영향 0). 매 점프 갱신, 종료 후 stale은 no-op.
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimMontage> ActiveJumpMontage = nullptr;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_Zoom;
 
@@ -276,17 +324,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
 	float ClimbEntryZTolerance = 80.f;
 
-	// [#184] 사다리 마무리(올라서기) 몽타주(예: AM_Man_Ladder_Finish, DefaultSlot). top 도착 '이전'에
+	// [#184/#343] 사다리 마무리(올라서기) 몽타주(예: AM_Man_Ladder_Finish, DefaultSlot). top 도착 '이전'에
 	// Move()의 FinishTriggerDistance 거리트리거로 1회 재생 — 올라서기가 실제 top 도착과 맞물리게(도착 순간
 	// 재생은 늦음). 미할당(nullptr)이면 몽타주 없이 기존 동작. ⚠️ ABP AnimGraph에 Slot 'DefaultSlot' 노드 필요.
-	// ⚠️ 몽타주 Root Motion OFF(캡슐 이동은 비행이 전담, 켜면 이중이동). Finish 루트높이(f0≈101) top 안착 PIE 확인.
+	// ⚠️ 몽타주 Root Motion OFF(캡슐 이동은 비행이 전담, 켜면 이중이동). #343 옵션A: Finish hips를 Loop 높이(128.4)로
+	// 평탄화(상승 0)해 캡슐 비행과 가산되지 않게 함 → '올라서기'는 평탄 hips 위 팔/다리 오버레이로 표현.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb")
 	TObjectPtr<UAnimMontage> LadderFinishMontage = nullptr;
 
-	// [#184] top까지 남은 Z가 이 값 이하면 Finish 마무리 몽타주를 1회 재생(올라서기가 top 도착과 맞물리게).
-	// 몽타주가 '마무리(올라서기)'만 담으므로 작게 시작 — PIE 튜닝. ⚠️ 짧은 사다리는 ClimbHeight*0.5로 클램프(Move).
+	// [#184/#343] 긴 사다리에서 top까지 남은 Z가 이 값 이하면 Finish를 1회 재생. 또한 짧은 사다리 분기 기준:
+	// ClimbHeight < FinishTriggerDistance면 Finish 아예 스킵(Loop+step-off만). 옵션A에서 150 권장(BP에서 설정).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
-	float FinishTriggerDistance = 100.f;
+	float FinishTriggerDistance = 150.f;
 
 	// 현재 오르는 사다리(없으면 null). 등반 상태의 단일 진실원.
 	UPROPERTY(Transient)
@@ -474,6 +523,9 @@ public:
 
 	UFUNCTION(Exec)
 	void ClearWarehouse();
+
+	UFUNCTION(Exec)
+	void Give(const FString& ItemID, int32 Count);
 
 	UFUNCTION(Exec)
 	void TriggerPlanetEvent(const FString& EventName, float Severity = 1.0f, float DurationSeconds = -1.0f);

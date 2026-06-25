@@ -28,7 +28,7 @@ def test_health_endpoint_returns_ok() -> None:
     assert response.json() == {"status": "ok"}
 
 
-def test_agent_websocket_requires_top_level_routing_model_for_agent_request() -> None:
+def test_agent_websocket_returns_process_optimizer_response_without_llm() -> None:
     with TestClient(create_app()) as client:
         with client.websocket_connect("/ws/agent") as websocket:
             websocket.send_json(
@@ -41,9 +41,10 @@ def test_agent_websocket_requires_top_level_routing_model_for_agent_request() ->
             )
             response = websocket.receive_json()
 
-    assert response["type"] == "agent.error"
+    assert response["type"] == "agent.response"
     assert response["agent"] == "process_optimizer"
-    assert response["error"]["code"] == "ROUTING_UNAVAILABLE"
+    assert response["payload"]["status"] == "suggestion"
+    assert response["payload"]["metadata"]["selectedAgent"] == "process_optimizer"
 
 
 def test_agent_websocket_returns_error_for_malformed_envelope() -> None:
@@ -72,7 +73,7 @@ def test_agent_websocket_returns_error_for_invalid_json() -> None:
     assert response["error"]["code"] == "INVALID_JSON"
 
 
-def test_agent_websocket_preserves_unreal_correlation_fields_on_error() -> None:
+def test_agent_websocket_preserves_unreal_correlation_fields_on_response() -> None:
     with TestClient(create_app()) as client:
         with client.websocket_connect("/ws/agent") as websocket:
             websocket.send_json(
@@ -87,12 +88,12 @@ def test_agent_websocket_preserves_unreal_correlation_fields_on_error() -> None:
             )
             response = websocket.receive_json()
 
-    assert response["type"] == "agent.error"
+    assert response["type"] == "agent.response"
     assert response["request_id"] == "unreal-smoke-1"
     assert response["session_id"] == "dev-session"
     assert response["client_id"] == "unreal-client"
     assert response["agent"] == "process_optimizer"
-    assert response["error"]["code"] == "ROUTING_UNAVAILABLE"
+    assert response["payload"]["status"] == "suggestion"
 
 
 def test_agent_websocket_logs_outgoing_response(
@@ -116,8 +117,8 @@ def test_agent_websocket_logs_outgoing_response(
         record.name == "uvicorn.error"
         and "Factory agent WebSocket sending:" in record.message
         and '"request_id": "request-log-ws"' in record.message
-        and '"type": "agent.error"' in record.message
-        and '"code": "ROUTING_UNAVAILABLE"' in record.message
+        and '"type": "agent.response"' in record.message
+        and '"status": "suggestion"' in record.message
         for record in caplog.records
     )
 

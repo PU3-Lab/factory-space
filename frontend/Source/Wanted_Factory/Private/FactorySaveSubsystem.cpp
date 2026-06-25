@@ -10,6 +10,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "MachineBase.h"
 #include "Machines/EscapePod.h"
+#include "Machines/LiquidTank.h"
 #include "Machines/MachineSubsystem.h"
 #include "Machines/PowerLine.h"
 #include "Machines/WarehousePort.h"
@@ -133,6 +134,24 @@ namespace
 		}
 
 		return FSoftClassPath(ClassPath).TryLoadClass<ActorType>();
+	}
+
+	FName ResolveSavedLiquidTankOutput(const FName SelectedOutputItemId, const TMap<FName, int32>& OutputBuffer)
+	{
+		if (!SelectedOutputItemId.IsNone())
+		{
+			return SelectedOutputItemId;
+		}
+
+		for (const TPair<FName, int32>& OutputEntry : OutputBuffer)
+		{
+			if (!OutputEntry.Key.IsNone() && OutputEntry.Value > 0)
+			{
+				return OutputEntry.Key;
+			}
+		}
+
+		return NAME_None;
 	}
 }
 
@@ -266,6 +285,11 @@ bool UFactorySaveSubsystem::SaveCurrentGame()
 		if (const AWarehousePort* WarehousePort = Cast<AWarehousePort>(Machine))
 		{
 			SavedMachine.SelectedOutputItemId = WarehousePort->GetSelectedOutputItem();
+		}
+		else if (const ALiquidTank* LiquidTank = Cast<ALiquidTank>(Machine))
+		{
+			SavedMachine.SelectedOutputItemId =
+				ResolveSavedLiquidTankOutput(LiquidTank->GetSelectedOutputLiquid(), SavedMachine.OutputBuffer);
 		}
 		SaveGame->Machines.Add(SavedMachine);
 		MachineIds.Add(Machine, SavedMachine.InstanceId);
@@ -554,6 +578,11 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 					if (AWarehousePort* WarehousePort = Cast<AWarehousePort>(Machine))
 					{
 						WarehousePort->SetSelectedOutputItem(SavedMachine.SelectedOutputItemId);
+					}
+					else if (ALiquidTank* LiquidTank = Cast<ALiquidTank>(Machine))
+					{
+						LiquidTank->SetSelectedOutputLiquid(
+							ResolveSavedLiquidTankOutput(SavedMachine.SelectedOutputItemId, SavedMachine.OutputBuffer));
 					}
 					RestoredMachines.Add(SavedMachine.InstanceId, Machine);
 				}

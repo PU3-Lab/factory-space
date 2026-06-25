@@ -4,7 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "MachineBase.h"
+#include "PlanetEventManagerSubsystem.h" // EPlanetEventType (UFUNCTION 핸들러 파라미터) — 매니저는 tower.h를 include 안 해 순환 없음.
 #include "OJJ_ProtectionTower.generated.h"
+
+class UStaticMeshComponent;
 
 /**
  * 자기폭풍(MagneticStorm) 전용 차폐장(Shield Generator) (OJJ 소유).
@@ -50,9 +53,9 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-	// 차폐 반경(언리얼 단위). 기본 700 = 셀 7칸.
+	// 차폐 반경(언리얼 단위). 기본 1200 = 셀 12칸. 보호 판정(IsMachineShieldedFromMagneticStorm)·돔 스케일 공용 단일 출처.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shield", meta = (ClampMin = "0.0"))
-	float ShieldRadius = 700.0f;
+	float ShieldRadius = 1200.0f;
 
 	// 차폐장 활성 상태.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shield")
@@ -62,8 +65,32 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shield|Debug")
 	bool bShowDebugRadius = false;
 
+	// [#353] 에너지 실드 돔 비주얼. 루트에 부착, 메시=Sphere(기본 반경 50uu)·머티리얼=MI_EnergyShield.
+	// 반경은 BeginPlay에서 GetShieldRadius()/50으로 스케일. 기본 숨김 — 실제 표시(활성/자기폭풍)는 후속.
+	// NoCollision(거리 판정은 PlanetEventManager 전담). 동적 MID 미생성(상태등 MID 저장버그 교훈).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Shield")
+	TObjectPtr<UStaticMeshComponent> ShieldDomeComponent;
+
+	// [#353] 돔 육안 디버그 — true면 BeginPlay에서 돔 visibility 강제 ON(반경 스케일 확인용). 기본 false(원복 불요).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shield|Debug")
+	bool bShowShieldDome = false;
+
 private:
 	// PlanetEventManagerSubsystem에 차폐장 등록/해제(BeginPlay/EndPlay에서 호출).
 	void RegisterToEventManager();
 	void UnregisterFromEventManager();
+
+	// [#353] 자기폭풍 이벤트 구독 핸들러 — 공용 이벤트 델리게이트(MagneticStorm/SandStorm 공유)라 EventType로
+	// MagneticStorm만 필터. DYNAMIC multicast(AddDynamic)라 UFUNCTION 필수.
+	UFUNCTION()
+	void HandleEventStarted(EPlanetEventType EventType, float Severity);
+	UFUNCTION()
+	void HandleEventEnded(EPlanetEventType EventType);
+
+	// [#353] 돔 표시 단일 진입점 — bShowShieldDome(디버그) OR (자기폭풍 활성 && IsShieldActive()).
+	// ⚠️ 돔 SetVisibility는 반드시 이 함수만 경유(분기 산재 방지).
+	void UpdateDomeVisibility();
+
+	// [#353] 자기폭풍 활성 캐시 — 이벤트 핸들러/BeginPlay 초기 동기화가 세팅, UpdateDomeVisibility가 읽음.
+	bool bMagneticStormActive = false;
 };

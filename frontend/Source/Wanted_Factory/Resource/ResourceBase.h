@@ -51,7 +51,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Resource|Grid")
 	bool bUseMeshBoundsForGridRegistration = true;
 
-	// 이 자원을 선점한 머신(채굴기/펌프). weak — 머신이 비정상 소멸해도 자동 무효화돼
+	// 이 자원을 선점한 머신(채굴기/펌프). weak — 머신이 비정상 소멸해도 자동 무효화돼x
 	// 선점이 자연 해제된다(IsClaimed가 IsValid로 판정). 명시 Release(머신 제거/EndPlay)도 병행.
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Resource|Claim")
 	TWeakObjectPtr<AMachineBase> ClaimedBy;
