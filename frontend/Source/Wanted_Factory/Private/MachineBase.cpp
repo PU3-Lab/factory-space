@@ -918,7 +918,7 @@ void AMachineBase::UpdateStateIndicator()
 	FLinearColor WarningIconTint = FLinearColor::White;
 	FLinearColor WarningGlowTint = FLinearColor::White;
 	float WarningIconScaleMultiplier = 1.0f;
-	if (MaxDurability > 0.0f && CurrentDurability / MaxDurability <= LowDurabilityWarningRatio)
+	if (CurrentDurability <= LowDurabilityWarningThreshold)
 	{
 		WarningIcon = DurabilityWarningIcon.Get();
 		WarningLightColor = DurabilityWarningLightColor;
