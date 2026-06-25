@@ -1082,123 +1082,125 @@ void AOJJ_Player::ToggleBuild(const FInputActionValue& Value)
 
 void AOJJ_Player::ApplyBuildModeView(bool bEntering)
 {
-	// 카메라 뷰타겟 블렌드 + 플레이어 가시성 + IMC 교체(Look 차단). (Pan/Rotate 핸들러는 3c에서 추가)
-	APlayerController* PC = Cast<APlayerController>(GetController());
-	UEnhancedInputLocalPlayerSubsystem* Subsystem = PC
-		? ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer())
-		: nullptr;
+    // 카메라 뷰타겟 블렌드 + 플레이어 가시성 + IMC 교체(Look 차단). (Pan/Rotate 핸들러는 3c에서 추가)
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    UEnhancedInputLocalPlayerSubsystem* Subsystem = PC
+       ? ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer())
+       : nullptr;
 
-	if (bEntering)
-	{
-		// 빌드모드 진입 시 머신 상호작용 위젯이 떠 있으면 닫는다 — F는 빌드모드 중 무시되지만
-		// B(빌드 토글)는 위젯이 열려 있어도 동작하므로, 닫지 않으면 위젯+GameAndUI가 빌드모드 위에
-		// 잔존하는 half-state가 된다(양방향 상호배제). IsValid()만 봐 자체 닫힘(미GC) 잔존 상태도 정리.
-		if (MachineInteractWidgetInstance.IsValid())
-		{
-			CloseMachineInteractWidget(PC);
-		}
+    if (bEntering)
+    {
+       // 빌드모드 진입 시 일반 기계창이나 창고 세부화면이 열려 있다면 자동으로 연동을 끊고 제거합니다.
+       if (MachineInteractWidgetInstance.IsValid() || WarehouseInteractWidgetInstance)
+       {
+          CloseMachineInteractWidget(PC);
+       }
 
-		if (BuildCamera && BuildController)
-		{
-			// 진입 시 1회: 카메라 XY = 플레이어 현재 위치, Z = 그리드 평면(GetGridCenter().Z).
-			// "선 데에서 빌드" — B 누른 순간 플레이어 위로 탑다운 배치. 빌드 중 추종 아님(WASD 패닝/QE 회전으로 이동).
-			// Z를 그리드 평면에 고정해 플레이어가 높은 Foundation 위여도 탑다운 거리(화면 스케일) 일정.
-			// 회전은 보존 — SpringArm pitch/arm이 높이·거리 담당.
-			if (const AOJJ_Grid* Grid = BuildController->GetTargetGrid())
-			{
-				const FVector PlayerLoc = GetActorLocation();
-				// 플레이어가 그리드 placement 범위 안이면 그 위로(선 데서 빌드), 밖이면 그리드 센터로 폴백.
-				// off-grid 진입 시 커서가 무효 셀에서 시작해 hover/place가 막히는 것 방지(Codex 리뷰 2026-06-19).
-				const FVector AnchorXY = Grid->IsValidGridCell(Grid->WorldToGrid(PlayerLoc))
-					? PlayerLoc : Grid->GetGridCenter();
-				const FVector CamLoc(AnchorXY.X, AnchorXY.Y, Grid->GetGridCenter().Z);
-				BuildCamera->SetActorLocation(CamLoc);
-			}
-		}
-		if (PC && BuildCamera)
-		{
-			PC->SetViewTargetWithBlend(BuildCamera, CameraBlendTime);
-		}
-		// 뷰타겟이 빌드캠이라 시각적 의미만 있지만, 탑다운에서 플레이어가 안 보이도록 숨김
-		SetActorHiddenInGame(true);
+       // 빌드모드 진입 시 가방 창이 열려 있다면 뷰포트에서 제거하고 리프레시 타이머까지 깔끔하게 폭파합니다.
+       if (bIsInventoryOpen && InventoryWidgetInstance)
+       {
+          InventoryWidgetInstance->RemoveFromParent();
+          bIsInventoryOpen = false;
+          GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
 
-		// 안전장치: 빌드모드 진입 시 아래에서 IMC_Player가 제거되면, Shift를 누른 채였을 경우
-		// IA_Sprint의 Completed가 오지 않아 MaxWalkSpeed가 SprintSpeed에 고착된다(영구 질주).
-		// 진입 시 걷기 속도로 강제 복귀해 복귀 후 질주 잔존을 방지.
-		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
-		{
-			Movement->MaxWalkSpeed = WalkSpeed;
-		}
+          if (UGameInstance* GameInstance = GetGameInstance())
+          {
+             if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+             {
+                QuestManager->NotifyTutorialEvent(TEXT("InventoryClose"));
+             }
+          }
+       }
 
-		// 입력: TPS IMC 제거 + 빌드 IMC 추가. 빌드 IMC엔 IA_Look이 없어 마우스 카메라 회전이 차단됨.
-		// ⚠️ IMC_Build 미할당 시엔 절대 IMC_Player를 제거하지 않음 — 제거하면 입력이 전부 잠겨
-		//    B키로 빌드모드를 빠져나올 수조차 없게 됨. 이 경우 IMC_Player 유지 + 경고만.
-		if (Subsystem && IMC_Build)
-		{
-			Subsystem->RemoveMappingContext(IMC_Player);
-			Subsystem->AddMappingContext(IMC_Build, 0);
-		}
-		else if (!IMC_Build)
-		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("[OJJ_Player] IMC_Build 미할당 — 빌드모드 Look 차단 불가(IMC_Player 유지). ")
-				TEXT("BP_OJJ_Player에 IMC_Build 할당 필요."));
-		}
-		
-		if (MainHUDWidgetInstance)
-		{
-			MainHUDWidgetInstance->SetVisibility(ESlateVisibility::Collapsed);
-		}
-		
-		if (PC && BuildModeWidgetClass && !BuildModeWidgetInstance)
-		{
-			BuildModeWidgetInstance = CreateWidget<UUserWidget>(PC, BuildModeWidgetClass);
-			if (BuildModeWidgetInstance)
-			{
-				BuildModeWidgetInstance->AddToViewport();
-			}
-		}
+       if (BuildCamera && BuildController)
+       {
+          // 진입 시 1회: 카메라 XY = 플레이어 현재 위치, Z = 그리드 평면(GetGridCenter().Z).
+          if (const AOJJ_Grid* Grid = BuildController->GetTargetGrid())
+          {
+             const FVector PlayerLoc = GetActorLocation();
+             const FVector AnchorXY = Grid->IsValidGridCell(Grid->WorldToGrid(PlayerLoc))
+                ? PlayerLoc : Grid->GetGridCenter();
+             const FVector CamLoc(AnchorXY.X, AnchorXY.Y, Grid->GetGridCenter().Z);
+             BuildCamera->SetActorLocation(CamLoc);
+          }
+       }
+       if (PC && BuildCamera)
+       {
+          PC->SetViewTargetWithBlend(BuildCamera, CameraBlendTime);
+       }
+       // 뷰타겟이 빌드캠이라 시각적 의미만 있지만, 탑다운에서 플레이어가 안 보이도록 숨김
+       SetActorHiddenInGame(true);
 
-		// 재진입 정합(MainHUD의 Collapsed/Visible 토글과 대칭). Exit가 위젯을 Collapsed로 숨긴 채
-		// 인스턴스를 유지하므로, 위 생성 가드(!BuildModeWidgetInstance)는 2회차+엔 스킵된다.
-		// 여기서 Visible로 되돌리지 않으면 재진입 시 버튼 UI가 Collapsed로 방치돼 안 보인다
-		// (1회차는 새로 생성돼 기본 Visible이라 정상). 최초 생성 직후엔 멱등.
-		if (BuildModeWidgetInstance)
-		{
-			BuildModeWidgetInstance->SetVisibility(ESlateVisibility::Visible);
-		}
-	}
-	else
-	{
-		if (PC)
-		{
-			// 복귀 뷰타겟은 플레이어 자신(소유 Pawn) — 빌드캠 없어도 안전하게 복귀
-			PC->SetViewTargetWithBlend(this, CameraBlendTime);
-		}
-		SetActorHiddenInGame(false);
+       // 안전장치: 질주 중 진입 시 속도 고착 방지
+       if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+       {
+          Movement->MaxWalkSpeed = WalkSpeed;
+       }
 
-		// 입력 복귀: 빌드 IMC 제거 + TPS IMC 복원. 항상 IMC_Player 재추가(멱등) — 진입이
-		// IMC_Build 미할당으로 스왑을 건너뛴 경우에도 안전하게 정상 상태로 수렴.
-		if (Subsystem)
-		{
-			if (IMC_Build)
-			{
-				Subsystem->RemoveMappingContext(IMC_Build);
-			}
-			if (IMC_Player)
-			{
-				Subsystem->AddMappingContext(IMC_Player, 0);
-			}
-		}
-		if (BuildModeWidgetInstance)
-		{
-			BuildModeWidgetInstance->SetVisibility(ESlateVisibility::Collapsed);
-		}
-		if (MainHUDWidgetInstance)
-		{
-			MainHUDWidgetInstance->SetVisibility(ESlateVisibility::Visible);
-		}
-	}
+       // 입력: TPS IMC 제거 + 빌드 IMC 추가
+       if (Subsystem && IMC_Build)
+       {
+          Subsystem->RemoveMappingContext(IMC_Player);
+          Subsystem->AddMappingContext(IMC_Build, 0);
+       }
+       else if (!IMC_Build)
+       {
+          UE_LOG(LogTemp, Warning,
+             TEXT("[OJJ_Player] IMC_Build 미할당 — 빌드모드 Look 차단 불가(IMC_Player 유지). ")
+             TEXT("BP_OJJ_Player에 IMC_Build 할당 필요."));
+       }
+       
+       if (MainHUDWidgetInstance)
+       {
+          MainHUDWidgetInstance->SetVisibility(ESlateVisibility::Collapsed);
+       }
+       
+       if (PC && BuildModeWidgetClass && !BuildModeWidgetInstance)
+       {
+          BuildModeWidgetInstance = CreateWidget<UUserWidget>(PC, BuildModeWidgetClass);
+          if (BuildModeWidgetInstance)
+          {
+             BuildModeWidgetInstance->AddToViewport();
+          }
+       }
+
+       if (BuildModeWidgetInstance)
+       {
+          BuildModeWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+       }
+    }
+    else
+    {
+       if (PC)
+       {
+          // 복귀 뷰타겟은 플레이어 자신(소유 Pawn)
+          PC->SetViewTargetWithBlend(this, CameraBlendTime);
+       }
+       SetActorHiddenInGame(false);
+
+       // 입력 복귀: 빌드 IMC 제거 + TPS IMC 복원
+       if (Subsystem)
+       {
+          if (IMC_Build)
+          {
+             Subsystem->RemoveMappingContext(IMC_Build);
+          }
+          if (IMC_Player)
+          {
+             Subsystem->AddMappingContext(IMC_Player, 0);
+          }
+       }
+       if (BuildModeWidgetInstance)
+       {
+          BuildModeWidgetInstance->SetVisibility(ESlateVisibility::Collapsed);
+       }
+       
+       if (MainHUDWidgetInstance)
+       {
+          // 드래그 씹힘 방지
+          MainHUDWidgetInstance->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+       }
+    }
 }
 
 void AOJJ_Player::BuildPlace(const FInputActionValue& Value)

@@ -477,6 +477,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Machine | Durability")
 	bool isBroken() const;
 	
+	UFUNCTION(BlueprintPure, Category = "Machine | Durability")
+	FORCEINLINE bool IsInfiniteDurability() const { return bInfiniteDurability; }
+	
 	UFUNCTION(BlueprintCallable, Category = "Machine | Durability")
 	void DamageDurability(float DamageAmount);
 	
