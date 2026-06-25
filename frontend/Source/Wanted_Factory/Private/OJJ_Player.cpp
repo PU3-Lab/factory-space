@@ -67,7 +67,7 @@ AOJJ_Player::AOJJ_Player()
 
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(RootComponent);
-	SpringArm->TargetArmLength = 400.f;
+	SpringArm->TargetArmLength = 270.f;
 	SpringArm->bUsePawnControlRotation = true; // 마우스 입력으로 카메라 회전
 	SpringArm->bEnableCameraLag = true;
 	SpringArm->CameraLagSpeed = 10.f;
@@ -82,7 +82,7 @@ AOJJ_Player::AOJJ_Player()
 	Movement->MaxWalkSpeed = WalkSpeed;                  // 기존 하드코딩 600 → 걷기 속도(단일 출처). BeginPlay에서 재확정.
 	// [#357] 점프 높이 = JumpZVelocity. BP_OJJ_Player override 대신 C++ 단일 출처(메모리 원칙: BP override는
 	// 멀티플레이 silent fail 위험 — 서버/클라 생성자값 보장). BP의 JumpZVelocity override는 제거해 이 값 상속.
-	Movement->JumpZVelocity = 400.f;
+	Movement->JumpZVelocity = 335.f;
 	Movement->AirControl = 0.35f;
 
 	NightSpotLight = CreateDefaultSubobject<USpotLightComponent>(TEXT("NightSpotLight"));
