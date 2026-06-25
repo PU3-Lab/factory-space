@@ -130,11 +130,25 @@ async def agent_websocket(websocket: WebSocket) -> None:
                     lambda: asyncio.create_task(send_agent_json(websocket, event))
                 )
 
-            response = await asyncio.to_thread(
-                pipeline.run,
-                message,
-                on_progress=handle_progress,
-            )
+            try:
+                response = await asyncio.to_thread(
+                    pipeline.run,
+                    message,
+                    on_progress=handle_progress,
+                )
+            except Exception:
+                LOGGER.exception("Factory agent pipeline failed during WebSocket request.")
+                response = {
+                    "type": "agent.error",
+                    "request_id": message.get("request_id"),
+                    "session_id": message.get("session_id"),
+                    "client_id": message.get("client_id"),
+                    "agent": message.get("agent") or "operator_guide",
+                    "error": build_error_payload(
+                        "AGENT_PIPELINE_ERROR",
+                        "Agent pipeline failed while handling the request.",
+                    ),
+                }
             await send_agent_json(websocket, response)
     except WebSocketDisconnect:
         return

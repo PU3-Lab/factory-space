@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any, Protocol
 
@@ -25,26 +26,28 @@ from agents.operator_guide.schemas import ManualQAResult
 from agents.operator_guide.session_memory import OPERATOR_GUIDE_RECENT_CONVERSATION_KEY
 from llm.adapter import LLMAdapter
 
+LOGGER = logging.getLogger(__name__)
+
 # 진행 상태 메시지 카탈로그 (Progress Message Catalog)
 # 초보자용 설명:
 #     플레이어가 질문 유형에 따라 느끼는 경험(UX)을 극대화하기 위해,
 #     단계별로 에이전트가 어떤 작업을 하고 있는지 상태 메시지를 사전 정의한 테이블입니다.
 PROGRESS_CATALOG: dict[str, list[tuple[str, str]]] = {
     "machine": [
-        ("rag_search", "장비 매뉴얼을 펼쳐보는 중입니다..."),
-        ("state_check", "입력과 출력 자원을 확인하는 중입니다..."),
-        ("logic_format", "연결 가능한 장비를 살펴보는 중입니다..."),
+        ("rag_search", "장비 매뉴얼을 확인하는 중입니다..."),
+        ("state_check", "입력과 출력 자원을 살펴보는 중입니다..."),
+        ("logic_format", "플레이어가 이해하기 쉽게 정리하는 중입니다..."),
     ],
     "recipe": [
-        ("rag_search", "관련 레시피를 찾는 중입니다..."),
-        ("state_check", "필요한 입력 자원을 확인하는 중입니다..."),
-        ("logic_format", "생산 흐름을 정리하는 중입니다..."),
+        ("rag_search", "관련 레시피 매뉴얼을 확인하는 중입니다..."),
+        ("state_check", "필요한 재료와 장비를 살펴보는 중입니다..."),
+        ("logic_format", "생산 흐름을 이해하기 쉽게 정리하는 중입니다..."),
     ],
     "troubleshooting": [
-        ("rag_search", "공장의 전체 흐름을 읽는 중입니다..."),
+        ("rag_search", "문제 상황과 관련된 매뉴얼을 찾는 중입니다..."),
         ("state_check", "선택된 장비 상태를 확인하는 중입니다..."),
         ("power_check", "전력과 입력 자원 상태를 대조하는 중입니다..."),
-        ("document_find", "관련 문제 해결 매뉴얼을 찾는 중입니다..."),
+        ("document_find", "관련 문제 해결 절차를 확인하는 중입니다..."),
         ("step_arrange", "점검 순서를 정리하는 중입니다..."),
     ],
 }
@@ -148,6 +151,7 @@ class ManualQAService:
         prompt_context = self._context_builder.build(question, intent)
         recent_conversation = _recent_conversation(context)
         confirmed_facts = _confirmed_facts(context)
+        response_style = _response_style(context)
 
         # 2단계: 실시간 게임 상태 확인 진행 중 메시지 전송
         if on_progress and topic in PROGRESS_CATALOG:
@@ -176,9 +180,9 @@ class ManualQAService:
         # 3단계: 문제해결(troubleshooting) 특화 진행 메시지 스트리밍
         if topic == "troubleshooting" and on_progress:
             on_progress("power_check", "전력과 입력 자원 상태를 대조하는 중입니다...")
-            on_progress("document_find", "관련 문제 해결 매뉴얼을 찾는 중입니다...")
+            on_progress("document_find", "관련 문제 해결 절차를 확인하는 중입니다...")
 
-        if self._rag_runtime is None:
+        def build_csv_only_context() -> ManualQAPromptContext:
             result = prompt_context.result.model_copy(
                 update={
                     "requires_current_game_state": requires_state,
@@ -203,7 +207,11 @@ class ManualQAService:
                 used_current_game_state=used_state,
                 required_state_scopes=required_scopes,
                 available_scopes=available_scopes,
+                response_style=response_style,
             )
+
+        if self._rag_runtime is None:
+            return build_csv_only_context()
 
         # 이미 동일 요청 내에서 RAG 검색이 실행되었는지 캐시를 확인합니다.
         # 초보자용 설명:
@@ -218,9 +226,19 @@ class ManualQAService:
             if confirmed_facts:
                 search_query = f"{question} {' '.join(confirmed_facts)}"
 
-            rag_result = self._rag_runtime.retrieve(search_query)
+            try:
+                rag_result = self._rag_runtime.retrieve(search_query)
+            except Exception as exc:
+                LOGGER.warning(
+                    "operator_guide RAG retrieval failed; falling back to CSV-only context: %s",
+                    exc,
+                )
+                rag_result = None
             if context is not None:
                 context["_cached_rag_result"] = rag_result
+
+        if rag_result is None:
+            return build_csv_only_context()
 
         rag_metadata = _rag_metadata(rag_result)
         result = prompt_context.result.model_copy(
@@ -248,6 +266,7 @@ class ManualQAService:
             used_current_game_state=used_state,
             required_state_scopes=required_scopes,
             available_scopes=available_scopes,
+            response_style=response_style,
         )
 
     def build_prompt(
@@ -407,6 +426,22 @@ def _confirmed_facts(context: dict[str, object] | None) -> list[str]:
         return []
 
     return [str(fact) for fact in raw_facts if fact]
+
+
+def _response_style(context: dict[str, object] | None) -> str:
+    """AgentContext metadata에서 답변 길이 스타일을 안전하게 꺼냅니다."""
+
+    if context is None:
+        return "normal"
+
+    raw_style = context.get("response_style")
+    if raw_style is None:
+        return "normal"
+
+    style = str(raw_style).strip().lower()
+    if style in {"short", "normal", "detailed"}:
+        return style
+    return "normal"
 
 
 def _rag_metadata(rag_result: object) -> dict[str, object]:

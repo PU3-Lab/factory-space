@@ -20,6 +20,33 @@ def disable_llm_for_websocket_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FACTORY_LLM_FALLBACK2_PROVIDER", "none")
 
 
+def _process_optimizer_analyze_payload(machine_id: str = "smelter_1") -> dict[str, Any]:
+    return {
+        "operation": "analyze",
+        "goal": "balance",
+        "factoryRevision": 1,
+        "factory_state": {
+            "machines": [
+                {
+                    "id": machine_id,
+                    "type": "smelter",
+                    "status": "operating",
+                    "operating_rate": 0.2,
+                    "inputs": [
+                        {
+                            "item_id": "iron_ore",
+                            "amount": 0.0,
+                            "max_amount": 100.0,
+                        }
+                    ],
+                }
+            ],
+            "conveyors": [],
+            "power_grid": {"produced": 100.0, "consumed": 50.0},
+        },
+    }
+
+
 def test_health_endpoint_returns_ok() -> None:
     with TestClient(create_app()) as client:
         response = client.get("/health")
@@ -36,15 +63,48 @@ def test_agent_websocket_returns_process_optimizer_response_without_llm() -> Non
                     "type": "agent.request",
                     "request_id": "request-ws",
                     "agent": "process_optimizer",
-                    "payload": {"machines": [{"id": "m-1"}]},
+                    "payload": _process_optimizer_analyze_payload("m-1"),
                 }
             )
             response = websocket.receive_json()
 
     assert response["type"] == "agent.response"
     assert response["agent"] == "process_optimizer"
-    assert response["payload"]["status"] == "suggestion"
+    assert response["payload"]["status"] == "preview"
     assert response["payload"]["metadata"]["selectedAgent"] == "process_optimizer"
+
+
+def test_agent_websocket_accepts_process_optimizer_state_update() -> None:
+    with TestClient(create_app()) as client:
+        with client.websocket_connect("/ws/agent") as websocket:
+            websocket.send_json(
+                {
+                    "type": "agent.request",
+                    "request_id": "request-ws-state-update",
+                    "session_id": "dev-session-state-update",
+                    "client_id": "unreal-client",
+                    "agent": "process_optimizer",
+                    "payload": {
+                        "operation": "state_update",
+                        "goal": "balance",
+                        "factoryRevision": 42,
+                        "factory_state": {
+                            "machines": [],
+                            "conveyors": [],
+                            "power_grid": {"produced": 100.0, "consumed": 40.0},
+                        },
+                    },
+                }
+            )
+            response = websocket.receive_json()
+
+    assert response["type"] == "agent.response"
+    assert response["request_id"] == "request-ws-state-update"
+    assert response["session_id"] == "dev-session-state-update"
+    assert response["client_id"] == "unreal-client"
+    assert response["agent"] == "process_optimizer"
+    assert response["payload"]["status"] == "success"
+    assert response["payload"]["factoryRevision"] == 42
 
 
 def test_agent_websocket_returns_error_for_malformed_envelope() -> None:
@@ -73,6 +133,39 @@ def test_agent_websocket_returns_error_for_invalid_json() -> None:
     assert response["error"]["code"] == "INVALID_JSON"
 
 
+def test_agent_websocket_returns_error_when_pipeline_raises() -> None:
+    class _RaisingPipeline:
+        def run(
+            self,
+            message: dict[str, Any],
+            on_progress: Callable[[str, str], None] | None = None,
+        ) -> dict[str, Any]:
+            raise RuntimeError("pipeline failed")
+
+    with TestClient(create_app()) as client:
+        client.app.state.agent_pipeline = _RaisingPipeline()
+
+        with client.websocket_connect("/ws/agent") as websocket:
+            websocket.send_json(
+                {
+                    "type": "agent.request",
+                    "request_id": "request-pipeline-failure",
+                    "session_id": "test-session",
+                    "client_id": "test-client",
+                    "agent": "operator_guide",
+                    "payload": {"question": "분쇄기가 뭐야?"},
+                }
+            )
+            response = websocket.receive_json()
+
+    assert response["type"] == "agent.error"
+    assert response["request_id"] == "request-pipeline-failure"
+    assert response["session_id"] == "test-session"
+    assert response["client_id"] == "test-client"
+    assert response["agent"] == "operator_guide"
+    assert response["error"]["code"] == "AGENT_PIPELINE_ERROR"
+
+
 def test_agent_websocket_preserves_unreal_correlation_fields_on_response() -> None:
     with TestClient(create_app()) as client:
         with client.websocket_connect("/ws/agent") as websocket:
@@ -83,7 +176,7 @@ def test_agent_websocket_preserves_unreal_correlation_fields_on_response() -> No
                     "session_id": "dev-session",
                     "client_id": "unreal-client",
                     "agent": "process_optimizer",
-                    "payload": {"machines": [{"id": "assembler-1"}]},
+                    "payload": _process_optimizer_analyze_payload("assembler-1"),
                 }
             )
             response = websocket.receive_json()
@@ -93,7 +186,7 @@ def test_agent_websocket_preserves_unreal_correlation_fields_on_response() -> No
     assert response["session_id"] == "dev-session"
     assert response["client_id"] == "unreal-client"
     assert response["agent"] == "process_optimizer"
-    assert response["payload"]["status"] == "suggestion"
+    assert response["payload"]["status"] == "preview"
 
 
 def test_agent_websocket_logs_outgoing_response(
@@ -108,7 +201,7 @@ def test_agent_websocket_logs_outgoing_response(
                     "type": "agent.request",
                     "request_id": "request-log-ws",
                     "agent": "process_optimizer",
-                    "payload": {"machines": [{"id": "m-1"}]},
+                    "payload": _process_optimizer_analyze_payload("m-1"),
                 }
             )
             websocket.receive_json()
@@ -118,7 +211,7 @@ def test_agent_websocket_logs_outgoing_response(
         and "Factory agent WebSocket sending:" in record.message
         and '"request_id": "request-log-ws"' in record.message
         and '"type": "agent.response"' in record.message
-        and '"status": "suggestion"' in record.message
+        and '"status": "preview"' in record.message
         for record in caplog.records
     )
 
@@ -185,9 +278,9 @@ def test_agent_websocket_streams_progress_for_operator_guide() -> None:
     assert [
         (m["payload"]["stage"], m["payload"]["message"]) for m in progress_messages
     ] == [
-        ("rag_search", "관련 레시피를 찾는 중입니다..."),
-        ("state_check", "필요한 입력 자원을 확인하는 중입니다..."),
-        ("logic_format", "생산 흐름을 정리하는 중입니다..."),
+        ("rag_search", "관련 레시피 매뉴얼을 확인하는 중입니다..."),
+        ("state_check", "필요한 재료와 장비를 살펴보는 중입니다..."),
+        ("logic_format", "생산 흐름을 이해하기 쉽게 정리하는 중입니다..."),
     ]
 
     for progress_message in progress_messages:

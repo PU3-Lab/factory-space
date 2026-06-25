@@ -47,6 +47,11 @@ class FakeRagRuntime:
         )
 
 
+class FailingRagRuntime:
+    def retrieve(self, question: str) -> object:
+        raise TimeoutError("rag store is not reachable")
+
+
 def test_service_includes_rag_context_in_prompt_when_runtime_is_available() -> None:
     rag_runtime = FakeRagRuntime()
 
@@ -77,3 +82,12 @@ def test_service_exposes_rag_retrieval_metadata() -> None:
         "medium": 0,
         "low": 0,
     }
+
+
+def test_service_falls_back_to_csv_context_when_rag_runtime_fails() -> None:
+    result = ManualQAService(rag_runtime=FailingRagRuntime()).answer(
+        "What is a crusher?"
+    )
+
+    assert result.answer
+    assert result.retrieval == {}

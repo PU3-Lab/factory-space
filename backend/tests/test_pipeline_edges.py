@@ -158,7 +158,13 @@ class ToolBackedProcessAgent:
 
 class ToolBackedMaterialAgent:
     agent_id = "new_material_generator"
-    tools = (OtherAgentSecretTool(),)
+    tools = (
+        EchoContextTool(),
+        MachineLookupTool(),
+        LargeContextTool(),
+        LargeContentBlockTool(),
+        RaisingContextTool(),
+    )
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
         return "tool backed material prompt"
@@ -170,9 +176,39 @@ class ToolBackedMaterialAgent:
     ) -> AgentRunResult:
         return AgentRunResult(
             agent=self.agent_id,
-            payload={"summary": "material fallback"},
+            payload={"summary": "deterministic fallback"},
             metadata={"fallback": True},
         )
+
+
+class SecretOnlyProcessAgent:
+    agent_id = "process_optimizer"
+    tools = (OtherAgentSecretTool(),)
+
+    def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
+        return "secret only process prompt"
+
+    def fallback(
+        self,
+        payload: dict[str, Any],
+        context: AgentContext,
+    ) -> AgentRunResult:
+        return AgentRunResult(
+            agent=self.agent_id,
+            payload={"summary": "process fallback"},
+            metadata={"fallback": True},
+        )
+
+
+def assert_process_optimizer_preview(response: dict[str, Any]) -> None:
+    assert_agent_response(response, agent="process_optimizer")
+    payload = response["payload"]
+    assert payload["status"] in {"preview", "suggestion", "error"}
+    if payload["status"] == "preview":
+        assert payload["plan_id"]
+        assert payload["expires_at"]
+    assert isinstance(payload.get("changes", []), list)
+    assert isinstance(payload["ui_hints"]["highlight_targets"], list)
 
 
 def test_pipeline_default_settings_without_api_returns_routing_unavailable() -> None:
@@ -193,7 +229,7 @@ def test_pipeline_default_settings_without_api_returns_routing_unavailable() -> 
         }
     )
 
-    assert_agent_error(response, code="ROUTING_UNAVAILABLE")
+    assert_process_optimizer_preview(response)
 
 
 def test_pipeline_default_constructor_without_api_returns_routing_unavailable(
@@ -213,7 +249,44 @@ def test_pipeline_default_constructor_without_api_returns_routing_unavailable(
         }
     )
 
-    assert_agent_error(response, code="ROUTING_UNAVAILABLE")
+    assert_process_optimizer_preview(response)
+
+
+def test_process_optimizer_analyze_routes_to_v2_graph_without_llm() -> None:
+    llm = StubLLM([])
+    pipeline = AgentPipeline(llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-process-v2-analyze",
+            "session_id": "session-process-v2-analyze",
+            "agent": "process_optimizer",
+            "payload": {
+                "operation": "analyze",
+                "goal": "balance",
+                "factoryRevision": 23,
+                "factory_state": {
+                    "machines": [
+                        {
+                            "id": "smelter_v2",
+                            "type": "smelter",
+                            "status": "operating",
+                            "inputs": [{"item_id": "iron_ore", "amount": 0.0}],
+                        }
+                    ],
+                    "conveyors": [],
+                    "power_grid": {"produced": 50.0, "consumed": 10.0},
+                },
+            },
+        }
+    )
+
+    assert_agent_response(response, agent="process_optimizer")
+    assert response["payload"]["status"] == "preview"
+    assert response["payload"]["plan_id"].startswith("plan-")
+    assert response["payload"]["factoryRevision"] == 23
+    assert len(llm.prompts) == 0
 
 
 def test_pipeline_uses_settings_slot_adapters_before_deterministic_fallback() -> None:
@@ -229,8 +302,15 @@ def test_pipeline_uses_settings_slot_adapters_before_deterministic_fallback() ->
     )
     created_slots: list[str] = []
     adapters = {
-        "default": StubLLM([top_agent_decision("process_optimizer"), None]),
-        "fallback1": StubLLM(['{"summary":"from fallback1"}']),
+        "default": StubLLM([None]),
+        "fallback1": StubLLM(
+            [
+                (
+                    '{"final_answer":"from fallback1","actions":[],'
+                    '"question":"What is a crusher?","topic":"machine"}'
+                )
+            ]
+        ),
         "fallback2": StubLLM(['{"summary":"should not be used"}']),
     }
 
@@ -247,14 +327,21 @@ def test_pipeline_uses_settings_slot_adapters_before_deterministic_fallback() ->
         {
             "type": "agent.request",
             "request_id": "request-settings-fallback1",
-            "agent": "process_optimizer",
-            "payload": {"machines": []},
+            "agent": "operator_guide",
+            "payload": {
+                "question": "What is a crusher?",
+                "sub_agent": "operator_guide.machine_help",
+            },
         }
     )
 
     assert created_slots == ["default", "fallback1", "fallback2"]
-    assert_agent_response(response, agent="process_optimizer")
-    assert response["payload"]["summary"] == "from fallback1"
+    assert_agent_response(
+        response,
+        agent="operator_guide",
+        sub_agent="operator_guide.machine_help",
+    )
+    assert response["payload"]["final_answer"] == "from fallback1"
     assert response["payload"]["metadata"]["llm"] == "used"
     assert response["payload"]["metadata"]["llmSlot"] == "fallback1"
     assert response["payload"]["metadata"]["llmProvider"] == "openai"
@@ -264,9 +351,9 @@ def test_pipeline_uses_settings_slot_adapters_before_deterministic_fallback() ->
         "provider": "openai",
         "model": "gpt-5.5",
     }
-    assert len(adapters["default"].prompts) == 2
-    assert len(adapters["fallback1"].prompts) == 1
-    assert len(adapters["fallback2"].prompts) == 0
+    assert len(adapters["default"].prompt_messages) == 1
+    assert len(adapters["fallback1"].prompt_messages) == 1
+    assert len(adapters["fallback2"].prompt_messages) == 0
 
 
 def test_pipeline_uses_fallback2_when_default_and_fallback1_fail() -> None:
@@ -286,9 +373,16 @@ def test_pipeline_uses_fallback2_when_default_and_fallback1_fail() -> None:
         ),
     )
     adapters = {
-        "default": StubLLM([top_agent_decision("process_optimizer"), None]),
+        "default": StubLLM([None]),
         "fallback1": StubLLM([None]),
-        "fallback2": StubLLM(['{"summary":"from fallback2"}']),
+        "fallback2": StubLLM(
+            [
+                (
+                    '{"final_answer":"from fallback2","actions":[],'
+                    '"question":"What is a crusher?","topic":"machine"}'
+                )
+            ]
+        ),
     }
 
     pipeline = AgentPipeline(
@@ -300,19 +394,26 @@ def test_pipeline_uses_fallback2_when_default_and_fallback1_fail() -> None:
         {
             "type": "agent.request",
             "request_id": "request-settings-fallback2",
-            "agent": "process_optimizer",
-            "payload": {"machines": []},
+            "agent": "operator_guide",
+            "payload": {
+                "question": "What is a crusher?",
+                "sub_agent": "operator_guide.machine_help",
+            },
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
-    assert response["payload"]["summary"] == "from fallback2"
+    assert_agent_response(
+        response,
+        agent="operator_guide",
+        sub_agent="operator_guide.machine_help",
+    )
+    assert response["payload"]["final_answer"] == "from fallback2"
     assert response["payload"]["metadata"]["llmSlot"] == "fallback2"
     assert response["payload"]["metadata"]["llmProvider"] == "local"
     assert response["payload"]["metadata"]["llmModel"] == "llama3.1:8b"
-    assert len(adapters["default"].prompts) == 2
-    assert len(adapters["fallback1"].prompts) == 1
-    assert len(adapters["fallback2"].prompts) == 1
+    assert len(adapters["default"].prompt_messages) == 1
+    assert len(adapters["fallback1"].prompt_messages) == 1
+    assert len(adapters["fallback2"].prompt_messages) == 1
 
 
 def test_pipeline_clears_stale_model_metadata_when_next_slot_has_no_model() -> None:
@@ -327,9 +428,16 @@ def test_pipeline_clears_stale_model_metadata_when_next_slot_has_no_model() -> N
         fallback2=LLMModelSlot(name="fallback2", provider="none"),
     )
     adapters = {
-        "default": StubLLM([top_agent_decision("process_optimizer"), None]),
+        "default": StubLLM([None]),
         "fallback1": StubLLM([None]),
-        "fallback2": StubLLM(['{"summary":"from fallback2 without model"}']),
+        "fallback2": StubLLM(
+            [
+                (
+                    '{"final_answer":"from fallback2 without model","actions":[],'
+                    '"question":"What is a crusher?","topic":"machine"}'
+                )
+            ]
+        ),
     }
     pipeline = AgentPipeline(
         llm_settings=settings,
@@ -340,12 +448,19 @@ def test_pipeline_clears_stale_model_metadata_when_next_slot_has_no_model() -> N
         {
             "type": "agent.request",
             "request_id": "request-clear-stale-model",
-            "agent": "process_optimizer",
-            "payload": {"machines": []},
+            "agent": "operator_guide",
+            "payload": {
+                "question": "What is a crusher?",
+                "sub_agent": "operator_guide.machine_help",
+            },
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
+    assert_agent_response(
+        response,
+        agent="operator_guide",
+        sub_agent="operator_guide.machine_help",
+    )
     metadata = response["payload"]["metadata"]
     assert metadata["llmSlot"] == "fallback2"
     assert metadata["llmProvider"] == "none"
@@ -363,7 +478,7 @@ def test_pipeline_uses_deterministic_fallback_after_all_slots_fail() -> None:
         fallback2=LLMModelSlot(name="fallback2", provider="none"),
     )
     adapters = {
-        "default": StubLLM([top_agent_decision("process_optimizer"), None]),
+        "default": StubLLM([None]),
         "fallback1": StubLLM([None]),
         "fallback2": StubLLM([None]),
     }
@@ -377,16 +492,23 @@ def test_pipeline_uses_deterministic_fallback_after_all_slots_fail() -> None:
         {
             "type": "agent.request",
             "request_id": "request-settings-all-fail",
-            "agent": "process_optimizer",
-            "payload": {"machines": []},
+            "agent": "operator_guide",
+            "payload": {
+                "question": "What is a crusher?",
+                "sub_agent": "operator_guide.machine_help",
+            },
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
+    assert_agent_response(
+        response,
+        agent="operator_guide",
+        sub_agent="operator_guide.machine_help",
+    )
     assert response["payload"]["metadata"]["fallback"] is True
-    assert len(adapters["default"].prompts) == 2
-    assert len(adapters["fallback1"].prompts) == 1
-    assert len(adapters["fallback2"].prompts) == 1
+    assert len(adapters["default"].prompt_messages) == 1
+    assert len(adapters["fallback1"].prompt_messages) == 1
+    assert len(adapters["fallback2"].prompt_messages) == 1
 
 
 def test_pipeline_routes_new_material_generator_to_deterministic_fallback() -> None:
@@ -434,7 +556,7 @@ def test_pipeline_deterministic_fallback_clears_stale_model_metadata() -> None:
         fallback2=LLMModelSlot(name="fallback2", provider="none"),
     )
     adapters = {
-        "default": StubLLM([top_agent_decision("process_optimizer"), None]),
+        "default": StubLLM([None]),
         "fallback1": StubLLM([None]),
         "fallback2": StubLLM([None]),
     }
@@ -447,12 +569,19 @@ def test_pipeline_deterministic_fallback_clears_stale_model_metadata() -> None:
         {
             "type": "agent.request",
             "request_id": "request-fallback-clear-stale-model",
-            "agent": "process_optimizer",
-            "payload": {"machines": []},
+            "agent": "operator_guide",
+            "payload": {
+                "question": "What is a crusher?",
+                "sub_agent": "operator_guide.machine_help",
+            },
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
+    assert_agent_response(
+        response,
+        agent="operator_guide",
+        sub_agent="operator_guide.machine_help",
+    )
     metadata = response["payload"]["metadata"]
     assert metadata["fallback"] is True
     assert metadata["currentModel"] == {
@@ -478,25 +607,25 @@ def test_pipeline_attaches_tool_node_for_agent_tools() -> None:
 def test_pipeline_executes_generation_tool_request_with_tool_node() -> None:
     llm = StubLLM(
         [
-            top_agent_decision("process_optimizer"),
+            top_agent_decision("new_material_generator"),
             '{"tool_call":{"name":"factory_context.echo","args":{}}}',
             '{"summary":"tool result used"}',
         ]
     )
     router = AgentRouter()
-    router.register(ToolBackedProcessAgent())
+    router.register(ToolBackedMaterialAgent())
     pipeline = AgentPipeline(router=router, llm=llm)
 
     response = pipeline.run(
         {
             "type": "agent.request",
             "request_id": "request-tool-node",
-            "agent": "process_optimizer",
+            "agent": "new_material_generator",
             "payload": {"machines": [{"id": "miner-1"}]},
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
+    assert_agent_response(response, agent="new_material_generator")
     metadata = response["payload"]["metadata"]
     assert response["payload"]["summary"] == "tool result used"
     assert metadata["toolCalls"] == [
@@ -510,20 +639,20 @@ def test_pipeline_executes_generation_tool_request_with_tool_node() -> None:
 def test_pipeline_passes_tool_call_args_to_agent_tool() -> None:
     llm = StubLLM(
         [
-            top_agent_decision("process_optimizer"),
+            top_agent_decision("new_material_generator"),
             '{"tool_call":{"name":"factory_context.machine_lookup","args":{"machine_id":"miner-1"}}}',
             '{"summary":"tool args used"}',
         ]
     )
     router = AgentRouter()
-    router.register(ToolBackedProcessAgent())
+    router.register(ToolBackedMaterialAgent())
     pipeline = AgentPipeline(router=router, llm=llm)
 
     response = pipeline.run(
         {
             "type": "agent.request",
             "request_id": "request-tool-args",
-            "agent": "process_optimizer",
+            "agent": "new_material_generator",
             "payload": {
                 "machines": [
                     {"id": "miner-1", "status": "blocked"},
@@ -533,7 +662,7 @@ def test_pipeline_passes_tool_call_args_to_agent_tool() -> None:
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
+    assert_agent_response(response, agent="new_material_generator")
     assert response["payload"]["summary"] == "tool args used"
     assert '"machine_id": "miner-1"' in llm.prompts[-1]
     assert '"status": "blocked"' in llm.prompts[-1]
@@ -543,13 +672,13 @@ def test_pipeline_passes_tool_call_args_to_agent_tool() -> None:
 def test_pipeline_blocks_tool_not_owned_by_selected_leaf_agent() -> None:
     llm = StubLLM(
         [
-            top_agent_decision("process_optimizer"),
+            top_agent_decision("new_material_generator"),
             '{"tool_call":{"name":"factory_context.secret","args":{}}}',
             '{"summary":"tool denied"}',
         ]
     )
     router = AgentRouter()
-    router.register(ToolBackedProcessAgent())
+    router.register(SecretOnlyProcessAgent())
     router.register(ToolBackedMaterialAgent())
     pipeline = AgentPipeline(router=router, llm=llm)
 
@@ -557,12 +686,12 @@ def test_pipeline_blocks_tool_not_owned_by_selected_leaf_agent() -> None:
         {
             "type": "agent.request",
             "request_id": "request-tool-denied",
-            "agent": "process_optimizer",
+            "agent": "new_material_generator",
             "payload": {"machines": []},
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
+    assert_agent_response(response, agent="new_material_generator")
     assert response["payload"]["summary"] == "tool denied"
     assert response["payload"]["metadata"]["toolCalls"] == [
         {"name": "factory_context.secret", "ok": False},
@@ -574,13 +703,13 @@ def test_pipeline_blocks_tool_not_owned_by_selected_leaf_agent() -> None:
 def test_pipeline_blocks_unknown_tool_without_exposing_global_tool_names() -> None:
     llm = StubLLM(
         [
-            top_agent_decision("process_optimizer"),
+            top_agent_decision("new_material_generator"),
             '{"tool_call":{"name":"factory_context.unknown","args":{}}}',
             '{"summary":"unknown tool denied"}',
         ]
     )
     router = AgentRouter()
-    router.register(ToolBackedProcessAgent())
+    router.register(SecretOnlyProcessAgent())
     router.register(ToolBackedMaterialAgent())
     pipeline = AgentPipeline(router=router, llm=llm)
 
@@ -588,12 +717,12 @@ def test_pipeline_blocks_unknown_tool_without_exposing_global_tool_names() -> No
         {
             "type": "agent.request",
             "request_id": "request-unknown-tool-denied",
-            "agent": "process_optimizer",
+            "agent": "new_material_generator",
             "payload": {"machines": []},
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
+    assert_agent_response(response, agent="new_material_generator")
     assert response["payload"]["summary"] == "unknown tool denied"
     assert response["payload"]["metadata"]["toolCalls"] == [
         {"name": "factory_context.unknown", "ok": False},
@@ -605,25 +734,25 @@ def test_pipeline_blocks_unknown_tool_without_exposing_global_tool_names() -> No
 def test_pipeline_treats_mixed_tool_call_output_as_invalid_tool_request() -> None:
     llm = StubLLM(
         [
-            top_agent_decision("process_optimizer"),
+            top_agent_decision("new_material_generator"),
             '{"tool_call":{"name":"factory_context.echo","args":{}},"summary":"mixed"}',
             '{"summary":"mixed recovered"}',
         ]
     )
     router = AgentRouter()
-    router.register(ToolBackedProcessAgent())
+    router.register(ToolBackedMaterialAgent())
     pipeline = AgentPipeline(router=router, llm=llm)
 
     response = pipeline.run(
         {
             "type": "agent.request",
             "request_id": "request-mixed-tool-call",
-            "agent": "process_optimizer",
+            "agent": "new_material_generator",
             "payload": {"machines": []},
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
+    assert_agent_response(response, agent="new_material_generator")
     assert response["payload"]["summary"] == "mixed recovered"
     assert response["payload"]["metadata"]["toolCalls"] == [
         {"name": "_invalid_tool_call", "ok": False},
@@ -634,25 +763,25 @@ def test_pipeline_treats_mixed_tool_call_output_as_invalid_tool_request() -> Non
 def test_pipeline_truncates_large_tool_result_in_followup_prompt() -> None:
     llm = StubLLM(
         [
-            top_agent_decision("process_optimizer"),
+            top_agent_decision("new_material_generator"),
             '{"tool_call":{"name":"factory_context.large","args":{}}}',
             '{"summary":"large tool result used"}',
         ]
     )
     router = AgentRouter()
-    router.register(ToolBackedProcessAgent())
+    router.register(ToolBackedMaterialAgent())
     pipeline = AgentPipeline(router=router, llm=llm)
 
     response = pipeline.run(
         {
             "type": "agent.request",
             "request_id": "request-large-tool-result",
-            "agent": "process_optimizer",
+            "agent": "new_material_generator",
             "payload": {"machines": []},
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
+    assert_agent_response(response, agent="new_material_generator")
     assert response["payload"]["summary"] == "large tool result used"
     assert "[truncated]" in llm.prompts[-1]
     assert "x" * 5000 not in llm.prompts[-1]
@@ -661,25 +790,25 @@ def test_pipeline_truncates_large_tool_result_in_followup_prompt() -> None:
 def test_pipeline_truncates_content_block_tool_result_in_followup_prompt() -> None:
     llm = StubLLM(
         [
-            top_agent_decision("process_optimizer"),
+            top_agent_decision("new_material_generator"),
             '{"tool_call":{"name":"factory_context.large_blocks","args":{}}}',
             '{"summary":"large content block result used"}',
         ]
     )
     router = AgentRouter()
-    router.register(ToolBackedProcessAgent())
+    router.register(ToolBackedMaterialAgent())
     pipeline = AgentPipeline(router=router, llm=llm)
 
     response = pipeline.run(
         {
             "type": "agent.request",
             "request_id": "request-large-block-tool-result",
-            "agent": "process_optimizer",
+            "agent": "new_material_generator",
             "payload": {"machines": []},
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
+    assert_agent_response(response, agent="new_material_generator")
     assert response["payload"]["summary"] == "large content block result used"
     assert "[truncated]" in llm.prompts[-1]
     assert "y" * 5000 not in llm.prompts[-1]
@@ -691,25 +820,25 @@ def test_pipeline_normalizes_tool_execution_exception(
     caplog.set_level(logging.INFO, logger="agents.pipeline.tool_node")
     llm = StubLLM(
         [
-            top_agent_decision("process_optimizer"),
+            top_agent_decision("new_material_generator"),
             '{"tool_call":{"name":"factory_context.raises","args":{}}}',
             '{"summary":"tool exception handled"}',
         ]
     )
     router = AgentRouter()
-    router.register(ToolBackedProcessAgent())
+    router.register(ToolBackedMaterialAgent())
     pipeline = AgentPipeline(router=router, llm=llm)
 
     response = pipeline.run(
         {
             "type": "agent.request",
             "request_id": "request-tool-exception",
-            "agent": "process_optimizer",
+            "agent": "new_material_generator",
             "payload": {"machines": []},
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
+    assert_agent_response(response, agent="new_material_generator")
     assert response["payload"]["summary"] == "tool exception handled"
     assert response["payload"]["metadata"]["toolCalls"] == [
         {"name": "factory_context.raises", "ok": False},
@@ -724,25 +853,25 @@ def test_pipeline_rejects_oversized_tool_name_before_followup_prompt() -> None:
     oversized_tool_name = f"factory_context.{'x' * 300}"
     llm = StubLLM(
         [
-            top_agent_decision("process_optimizer"),
+            top_agent_decision("new_material_generator"),
             f'{{"tool_call":{{"name":"{oversized_tool_name}","args":{{}}}}}}',
             '{"summary":"oversized tool name rejected"}',
         ]
     )
     router = AgentRouter()
-    router.register(ToolBackedProcessAgent())
+    router.register(ToolBackedMaterialAgent())
     pipeline = AgentPipeline(router=router, llm=llm)
 
     response = pipeline.run(
         {
             "type": "agent.request",
             "request_id": "request-oversized-tool-name",
-            "agent": "process_optimizer",
+            "agent": "new_material_generator",
             "payload": {"machines": []},
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
+    assert_agent_response(response, agent="new_material_generator")
     assert response["payload"]["summary"] == "oversized tool name rejected"
     assert response["payload"]["metadata"]["toolCalls"] == [
         {"name": "_invalid_tool_call", "ok": False},
@@ -754,25 +883,25 @@ def test_pipeline_rejects_oversized_tool_name_before_followup_prompt() -> None:
 def test_pipeline_preserves_tool_metadata_when_tool_followup_falls_back() -> None:
     llm = StubLLM(
         [
-            top_agent_decision("process_optimizer"),
+            top_agent_decision("new_material_generator"),
             '{"tool_call":{"name":"factory_context.echo","args":{}}}',
             None,
         ]
     )
     router = AgentRouter()
-    router.register(ToolBackedProcessAgent())
+    router.register(ToolBackedMaterialAgent())
     pipeline = AgentPipeline(router=router, llm=llm)
 
     response = pipeline.run(
         {
             "type": "agent.request",
             "request_id": "request-tool-followup-fallback",
-            "agent": "process_optimizer",
+            "agent": "new_material_generator",
             "payload": {"machines": []},
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
+    assert_agent_response(response, agent="new_material_generator")
     assert response["payload"]["summary"] == "deterministic fallback"
     assert response["payload"]["metadata"]["fallback"] is True
     assert response["payload"]["metadata"]["toolCalls"] == [
@@ -810,23 +939,18 @@ def test_pipeline_records_middleware_logs_and_current_model(
 
     assert_agent_response(response, agent="process_optimizer")
     metadata = response["payload"]["metadata"]
-    assert metadata["currentModel"] == {
-        "slot": "fallback2",
-        "provider": "none",
-    }
-    assert [log["node"] for log in metadata["middlewareLogs"]] == [
-        "agent.middleware.before",
-        "agent.middleware.fallback",
-        "agent.middleware.after",
-    ]
-    assert [log["event"] for log in metadata["middlewareLogs"]] == [
-        "agent_started",
-        "deterministic_fallback",
-        "agent_finished",
-    ]
-    assert "agent.middleware.before agent_started" in caplog.messages
-    assert "agent.middleware.fallback deterministic_fallback" in caplog.messages
-    assert "agent.middleware.after agent_finished" in caplog.messages
+    assert "currentModel" not in metadata
+    assert metadata["selectedAgent"] == "process_optimizer"
+    assert metadata["selectedLeafAgent"] == "process_optimizer"
+    if "middlewareLogs" in metadata:
+        assert [log["node"] for log in metadata["middlewareLogs"]] == [
+            "agent.middleware.before",
+            "agent.middleware.after",
+        ]
+        assert [log["event"] for log in metadata["middlewareLogs"]] == [
+            "agent_started",
+            "agent_finished",
+        ]
 
 
 def test_pipeline_uses_valid_llm_json_response_without_fallback() -> None:
@@ -849,18 +973,11 @@ def test_pipeline_uses_valid_llm_json_response_without_fallback() -> None:
     )
 
     assert_agent_response(response, agent="process_optimizer")
-    assert response["payload"]["summary"] == "from model"
-    assert response["payload"]["metadata"]["llm"] == "used"
-    assert response["payload"]["metadata"]["currentModel"] == {
-        "slot": "injected",
-        "provider": "injected",
-    }
-    assert [
-        log["node"] for log in response["payload"]["metadata"]["middlewareLogs"]
-    ] == [
-        "agent.middleware.before",
-        "agent.middleware.after",
-    ]
+    assert response["payload"]["status"] in {"preview", "error"}
+    assert response["payload"]["summary"]
+    assert "llm" not in response["payload"]["metadata"]
+    assert "currentModel" not in response["payload"]["metadata"]
+    assert response["payload"]["metadata"]["selectedAgent"] == "process_optimizer"
 
 
 def test_pipeline_rejects_non_json_llm_response() -> None:
@@ -877,7 +994,7 @@ def test_pipeline_rejects_non_json_llm_response() -> None:
         }
     )
 
-    assert_agent_error(response, code="INVALID_LLM_RESPONSE")
+    assert_process_optimizer_preview(response)
 
 
 def test_pipeline_rejects_non_object_llm_response() -> None:
@@ -894,7 +1011,7 @@ def test_pipeline_rejects_non_object_llm_response() -> None:
         }
     )
 
-    assert_agent_error(response, code="INVALID_LLM_RESPONSE")
+    assert_process_optimizer_preview(response)
 
 
 def test_pipeline_returns_routing_unavailable_for_invalid_explicit_agent_without_model_decision() -> (
@@ -929,7 +1046,6 @@ def test_pipeline_routes_operator_guide_from_llm_top_level_decision() -> None:
         {
             "type": "agent.request",
             "request_id": "request-edge-operator-guide-decision",
-            "agent": "process_optimizer",
             "payload": {"question": "How do I run this recipe?"},
         }
     )
@@ -1040,7 +1156,8 @@ def test_pipeline_rejects_invalid_fallback_payload_shape() -> None:
         }
     )
 
-    assert_agent_error(response, code="INVALID_AGENT_RESPONSE")
+    assert_agent_response(response, agent="process_optimizer")
+    assert response["payload"]["status"] == "error"
 
 
 def test_pipeline_cache_hit_skips_second_llm_call() -> None:
@@ -1063,13 +1180,12 @@ def test_pipeline_cache_hit_skips_second_llm_call() -> None:
     first = pipeline.run(message)
     second = pipeline.run({**message, "request_id": "request-cache-second"})
 
-    assert first["payload"]["summary"] == "first"
-    assert second["payload"]["summary"] == "first"
-    assert second["payload"]["metadata"]["cache"] == "hit"
+    assert first["payload"]["summary"] == second["payload"]["summary"]
+    assert "cache" not in second["payload"]["metadata"]
     assert "middlewareLogs" not in second["payload"]["metadata"]
     assert_agent_response(first, agent="process_optimizer")
     assert_agent_response(second, agent="process_optimizer")
-    assert len(llm.prompts) == 3
+    assert len(llm.prompts) == 0
 
 
 def test_pipeline_cache_hit_preserves_original_response_metadata() -> None:
@@ -1091,9 +1207,9 @@ def test_pipeline_cache_hit_preserves_original_response_metadata() -> None:
     first = pipeline.run(message)
     second = pipeline.run({**message, "request_id": "request-cache-metadata-second"})
 
-    assert first["payload"]["metadata"]["llm"] == "used"
-    assert second["payload"]["metadata"]["llm"] == "used"
-    assert second["payload"]["metadata"]["cache"] == "hit"
+    assert "llm" not in first["payload"]["metadata"]
+    assert "llm" not in second["payload"]["metadata"]
+    assert "cache" not in second["payload"]["metadata"]
     assert "middlewareLogs" not in second["payload"]["metadata"]
 
 

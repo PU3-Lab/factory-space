@@ -78,6 +78,7 @@ class ManualQAPromptBuilder:
         confirmed_facts_section = self._confirmed_facts_section(context)
         current_game_state_section = self._current_game_state_section(context)
         rag_context_section = self._rag_context_section(context)
+        response_style_section = self._response_style_section(context)
         return f"""Answer this {self._topic_label(topic)}.
 [PLAYER_QUESTION]
 {question}
@@ -98,6 +99,8 @@ class ManualQAPromptBuilder:
 {current_game_state_section}
 
 {rag_context_section}
+
+{response_style_section}
 
 [RECOMMENDED_ACTIONS]
 {actions_json}
@@ -124,6 +127,29 @@ Use exactly these keys:
   "topic": "{topic}"
 }}
 """
+
+    def _response_style_section(self, context: ManualQAPromptContext) -> str:
+        """답변 길이 스타일을 LLM에게 알려주는 prompt 섹션을 만든다."""
+
+        style = context.response_style
+        if style == "short":
+            instruction = (
+                "Answer in 1~2 short Korean sentences. "
+                "Prioritize the direct answer over extra background."
+            )
+        elif style == "detailed":
+            instruction = (
+                "Answer in 4~6 Korean sentences. "
+                "Include the role, relevant flow, and one practical check when evidence supports it."
+            )
+        else:
+            instruction = (
+                "Answer in 2~3 short Korean sentences for simple questions, "
+                "and stay concise for NPC dialogue."
+            )
+        return f"""[RESPONSE_STYLE]
+{style}
+{instruction}"""
 
     def _recent_conversation_section(self, context: ManualQAPromptContext) -> str:
         """같은 세션의 최근 대화를 LLM이 참고할 수 있는 prompt 섹션으로 만든다.
