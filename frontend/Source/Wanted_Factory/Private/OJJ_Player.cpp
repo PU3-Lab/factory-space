@@ -231,10 +231,35 @@ void AOJJ_Player::ApplySelectedCharacterAppearance()
 	if (Appearance->SkeletalMesh)
 	{
 		MeshComp->SetSkeletalMeshAsset(Appearance->SkeletalMesh);
+		// [게임진입] 메시 스왑 직후 BP_OJJ_Player Mesh의 머티리얼 override(Man 전용 ManMat) 제거 —
+		// SetSkeletalMeshAsset은 OverrideMaterials를 유지하므로, 안 비우면 Woman 메시에 ManMat가 덮여
+		// 머티리얼이 깨진다(스켈레톤/UV mismatch). 비우면 각 메시 자체 머티리얼(ManMat/WomanMat)을 사용.
+		MeshComp->EmptyOverrideMaterials();
 	}
 	if (Appearance->AnimClass)
 	{
 		MeshComp->SetAnimInstanceClass(Appearance->AnimClass);
+	}
+	// [게임진입] 캐릭터별 메시 Z 보정 — 메시 피벗(발바닥 원점)이 캐릭터마다 달라 단일 BP RelativeLocation.Z로는
+	// 발이 뜬다(Woman). bOverrideMeshRelativeZ=true인 캐릭터만 X/Y는 BP 기본 유지하고 Z만 DA값으로 덮는다.
+	// false면 BP 기본 Z 유지(Man 등 — 미설정 회귀 방지). 재호출 시에도 절대값 대입이라 누적 없음.
+	if (Appearance->bOverrideMeshRelativeZ)
+	{
+		FVector MeshLoc = MeshComp->GetRelativeLocation();
+		MeshLoc.Z = Appearance->MeshRelativeZ;
+		MeshComp->SetRelativeLocation(MeshLoc);
+	}
+	// [게임진입] 캐릭터별 인트로 getup 몽타주 / 점프 시퀀스 교체. Man 전용 애님을 Woman_Skeleton에서 재생하면
+	// 누우므로(스켈레톤 mismatch) DA 매핑값으로 덮는다. ApplySelectedCharacterAppearance가 BeginPlay에서
+	// PlayIntroSequence·점프 입력보다 먼저 호출되므로 인트로/점프 전에 세팅 완료. 비어 있으면(null) BP_OJJ_Player
+	// 기본값(Man) 유지 — DA 누락 시 기존 동작 보존(회귀 0).
+	if (Appearance->GetUpMontage)
+	{
+		GetUpMontage = Appearance->GetUpMontage;
+	}
+	if (Appearance->JumpAnim)
+	{
+		JumpAnim = Appearance->JumpAnim;
 	}
 }
 
