@@ -81,6 +81,27 @@ def test_response_validation_rejects_execution_command_in_optimizer_suggestion()
         )
 
 
+def test_response_validation_rejects_wrong_expected_status() -> None:
+    """Smoke validation must fail when a v2 case returns the wrong payload status."""
+    case = smoke.SmokeCase(
+        name="process optimizer measure",
+        message={"type": "agent.request"},
+        expected_type="agent.response",
+        expected_agent="process_optimizer",
+        expected_status="measurement_ready",
+    )
+
+    with pytest.raises(smoke.SmokeError, match="expected status measurement_ready"):
+        smoke.validate_case_response(
+            case,
+            {
+                "type": "agent.response",
+                "agent": "process_optimizer",
+                "payload": {"status": "measurement_not_ready"},
+            },
+        )
+
+
 def test_provider_profile_requires_explicit_opt_in() -> None:
     profile = smoke.build_profile("providers")
 
@@ -108,6 +129,74 @@ def test_provider_profile_skips_without_explicit_opt_in(
     )
 
     assert exit_code == 0
+
+
+def test_local_run_profile_executes_v2_cases_with_replaced_plan_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The local runner appends v2 cases and sends the replaced plan_id payload."""
+    sent_messages: list[dict[str, object]] = []
+
+    async def fake_request_websocket_case(
+        websocket_url: str,
+        case: smoke.SmokeCase,
+        message: dict[str, object] | str | None = None,
+    ) -> dict[str, object]:
+        assert websocket_url == "ws://127.0.0.1:18000/ws/agent"
+        assert isinstance(message, dict)
+        sent_messages.append(message)
+
+        payload = {
+            "status": case.expected_status or "preview",
+            "plan_id": "plan-run-profile",
+            "factoryRevision": case.expected_factory_revision,
+            "ui_hints": {"highlight_targets": ["smelter_1"]},
+            "quests": [{} for _ in range(case.expected_quest_count or 0)],
+            "metadata": {"selectedLeafAgent": case.expected_sub_agent},
+        }
+        return {
+            "type": case.expected_type or "agent.response",
+            "agent": case.expected_agent,
+            "payload": payload,
+        }
+
+    monkeypatch.setattr(
+        smoke,
+        "request_websocket_case",
+        fake_request_websocket_case,
+    )
+
+    exit_code = asyncio.run(
+        smoke.run_profile(
+            smoke.build_profile("local"),
+            smoke.DEFAULT_BASE_URL,
+            smoke.DEFAULT_WS_PATH,
+        )
+    )
+
+    assert exit_code == 0
+    operations = [
+        message["payload"]["operation"]
+        for message in sent_messages
+        if isinstance(message.get("payload"), dict)
+        and message["payload"].get("operation") is not None
+    ]
+    assert operations == [
+        "analyze",
+        "state_update",
+        "apply",
+        "apply",
+        "apply",
+        "undo",
+        "measure",
+        "measure",
+    ]
+    assert all("{PLAN_ID}" not in str(message) for message in sent_messages)
+    assert any(
+        message.get("payload", {}).get("plan_id") == "plan-run-profile"
+        for message in sent_messages
+        if isinstance(message.get("payload"), dict)
+    )
 
 
 def test_websocket_url_is_derived_from_http_base_url() -> None:

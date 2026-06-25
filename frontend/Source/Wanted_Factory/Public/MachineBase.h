@@ -224,8 +224,8 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "0.01"))
 	FVector StateIndicatorScale = FVector(0.5f, 0.5f, 0.5f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float LowDurabilityWarningRatio = 0.25f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "0.0"))
+	float LowDurabilityWarningThreshold = 100.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
 	TObjectPtr<UTexture2D> ElectricityWarningIcon;

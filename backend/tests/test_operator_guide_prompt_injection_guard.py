@@ -85,3 +85,20 @@ def test_user_prompt_contract_prefers_friendly_short_multi_question_answer() -> 
     assert "do not enumerate input materials or recipe names" in prompt
     assert "do not expose raw ids" in prompt
     assert "do not add troubleshooting checks unless" in prompt
+
+
+def test_user_prompt_includes_requested_response_style() -> None:
+    prompt = (
+        ManualQAService()
+        .build_prompt(
+            "분쇄기가 뭐야?",
+            topic="machine",
+            sub_agent="operator_guide.machine_help",
+            context={"response_style": "short"},
+        )
+        .lower()
+    )
+
+    assert "[response_style]" in prompt
+    assert "short" in prompt
+    assert "answer in 1~2 short korean sentences" in prompt

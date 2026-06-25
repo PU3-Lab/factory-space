@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from datetime import datetime
+from typing import Literal, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -64,7 +65,7 @@ class ProcessOptimizerPayload(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    operation: Literal["state_update", "analyze"] = "analyze"
+    operation: Literal["state_update", "analyze", "apply", "undo", "measure"] = "analyze"
     goal: Literal["balance", "throughput", "power_saving", "congestion_relief"] = (
         "balance"
     )
@@ -120,12 +121,77 @@ class FactoryAnalysisReport(BaseModel):
     power_summary: PowerSummary
 
 
+class PreviewPlan(BaseModel):
+    """Schema representing a saved optimization preview plan."""
+
+    plan_id: str
+    session_id: str
+    factoryRevision: int
+    goal: str
+    changes: list[OptimizationSuggestion] = Field(default_factory=list)
+    expected_effect: dict[str, Any] = Field(default_factory=dict)
+    ui_hints: UiHints = Field(default_factory=UiHints)
+    created_at: datetime
+    expires_at: datetime
+
+
+class EffectMeasurementReport(BaseModel):
+    """측정 성과 리포트 스키마."""
+
+    status: Literal["success", "failed", "degraded"]
+    """개선 성공, 미달(failed), 악화(degraded) 상태 분류"""
+
+    next_action: Literal["monitor", "reanalyze"]
+    """추천 차기 작업 (모니터링 유지 또는 최신 상태 재분석)"""
+
+    expected_effect: dict[str, Any] = Field(default_factory=dict)
+    """최적화 제안 당시 예상되었던 효과 지표"""
+
+    actual_effect: dict[str, Any] = Field(default_factory=dict)
+    """최적화 적용 후 실제 측정된 효과 지표"""
+
+    observation_duration_seconds: float
+    """적용 후 실시간 경과 관찰 시간(초 단위)"""
+
+    production_cycles: int
+    """적용 후 진행된 실제 생산 주기 수"""
+
+
 class ProcessOptimizerResponse(BaseModel):
     """Response payload returned by the process optimizer agent."""
 
-    status: Literal["success", "suggestion", "error"] = "suggestion"
+    status: Literal[
+        "success",
+        "suggestion",
+        "preview",
+        "apply_ready",
+        "execute_ready",
+        "undo_ready",
+        "measurement_ready",
+        "measurement_not_ready",
+        "measurement_error",
+        "plan_not_found",
+        "plan_expired",
+        "revision_conflict",
+        "approval_required",
+        "no_changes_selected",
+        "invalid_change_id",
+        "duplicate_execution",
+        "invalid_command_payload",
+        "record_not_found",
+        "invalid_factory_state",
+        "undo_conflict",
+        "error",
+    ] = "suggestion"
     factoryRevision: int  # noqa: N815 - Unreal WebSocket contract uses camelCase.
     goal: str = "balance"
     summary: str
+    plan_id: str | None = None
+    expires_at: str | None = None
     suggestions: list[OptimizationSuggestion] = Field(default_factory=list)
+    changes: list[OptimizationSuggestion] = Field(default_factory=list)
+    expected_effect: dict[str, Any] = Field(default_factory=dict)
     ui_hints: UiHints = Field(default_factory=UiHints)
+    approved_changes: list[OptimizationSuggestion] = Field(default_factory=list)
+    commands: list[dict[str, Any]] = Field(default_factory=list)
+    measurement_result: EffectMeasurementReport | None = None

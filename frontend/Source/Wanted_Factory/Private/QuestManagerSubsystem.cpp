@@ -427,13 +427,33 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	}
 	else if (QuestId == TEXT("TUT_COMM_001"))
 	{
-		SetWarehouseRequirement(TEXT("TeleCommunicationTower"), 1);
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("MoldingMachine"));
 	}
 	else if (QuestId == TEXT("TUT_COMM_002"))
 	{
-		SetEventRequirement(TEXT("PlaceMachine"), TEXT("TeleCommunicationTower"));
+		SetProductionRequirement(TEXT("rebar"), 20);
 	}
 	else if (QuestId == TEXT("TUT_COMM_003"))
+	{
+		SetProductionRequirement(TEXT("copperwire"), 20);
+	}
+	else if (QuestId == TEXT("TUT_COMM_004"))
+	{
+		SetProductionRequirement(TEXT("tinboard"), 20);
+	}
+	else if (QuestId == TEXT("TUT_COMM_005"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("Synthesizer"));
+	}
+	else if (QuestId == TEXT("TUT_COMM_006"))
+	{
+		SetWarehouseRequirement(TEXT("TeleCommunicationTower"), 1);
+	}
+	else if (QuestId == TEXT("TUT_COMM_007"))
+	{
+		SetEventRequirement(TEXT("PlaceMachine"), TEXT("TeleCommunicationTower"));
+	}
+	else if (QuestId == TEXT("TUT_COMM_008"))
 	{
 		SetEventRequirement(TutorialEventCableConnected);
 	}

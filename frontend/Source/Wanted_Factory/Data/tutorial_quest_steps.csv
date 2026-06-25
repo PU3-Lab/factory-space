@@ -54,10 +54,15 @@ TUT_EXPAND_006,TUT_EXPAND_007,tutorial_expand,추가 제련기 설치,"제련기
 TUT_EXPAND_007,TUT_EXPAND_008,tutorial_expand,자동 생산 라인 확장,"자동 생산 라인 1개를 추가로 완성하세요.",iron ingot 10
 TUT_EXPAND_008,TUT_EXPAND_009,tutorial_expand,철 광석 누적 생산,"철 광석을 누적 20개 생산하세요.",,
 TUT_EXPAND_009,TUT_COMM_001,tutorial_expand,철 주괴 누적 생산,"철 주괴를 누적 10개 생산하세요.",iron ingot 10
-TUT_COMM_001,TUT_COMM_002,main_commtower,통신탑 재료 확보,"통신탑 건설에 필요한 재료를 확보하세요.",,
-TUT_COMM_002,TUT_COMM_003,main_commtower,통신탑 설치 완료,"통신탑을 설치하세요.",,
-TUT_COMM_003,TUT_COMM_004,main_commtower,통신탑 전력 연결,"통신탑에 전력을 연결하세요.",,
-TUT_COMM_004,TUT_SIGNAL_001,main_commtower,위성 통신 복구 확인,"위성 내 통신이 복구되었는지 확인하세요.",iron ingot 10
+TUT_COMM_001,TUT_COMM_002,main_commtower,성형기 설치,"통신탑 재료 생산을 위해 성형기를 설치하세요.",,
+TUT_COMM_002,TUT_COMM_003,main_commtower,철근 저장,"성형기로 제작한 철근 20개를 창고에 저장하세요.",,
+TUT_COMM_003,TUT_COMM_004,main_commtower,구리선 저장,"성형기로 제작한 구리선 20개를 창고에 저장하세요.",,
+TUT_COMM_004,TUT_COMM_005,main_commtower,주석판 저장,"성형기로 제작한 주석판 20개를 창고에 저장하세요.",,
+TUT_COMM_005,TUT_COMM_006,main_commtower,합성기 설치,"통신탑 제작을 위해 합성기를 설치하세요.",,
+TUT_COMM_006,TUT_COMM_007,main_commtower,통신탑 제작,"합성기로 통신탑 1개를 제작하세요.",,
+TUT_COMM_007,TUT_COMM_008,main_commtower,통신탑 설치 완료,"통신탑을 설치하세요.",,
+TUT_COMM_008,TUT_COMM_009,main_commtower,통신탑 전력 연결,"통신탑에 전력을 연결하세요.",,
+TUT_COMM_009,TUT_SIGNAL_001,main_commtower,위성 통신 복구 확인,"위성 내 통신이 복구되었는지 확인하세요.",iron ingot 10
 TUT_SIGNAL_001,TUT_SIGNAL_002,main_signal_booster,신호 증폭기 재료 확보,"신호 증폭기 건설에 필요한 재료를 확보하세요.",,
 TUT_SIGNAL_002,TUT_SIGNAL_003,main_signal_booster,신호 증폭기 설치 완료,"신호 증폭기를 설치하세요.",,
 TUT_SIGNAL_003,TUT_SIGNAL_004,main_signal_booster,통신 출력 상승 확인,"통신 출력이 상승했는지 확인하세요.",,

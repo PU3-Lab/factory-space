@@ -148,14 +148,14 @@ def test_manual_qa_agent_unknown_question_does_not_hallucinate() -> None:
     assert response["question_type"] == "unknown_question"
     assert response["sources"] == []
     assert response["confidence"] == "low"
-    assert "manual data" in response["answer"]
+    assert "관련 매뉴얼 근거를 찾지 못했습니다" in response["answer"]
 
 
 def test_manual_qa_troubleshooting_fallback_keeps_csv_metadata() -> None:
     response = answer_manual_qa("제련기가 왜 안 돌아가?")
 
     assert response["question_type"] == "troubleshooting_question"
-    assert "LLM answer unavailable" in response["final_answer"]
+    assert "관련 매뉴얼 근거는 찾았습니다" in response["final_answer"]
     source_ids = {source["doc_id"] for source in response["sources"]}
     assert {"issue_machine_stopped", "equipment_smelter"} <= source_ids
     action_ids = {action["action_id"] for action in response["recommended_actions"]}
@@ -172,13 +172,13 @@ def test_manual_qa_fallback_does_not_build_rule_based_template_answers() -> None
     unknown_response = answer_manual_qa("우주 엘리베이터는 어떻게 업그레이드해?")
 
     assert equipment_response["final_answer"] == (
-        "LLM answer unavailable. Please check the matched manual evidence."
+        "지금은 답변을 완성하지 못했지만, 관련 매뉴얼 근거는 찾았습니다. 잠시 후 다시 물어보면 확인한 내용을 바탕으로 정리해드릴게요."
     )
     assert recipe_response["final_answer"] == (
-        "LLM answer unavailable. Please check the matched manual evidence."
+        "지금은 답변을 완성하지 못했지만, 관련 매뉴얼 근거는 찾았습니다. 잠시 후 다시 물어보면 확인한 내용을 바탕으로 정리해드릴게요."
     )
     assert unknown_response["final_answer"] == (
-        "LLM answer unavailable. No matching manual data was found."
+        "지금은 관련 매뉴얼 근거를 찾지 못했습니다. 장비 이름이나 자원 이름을 조금 더 구체적으로 말해주면 다시 확인해볼게요."
     )
 
 

@@ -49,13 +49,13 @@ from agents.pipeline.utils import (
     build_validation_error,
     run_fallback,
 )
-from agents.process_optimizer.schemas import (
-    FactoryState,
-    ProcessOptimizerPayload,
-    ProcessOptimizerResponse,
+from agents.process_optimizer.graph import compile_process_optimizer_graph
+from agents.process_optimizer.middleware import (
+    build_graph_payload_with_memory,
+    build_state_update_response,
+    validate_process_optimizer_payload,
 )
-from agents.process_optimizer.session_memory import process_optimizer_memory
-from agents.process_optimizer.suggestion import SuggestionValidationTool
+from agents.process_optimizer.prompts import apply_process_optimizer_llm_explanation
 from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS, QuestGeneratorAgent
 from agents.quest_generator.tools import PRODUCTION_QUEST_SELECTION_TOOL_NAME
 from agents.router import AgentRouter, UnknownAgentError, create_default_agent_router
@@ -282,66 +282,49 @@ class AgentPipeline:
             }
 
         def validate_process_payload(state: AgentGraphState) -> AgentGraphState:
-            explicit_sub_agent = state["typedPayload"].get("sub_agent")
-            if (
-                explicit_sub_agent is not None
-                and explicit_sub_agent != "process_optimizer"
-            ):
-                return {
-                    "error": build_error_payload(
-                        "INVALID_SUB_AGENT",
-                        "Explicit sub_agent is not valid for process_optimizer.",
-                        details={"sub_agent": explicit_sub_agent},
-                    )
-                }
-
-            try:
-                payload = state["typedPayload"]
-                ProcessOptimizerPayload.model_validate(payload)
-
-                revision = payload.get("factoryRevision")
-                if revision is not None:
-                    if not isinstance(revision, int) or isinstance(revision, bool):
-                        raise ValueError("factoryRevision must be an integer")
-                    if revision < 0:
-                        raise ValueError("factoryRevision cannot be negative")
-
-                factory_state = payload.get("factory_state")
-                if factory_state is not None:
-                    if not isinstance(factory_state, dict):
-                        raise ValueError("factory_state must be a dictionary")
-                    FactoryState.model_validate(factory_state)
-
-            except Exception as exc:
-                return {
-                    "error": build_error_payload(
-                        "INVALID_REQUEST_PAYLOAD",
-                        f"Request payload validation failed: {exc}",
-                    )
-                }
-
+            error = validate_process_optimizer_payload(state["typedPayload"])
+            if error:
+                return {"error": error}
             return {"selectedLeafAgent": "process_optimizer"}
 
         def process_optimizer_state_update(state: AgentGraphState) -> AgentGraphState:
+            return build_state_update_response(state["context"], state["typedPayload"])
+
+        def process_optimizer_v2_graph(state: AgentGraphState) -> AgentGraphState:
             context = state["context"]
-            payload = state["typedPayload"]
+            envelope = state["envelope"]
+            payload = build_graph_payload_with_memory(context, state["typedPayload"])
 
-            factory_state = payload.get("factory_state")
-            revision = payload.get("factoryRevision")
-            if revision is None:
-                revision = 0
-
-            process_optimizer_memory.update(context.session_id, factory_state, revision)
-
-            goal = payload.get("goal") or "balance"
-            response_payload = {
-                "status": "success",
-                "factoryRevision": revision,
-                "goal": goal,
-            }
+            graph_result = compile_process_optimizer_graph().invoke(
+                {
+                    "payload": payload,
+                    "context": envelope.context,
+                    "session_id": context.session_id,
+                }
+            )
+            response_payload = graph_result.get("previewPayload")
+            if not isinstance(response_payload, dict):
+                return {
+                    "responsePayload": {
+                        "status": "error",
+                        "factoryRevision": payload.get("factoryRevision") or 0,
+                        "goal": payload.get("goal") or "balance",
+                        "summary": (
+                            "Process optimizer v2 graph did not return a response "
+                            "payload."
+                        ),
+                        "changes": [],
+                        "suggestions": [],
+                        "expected_effect": {},
+                        "ui_hints": {"highlight_targets": []},
+                    }
+                }
+            response_payload, response_metadata = (
+                apply_process_optimizer_llm_explanation(response_payload, llm_slots)
+            )
             return {
                 "responsePayload": response_payload,
-                "responseMetadata": {"memory": "updated"},
+                "responseMetadata": response_metadata,
             }
 
         def route_new_material_sub_agent(state: AgentGraphState) -> AgentGraphState:
@@ -617,14 +600,13 @@ class AgentPipeline:
                 ):
                     cleaned = "\n".join(lines[1:-1]).strip()
 
-            is_process_optimizer = state.get("selectedLeafAgent") == "process_optimizer"
             is_operator_guide = state.get("selectedAgent") == "operator_guide"
             try:
                 payload = json.loads(cleaned)
                 if not isinstance(payload, dict):
                     raise ValueError("LLM response must be a JSON object.")
             except Exception as exc:
-                if is_process_optimizer or is_operator_guide:
+                if is_operator_guide:
                     fallback_context = replace(state["context"], on_progress=None)
                     result = run_fallback(
                         agent_router,
@@ -733,38 +715,6 @@ class AgentPipeline:
                         "Agent response payload must be an object.",
                     )
                 }
-
-            if state.get("selectedLeafAgent") == "process_optimizer":
-                try:
-                    res_obj = ProcessOptimizerResponse.model_validate(payload)
-                    suggestion_validator = SuggestionValidationTool()
-                    if not suggestion_validator.validate_suggestions(
-                        res_obj.suggestions
-                    ):
-                        raise ValueError(
-                            "Suggestions contain forbidden execution commands or invalid structure"
-                        )
-                except Exception as exc:
-                    fallback_context = replace(state["context"], on_progress=None)
-                    result = run_fallback(
-                        agent_router,
-                        {
-                            **state,
-                            "context": fallback_context,
-                        },
-                    )
-                    metadata = dict(result.metadata)
-                    metadata["fallbackReason"] = "validation_failed"
-                    metadata["fallbackDetails"] = str(exc)
-                    current_model = build_current_model_metadata(state)
-                    if current_model is not None:
-                        metadata["currentModel"] = current_model
-
-                    return {
-                        "responsePayload": result.payload,
-                        "responseMetadata": metadata,
-                        "fallbackReason": "validation_failed",
-                    }
             return {}
 
         def cache_write(state: AgentGraphState) -> AgentGraphState:
@@ -847,6 +797,7 @@ class AgentPipeline:
         graph.add_node("route_top_agent", route_top_agent)
         graph.add_node("validate_process_payload", validate_process_payload)
         graph.add_node("process_optimizer_state_update", process_optimizer_state_update)
+        graph.add_node("process_optimizer_v2_graph", process_optimizer_v2_graph)
         graph.add_node("operator_guide.route_sub_agent", route_operator_guide_sub_agent)
         graph.add_node("quest_generator.route_sub_agent", route_quest_sub_agent)
         graph.add_node(

@@ -1,12 +1,11 @@
 #include "UI/UI_WarehouseInteract.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
-#include "Components/ProgressBar.h"
-#include "Components/Button.h"
 #include "Components/Border.h"
 #include "Engine/DataTable.h"
 #include "Resource/ResourceData.h"
 #include "Machines/MachineTable.h"
+#include "Components/ProgressBar.h"
 #include "Machines/MachineSubsystem.h"
 #include "Machines/WarehousePort.h"
 #include "MachineBase.h"
@@ -47,18 +46,6 @@ void UUI_WarehouseInteract::SetTargetMachine(AMachineBase* InMachine)
     
     if (TargetMachine)
     {
-        const ESlateVisibility FeatureVisibility = TargetMachine->IsInfiniteDurability() ? ESlateVisibility::Hidden : ESlateVisibility::Visible;
-        
-        // 1. 내구도 및 수리 버튼 숨김 제어 (위치 고정)
-        if (PB_Durability)          PB_Durability->SetVisibility(FeatureVisibility);
-        if (TXT_DurabilityPercent)  TXT_DurabilityPercent->SetVisibility(FeatureVisibility);
-        if (BTN_Repair)             BTN_Repair->SetVisibility(FeatureVisibility);
-        
-        // 2. 생산 진행도 UI 숨김 제어 (위치 고정)
-        if (PB_CraftingProgress)    PB_CraftingProgress->SetVisibility(FeatureVisibility);
-        if (TXT_ProgressPercent)    TXT_ProgressPercent->SetVisibility(FeatureVisibility);
-
-        // --- 이하 기존 창고/유체탱크 세팅 로직 동일 ---
         if (AWarehousePort* WarehousePort = Cast<AWarehousePort>(TargetMachine))
         {
             ManualDroppedOutputItemID = WarehousePort->GetSelectedOutputItem();
@@ -93,7 +80,6 @@ void UUI_WarehouseInteract::SetTargetMachine(AMachineBase* InMachine)
 void UUI_WarehouseInteract::NativeConstruct()
 {
     Super::NativeConstruct();
-    if (BTN_Repair) BTN_Repair->OnClicked.AddDynamic(this, &UUI_WarehouseInteract::OnRepairClicked);
 }
 
 void UUI_WarehouseInteract::NativeDestruct()
@@ -137,32 +123,6 @@ void UUI_WarehouseInteract::NativeTick(const FGeometry& MyGeometry, float InDelt
     
     // 우측 보관함 슬롯 노출 갱신
     UpdateOutputUI(OutputName, OutputAmount, MaxOutputAmount);
-
-    // 상태 텍스트 분기 처리
-    EMachineState State = TargetMachine->GetMachineState();
-    switch (State)
-    {
-    case EMachineState::Working: UpdateMachineState(TEXT("출력 중"), FLinearColor::Green); break;
-    case EMachineState::Idle:    UpdateMachineState(TEXT("보관 중"), FLinearColor::Gray); break;
-    case EMachineState::Blocked: UpdateMachineState(TEXT("창고 가득 참"), FLinearColor::Red); break;
-    case EMachineState::NoPower: UpdateMachineState(TEXT("전력 없음"), FLinearColor::Red); break;
-    default:                     UpdateMachineState(TEXT("대기 중"), FLinearColor::White); break;
-    }
-
-    // 중앙 프로그래스바
-    float MaxTime = TargetMachine->GetProcessTime();
-    if (State == EMachineState::Working && MaxTime > 0.0f)
-    {
-        float RemainTime = GetWorld()->GetTimerManager().GetTimerRemaining(TargetMachine->GetProcessTimer());
-        float Progress = 1.0f - (RemainTime / MaxTime);
-        UpdateCraftingProgress(Progress);
-    }
-    else
-    {
-        UpdateCraftingProgress(0.0f);
-    }
-
-    UpdateDurabilityUI(TargetMachine->GetCurrentDurability(), TargetMachine->GetMaxDurability());
 }
 
 void UUI_WarehouseInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, int32 MaxAmount)
@@ -232,17 +192,6 @@ void UUI_WarehouseInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, 
     }
 }
 
-void UUI_WarehouseInteract::UpdateCraftingProgress(float Percent)
-{
-    if (PB_CraftingProgress && TXT_ProgressPercent)
-    {
-        PB_CraftingProgress->SetPercent(Percent);
-        int32 PercentInt = FMath::RoundToInt(Percent * 100.0f);
-        FString ProgressStr = FString::Printf(TEXT("진행도: %d%%"), PercentInt);
-        TXT_ProgressPercent->SetText(FText::FromString(ProgressStr));
-    }
-}
-
 bool UUI_WarehouseInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
     UItemDragDropOperation* ItemDragOp = Cast<UItemDragDropOperation>(InOperation);
@@ -257,7 +206,6 @@ bool UUI_WarehouseInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDra
     UGameInstance* GI = GetGameInstance();
     UPlayerWarehouseSubsystem* WarehouseSubsystem = GI ? GI->GetSubsystem<UPlayerWarehouseSubsystem>() : nullptr;
 
-    // 1. 대상 기계가 '창고포트' 일 때
     if (AWarehousePort* WarehousePort = Cast<AWarehousePort>(TargetMachine))
     {
         if (WarehouseSubsystem && WarehouseSubsystem->TakeItem(TargetItemID, 1))
@@ -278,7 +226,6 @@ bool UUI_WarehouseInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDra
         return false;
     }
 
-    // 2. 대상 기계가 '유체탱크' 일 때
     if (ALiquidTank* LiquidTank = Cast<ALiquidTank>(TargetMachine))
     {
         if (WarehouseSubsystem && WarehouseSubsystem->TakeItem(TargetItemID, 1))
@@ -294,7 +241,6 @@ bool UUI_WarehouseInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDra
         return false;
     }
 
-    // 3. 일반 생산 기계 계열일 때
     int32 CurrentInputAmount = TargetMachine->GetInputInventory().FindRef(TargetItemID);
     if (CurrentInputAmount >= TargetMachine->GetMaxInput()) return false;
 
@@ -313,7 +259,6 @@ FReply UUI_WarehouseInteract::NativeOnMouseButtonDown(const FGeometry& InGeometr
 {
     FReply Reply = Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 
-    // 마우스 좌클릭이고, 현재 기계에 지정되거나 쌓인 아이템이 존재할 때만 드래그를 발동합니다.
     if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && !ManualDroppedOutputItemID.IsNone())
     {
         FVector2D ClickPos = InMouseEvent.GetScreenSpacePosition();
@@ -356,13 +301,10 @@ void UUI_WarehouseInteract::CancelMachineProcess()
 {
     if (!TargetMachine || ManualDroppedOutputItemID.IsNone()) return;
 
-    // 1. 돌아가던 기계의 공정 타이머를 중지시킵니다.
     TargetMachine->StopProcess();
 
-    // 현재 기계 버퍼에 들어있는 정확한 수량을 확인합니다.
     int32 CurrentStoredAmount = TargetMachine->GetOutputBuffer().FindRef(ManualDroppedOutputItemID);
 
-    // 2. 창고 포트일 때 내부 지정 품목 해제 및 버퍼 완벽 차감
     if (AWarehousePort* WarehousePort = Cast<AWarehousePort>(TargetMachine))
     {
         WarehousePort->SetSelectedOutputItem(NAME_None);
@@ -371,7 +313,6 @@ void UUI_WarehouseInteract::CancelMachineProcess()
             TargetMachine->TakeOutputItem(ManualDroppedOutputItemID, CurrentStoredAmount);
         }
     }
-    // 3. 유체 탱크일 때 저장 유체 종류 해제 및 차감
     else if (ALiquidTank* LiquidTank = Cast<ALiquidTank>(TargetMachine))
     {
         LiquidTank->SetSelectedOutputLiquid(NAME_None);
@@ -382,18 +323,15 @@ void UUI_WarehouseInteract::CancelMachineProcess()
     }
     else
     {
-        // 일반 생산 기계일 경우
         if (CurrentStoredAmount > 0)
         {
             TargetMachine->TakeOutputItem(ManualDroppedOutputItemID, CurrentStoredAmount);
         }
     }
 
-    // 4. UI 변수 초기화 및 기계 상태 새로고침
     ManualDroppedOutputItemID = NAME_None;
     TargetMachine->RefreshMachineState();
 
-    // 5. 슬롯 아이템 데이터 상태 새로고침 촉발
     APlayerController* PC = GetOwningPlayer();
     if (PC)
     {
@@ -408,6 +346,3 @@ void UUI_WarehouseInteract::CancelMachineProcess()
 }
 
 void UUI_WarehouseInteract::UpdateMachineName(const FText& MachineName) { if (TXT_MachineName) TXT_MachineName->SetText(MachineName); }
-void UUI_WarehouseInteract::UpdateMachineState(FString StateText, FLinearColor StateColor) { if (TXT_MachineState) { TXT_MachineState->SetText(FText::FromString(StateText)); TXT_MachineState->SetColorAndOpacity(FSlateColor(StateColor)); } }
-void UUI_WarehouseInteract::OnRepairClicked() { if (TargetMachine) TargetMachine->RepairUsingWarehouse(); }
-void UUI_WarehouseInteract::UpdateDurabilityUI(float CurrentDur, float MaxDur) { if (TXT_DurabilityPercent && PB_Durability) { float SafeMax = (MaxDur > 0.f) ? MaxDur : 100.f; float Percent = FMath::Clamp(CurrentDur / SafeMax, 0.0f, 1.0f); PB_Durability->SetPercent(Percent); FString DurabilityStr = FString::Printf(TEXT("내구도: %d / %d"), FMath::RoundToInt(CurrentDur), FMath::RoundToInt(SafeMax)); TXT_DurabilityPercent->SetText(FText::FromString(DurabilityStr)); } }
