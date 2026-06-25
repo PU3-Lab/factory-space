@@ -20,7 +20,7 @@ public:
     
     UFUNCTION() 
     void OnRequestQuestsClicked();
-    
+    void CloseQuestWindow();
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest")
     TSubclassOf<class UUI_QuestNotify> QuestNotifyWidgetClass;
 
