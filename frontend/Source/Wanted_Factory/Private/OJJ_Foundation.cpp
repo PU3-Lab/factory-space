@@ -22,7 +22,9 @@ AOJJ_Foundation::AOJJ_Foundation()
 	//  - Visibility Block: 커서가 슬래브 상면에 스냅 → Foundation 위 머신 호버/배치 가능
 	//    (BuildController 표면 게이트가 bHitFoundation을 허용하도록 함께 확장됨).
 	//  - 베이크 ↓트레이스도 Visibility지만 BakeBuildableCells가 Foundation을 ignore(이중 안전).
-	//  - Camera Ignore: 빌드/줌 카메라 충돌 간섭 방지.
+	//  - Camera Block: 3인칭 SpringArm(ProbeChannel=ECC_Camera)이 Foundation 벽 뒤 오클루전을 피하도록
+	//    머신과 동일하게 카메라 충돌을 잡는다. ⚠️ 플레이어가 Foundation 위에 설 때 발밑 슬래브로 인한
+	//    카메라 줌인 부작용은 PIE에서 확인 필요(필요 시 발밑/측면 구분 후속).
 	SlabMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("SlabMesh"));
 	SlabMesh->SetupAttachment(RootComponent);
 	SlabMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
@@ -30,7 +32,7 @@ AOJJ_Foundation::AOJJ_Foundation()
 	SlabMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
 	SlabMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
 	SlabMesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
-	SlabMesh->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	SlabMesh->SetCollisionResponseToChannel(ECC_Camera, ECR_Block);
 	SlabMesh->SetCanEverAffectNavigation(false);
 
 	// [Deck] 윗면 비주얼 = Deck 메시(엔진 Cube 대체). 머티리얼은 에셋에 포함돼 SetStaticMesh로 함께 적용.

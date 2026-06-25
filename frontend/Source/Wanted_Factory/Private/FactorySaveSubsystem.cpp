@@ -250,6 +250,12 @@ bool UFactorySaveSubsystem::SaveCurrentGame()
 	SaveGame->WeatherState = PlanetManager->GetWeatherState();
 	SaveGame->EventState = PlanetManager->GetEventState();
 
+	// [게임진입] 선택 캐릭터 저장(OJJ 합의). Continue 시 LoadCurrentGame이 SetSelectedCharacter로 복원한다.
+	if (UOJJ_CharacterSelectionSubsystem* CharacterSelection = GetGameInstance()->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
+	{
+		SaveGame->SavedCharacterType = CharacterSelection->GetSelectedCharacter();
+	}
+
 	TArray<AMachineBase*> Machines;
 	for (TActorIterator<AMachineBase> It(World); It; ++It)
 	{
@@ -418,6 +424,12 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 	if (!SaveGame)
 	{
 		return false;
+	}
+
+	// [게임진입] 선택 캐릭터 복원(OJJ 합의). 외형 재적용은 OJJ_Player::BeginPlay 말미가 담당(영역 분리) — 여기선 값만 복원.
+	if (UOJJ_CharacterSelectionSubsystem* CharacterSelection = GetGameInstance()->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
+	{
+		CharacterSelection->SetSelectedCharacter(SaveGame->SavedCharacterType);
 	}
 
 	bIsRestoring = true;
