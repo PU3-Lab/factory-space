@@ -14,6 +14,13 @@ from agents.process_optimizer.suggestion import (
     SuggestionValidationTool,
 )
 
+PROCESS_OPTIMIZER_V1_STATUS = "legacy_reference"
+PROCESS_OPTIMIZER_V1_NOTE = (
+    "The public process_optimizer pipeline now routes analyze/apply/undo/measure "
+    "requests to the v2 LangGraph. This class remains for direct fallback tests "
+    "and as a reference for deterministic v1 prompt/fallback behavior."
+)
+
 
 class ProcessOptimizerAgent:
     """공장 스냅샷을 분석하고 병목을 해결하기 위한 최적화 제안을 생성하는 에이전트 클래스입니다.
@@ -23,6 +30,8 @@ class ProcessOptimizerAgent:
     """
 
     agent_id = "process_optimizer"
+    implementation_status = PROCESS_OPTIMIZER_V1_STATUS
+    implementation_note = PROCESS_OPTIMIZER_V1_NOTE
     tools = ()
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:

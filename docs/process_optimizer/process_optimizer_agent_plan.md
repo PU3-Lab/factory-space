@@ -1,5 +1,22 @@
 # Process Optimizer Agent 계획
 
+## 0. 현재 구현 상태
+
+현재 public `agent: "process_optimizer"` 요청은 v2 전용 LangGraph를 사용한다.
+
+```text
+process_optimizer request
+-> validate_process_payload
+-> process_optimizer_v2_graph
+-> state_update / analyze / apply / undo / measure
+```
+
+초기 v1 MVP인 `ProcessOptimizerAgent`는 삭제하지 않고 archive/reference 용도로만 유지한다. v1은 직접 legacy 테스트와 비교 기준으로 남기며, 실제 WebSocket/agent-test의 주요 `process_optimizer` 흐름은 v2 graph가 담당한다.
+
+자세한 전환 기록은 `docs/process_optimizer/process_optimizer_v1_v2_transition_note.md`를 기준으로 한다.
+포트폴리오용 개선 지표와 면접 설명은 `docs/process_optimizer/process_optimizer_portfolio_metrics.md`에 정리한다.
+v2의 Tool, Middleware, System Prompt 책임은 `docs/process_optimizer/process_optimizer_v2_runtime_contract.md`에 정리한다.
+
 ## 1. 목적
 
 `process_optimizer`는 플레이어의 현재 공장 상태를 분석해 병목, 유휴 장비, 입력 부족, 출력 적체, 전력 문제를 찾고 개선 계획을 제안하는 Agent다.
@@ -12,6 +29,8 @@
 - LLM은 계산 결과를 설명하고 계획의 이유를 자연스럽게 전달한다.
 - 병목 판단, 수치 계산, 명령 검증은 결정론적인 코드가 담당한다.
 - Agent는 승인 없이 공장을 바꾸지 않는다.
+- process_optimizer는 자동 실행 Agent가 아니라 preview/approval 기반 보조 Agent다.
+- 주기 상태 업데이트는 분석 준비용이며, 실제 적용 전에는 최신 snapshot과 factoryRevision을 다시 검증한다.
 - Unreal은 실제 월드 상태를 마지막으로 검증하고 명령을 실행한다.
 - 되돌리기는 전체 공장 복원이 아니라 변경한 항목의 실행 기록을 사용한다.
 - 플레이어가 적용 후 직접 수정한 항목은 자동으로 되돌리지 않는다.
@@ -20,7 +39,11 @@
 ## 3. 사용자 흐름
 
 ```text
-플레이어가 최적화 요청
+Unreal이 경량 factory_state를 주기적으로 state_update
+-> 백엔드가 session memory에 최신 상태와 factoryRevision 저장
+-> Unreal 또는 NPC가 병목 징후 감지
+-> 플레이어에게 "최적화 분석을 실행할까요?" 안내
+-> 플레이어가 최적화 요청
 -> Unreal이 최신 공장 전체 snapshot과 factoryRevision 전송
 -> 백엔드가 병목/효율 지표 계산
 -> process_optimizer가 최대 3개의 변경 계획 생성
@@ -50,24 +73,36 @@
 
 ## 5. 상태 전달 방식
 
-공장 전체 상태를 주기적으로 전송하지 않는다. Unreal이 중요한 요청 시점에 최신 상태를 전송하는 이벤트 기반 구조를 사용한다.
+Unreal은 기본적으로 경량 공장 상태를 주기적으로 `state_update`로 전송한다. 백엔드는 session memory에 최신 `factory_state`와 `factoryRevision`을 저장한다.
+
+다만 정확성이 중요한 순간에는 이벤트 기반 최신 snapshot을 다시 전송한다. 특히 적용 직전, 되돌리기, 효과 측정처럼 실제 변경 또는 결과 판정과 연결되는 요청은 주기 업데이트만 신뢰하지 않고 최신 revision을 재검증한다.
 
 ```text
+주기 상태 업데이트
+-> 경량 factory_state와 factoryRevision 전송
+-> 백엔드 session memory 갱신
+-> 공장 변경 없음
+
 최적화 분석 요청
--> 전체 공장 snapshot 전송
+-> 최신 전체 snapshot 또는 최근 state_update 기반 snapshot 전송
 
 계획 적용 직전
--> 최신 전체 또는 변경 대상 snapshot 전송
+-> 최신 전체 또는 변경 대상 snapshot과 factoryRevision 전송
 
 되돌리기 요청
 -> 변경 대상의 현재 상태와 factoryRevision 전송
 
+효과 측정 요청
+-> 관찰 시간과 생산 cycle 충족 후 최신 생산 지표 snapshot 전송
+
 플레이어가 직접 변경
 -> Unreal 내부 factoryRevision 증가
--> 다음 최적화/되돌리기 요청에서 최신 상태 전달
+-> 다음 state_update 또는 이벤트 요청에서 최신 상태 전달
 ```
 
 `factoryRevision`은 Unreal이 관리하는 공장 상태 버전 번호다. 실행 계획과 되돌리기 기록은 적용 당시의 revision을 보관해, 이후 플레이어가 직접 변경했는지 확인한다.
+
+자동화 범위는 감지와 제안까지다. Unreal이 병목 징후를 감지하면 NPC/UI가 최적화 분석을 제안할 수 있지만, 실제 공장 변경은 항상 preview 확인과 플레이어 승인 이후에만 가능하다.
 
 ## 6. 분석 지표
 
@@ -237,7 +272,9 @@ changes:
 
 ## 12. 구현 범위
 
-현재 `backend/src/agents/process_optimizer.py`는 추천 응답 뼈대와 fallback만 가진 상태다. 아래는 새 구현이 필요한 영역이다.
+현재 정식 `process_optimizer` 구현은 `backend/src/agents/process_optimizer/` 패키지의 v2 LangGraph와 결정론적 Tool 모듈로 구성되어 있다. 초기 v1 `ProcessOptimizerAgent`는 기본 agent router에 등록하지 않으며 archive/reference 용도로만 남긴다.
+
+현재 구현된 영역은 다음과 같다.
 
 ```text
 - 공장 상태 schema
@@ -248,8 +285,10 @@ changes:
 - 되돌리기 충돌 validator
 - Unreal command / result WebSocket contract
 - 예상 효과와 실제 효과 비교기
-- Unreal 미리보기 및 승인 UI
+- Unreal 미리보기 및 승인 UI 계약
 ```
+
+Unreal 실제 UI 하이라이트 구현은 Unreal 클라이언트 영역에서 이 계약을 소비하는 방식으로 연결한다.
 
 ## 13. 발표용 설명
 
@@ -264,7 +303,7 @@ LLM은 그 근거를 바탕으로 플레이어가 이해할 수 있는 최적화
 
 최종 `process_optimizer`는 전용 LangGraph를 사용한다.
 
-현재 `process_optimizer`는 공통 `AgentPipeline`의 단일 leaf agent로 등록되어 있고, 추천 응답 뼈대와 fallback만 가진 상태다. 하지만 최종 구조에는 상태 분석, 계획 승인, Unreal 실행 결과, 되돌리기, 효과 재측정처럼 서로 다른 상태와 조건 분기가 있다. 따라서 `operator_guide`처럼 공통 pipeline만 재사용하기보다 `material_generation`처럼 전용 graph를 두는 편이 책임과 흐름을 명확하게 만든다.
+현재 `process_optimizer`는 공통 `AgentPipeline`의 v2 전용 분기에서 실행된다. 기본 leaf agent router에는 v1 `ProcessOptimizerAgent`를 등록하지 않으며, 상태 분석, 계획 승인, Unreal 실행 결과, 되돌리기, 효과 재측정은 전용 graph가 담당한다.
 
 ```text
 Top-level Orchestrator
@@ -319,6 +358,8 @@ START
 ```
 
 ## 15. 시스템 프롬프트 역할
+
+현재 v2 메인 실행 경로는 LLM system prompt에 의존하지 않는다. `analyze`, `apply`, `undo`, `measure`는 결정론적 LangGraph node와 Tool 코드가 처리한다. 아래 규칙은 후속으로 LLM 설명 node를 붙일 때 적용할 설명 전용 system prompt 기준이다.
 
 시스템 프롬프트는 LLM이 수치를 임의로 만들거나 허용되지 않은 명령을 제안하지 않도록 역할을 제한한다.
 
@@ -461,7 +502,46 @@ LLM은 검증된 결과를 플레이어가 이해하기 쉬운 최적화 계획�
 
 최적화 Agent는 기존 `/ws/agent` WebSocket envelope를 사용한다. 각 요청은 `request_id`, `session_id`, `client_id`, `agent: "process_optimizer"`를 공통으로 포함한다.
 
-### 18.1 분석 요청
+### 18.1 주기 상태 업데이트
+
+Unreal은 플레이 중 경량 공장 상태를 주기적으로 보낼 수 있다. 이 요청은 최신 상태를 백엔드 session memory에 저장하기 위한 것이며, 공장 변경 명령을 만들지 않는다.
+
+```json
+{
+  "type": "agent.request",
+  "request_id": "optimizer-state-update-001",
+  "session_id": "player-session-001",
+  "client_id": "unreal-client",
+  "agent": "process_optimizer",
+  "payload": {
+    "operation": "state_update",
+    "goal": "balance",
+    "factoryRevision": 12,
+    "factory_state": {}
+  },
+  "context": {
+    "language": "ko",
+    "mode": "gameplay"
+  }
+}
+```
+
+```json
+{
+  "type": "agent.response",
+  "request_id": "optimizer-state-update-001",
+  "agent": "process_optimizer",
+  "payload": {
+    "status": "success",
+    "factoryRevision": 12,
+    "goal": "balance"
+  }
+}
+```
+
+NPC/UI는 주기 업데이트로 감지한 병목 징후를 바탕으로 최적화 분석을 제안할 수 있다. 하지만 `state_update` 자체는 preview 생성이나 실행 승인을 대체하지 않는다.
+
+### 18.2 분석 요청
 
 Unreal은 플레이어가 최적화 버튼을 눌렀을 때 현재 공장 snapshot과 `factoryRevision`을 보낸다.
 
@@ -487,7 +567,7 @@ Unreal은 플레이어가 최적화 버튼을 눌렀을 때 현재 공장 snapsh
 
 `factory_state`의 상세 schema는 구현 단계에서 Unreal 데이터 구조와 맞추되, 최소한 장비, 레시피, 입출력 inventory, 전력, 컨베이어 연결, 생산 지표를 포함해야 한다.
 
-### 18.2 계획 미리보기 응답
+### 18.3 계획 미리보기 응답
 
 백엔드는 아직 실행하지 않은 preview 계획을 반환한다. Unreal은 이 응답을 바탕으로 대상 장비와 컨베이어를 하이라이트한다.
 
@@ -509,7 +589,7 @@ Unreal은 플레이어가 최적화 버튼을 눌렀을 때 현재 공장 snapsh
 }
 ```
 
-### 18.3 승인 및 실행 요청
+### 18.4 승인 및 실행 요청
 
 Unreal은 플레이어가 전체 또는 선택 항목 적용을 승인한 경우에만 실행 요청을 보낸다.
 
@@ -533,7 +613,7 @@ Unreal은 플레이어가 전체 또는 선택 항목 적용을 승인한 경우
 }
 ```
 
-### 18.4 실행 및 Undo 결과
+### 18.5 실행 및 Undo 결과
 
 실행 결과는 각 변경 항목의 성공, 실패, 실패 사유를 포함한다. Undo는 `plan_id`와 최신 공장 상태를 함께 보내며, 충돌 시 역방향 명령을 실행하지 않는다.
 

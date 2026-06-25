@@ -57,11 +57,15 @@ def wire_agent_graph(graph: StateGraph) -> None:
         route_process_optimizer,
         {
             "state_update": "process_optimizer_state_update",
-            "analyze": "cache_lookup",
+            "analyze": "process_optimizer_v2_graph",
+            "apply": "process_optimizer_v2_graph",
+            "undo": "process_optimizer_v2_graph",
+            "measure": "process_optimizer_v2_graph",
             "error": "build_agent_error",
         },
     )
     graph.add_edge("process_optimizer_state_update", "build_agent_response")
+    graph.add_edge("process_optimizer_v2_graph", "build_agent_response")
     graph.add_conditional_edges(
         "cache_lookup",
         route_cache_result,
@@ -207,7 +211,7 @@ def route_response_validation(state: AgentGraphState) -> Literal["valid", "error
 
 def route_process_optimizer(
     state: AgentGraphState,
-) -> Literal["state_update", "analyze", "error"]:
+) -> Literal["state_update", "analyze", "apply", "undo", "measure", "error"]:
     if state.get("error"):
         return "error"
     payload = state.get("typedPayload", {})
@@ -216,4 +220,10 @@ def route_process_optimizer(
         return "state_update"
     elif operation == "analyze":
         return "analyze"
+    elif operation == "apply":
+        return "apply"
+    elif operation == "undo":
+        return "undo"
+    elif operation == "measure":
+        return "measure"
     return "error"
