@@ -5,6 +5,7 @@
 #include "PlanetEventManagerSubsystem.h"
 #include "QuestManagerSubsystem.h"
 #include "Recipe/RecipeTable.h"
+#include "OJJ_CharacterSelectionSubsystem.h" // EOJJ_CharacterType (Continue 캐릭터 복원, OJJ 합의)
 #include "FactorySaveGame.generated.h"
 
 USTRUCT(BlueprintType)
@@ -210,6 +211,10 @@ public:
 
 	UPROPERTY()
 	FPlanetEventState EventState;
+
+	// [게임진입] Continue 시 마지막 선택 캐릭터 복원용(기본 Man). OJJ 합의 — OJJ_CharacterSelectionSubsystem 연동.
+	UPROPERTY()
+	EOJJ_CharacterType SavedCharacterType = EOJJ_CharacterType::Man;
 
 	UPROPERTY()
 	TArray<FFactorySavedFoundationData> Foundations;
