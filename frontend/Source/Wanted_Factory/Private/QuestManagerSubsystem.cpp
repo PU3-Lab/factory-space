@@ -54,7 +54,8 @@ enum class ETutorialRequirementType : uint8
 {
 	Unsupported,
 	EventCount,
-	WarehouseCount
+	WarehouseCount,
+	ProductionCount
 };
 
 struct FTutorialRequirement
@@ -209,6 +210,13 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 		Requirement.RequiredCount = RequiredCount;
 	};
 
+	auto SetProductionRequirement = [&Requirement](const TCHAR* ItemId, int32 RequiredCount)
+	{
+		Requirement.Type = ETutorialRequirementType::ProductionCount;
+		Requirement.TargetId = FName(ItemId);
+		Requirement.RequiredCount = RequiredCount;
+	};
+
 	if (QuestId == TEXT("TUT_BASIC_001"))
 	{
 		SetEventRequirement(TutorialEventInputAction, TEXT("Move"));
@@ -323,7 +331,7 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	}
 	else if (QuestId == TEXT("TUT_SMELT_001"))
 	{
-		SetWarehouseRequirement(TEXT("iron_ore"), 10);
+		SetProductionRequirement(TEXT("iron_ore"), 10);
 	}
 	else if (QuestId == TEXT("TUT_POWER_007"))
 	{
@@ -383,7 +391,7 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	}
 	else if (QuestId == TEXT("TUT_EXPAND_001"))
 	{
-		SetWarehouseRequirement(TEXT("iron_ingot"), 10);
+		SetProductionRequirement(TEXT("iron_ingot"), 10);
 	}
 	else if (QuestId == TEXT("TUT_EXPAND_002"))
 	{
@@ -411,11 +419,11 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	}
 	else if (QuestId == TEXT("TUT_EXPAND_008"))
 	{
-		SetWarehouseRequirement(TEXT("iron_ore"), 50);
+		SetProductionRequirement(TEXT("iron_ore"), 20);
 	}
 	else if (QuestId == TEXT("TUT_EXPAND_009"))
 	{
-		SetWarehouseRequirement(TEXT("iron_ingot"), 30);
+		SetProductionRequirement(TEXT("iron_ingot"), 10);
 	}
 	else if (QuestId == TEXT("TUT_COMM_001"))
 	{
@@ -443,6 +451,8 @@ FString DescribeTutorialRequirement(const FTutorialRequirement& Requirement)
 			: FString::Printf(TEXT("event=%s target=%s count=%d"), *Requirement.EventId.ToString(), *Requirement.TargetId.ToString(), Requirement.RequiredCount);
 	case ETutorialRequirementType::WarehouseCount:
 		return FString::Printf(TEXT("warehouse item=%s count=%d"), *Requirement.TargetId.ToString(), Requirement.RequiredCount);
+	case ETutorialRequirementType::ProductionCount:
+		return FString::Printf(TEXT("production item=%s count=%d"), *Requirement.TargetId.ToString(), Requirement.RequiredCount);
 	default:
 		return TEXT("manual test only");
 	}
@@ -635,6 +645,7 @@ void UQuestManagerSubsystem::StartTutorialQuestTest()
 	bTutorialQuestTestActive = true;
 	CurrentTutorialQuestId = TutorialQuestSteps[0].QuestId;
 	bPendingTutorialStartDialogueReveal = false;
+	TutorialProgressCounts.Reset();
 	BroadcastCurrentTutorialQuestStep();
 	LogTutorialDialogue(CurrentTutorialQuestId, TEXT("on_start"));
 }
@@ -722,6 +733,52 @@ bool UQuestManagerSubsystem::GetTutorialQuestStepById(const FString& QuestId, FT
 	return true;
 }
 
+bool UQuestManagerSubsystem::GetTutorialStepProgress(
+	const FString& QuestId,
+	int32& OutCurrentCount,
+	int32& OutRequiredCount) const
+{
+	OutCurrentCount = 0;
+	OutRequiredCount = 0;
+
+	const FTutorialRequirement Requirement = GetTutorialRequirement(QuestId);
+	if (Requirement.Type != ETutorialRequirementType::ProductionCount
+		&& Requirement.Type != ETutorialRequirementType::WarehouseCount)
+	{
+		return false;
+	}
+
+	OutRequiredCount = Requirement.RequiredCount;
+	if (Requirement.Type == ETutorialRequirementType::ProductionCount)
+	{
+		OutCurrentCount = FMath::Min(
+			TutorialProgressCounts.FindRef(QuestId),
+			Requirement.RequiredCount);
+		return true;
+	}
+
+	OutCurrentCount = WarehouseSubsystem
+		? FMath::Min(WarehouseSubsystem->GetItemCount(Requirement.TargetId), Requirement.RequiredCount)
+		: 0;
+	return true;
+}
+
+FString UQuestManagerSubsystem::GetTutorialStepDisplayDescription(const FTutorialQuestStep& Step) const
+{
+	int32 CurrentCount = 0;
+	int32 RequiredCount = 0;
+	if (!GetTutorialStepProgress(Step.QuestId, CurrentCount, RequiredCount) || RequiredCount <= 1)
+	{
+		return Step.Description;
+	}
+
+	return FString::Printf(
+		TEXT("%s\n진행도: %d/%d"),
+		*Step.Description,
+		CurrentCount,
+		RequiredCount);
+}
+
 void UQuestManagerSubsystem::GetTutorialDialogueLines(
 	const FString& QuestId,
 	const FString& TriggerType,
@@ -760,7 +817,8 @@ void UQuestManagerSubsystem::GetTutorialSaveState(
 	bool& bOutPendingTutorialStartDialogueReveal,
 	FString& OutLastTutorialDialogueQuestId,
 	FString& OutLastTutorialDialogueTriggerType,
-	TArray<FTutorialQuestDialogueLine>& OutLastTutorialDialogueLines) const
+	TArray<FTutorialQuestDialogueLine>& OutLastTutorialDialogueLines,
+	TMap<FString, int32>& OutTutorialProgressCounts) const
 {
 	bOutTutorialQuestTestActive = bTutorialQuestTestActive;
 	OutCurrentTutorialQuestId = CurrentTutorialQuestId;
@@ -768,6 +826,7 @@ void UQuestManagerSubsystem::GetTutorialSaveState(
 	OutLastTutorialDialogueQuestId = LastTutorialDialogueQuestId;
 	OutLastTutorialDialogueTriggerType = LastTutorialDialogueTriggerType;
 	OutLastTutorialDialogueLines = LastTutorialDialogueLines;
+	OutTutorialProgressCounts = TutorialProgressCounts;
 }
 
 void UQuestManagerSubsystem::RestoreTutorialSaveState(
@@ -776,7 +835,8 @@ void UQuestManagerSubsystem::RestoreTutorialSaveState(
 	bool bInPendingTutorialStartDialogueReveal,
 	const FString& InLastTutorialDialogueQuestId,
 	const FString& InLastTutorialDialogueTriggerType,
-	const TArray<FTutorialQuestDialogueLine>& InLastTutorialDialogueLines)
+	const TArray<FTutorialQuestDialogueLine>& InLastTutorialDialogueLines,
+	const TMap<FString, int32>& InTutorialProgressCounts)
 {
 	bTutorialQuestTestActive = bInTutorialQuestTestActive;
 	CurrentTutorialQuestId = InCurrentTutorialQuestId;
@@ -784,6 +844,7 @@ void UQuestManagerSubsystem::RestoreTutorialSaveState(
 	LastTutorialDialogueQuestId = InLastTutorialDialogueQuestId;
 	LastTutorialDialogueTriggerType = InLastTutorialDialogueTriggerType;
 	LastTutorialDialogueLines = InLastTutorialDialogueLines;
+	TutorialProgressCounts = InTutorialProgressCounts;
 
 	BroadcastCurrentTutorialQuestStep();
 	OnTutorialDialogueLogged.Broadcast(
@@ -897,6 +958,7 @@ void UQuestManagerSubsystem::LoadTutorialQuestTestData()
 	LastTutorialDialogueQuestId.Empty();
 	LastTutorialDialogueTriggerType.Empty();
 	LastTutorialDialogueLines.Reset();
+	TutorialProgressCounts.Reset();
 
 	FString StepsCsvContent;
 	const FString StepsCsvPath = FPaths::Combine(FPaths::ProjectDir(), TutorialQuestStepsCsvRelativePath);
@@ -1306,11 +1368,36 @@ void UQuestManagerSubsystem::HandleWarehouseItemAdded(FName ItemID, int32 AddedC
 		if (Step)
 		{
 			const FTutorialRequirement Requirement = GetTutorialRequirement(Step->QuestId);
-			if (Requirement.Type == ETutorialRequirementType::WarehouseCount
-				&& Requirement.TargetId == ItemID
-				&& NewTotalCount >= Requirement.RequiredCount)
+			if (Requirement.TargetId == ItemID)
 			{
-				AdvanceTutorialQuestStep(false);
+				if (Requirement.Type == ETutorialRequirementType::WarehouseCount)
+				{
+					if (NewTotalCount >= Requirement.RequiredCount)
+					{
+						AdvanceTutorialQuestStep(false);
+					}
+					else if (Requirement.RequiredCount > 1)
+					{
+						BroadcastCurrentTutorialQuestStep();
+					}
+				}
+				else if (Requirement.Type == ETutorialRequirementType::ProductionCount)
+				{
+					const int32 PreviousCount = TutorialProgressCounts.FindRef(Step->QuestId);
+					const int32 NewCount = FMath::Min(Requirement.RequiredCount, PreviousCount + AddedCount);
+					if (NewCount != PreviousCount)
+					{
+						TutorialProgressCounts.Add(Step->QuestId, NewCount);
+						if (NewCount >= Requirement.RequiredCount)
+						{
+							AdvanceTutorialQuestStep(false);
+						}
+						else
+						{
+							BroadcastCurrentTutorialQuestStep();
+						}
+					}
+				}
 			}
 		}
 	}
