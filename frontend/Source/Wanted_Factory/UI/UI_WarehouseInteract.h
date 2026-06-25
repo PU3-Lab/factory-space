@@ -21,10 +21,6 @@ protected:
     // --- 기계 공통 및 출력(Output) 관련 위젯만 바인딩 ---
     UPROPERTY(meta = (BindWidget)) class UImage* IMG_MachinePreview;
     UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_MachineName;
-    UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_MachineState;
-    UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_DurabilityPercent;
-    UPROPERTY(meta = (BindWidget)) class UProgressBar* PB_Durability;
-    UPROPERTY(meta = (BindWidget)) class UButton* BTN_Repair;
 
     // 출력(보관함) UI들
     UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_OutputName;
@@ -32,8 +28,6 @@ protected:
     UPROPERTY(meta = (BindWidget)) class UProgressBar* PB_OutputBuffer;
     UPROPERTY(meta = (BindWidget)) class UBorder* B_OutputDropZone; // 마우스 센서 패드
     UPROPERTY(meta = (BindWidget)) class UImage* IMG_OutputIcon;
-    UPROPERTY(meta = (BindWidget)) class UProgressBar* PB_CraftingProgress;
-    UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_ProgressPercent;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Data") class UDataTable* MachineDataTable;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Data") class UDataTable* ResourceDataTable;
@@ -50,10 +44,6 @@ protected:
     // UpdateOutputUI
     void UpdateOutputUI(FName ItemName, int32 CurrentAmount, int32 MaxAmount);
     void UpdateMachineName(const FText& MachineName);
-    void UpdateMachineState(FString StateText, FLinearColor StateColor);
-    void UpdateDurabilityUI(float CurrentDurability, float MaxDurability);
-    void UpdateCraftingProgress(float Percent);
-    UFUNCTION() void OnRepairClicked();
 
     // 드래그 앤 드롭 수용
     virtual bool NativeOnDrop(const FGeometry& MyGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
