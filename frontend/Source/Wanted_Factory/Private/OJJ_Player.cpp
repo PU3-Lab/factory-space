@@ -1552,6 +1552,11 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
           UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] WarehouseInteractWidgetClass 미할당! BP에서 할당하세요."));
           return;
        }
+    	
+    	if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
+    	{
+    		MainHUD->CloseQuestWindow();
+    	}	
 
        // 이제 액체 탱크도 여기로 안전하게 들어와 UI_WarehouseInteract 창을 소환합니다
        UUI_WarehouseInteract* WHWidget = CreateWidget<UUI_WarehouseInteract>(PC, WarehouseInteractWidgetClass);

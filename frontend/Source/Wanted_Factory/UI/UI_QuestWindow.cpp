@@ -360,3 +360,13 @@ void UUI_QuestWindow::HandleOnTutorialDialogueLogged(
     UpdateQuestZoneVisibility();
     UpdateSubQuestZoneVisibility();
 }
+
+void UUI_QuestWindow::CloseQuestWindow()
+{
+    // 현재 켜져있는 상태라면 기존 Toggle 로직을 실행시켜 
+    // bIsQuestWindowOpen = false 처리와 함께 K2_PlayQuestAnimation(false)를 구동
+    if (bIsQuestWindowOpen)
+    {
+        ToggleQuestWindow();
+    }
+}
