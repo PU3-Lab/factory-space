@@ -128,9 +128,11 @@ void UUI_BuildModeMain::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
     UpdateSelectedPreview();
 }
 
-void UUI_BuildModeMain::OnMachineModeClicked()   { SwitchBuildSubMode(EBuildSubMode::Machine); }
-void UUI_BuildModeMain::OnPowerModeClicked()     { SwitchBuildSubMode(EBuildSubMode::Power); }
-void UUI_BuildModeMain::OnStructureModeClicked() { SwitchBuildSubMode(EBuildSubMode::Structure); }
+// 카테고리 버튼 클릭은 슬롯1 자동선택을 하지 않음(기존 UX). 순환(←/→) 애니 진행 중 버튼이 끼어들면
+// 직전 CycleSubMode가 세운 플래그를 이 클릭의 OnHotbarOutFinished가 소비해 오발동하므로, 진입부에서 명시적으로 끈다.
+void UUI_BuildModeMain::OnMachineModeClicked()   { bAutoSelectFirstSlotOnSwitch = false; SwitchBuildSubMode(EBuildSubMode::Machine); }
+void UUI_BuildModeMain::OnPowerModeClicked()     { bAutoSelectFirstSlotOnSwitch = false; SwitchBuildSubMode(EBuildSubMode::Power); }
+void UUI_BuildModeMain::OnStructureModeClicked() { bAutoSelectFirstSlotOnSwitch = false; SwitchBuildSubMode(EBuildSubMode::Structure); }
 
 void UUI_BuildModeMain::SwitchBuildSubMode(EBuildSubMode NewMode)
 {
