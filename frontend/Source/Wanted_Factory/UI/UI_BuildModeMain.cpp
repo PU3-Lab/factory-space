@@ -154,7 +154,7 @@ void UUI_BuildModeMain::InitializeHotbarRegistry()
 {
     SubModeHotbarRegistry.Empty();
 
-    // 🤖 [1. 기계 설치 모드 한글 이름표 완벽 바인딩]
+    // 🤖 [1. 기계 설치 모드 한글 이름표 바인딩]
     TArray<FHotbarSlotData>& MachineHotbar = SubModeHotbarRegistry.FindOrAdd(EBuildSubMode::Machine);
     MachineHotbar.SetNum(10);
     MachineHotbar[0] = { EOJJ_BuildPlacementMode::Conveyor,       TEXT("Conveyor"),       FText::FromString(TEXT("컨베이어")) };
@@ -168,7 +168,7 @@ void UUI_BuildModeMain::InitializeHotbarRegistry()
     MachineHotbar[8] = { EOJJ_BuildPlacementMode::LiquidTank,     TEXT("LiquidTank"),     FText::FromString(TEXT("액체 탱크")) };
     MachineHotbar[9] = { EOJJ_BuildPlacementMode::Pipe,           TEXT("Pipe"),           FText::FromString(TEXT("파이프")) };
 
-    // ⚡ [2. 전력 설치 모드 한글 이름표 완벽 바인딩]
+    // ⚡ [2. 전력 설치 모드 한글 이름표 바인딩]
     TArray<FHotbarSlotData>& PowerHotbar = SubModeHotbarRegistry.FindOrAdd(EBuildSubMode::Power);
     PowerHotbar.SetNum(10);
     PowerHotbar[0] = { EOJJ_BuildPlacementMode::PowerLine,  TEXT("Cable"),  FText::FromString(TEXT("전선")) };
@@ -176,7 +176,7 @@ void UUI_BuildModeMain::InitializeHotbarRegistry()
     PowerHotbar[2] = { EOJJ_BuildPlacementMode::PowerPlant, TEXT("PowerPlant"), FText::FromString(TEXT("기본 발전소")) };
     // 4~10번 자리는 미래에 구현될 수력, 화력 발전소 등을 위해 깔끔하게 빈 칸 유지
 
-    // 🏢 [3. 건물 설치 모드 한글 이름표 완벽 바인딩]
+    // 🏢 [3. 건물 설치 모드 한글 이름표 바인딩]
     TArray<FHotbarSlotData>& StructHotbar = SubModeHotbarRegistry.FindOrAdd(EBuildSubMode::Structure);
     StructHotbar.SetNum(10);
     StructHotbar[0] = { EOJJ_BuildPlacementMode::BaseCamp,               TEXT("BaseCamp"), FText::FromString(TEXT("중앙 거점")) };
