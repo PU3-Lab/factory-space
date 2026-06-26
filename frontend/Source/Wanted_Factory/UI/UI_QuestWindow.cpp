@@ -37,11 +37,6 @@ void UUI_QuestWindow::NativeConstruct()
 {
     Super::NativeConstruct();
 
-    if (BTN_RequestQuests)
-    {
-        BTN_RequestQuests->OnClicked.AddDynamic(this, &UUI_QuestWindow::OnRequestQuestsClicked);
-    }
-
     UGameInstance* GI = GetGameInstance();
     if (!GI)
     {

@@ -1167,10 +1167,10 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
     if (bEntering)
     {
        // 빌드모드 진입 시 일반 기계창이나 창고 세부화면이 열려 있다면 자동으로 연동을 끊고 제거합니다.
-       if (MachineInteractWidgetInstance.IsValid() || WarehouseInteractWidgetInstance)
-       {
-          CloseMachineInteractWidget(PC);
-       }
+    	if (MachineInteractWidgetInstance.IsValid() || WarehouseInteractWidgetInstance || SynthesizerInteractWidgetInstance)
+    	{
+    		CloseMachineInteractWidget(PC);
+    	}
 
        // 빌드모드 진입 시 가방 창이 열려 있다면 뷰포트에서 제거하고 리프레시 타이머까지 깔끔하게 폭파합니다.
        if (bIsInventoryOpen && InventoryWidgetInstance)
