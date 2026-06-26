@@ -691,12 +691,14 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 		return;
 	}
 
-	// step-off 안착 보간 중엔 이동 입력 잠금(보간이 위치를 전담 → 진동/끼임 방지).
-	if (BuildController && BuildController->IsInBuildMode())
+	// 탑다운 빌드모드에선 캐릭터 이동 잠금(팀 의도 — 탑다운은 캐릭터 조작 없음).
+	// TPS 빌드모드/None은 통과 → 캐릭터 이동 유지. (IsInBuildMode는 TPS도 true라 TPS 먹통 회귀 → TopDown 한정)
+	if (BuildController && BuildController->GetBuildViewMode() == EBuildViewMode::TopDown)
 	{
 		return;
 	}
 
+	// step-off 안착 보간 중엔 이동 입력 잠금(보간이 위치를 전담 → 진동/끼임 방지).
 	if (bSteppingOff)
 	{
 		return;
@@ -1036,7 +1038,9 @@ void AOJJ_Player::NotifyLadderEndOverlap(AOJJ_Ladder* Ladder)
 
 void AOJJ_Player::Look(const FInputActionValue& Value)
 {
-	if (BuildController && BuildController->IsInBuildMode())
+	// 탑다운 빌드모드에선 마우스룩 잠금(팀 의도). TPS 빌드모드/None은 통과 → 마우스 카메라 유지.
+	// (IsInBuildMode는 TPS도 true라 TPS 진입 시 마우스룩 먹통 회귀 → TopDown 한정)
+	if (BuildController && BuildController->GetBuildViewMode() == EBuildViewMode::TopDown)
 	{
 		return;
 	}
