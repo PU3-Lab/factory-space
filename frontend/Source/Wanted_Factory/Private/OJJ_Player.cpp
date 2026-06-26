@@ -1212,10 +1212,10 @@ void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
     if (NewMode != EBuildViewMode::None)
     {
        // ── 진입 또는 모드 전환 공통: 열려 있던 기계창/창고/가방 UI 정리 ──
-       if (MachineInteractWidgetInstance.IsValid() || WarehouseInteractWidgetInstance)
-       {
-          CloseMachineInteractWidget(PC);
-       }
+    	if (MachineInteractWidgetInstance.IsValid() || WarehouseInteractWidgetInstance || SynthesizerInteractWidgetInstance)
+    	{
+    		CloseMachineInteractWidget(PC);
+    	}
        if (bIsInventoryOpen && InventoryWidgetInstance)
        {
           InventoryWidgetInstance->RemoveFromParent();

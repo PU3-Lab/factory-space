@@ -29,8 +29,6 @@ protected:
     UPROPERTY(meta = (BindWidget)) class UVerticalBox* VB_MainQuestZone;
     UPROPERTY(meta = (BindWidget)) class UVerticalBox* VB_SubQuestZone;
     UPROPERTY(meta = (BindWidget)) class UBorder* B_QuestBg;
-    
-    UPROPERTY(meta = (BindWidget)) class UButton* BTN_RequestQuests;
 
     // --- 텍스트 컴포넌트 바인딩 ---
     UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_MainQuestTitle;
