@@ -243,42 +243,37 @@ void UUI_QuestWindow::DisplayTutorialStep(const FTutorialQuestStep& Step)
 
 void UUI_QuestWindow::UpdateQuestZoneVisibility()
 {
-    if (!VB_MainQuestZone || !VB_SubQuestZone)
-    {
-        return;
-    }
+    if (!VB_MainQuestZone || !VB_SubQuestZone) return;
 
     UGameInstance* GI = GetGameInstance();
     UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
-    if (!QuestManager)
-    {
-        VB_MainQuestZone->SetVisibility(ESlateVisibility::Collapsed);
-        VB_SubQuestZone->SetVisibility(ESlateVisibility::Collapsed);
-        return;
-    }
+    if (!QuestManager) return;
 
+    // 1. 튜토리얼 스텝 존재 여부 체크
     FTutorialQuestStep CurrentStep;
     const bool bHasTutorialStep = QuestManager->GetCurrentTutorialQuestStep(CurrentStep);
-    const ESlateVisibility MainQuestVisibility = bHasTutorialStep
-        ? ESlateVisibility::SelfHitTestInvisible
-        : ESlateVisibility::Collapsed;
 
-    VB_MainQuestZone->SetVisibility(MainQuestVisibility);
+    //메인 퀘스트가 완전히 끝났는지 상태 판정식 결합
+    bool bIsMainQuestActive = false;
+    FQuestState MainQuest;
 
-    if (!bHasTutorialStep)
+    // 튜토리얼이나 진행 중인 메인 퀘스트가 "진행 중"일 때만 노출을 허용합니다.
+    const bool bShouldShowMainZone = bHasTutorialStep || bIsMainQuestActive;
+
+    if (bShouldShowMainZone)
     {
-        if (TXT_MainQuestTitle)
-        {
-            TXT_MainQuestTitle->SetText(FText::GetEmpty());
-        }
-
-        if (TXT_MainQuestDesc)
-        {
-            TXT_MainQuestDesc->SetText(FText::GetEmpty());
-        }
-
-        VB_SubQuestZone->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        VB_MainQuestZone->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     }
+    else
+    {
+        // 서브퀘스트가 위로 밀리지 않습니다.
+        VB_MainQuestZone->SetVisibility(ESlateVisibility::Hidden);
+
+        if (TXT_MainQuestTitle) TXT_MainQuestTitle->SetText(FText::GetEmpty());
+        if (TXT_MainQuestDesc)  TXT_MainQuestDesc->SetText(FText::GetEmpty());
+    }
+    // 서브 퀘스트 영역 최종 표시 처리 호출
+    UpdateSubQuestZoneVisibility();
 }
 
 void UUI_QuestWindow::UpdateSubQuestZoneVisibility()

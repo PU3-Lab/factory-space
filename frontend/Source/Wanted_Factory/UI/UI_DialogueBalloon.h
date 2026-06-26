@@ -13,6 +13,7 @@ class WANTED_FACTORY_API UUI_DialogueBalloon : public UUserWidget
 protected:
 	UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_Dialogue;
 	UPROPERTY(meta = (BindWidget)) class UWidget* DialogueContainer;
+	UPROPERTY(meta = (BindWidget)) class USizeBox* SB_DialogueData;
 
 	virtual void NativeConstruct() override;
 	virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;

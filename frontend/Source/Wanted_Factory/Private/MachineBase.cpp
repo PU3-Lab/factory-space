@@ -1057,7 +1057,7 @@ void AMachineBase::UpdateStateIndicatorFacingPlayer()
 		return;
 	}
 
-	const FVector ToCamera = CameraManager->GetCameraLocation() - StateIndicatorIconWidgetComponent->GetComponentLocation();
+	const FVector ToCamera = -CameraManager->GetCameraRotation().Vector();
 	if (ToCamera.IsNearlyZero())
 	{
 		return;
