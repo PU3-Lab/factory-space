@@ -1491,19 +1491,34 @@ bool AOJJ_Grid::OJJ_GetPipeOutputStartCell(FIntPoint ClickedCell, int32 MaxSnap,
 	return bFound;
 }
 
-bool AOJJ_Grid::OJJ_FindLiquidOutputPortUnderCursorScreen(APlayerController* PC, float MaxScreenDist, FIntPoint& OutPortCell) const
+bool AOJJ_Grid::OJJ_FindLiquidOutputPortUnderCursorScreen(APlayerController* PC, float MaxScreenDist, FIntPoint& OutPortCell, bool bUseScreenCenter) const
 {
 	if (!PC)
 	{
 		return false;
 	}
-	float MouseX = 0.0f;
-	float MouseY = 0.0f;
-	if (!PC->GetMousePosition(MouseX, MouseY))
+	// [M3] 기준 스크린 점: TopDown=마우스 커서, TPS=뷰포트 중앙(크로스헤어). TPS는 마우스가 중앙고정/숨김이라 마우스 좌표 무의미.
+	FVector2D Mouse = FVector2D::ZeroVector;
+	if (bUseScreenCenter)
 	{
-		return false;
+		int32 ViewX = 0, ViewY = 0;
+		PC->GetViewportSize(ViewX, ViewY);
+		if (ViewX <= 0 || ViewY <= 0)
+		{
+			return false;
+		}
+		Mouse = FVector2D(ViewX * 0.5f, ViewY * 0.5f);
 	}
-	const FVector2D Mouse(MouseX, MouseY);
+	else
+	{
+		float MouseX = 0.0f;
+		float MouseY = 0.0f;
+		if (!PC->GetMousePosition(MouseX, MouseY))
+		{
+			return false;
+		}
+		Mouse = FVector2D(MouseX, MouseY);
+	}
 
 	float BestDist = MaxScreenDist;
 	bool bFound = false;
@@ -1534,6 +1549,138 @@ bool AOJJ_Grid::OJJ_FindLiquidOutputPortUnderCursorScreen(APlayerController* PC,
 		}
 	}
 	return bFound;
+}
+
+bool AOJJ_Grid::OJJ_FindConveyorRoute(FIntPoint Start, FIntPoint Goal, bool bAllowWater, TArray<FIntPoint>& OutCells) const
+{
+	OutCells.Reset();
+	if (Start == Goal)
+	{
+		OutCells.Add(Start);
+		return true;
+	}
+	if (!IsValidGridCell(Start) || !IsValidGridCell(Goal))
+	{
+		return false;
+	}
+
+	// 탐색 범위: 시작↔끝 바운딩박스 + 여유(Margin). 그리드가 커도 국소 영역만 탐색해 부하 상한.
+	const int32 Margin = FMath::Max(0, OJJ_RouteSearchMargin);
+	const int32 MinX = FMath::Max(0, FMath::Min(Start.X, Goal.X) - Margin);
+	const int32 MaxX = FMath::Min(GridSize.X - 1, FMath::Max(Start.X, Goal.X) + Margin);
+	const int32 MinY = FMath::Max(0, FMath::Min(Start.Y, Goal.Y) - Margin);
+	const int32 MaxY = FMath::Min(GridSize.Y - 1, FMath::Max(Start.Y, Goal.Y) + Margin);
+
+	// 통행 가능: 박스 내 + 유효 + 머신 점유 없음 + 건설가능(파이프는 물 허용). 시작/끝은 예외(엔드포인트 규칙은 최종 검증 담당).
+	auto Passable = [&](const FIntPoint& C) -> bool
+	{
+		if (C == Start || C == Goal)
+		{
+			return true;
+		}
+		if (C.X < MinX || C.X > MaxX || C.Y < MinY || C.Y > MaxY)
+		{
+			return false;
+		}
+		if (OJJ_GetMachineAtCell(OccupiedCells, C) != nullptr)
+		{
+			return false;
+		}
+		if (IsCellConstructible(C))
+		{
+			return true;
+		}
+		return bAllowWater && IsCellWater(C);
+	};
+
+	static const FIntPoint Dirs[4] = { FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1) };
+	const float StepCost = 1.0f;
+	const float TurnCost = FMath::Max(0.0f, OJJ_RouteTurnPenalty);
+	auto Heur = [&](const FIntPoint& C) -> float
+	{
+		return StepCost * (FMath::Abs(C.X - Goal.X) + FMath::Abs(C.Y - Goal.Y));
+	};
+
+	struct FNode { FIntPoint Cell; float F; };
+	auto Cmp = [](const FNode& A, const FNode& B) { return A.F < B.F; }; // min-heap
+
+	TArray<FNode> Open;
+	TMap<FIntPoint, float> G;
+	TMap<FIntPoint, FIntPoint> Came;
+	TMap<FIntPoint, FIntPoint> ArriveDir; // 노드에 도달한 진행방향(꺾임 비용 판정)
+
+	G.Add(Start, 0.0f);
+	ArriveDir.Add(Start, FIntPoint::ZeroValue);
+	Open.HeapPush({ Start, Heur(Start) }, Cmp);
+
+	// 노드 확장 상한(완전 안전망) — 박스 면적 또는 8000 중 작은 값.
+	const int32 MaxExpand = FMath::Min(8000, (MaxX - MinX + 1) * (MaxY - MinY + 1) + 1);
+	int32 Expanded = 0;
+	bool bFound = false;
+
+	while (Open.Num() > 0)
+	{
+		FNode Cur;
+		Open.HeapPop(Cur, Cmp);
+		if (Cur.Cell == Goal)
+		{
+			bFound = true;
+			break;
+		}
+		if (++Expanded > MaxExpand)
+		{
+			break;
+		}
+		const float CurG = G.FindRef(Cur.Cell);
+		const FIntPoint InDir = ArriveDir.FindRef(Cur.Cell);
+		for (const FIntPoint& D : Dirs)
+		{
+			const FIntPoint Nb = Cur.Cell + D;
+			if (!Passable(Nb))
+			{
+				continue;
+			}
+			float Tentative = CurG + StepCost;
+			if (InDir != FIntPoint::ZeroValue && D != InDir)
+			{
+				Tentative += TurnCost; // 직선 선호 — 방향 바뀌면 가중
+			}
+			const float* Existing = G.Find(Nb);
+			if (!Existing || Tentative < *Existing)
+			{
+				G.Add(Nb, Tentative);
+				Came.Add(Nb, Cur.Cell);
+				ArriveDir.Add(Nb, D);
+				Open.HeapPush({ Nb, Tentative + Heur(Nb) }, Cmp);
+			}
+		}
+	}
+
+	if (!bFound)
+	{
+		return false;
+	}
+
+	// 역추적 → Start..Goal 연속 셀.
+	TArray<FIntPoint> Rev;
+	FIntPoint C = Goal;
+	Rev.Add(C);
+	while (C != Start)
+	{
+		const FIntPoint* Prev = Came.Find(C);
+		if (!Prev || Rev.Num() > 4096) // 안전망(사이클/과대 경로)
+		{
+			return false;
+		}
+		C = *Prev;
+		Rev.Add(C);
+	}
+	for (int32 I = 0, J = Rev.Num() - 1; I < J; ++I, --J)
+	{
+		Rev.Swap(I, J);
+	}
+	OutCells = MoveTemp(Rev);
+	return true;
 }
 
 void AOJJ_Grid::BakeBuildableCells(bool bVerbose, bool bWriteCache)
@@ -2810,7 +2957,7 @@ float AOJJ_Grid::OJJ_ComputeFoundationSnapLift(FIntPoint Origin, FIntPoint Size,
 	return SnapSteps * OJJ_FoundationSnapStep;
 }
 
-void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size, bool bForceInvalid)
+void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size, bool bForceInvalid, float HeightLiftZ)
 {
 	ClearHoverPreview();
 
@@ -2851,7 +2998,7 @@ void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Siz
 		{
 			const FIntPoint PreviewCell((int32)X, (int32)Y);
 			const FVector CellCenter = GridToWorld(PreviewCell);
-			const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(PreviewCell) + 2.0f + HoverExtraZLift);
+			const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(PreviewCell) + 2.0f + HoverExtraZLift + HeightLiftZ);
 			const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
 			TargetISM->AddInstance(FTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale), /*bWorldSpace=*/true);
 		}
@@ -4957,7 +5104,7 @@ void AOJJ_Grid::OJJ_ShowGhostForMachine(AMachineBase* MachineCDO, FIntPoint Orig
 	GhostMeshComp->SetVisibility(true);
 }
 
-void AOJJ_Grid::OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize, bool bValid)
+void AOJJ_Grid::OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize, bool bValid, float HeightLiftZ)
 {
 	if (!GhostMeshComp || !FoundationCDO || EffSize.X < 1 || EffSize.Y < 1)
 	{
@@ -5009,7 +5156,7 @@ void AOJJ_Grid::OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntP
 	GhostMeshComp->SetWorldScale3D(Scale);
 	GhostMeshComp->SetWorldLocationAndRotation(
 		FVector(LowerLeftCenter.X + OffsetX + Offset.X, LowerLeftCenter.Y + OffsetY + Offset.Y,
-			LowerLeftCenter.Z + SnapLift + Offset.Z),
+			LowerLeftCenter.Z + SnapLift + HeightLiftZ + Offset.Z),
 		SlabRot);
 
 	// 틴트는 Overlay Material 패스(#187 B안) — 머신 고스트와 동일. 베이스(슬래브 원본) 위에 초록/빨강 합성.
