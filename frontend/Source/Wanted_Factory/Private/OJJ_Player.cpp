@@ -87,12 +87,12 @@ AOJJ_Player::AOJJ_Player()
 
 	NightSpotLight = CreateDefaultSubobject<USpotLightComponent>(TEXT("NightSpotLight"));
 	NightSpotLight->SetupAttachment(RootComponent);
-	NightSpotLight->SetRelativeLocation(FVector(90.0f, 0.0f, 55.0f));
-	NightSpotLight->SetRelativeRotation(FRotator(-8.0f, 0.0f, 0.0f));
-	NightSpotLight->Intensity = 100.0f;
-	NightSpotLight->AttenuationRadius = 2200.0f;
-	NightSpotLight->InnerConeAngle = 18.0f;
-	NightSpotLight->OuterConeAngle = 36.0f;
+	NightSpotLight->SetRelativeLocation(FVector(10.0f, 0.0f, 25.0f));
+	NightSpotLight->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
+	NightSpotLight->Intensity = 50.f;
+	NightSpotLight->AttenuationRadius = 1500.f;
+	NightSpotLight->InnerConeAngle = 30.0f;
+	NightSpotLight->OuterConeAngle = 45.0f;
 	NightSpotLight->bUseInverseSquaredFalloff = false;
 	NightSpotLight->LightFalloffExponent = 2.5f;
 	NightSpotLight->SetVisibility(false);

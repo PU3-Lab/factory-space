@@ -136,13 +136,13 @@ protected:
 	float MagneticStormFogDensityBonus = 0.006f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.0"))
-	float SandStormFogDensityBonus = 0.035f;
+	float SandStormFogDensityBonus = 0.9;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.0"))
 	float MagneticStormSunIntensityScale = 0.72f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.0"))
-	float SandStormSunIntensityScale = 0.65f;
+	float SandStormSunIntensityScale = 0.3f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
 	TObjectPtr<UNiagaraSystem> MagneticStormNiagara;
