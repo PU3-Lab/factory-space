@@ -599,6 +599,12 @@ protected:
 	void SetHotbarSlot8();
 	void SetHotbarSlot9();
 	void SetHotbarSlot10();
+	// [카테고리 순환] TPS 빌드모드 전용 ←/→ 방향키로 설치 카테고리(기계/전력/건물) 순환.
+	// CycleBuildCategory: GetBuildViewMode()==TPS 가드 + 위젯(UI_BuildModeMain) CycleSubMode 위임.
+	// TopDown/None에서는 무동작(←/→ 오발동 차단). ExecuteHotbarSlot과 동일 위임 구조.
+	void CycleBuildCategory(int32 Dir);
+	void CycleCategoryNext(); // → : Dir=+1 (기계→전력→건물)
+	void CycleCategoryPrev(); // ← : Dir=-1 (역순)
 	void SetDemolishMode(const FInputActionValue& Value);
 
 	// 스프린트 — Started=달리기 속도, Completed=걷기 속도로 복귀.
