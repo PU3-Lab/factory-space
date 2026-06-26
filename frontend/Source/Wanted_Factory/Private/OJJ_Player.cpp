@@ -671,6 +671,11 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 	}
 
 	// step-off 안착 보간 중엔 이동 입력 잠금(보간이 위치를 전담 → 진동/끼임 방지).
+	if (BuildController && BuildController->IsInBuildMode())
+	{
+		return;
+	}
+
 	if (bSteppingOff)
 	{
 		return;
@@ -1010,6 +1015,11 @@ void AOJJ_Player::NotifyLadderEndOverlap(AOJJ_Ladder* Ladder)
 
 void AOJJ_Player::Look(const FInputActionValue& Value)
 {
+	if (BuildController && BuildController->IsInBuildMode())
+	{
+		return;
+	}
+
 	const FVector2D Axis = Value.Get<FVector2D>();
 	// 마우스 raw 델타가 그대로 회전량이 되지 않도록 감도 배율을 곱해 완화
 	AddControllerYawInput(Axis.X * LookYawSensitivity);
@@ -1480,6 +1490,11 @@ void AOJJ_Player::StopSprint(const FInputActionValue& Value)
 void AOJJ_Player::BuildPan(const FInputActionValue& Value)
 {
 	// IA_BuildPan은 IMC_Build에만 매핑되므로 빌드모드에서만 호출됨. Pan 내부에서 0입력/DeltaSeconds 처리.
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+
 	if (BuildCamera)
 	{
 		BuildCamera->Pan(Value.Get<FVector2D>());
@@ -1488,6 +1503,11 @@ void AOJJ_Player::BuildPan(const FInputActionValue& Value)
 
 void AOJJ_Player::BuildRotate(const FInputActionValue& Value)
 {
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+
 	const float RotateInput = Value.Get<float>() * -1;
 
 	if (BuildCamera)
