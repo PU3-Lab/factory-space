@@ -36,3 +36,6 @@ EscapePod,EscapePid,탈출 포드,1,,0,1000,0,0,0,0,0,4,4,,,
 Cable,Cable,전선,1,,,,,,,,,,,/Game/Assets/UIImg/etc/Cable.Cable,,
 BaseCamp,BaseCamp,중앙거점,1,iron_ingot,1,1000,10,0,0,0,0,7,7,/Game/Assets/UIImg/Machine/BaseCamp.BaseCamp,/Game/Assets/Machine/BaseCamp/SM_BaseCamp.SM_BaseCamp,/Game/Assets/Machine/BaseCamp/M_BaseCamp.M_BaseCamp
 Signal_Amplifier,Signal_Amplifier,신호증폭기,3,iron_ingot,1,1000,10,0,0,0,0,7,7,/Game/Assets/UIImg/etc/Signal_Amplifier.Signal_Amplifier,/Game/Assets/Machine/Signal_Amplifier/SM_Signal_Amplifier.SM_Signal_Amplifier,/Game/Assets/Machine/Signal_Amplifier/M_Signal_Amplifier.M_Signal_Amplifier
+Ladder,Ladder,사다리,1,,,,,,,,,,,/Game/Assets/UIImg/etc/Ladder.Ladder,,
+FlatFloor,FlatFloor,평평한 바닥,1,,,,,,,,,,,/Game/Assets/UIImg/etc/FlatFloor.FlatFloor,,
+SlantedFloor,SlantedFloor,기울어진 바닥,,,,,,,,,,,,/Game/Assets/UIImg/etc/SlantedFloor.SlantedFloor,,
