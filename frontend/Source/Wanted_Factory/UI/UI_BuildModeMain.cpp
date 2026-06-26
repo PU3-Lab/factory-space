@@ -147,7 +147,27 @@ void UUI_BuildModeMain::OnHotbarOutFinished()
     CachedMachineLevels.Empty();
     RefreshHotbarSlotsVisual();
 
+    // [카테고리 순환] 순환 경로(←/→)로 전환된 경우에만 새 카테고리의 슬롯1 자동선택.
+    // CurrentSubMode가 방금 갱신됐으므로 ExecutePlacementMode(1)이 정확히 새 카테고리 기준으로 해석됨.
+    // (CycleSubMode 직후가 아니라 여기서 부르는 이유: out-애니 완료 전엔 CurrentSubMode가 이전 값)
+    if (bAutoSelectFirstSlotOnSwitch)
+    {
+        bAutoSelectFirstSlotOnSwitch = false;
+        ExecutePlacementMode(1);
+    }
+
     if (Anim_HotbarIn) PlayAnimation(Anim_HotbarIn);
+}
+
+void UUI_BuildModeMain::CycleSubMode(int32 Dir)
+{
+    // Machine(0)↔Power(1)↔Structure(2) 3분류 래핑. +1=다음, +2=(-1 등가) 이전 — uint8 언더플로 없이 역순.
+    const uint8 Cur = (uint8)CurrentSubMode;
+    const uint8 Nxt = (uint8)((Cur + (Dir > 0 ? 1 : 2)) % 3);
+    if ((EBuildSubMode)Nxt == CurrentSubMode) return; // 동일 카테고리면 무동작(이론상 없음)
+
+    bAutoSelectFirstSlotOnSwitch = true; // OnHotbarOutFinished에서 슬롯1 자동선택 게이트
+    SwitchBuildSubMode((EBuildSubMode)Nxt);
 }
 
 void UUI_BuildModeMain::InitializeHotbarRegistry()
