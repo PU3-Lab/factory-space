@@ -54,6 +54,19 @@ enum class EOJJ_BuildPlacementMode : uint8
 	SignalAmplifier
 };
 
+// 빌드 뷰 모드 — 빌드모드의 "관점"을 구분(상태/입력 골격, 1단계). 카메라/좌표 분기는 2·3단계.
+//   None    = 빌드모드 아님(기존 bIsBuildMode == false 와 동치)
+//   TopDown = 탑다운 빌드(기존 B키 동작). 별도 빌드 카메라 + 마우스 커서 레이.
+//   TPS     = 3인칭 빌드(신규 V키). 1단계에선 진입 골격만 — 카메라/좌표는 아직 TopDown처럼 동작.
+// ⚠️ None을 0으로 고정(IsInBuildMode = (Mode != None)). 신규 값은 끝에 append(BP 직렬화 호환).
+UENUM(BlueprintType)
+enum class EBuildViewMode : uint8
+{
+	None,
+	TopDown,
+	TPS
+};
+
 /**
  * 건설 모드 컨트롤러. 호버 갱신, 미리보기, 클릭 배치 라우팅을 담당.
  * 빌드모드 진입/종료 토글과 클릭 배치는 외부(플레이어 Pawn)가 입력에서
@@ -199,8 +212,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController|Power")
 	TWeakObjectPtr<AMachineBase> PowerLineStartMachine;
 
+	// 빌드 뷰 모드(단일 진실원). None=빌드 아님, TopDown=B, TPS=V. 기존 bIsBuildMode를 대체.
+	// IsInBuildMode()는 (BuildViewMode != None)이라 기존 호출처 전부 무변경 호환.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
-	bool bIsBuildMode = false;
+	EBuildViewMode BuildViewMode = EBuildViewMode::None;
 
 	// 마우스 아래 cursor cell (WorldToGrid 결과). 머신의 lower-left origin은
 	// ComputeOriginFromCursorCell로 변환 — 짝수 머신은 lower-left bias 정책.
@@ -217,6 +232,11 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
 	bool bRampFoundationSelected = false;
 
+	// [공중 Foundation] 빌드 높이 오프셋(층 수, 1층=OJJ_FoundationSnapStep=100uu). Foundation(Flat)에서 증감 — TPS=Q/E, 탑다운=↑↓.
+	// 회전/Foundation종류와 동일 라이프사이클 — Enter/ExitBuildMode에서만 0 리셋(모드 전환·램프 전환 시 유지=세션 기억).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildController")
+	int32 BuildHeightOffset = 0;
+
 public:
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void EnterBuildMode();
@@ -225,7 +245,23 @@ public:
 	void ExitBuildMode();
 
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
-	bool IsInBuildMode() const { return bIsBuildMode; }
+	bool IsInBuildMode() const { return BuildViewMode != EBuildViewMode::None; }
+
+	// 현재 빌드 뷰 모드(None/TopDown/TPS). 플레이어 입력 라우팅·2단계 카메라 분기에서 사용.
+	UFUNCTION(BlueprintPure, Category = "BuildController")
+	EBuildViewMode GetBuildViewMode() const { return BuildViewMode; }
+
+	// [경로형 2클릭 공통 골격] 연결형 배치(전선/컨베이어/파이프)의 입력 정책. TPS=2클릭(앵커→커밋), 그 외=드래그.
+	// 마우스가 카메라 Look에 묶이는 TPS에선 드래그 스윕이 불가하므로 누름 2회로 처리. 전선부터 적용, 컨/파이프 확장 예정.
+	UFUNCTION(BlueprintPure, Category = "BuildController")
+	bool IsTwoClickConnectMode() const { return BuildViewMode == EBuildViewMode::TPS; }
+
+	// 빌드 뷰 모드 전환의 절대 세터(단일 진입점). None=해제(ExitBuildMode), TopDown/TPS=진입 또는 전환.
+	//  - None→TopDown/TPS : EnterBuildMode 경유 진입(검증 실패 시 None 유지). TPS는 진입 후 모드만 갱신.
+	//  - TopDown↔TPS      : 1단계 골격 — 그리드 상태는 그대로 두고 모드 플래그만 교체.
+	// 토글 규칙(같은 키 재입력 시 해제)은 호출자(플레이어)가 담당.
+	UFUNCTION(BlueprintCallable, Category = "BuildController")
+	void SetBuildViewMode(EBuildViewMode NewMode);
 
 	// 연동된 그리드 접근자 (빌드 카메라 자동 센터링 등 외부에서 그리드 중심을 얻기 위함).
 	UFUNCTION(BlueprintPure, Category = "BuildController")
@@ -271,6 +307,21 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void CancelPowerLineDrag();
+
+	// [경로형 2클릭 공통 골격] 진행 중인 연결 앵커(전선 등)를 무른다. 무른 게 있으면 true(호출부가 모드 유지 판단).
+	// TPS 2클릭 중 Z 취소가 모드까지 None으로 나가지 않고 앵커만 취소해 재시도하도록 함. 컨/파이프 확장 예정.
+	UFUNCTION(BlueprintCallable, Category = "BuildController")
+	bool CancelPendingConnectAnchor();
+
+	// [공중 Foundation] 빌드 높이 오프셋 층수 증감(Q/E). Delta>0=올림/Delta<0=내림, clamp(min 0).
+	// ⚠️ TPS Foundation(Flat)일 때만 동작(램프 제외). 1단계는 값 증감 + 로그만 — 고스트/스폰 Z 반영은 2단계.
+	UFUNCTION(BlueprintCallable, Category = "BuildController")
+	void AdjustBuildHeight(int32 Delta);
+
+	// [공중 Foundation] 이 풋프린트(Origin/EffSize)에 적용할 높이 오프셋 Z(uu) = BuildHeightOffset×100.
+	// 게이트: TPS && Flat && offset>0 일 때만. ⚠️(b) 이웃 Foundation 접촉(상속) 시 0 — coplanar 확장(씨앗 배치에만 높이 적용).
+	// 고스트(슬래브/타일)·스폰이 모두 이 값을 써 프리뷰=배치 일치. FoundationCDO는 Thickness(이웃 판정 기준)용.
+	float GetFoundationHeightLiftZ(const class AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize) const;
 
 	// 빌드 모드 상태 토글. Enter/Exit의 자체 가드(이미 같은 상태면 no-op) 덕분에 안전.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
@@ -332,6 +383,22 @@ private:
 	// 상면으로 바뀌므로 강제 재적재 유도.
 	TArray<FIntPoint> CharacterOverlayCells;
 
+	// [TPS 3단계] 빌드 트레이스 소스 추상화 — 현재 빌드 뷰 모드에 따라 히트(FHitResult) 산출.
+	//  - TopDown/None : 기존 마우스 커서 트레이스(GetHitResultUnderCursorByChannel).
+	//  - TPS          : 화면 중앙(크로스헤어) deproject → 전방 LineTrace(ECC_Visibility) + 10m 도달거리 클램프.
+	// 전체 FHitResult를 돌려주므로 downstream(액터/컴포넌트 판별·Foundation/Ladder/PowerLine)이 모드 무관하게 재사용.
+	// 고스트(UpdateMouseHover)·설치/철거(GetCursorCell)·파워라인 픽이 동일 소스를 쓰도록 세 경로 모두 이 함수 경유.
+	bool ResolveBuildTraceHit(APlayerController* PC, FHitResult& OutHit) const;
+
+	// [TPS 3단계] 도달거리(플레이어~히트 최대, uu). 초과 시 도달거리 링 방향 지면으로 클램프. PIE에서 UX 튜닝.
+	// (private 멤버라 BlueprintReadWrite 불가 — EditAnywhere만으로 Details 패널 튜닝 가능, BP 접근 불필요)
+	UPROPERTY(EditAnywhere, Category = "BuildController|TPS", meta = (ClampMin = "0.0"))
+	float BuildTPSMaxReach = 1000.f;
+
+	// [TPS 3단계] 화면중앙 전방 트레이스 최대 길이(uu). 이 안에 표면 없으면 고스트 없음(탑다운 !bHit과 동일).
+	UPROPERTY(EditAnywhere, Category = "BuildController|TPS", meta = (ClampMin = "0.0"))
+	float BuildTPSTraceLength = 100000.f;
+
 	// 마우스 커서 아래 그리드 셀 조회(라인 트레이스 → WorldToGrid). 실패 시 false.
 	bool GetCursorCell(FIntPoint& OutCell) const;
 
@@ -346,6 +413,11 @@ private:
 	void CommitConveyorDrag();
 	void AppendConveyorPathTo(FIntPoint TargetCell);
 	void AddConveyorPathCell(FIntPoint Cell);
+
+	// [TPS 2클릭 오토라우터] 앵커(ConveyorDragCells[0]) ↔ TargetCell 사이를 연속 L경로로 재구성한다.
+	// L자 = 가로 먼저(x1→x2) then 세로(y1→y2). 4방향 인접 셀만 생성 → OJJ_BuildConveyorPlacementPath 연속성 요건 충족.
+	// TPS 컨베이어 2클릭에서 매 호버마다 호출(앵커→조준 경로 미리보기). 검증/색상은 기존 프리뷰가 처리.
+	void OJJ_BuildConveyorAutoRoute(FIntPoint TargetCell);
 
 	// 컨베이어 호버 갱신(드래그 중이면 drag, 아니면 단일 셀 미리보기). 파이프 모드도 공용(F4-1).
 	void UpdateConveyorHover(FIntPoint CursorCell);
