@@ -2,6 +2,7 @@
 #include "Components/TextBlock.h"
 #include "Components/Widget.h"
 #include "Components/EditableText.h"
+#include "Components/SizeBox.h"
 #include "Engine/GameInstance.h"
 #include "Input/Reply.h"
 #include "FactoryAgentClientSubsystem.h" 
@@ -200,23 +201,30 @@ void UUI_DialogueBalloon::ClearExternalDialogue()
 
 void UUI_DialogueBalloon::DisplayCurrentLine()
 {
+    // 위젯 본체 루트는 절대로 Collapsed 시키지 않고 항시 살려둡니다.
+    // 그래야 하단의 / 인풋 Border 창이 언제든 독립적으로 튀어나올 수 있습니다.
+    SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
     if (bHasExternalDialogue)
     {
-        SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        if (SB_DialogueData)   SB_DialogueData->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         if (DialogueContainer) DialogueContainer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-        if (TXT_Dialogue) TXT_Dialogue->SetText(FText::FromString(ExternalDialogueText));
+        if (TXT_Dialogue)      TXT_Dialogue->SetText(FText::FromString(ExternalDialogueText));
         return;
     }
 
     if (CachedLines.IsEmpty())
     {
-        SetVisibility(ESlateVisibility::Collapsed);
+        // 퀘스트가 끝나 대사가 비어있다면, 인풋 창은 내버려 두고 
+        // 말풍선 배경(Image_229)과 글자가 담긴 'Size Box 세트'만 깔끔하게 투명 청소합니다
+        if (SB_DialogueData)   SB_DialogueData->SetVisibility(ESlateVisibility::Collapsed);
         if (DialogueContainer) DialogueContainer->SetVisibility(ESlateVisibility::Collapsed);
-        if (TXT_Dialogue) TXT_Dialogue->SetText(FText::GetEmpty());
+        if (TXT_Dialogue)      TXT_Dialogue->SetText(FText::GetEmpty());
         return;
     }
 
-    SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    // 일반 대사가 존재할 때는 주머니 세트를 다시 이쁘게 노출합니다.
+    if (SB_DialogueData)   SB_DialogueData->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     if (DialogueContainer) DialogueContainer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
     FString CombinedDialogue;
