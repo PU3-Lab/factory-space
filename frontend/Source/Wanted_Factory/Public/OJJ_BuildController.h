@@ -14,6 +14,11 @@ class AConveyor;
 class APipe;
 class APowerGridNode;
 class APowerLine;
+class UStaticMeshComponent;
+class UStaticMesh;
+class UMaterialInterface;
+class UMaterialInstanceDynamic;
+struct FHitResult;
 
 // 빌드 배치 모드 — 머신(기본) / 컨베이어 드래그.
 UENUM(BlueprintType)
@@ -429,4 +434,46 @@ private:
 	bool IsPowerLineEndpoint(const AMachineBase* Machine) const;
 	void BeginPowerLineDrag(AMachineBase* StartMachine);
 	void CommitPowerLineDrag();
+
+	// [#5 전선 미리보기] 드래그 중 앵커↔조준을 실제 메시(실린더 세그먼트 + 동적 머티리얼 3색)로 그린다.
+	// DrawDebugLine과 달리 출시 빌드에서도 보인다. sag/세그먼트/끝점Z 공식은 APowerLine 룩을 읽어 OJJ에
+	// 재구현(Chan 코드 무수정·복사). 색: 노랑=드래그(타겟없음)/초록=연결가능/빨강=무효·범위밖.
+	void UpdatePowerLinePreview(const FHitResult& Hit);
+	// 미리보기 세그먼트 전부 숨김(드래그 취소/커밋/빌드해제 시). 매 프레임 spawn/destroy 금지 — 풀 재사용.
+	void HidePowerLinePreview();
+	// 미리보기 동적 머티리얼(M_Ghost_Preview 기반) 멱등 보장. 실패 시 PowerLinePreviewMID는 null 유지.
+	void EnsurePowerLinePreviewMID();
+	// APowerLine::GetSagPoint 공식 복제 — Lerp 후 Z를 SagDepth·4α(1-α)만큼 내림(포물선 처짐).
+	static FVector ComputePowerLineSagPoint(const FVector& Start, const FVector& End, float Alpha, float SagDepth);
+
+	// [#5 전선 미리보기] 세그먼트 메시 풀(재사용 — 매 프레임 생성/파괴 금지). 길이 따라 가변, 남는 건 SetVisibility(false).
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UStaticMeshComponent>> PowerLinePreviewSegments;
+
+	// 세그먼트에 입힐 동적 머티리얼(색 3단계 TintColor). M_Ghost_Preview 기반, 런타임 생성.
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> PowerLinePreviewMID;
+
+	// 미리보기 머티리얼 베이스(기본 M_Ghost_Preview, 생성자 로드 — 에디터 재지정 가능). TintColor/Opacity 파라미터.
+	UPROPERTY(EditAnywhere, Category = "BuildController|Power|Preview")
+	TObjectPtr<UMaterialInterface> PowerLinePreviewMaterial;
+
+	// 미리보기 실린더 메시(기본 /Engine/BasicShapes/Cylinder, 생성자 로드).
+	UPROPERTY(EditAnywhere, Category = "BuildController|Power|Preview")
+	TObjectPtr<UStaticMesh> PowerLinePreviewMesh;
+
+	UPROPERTY(EditAnywhere, Category = "BuildController|Power|Preview")
+	FLinearColor PowerLinePreviewColorDragging = FLinearColor(1.0f, 0.85f, 0.1f);   // 노랑: 드래그 중(타겟 없음)
+
+	UPROPERTY(EditAnywhere, Category = "BuildController|Power|Preview")
+	FLinearColor PowerLinePreviewColorValid = FLinearColor(0.15f, 0.9f, 0.25f);     // 초록: 연결 가능
+
+	UPROPERTY(EditAnywhere, Category = "BuildController|Power|Preview")
+	FLinearColor PowerLinePreviewColorInvalid = FLinearColor(0.95f, 0.15f, 0.15f);  // 빨강: 무효·범위밖
+
+	UPROPERTY(EditAnywhere, Category = "BuildController|Power|Preview", meta = (ClampMin = "0.1"))
+	float PowerLinePreviewThickness = 4.0f;
+
+	UPROPERTY(EditAnywhere, Category = "BuildController|Power|Preview", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float PowerLinePreviewOpacity = 0.6f;
 };
