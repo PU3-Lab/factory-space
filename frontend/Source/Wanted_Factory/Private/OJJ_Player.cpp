@@ -177,6 +177,13 @@ void AOJJ_Player::BeginPlay()
 		}
 	}
 	
+	// [빌드 작업등] NightSpotLight 기본 강도/반경 캡처 — TPS 작업등 상향 후 밤 일반 점등으로 원복할 때 사용.
+	if (NightSpotLight)
+	{
+		BaseNightLightIntensity = NightSpotLight->Intensity;
+		BaseNightLightRadius = NightSpotLight->AttenuationRadius;
+	}
+
 	UpdateNightSpotLightVisibility();
 	ConnectFactoryAgentClient();
 
@@ -655,7 +662,7 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
 	PlayerInputComponent->BindKey(EKeys::Slash, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
-	PlayerInputComponent->BindKey(EKeys::Period, IE_Pressed, this, &AOJJ_Player::TriggerTutorialDialogueReveal);
+	PlayerInputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &AOJJ_Player::TriggerTutorialDialogueReveal);
 	// [옛 빌드 입력 경로 전수 정리] O(성형)/P(합성)/T(통신) 직행 BindKey는 카테고리 숫자키 슬롯이 완전 대체하여 제거.
 	// 콘솔 SetBuildMode tower(통신탑)는 계속 동작.
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AOJJ_Player::SetDemolishModeShortcut);
@@ -682,10 +689,14 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::Nine,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot9);
 	PlayerInputComponent->BindKey(EKeys::Zero,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot10); // 0키 = 10번 슬롯
 
-	// [카테고리 순환] ←/→ 방향키 = TPS 빌드모드 설치 카테고리 순환(기계↔전력↔건물). 슬롯키와 동일한 레거시
-	// BindKey 패턴(IA 에셋 불필요). TPS 전용 가드는 핸들러(CycleBuildCategory)에서 처리 — TopDown/None 무동작.
+	// [카테고리 순환] ←/→ 방향키 = 빌드모드(TPS+TopDown) 설치 카테고리 순환(기계↔전력↔건물). 슬롯키와 동일한
+	// 레거시 BindKey 패턴(IA 에셋 불필요). 빌드모드 가드는 핸들러(CycleBuildCategory)에서 처리 — None(빌드 밖) 무동작.
 	PlayerInputComponent->BindKey(EKeys::Right, IE_Pressed, this, &AOJJ_Player::CycleCategoryNext);
 	PlayerInputComponent->BindKey(EKeys::Left,  IE_Pressed, this, &AOJJ_Player::CycleCategoryPrev);
+
+	// [빌드 작업등] L = 빌드모드 작업등 토글. 핸들러(ToggleWorkLight)가 IsInBuildMode 가드 — 빌드 밖 무동작.
+	// TPS=NightSpotLight 재활용, TopDown=BuildCamera 하향광. 실제 점등은 UpdateNightSpotLightVisibility가 매 틱 분배.
+	PlayerInputComponent->BindKey(EKeys::L, IE_Pressed, this, &AOJJ_Player::ToggleWorkLight);
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -976,25 +987,63 @@ void AOJJ_Player::Tick(float DeltaSeconds)
 
 void AOJJ_Player::UpdateNightSpotLightVisibility()
 {
-	if (!NightSpotLight)
-	{
-		return;
-	}
+	// ⚠️ 매 틱 호출 — 모든 조명 상태(밤 점등 + 빌드 작업등)의 단일 진입점. 외부에서 SetVisibility 하면
+	//    다음 틱에 여기서 덮어쓰므로, 작업등 토글(bWorkLightOn)도 반드시 이 함수에서 분배해야 한다.
 
-	bool bShouldEnable = false;
+	// 1) 밤 시간대 판정(기존 로직): 18시~6시.
+	bool bNight = false;
 	if (const UWorld* World = GetWorld())
 	{
 		if (const UPlanetEventManagerSubsystem* EventManager = World->GetSubsystem<UPlanetEventManagerSubsystem>())
 		{
 			const int32 CurrentHour24 = EventManager->GetCurrentHour24();
-			bShouldEnable = CurrentHour24 >= NightLightStartHour24 || CurrentHour24 < NightLightEndHour24;
+			bNight = CurrentHour24 >= NightLightStartHour24 || CurrentHour24 < NightLightEndHour24;
 		}
 	}
 
-	if (NightSpotLight->IsVisible() != bShouldEnable)
+	// 2) 빌드 작업등 상태 — 모드별 분배.
+	const EBuildViewMode ViewMode = BuildController ? BuildController->GetBuildViewMode() : EBuildViewMode::None;
+	const bool bWorkLightActive = bWorkLightOn && ViewMode != EBuildViewMode::None;
+	const bool bTPSWorkLight = bWorkLightActive && ViewMode == EBuildViewMode::TPS;
+	const bool bTopDownWorkLight = bWorkLightActive && ViewMode == EBuildViewMode::TopDown;
+
+	// 3) NightSpotLight(플레이어 정면): 밤이거나 TPS 작업등이면 점등. TPS 작업등일 땐 작업등답게 상향,
+	//    그 외(밤 일반)엔 기본값으로 원복. (탑다운에선 플레이어가 숨겨져 어차피 렌더 안 됨 → BuildCamera 담당)
+	if (NightSpotLight)
 	{
-		NightSpotLight->SetVisibility(bShouldEnable);
+		const bool bSpotOn = bNight || bTPSWorkLight;
+		if (NightSpotLight->IsVisible() != bSpotOn)
+		{
+			NightSpotLight->SetVisibility(bSpotOn);
+		}
+
+		const float TargetIntensity = bTPSWorkLight ? TPSWorkLightIntensity : BaseNightLightIntensity;
+		const float TargetRadius = bTPSWorkLight ? TPSWorkLightRadius : BaseNightLightRadius;
+		if (!FMath::IsNearlyEqual(NightSpotLight->Intensity, TargetIntensity))
+		{
+			NightSpotLight->SetIntensity(TargetIntensity);
+		}
+		if (!FMath::IsNearlyEqual(NightSpotLight->AttenuationRadius, TargetRadius))
+		{
+			NightSpotLight->SetAttenuationRadius(TargetRadius);
+		}
 	}
+
+	// 4) BuildCamera 하향광(탑다운 전용): 탑다운 작업등일 때만 점등.
+	if (BuildCamera)
+	{
+		BuildCamera->SetWorkLightEnabled(bTopDownWorkLight);
+	}
+}
+
+void AOJJ_Player::ToggleWorkLight()
+{
+	// 빌드모드(TPS/TopDown)에서만 토글. 빌드 밖이면 무동작(키 오발동 차단). 실제 점등 분배는 매 틱 갱신.
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+	bWorkLightOn = !bWorkLightOn;
 }
 
 void AOJJ_Player::AbortClimb()
@@ -1278,6 +1327,13 @@ void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
           }
           SetActorHiddenInGame(false);
 
+          // [빌드 작업등] TopDown→TPS 전환 시 BuildCamera 하향광 즉시 끔(월드 스폿이라 1프레임 잔광이 TPS 뷰에
+          // 보이는 것 방지). TPS 작업등은 NightSpotLight가 담당 — 다음 틱 UpdateNightSpotLightVisibility가 분배.
+          if (BuildCamera)
+          {
+             BuildCamera->SetWorkLightEnabled(false);
+          }
+
           // ⚠️ 마우스: 커서 숨김 + GameOnly(마우스 = 3인칭 카메라 Look). 화면중앙 조준이라 OS 커서 불필요.
           //    EnterBuildMode가 켠 커서를 여기서 끔. (크로스헤어 UI는 후속 — 일단 화면중앙 감각.)
           if (PC)
@@ -1317,6 +1373,14 @@ void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
     else
     {
        // ── 빌드모드 해제(None) ──
+       // [빌드 작업등] 빌드 나가면 작업등 끔(리셋). 라이트 실소등은 다음 틱 UpdateNightSpotLightVisibility가 처리하나,
+       // BuildCamera 하향광은 즉시 꺼 1프레임 잔광을 막는다.
+       bWorkLightOn = false;
+       if (BuildCamera)
+       {
+          BuildCamera->SetWorkLightEnabled(false);
+       }
+
        if (PC)
        {
           // 복귀 뷰타겟은 플레이어 자신(소유 Pawn)
@@ -1568,11 +1632,11 @@ void AOJJ_Player::SetHotbarSlot9()  { ExecuteHotbarSlot(9); }
 void AOJJ_Player::SetHotbarSlot10() { ExecuteHotbarSlot(10); }
 
 // [카테고리 순환] ←/→ → 현재 카테고리(LDJ UI_BuildModeMain)를 Dir 방향으로 1칸 순환 위임.
-// ExecuteHotbarSlot과 동일 위임 구조이나, 가드는 IsInBuildMode()가 아니라 GetBuildViewMode()==TPS로 강화
-// — TopDown/None 빌드에서 ←/→가 카테고리를 바꾸는 오발동을 차단(TPS 전용 기능).
+// ExecuteHotbarSlot과 동일 위임 구조이나, 가드는 IsInBuildMode()가 아니라 GetBuildViewMode()==None 차단으로
+// — 빌드모드(TPS+TopDown) 공용. None(빌드 밖)에서만 ←/→ 카테고리 오발동을 차단한다.
 void AOJJ_Player::CycleBuildCategory(int32 Dir)
 {
-	if (!BuildController || BuildController->GetBuildViewMode() != EBuildViewMode::TPS)
+	if (!BuildController || BuildController->GetBuildViewMode() == EBuildViewMode::None)
 	{
 		return;
 	}
