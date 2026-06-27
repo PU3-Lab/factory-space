@@ -522,10 +522,13 @@ void AOJJ_RampFoundation::UpdateSlabVisual()
 	// 미확정(에디터 프리뷰/스폰 직후 OnConstruction)은 CDO 고정 램프 규격(기존과 동일).
 	const int32 R = PlacedClimbLengthCells > 0 ? PlacedClimbLengthCells : FMath::Max(1, FoundationSize.X);
 	const int32 Rise = PlacedClimbLengthCells > 0 ? PlacedRiseSteps : 1;
-	const int32 Cols = FMath::Max(1, FoundationSize.Y);
-	const float SlabThickness = FMath::Max(1.0f, Thickness);
-	// F3.8': 확정 step 전달(미확정 에디터 프리뷰 0 — 역회전 항등, 기존 프리뷰와 동일).
+	// F3.8': 확정 step(미확정 에디터 프리뷰 0 — 역회전 항등). Cols 폭축 parity 산출에 먼저 필요해 위로 이동.
 	const int32 Step = PlacedClimbLengthCells > 0 ? PlacedRotationSteps : 0;
+	// [#7 버그 a] 폭(Cols)도 climb과 같은 parity로 축 선택 — 회전 램프(Step 1/3)는 폭축이 X다. 로드 후
+	// FoundationSize가 비정사각 footprint로 바뀌면(SetFoundationSizeForSave) .Y 고정이 climb축을 집어 폭이
+	// 좁아지던 버그 수정. 배치 직후(CDO 정사각)는 X=Y라 결과 동일(회귀 0).
+	const int32 Cols = (Step % 2 == 0) ? FMath::Max(1, FoundationSize.Y) : FMath::Max(1, FoundationSize.X);
+	const float SlabThickness = FMath::Max(1.0f, Thickness);
 
 	// 충돌 바디 = 쐐기(시각 OFF, 충돌 유지). Rise<1(평지 브리지)은 쐐기 미생성(false) → Deck이 충돌 담당.
 	const bool bWedgeBuilt = OJJ_BuildWedgeVisual(R, Cols, Rise, CellSize, Step);

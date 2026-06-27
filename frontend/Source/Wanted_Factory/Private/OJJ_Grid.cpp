@@ -2815,11 +2815,17 @@ bool AOJJ_Grid::OJJ_GetUniformSurfaceZ(const TArray<FIntPoint>& Cells, float& Ou
 
 	bool bFirst = true;
 	bool bOnFoundation = false;
+	bool bAnyRampCell = false; // [#7 b] 램프(경사) 셀 포함 여부 — 평탄 균일면이 아니므로 그 위 안착 거부용.
 	float SurfaceZ = 0.0f;
 	for (const FIntPoint& Cell : Cells)
 	{
 		float CellSurfaceZ = 0.0f;
 		const bool bCellOnFoundation = GetFoundationSurfaceZ(Cell, CellSurfaceZ);
+		// 램프 셀 식별: FoundationCells 셀 구조체엔 표식이 없어 점유 Foundation 액터 타입으로 판별(이미 :417 동일 패턴).
+		if (bCellOnFoundation && Cast<AOJJ_RampFoundation>(GetFoundationAtCell(Cell)))
+		{
+			bAnyRampCell = true;
+		}
 		if (bFirst)
 		{
 			bFirst = false;
@@ -2833,6 +2839,14 @@ bool AOJJ_Grid::OJJ_GetUniformSurfaceZ(const TArray<FIntPoint>& Cells, float& Ou
 		{
 			return false;
 		}
+	}
+
+	// [#7 버그 b 수정] 램프 셀 위에는 평탄 안착이 성립하지 않는다. 충돌은 쐐기 convex(경사 아래 빈공간 미포함)인데
+	// 셀 장부 SurfaceZ만 보던 기존 판정(특히 1×1 풋프린트 자명통과, F3.10 b②)이 컨베이어/직배치물을 쐐기에
+	// 묻거나 허공에 깔리게 했다. 램프 셀이 하나라도 포함되면 균일면 아님으로 거부(평탄 Foundation은 무영향).
+	if (bOnFoundation && bAnyRampCell)
+	{
+		return false;
 	}
 
 	if (bOnFoundation)
