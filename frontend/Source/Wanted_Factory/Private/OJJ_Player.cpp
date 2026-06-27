@@ -87,7 +87,7 @@ AOJJ_Player::AOJJ_Player()
 
 	NightSpotLight = CreateDefaultSubobject<USpotLightComponent>(TEXT("NightSpotLight"));
 	NightSpotLight->SetupAttachment(RootComponent);
-	NightSpotLight->SetRelativeLocation(FVector(25.0f, 0.0f, 30.0f));
+	NightSpotLight->SetRelativeLocation(FVector(30.0f, 0.0f, 30.0f));
 	NightSpotLight->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
 	NightSpotLight->Intensity = 50.f;
 	NightSpotLight->AttenuationRadius = 1500.f;

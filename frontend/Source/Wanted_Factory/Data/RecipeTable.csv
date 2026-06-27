@@ -31,5 +31,5 @@ Crush_Sulfur,Grinder,sulfur_ore,1,,,,,sulfur_powder,1,,,1.5
 Make_Glass,Smelter,sand,1,,,,,glass,1,,,3
 Make_Ironbar,MoldingMachine,iron_ingot,5,,,,,iron_bar,2,,,5
 Make_Copperwire,MoldingMachine,copper_ingot,5,,,,,copper_wire,2,,,5
-Make_Tinboard,MoldingMachine,tin_ingot,5,,,,,tin_board,2,,,5
-Make_telecommunication_tower,Synthesizer,rebar,20,copperwire,20,tinboard,20,TeleCommunicationTower,1,,,30
+Make_Tinplate,MoldingMachine,tin_ingot,5,,,,,tin_plate,2,,,5
+Make_telecommunication_tower,Synthesizer,iron_bar,20,copper_wire,20,tin_plate,20,TeleCommunicationTower,1,,,30
