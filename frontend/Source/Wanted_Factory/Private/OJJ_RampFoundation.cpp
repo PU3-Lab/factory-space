@@ -241,7 +241,13 @@ FOJJFoundationFitResult AOJJ_RampFoundation::OJJ_ComputeHoverFootprint(const AOJ
 		const int32 WalkGap = FMath::CeilToInt(
 			OneSideRiseSteps * AOJJ_Grid::OJJ_FoundationSnapStep / WalkLimit) + 1;
 		const int32 DistFound = bNeg ? DistNeg : DistPos;
-		const int32 DistGround = FMath::Max(1, WalkGap - DistFound);
+		// [#7 커서거리 제거] 길이는 커서거리(DistFound)와 무관하게 보행 슬로프로 지면까지 = (WalkGap-1)칸 고정.
+		// GapLength = DistFound + DistGround - 1 인데, DistGround = WalkGap - DistFound 면 DistFound가 상쇄돼
+		// GapLength = WalkGap-1 (커서 무관). Origin = CursorCell-(DistNeg-1) 은 DistFound가 파운데이션을 추적하므로
+		// 이미 파운데이션 변에 앵커됨(커서 절대위치 무관). 커서가 멀어 DistFound>=WalkGap이면 DistGround<=0이 되나
+		// GapLength에만 반영돼 길이를 줄일 뿐(WalkGap>=2 → GapLength>=1 보장). 기존 Max(1,..) 클램프가
+		// DistFound>=WalkGap에서 GapLength=DistFound(커서거리)로 새던 "커서로 늘어남" 버그를 제거한다.
+		const int32 DistGround = WalkGap - DistFound;
 
 		// (f) 누락측 합성 Dist/Z 채움 → ①이 양쪽을 다 보게 한다. Z는 SynthGroundZ(FoundationZ 앵커).
 		if (bNeg) { DistPos = DistGround; ZPos = SynthGroundZ; }  // Foundation −쪽, 맨땅 +쪽 합성
