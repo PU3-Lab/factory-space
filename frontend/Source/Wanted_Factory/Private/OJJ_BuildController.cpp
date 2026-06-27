@@ -1407,6 +1407,20 @@ TSubclassOf<AOJJ_Foundation> AOJJ_BuildController::GetActiveFoundationClass() co
 	return bRampFoundationSelected ? RampFoundationClass : FlatFoundationClass;
 }
 
+float AOJJ_BuildController::OJJ_ComputeFoundationTopZ(AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize, int32 RotationSteps) const
+{
+	// [#B 묻힘 금지] 파운데이션 상면 Z 단일원 — 배치 PlaceFoundationAtCursor의 BaseSurfaceZ 산식과 동일.
+	// 정보 부족 시 큰 값 반환 = 묻힘 게이트 사실상 통과(거부 안 함, 안전측).
+	if (!TargetGrid || !FoundationCDO)
+	{
+		return TNumericLimits<float>::Max();
+	}
+	const float PlaceZ = TargetGrid->GetFoundationPlacementLocation(Origin, EffSize).Z;
+	const float SnapLift = FoundationCDO->OJJ_ComputeSnapLift(*TargetGrid, Origin, EffSize, RotationSteps, nullptr);
+	const float HeightLift = GetFoundationHeightLiftZ(FoundationCDO, Origin, EffSize);
+	return PlaceZ + SnapLift + HeightLift + FoundationCDO->GetThickness();
+}
+
 void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHitResult& Hit)
 {
 	// 癒몄떊 ?몃쾭? ?숈씪???쒕㈃ 寃뚯씠?? floor/癒몄떊 ?꾩뿉?쒕쭔 ?좏슚(洹????쒕㈃? off-grid ???꾨━酉??대━??.
@@ -1453,14 +1467,18 @@ void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHi
 	// ???⑥씪 吏꾩떎???좎?. ?ъ쑀 ?띿뒪?몃뒗 ?대┃ ??濡쒓렇(?꾨옒 ?몃쾭 濡쒓렇?먮룄 ?숇컲 ??? 蹂寃??쒕쭔?대씪 ?鍮덈룄).
 	// [공중 Foundation] 높이 오프셋 Z 1회 계산 — 타일 프리뷰·슬래브 고스트·스폰이 동일 값을 쓰도록(이웃 조회 중복 방지).
 	const float FoundationHeightLiftZ = GetFoundationHeightLiftZ(DefaultFoundation, Fit.Origin, Fit.EffSize);
-	TargetGrid->OJJ_UpdateFoundationHoverPreview(Fit.Origin, Fit.EffSize, !Fit.bValid, FoundationHeightLiftZ);
+	// [#B 묻힘 금지] 상면 Z 단일원 + 램프 예외(램프는 묻힘 허용). 호버 타일색/고스트/배치가 같은 TopZ로 정합.
+	const float FoundationTopZ = OJJ_ComputeFoundationTopZ(ActiveClass.GetDefaultObject(), Fit.Origin, Fit.EffSize, Fit.EffectiveRotationSteps);
+	const bool bRejectBuried = !bRampFoundationSelected;
+	TargetGrid->OJJ_UpdateFoundationHoverPreview(Fit.Origin, Fit.EffSize, !Fit.bValid, FoundationHeightLiftZ, FoundationTopZ, bRejectBuried);
 
 	// 怨좎뒪???꾨━酉?#187): ?됲뙋 ?꾩슜. ???먯젙?먯? ?몃쾭 ??쇨낵 ?숈씪(Fit.bValid AND CanPlaceFoundation)濡??쇱튂.
 	// ?⑦봽???꾩냽 踰붿쐞??怨좎뒪??誘명몴????OJJ_HideGhost濡??꾪솚 ?붿〈 諛⑹?(ClearHoverPreview???④린吏留?紐낆떆??.
 	if (!bRampFoundationSelected)
 	{
 		FString GhostReason;
-		const bool bGhostValid = Fit.bValid && TargetGrid->CanPlaceFoundation(Fit.Origin, Fit.EffSize, GhostReason);
+		// 평탄 고스트 — 묻힘 거부 적용(bRejectBuried=true). 램프 분기(else)는 면제.
+		const bool bGhostValid = Fit.bValid && TargetGrid->CanPlaceFoundation(Fit.Origin, Fit.EffSize, GhostReason, FoundationTopZ, /*bRejectBuried=*/true);
 		TargetGrid->OJJ_ShowGhostForFoundation(
 			ActiveClass.GetDefaultObject(), Fit.Origin, Fit.EffSize, bGhostValid, FoundationHeightLiftZ);
 	}

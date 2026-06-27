@@ -877,8 +877,12 @@ public:
 	// 게이트: off-grid·겹침(기존 Foundation)·void·water(§5-3 미결 — F1 기본 금지)·점유(머신/컨베이어/자원) 금지.
 	// blocked(높이 단차)는 의도적으로 허용 — 단차 흡수가 Foundation의 존재 이유.
 	// ※ 자원 점유 셀 거부는 F1 보수 기본값 — "광맥 위 Foundation+추출기" 시나리오는 §5-2 결정 후 재검토(F1-c).
+	// [#B 묻힘 금지] FoundationTopZ/bRejectBuried: 평탄 파운데이션 상면 Z가 셀 지형 Z보다 낮으면(일부라도) 거부.
+	// 기본 인자(bRejectBuried=false)라 기존 호출처 무영향. 램프는 호출측이 bRejectBuried=false로 면제(바닥 연결).
+	// (FoundationTopZ 기본 0은 bRejectBuried=false일 때 미사용 — UHT 리터럴 제약 회피용 placeholder.)
 	UFUNCTION(BlueprintPure, Category = "Grid|Foundation")
-	bool CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& OutReason) const;
+	bool CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& OutReason,
+		float FoundationTopZ = 0.0f, bool bRejectBuried = false) const;
 
 	// Foundation 커버리지 등록 — 검증(CanPlaceFoundation) + 양방향 맵 등록만 수행. 액터 위치/비주얼은
 	// 건드리지 않음(F1-b BuildController 책임 — 그리드는 Foundation 메시/Thickness를 모름).
@@ -995,7 +999,8 @@ public:
 	// 거부되므로 단일 진실원 유지)일 때 호출자가 빨강을 강제.
 	// [공중 Foundation] HeightLiftZ(uu) = 빌드 높이 오프셋(층×100). 프리뷰 타일을 그만큼 더 들어올려 슬래브 고스트와 정합.
 	UFUNCTION(BlueprintCallable, Category = "Grid|Hover")
-	void OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size, bool bForceInvalid = false, float HeightLiftZ = 0.0f);
+	void OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size, bool bForceInvalid = false, float HeightLiftZ = 0.0f,
+		float FoundationTopZ = 0.0f, bool bRejectBuried = false);
 
 	// 캐릭터 점유 셀 표시 갱신(F2-4 후속 ② — 시각 전용). 빈 배열 = 클리어. 셀 변경 시에만 호출하는
 	// 책임은 호출자(BuildController가 이전 셀 비교) — 여기는 ClearInstances+재적재만. Z는

@@ -2356,7 +2356,8 @@ void AOJJ_Grid::SetForceShowWater(bool bShow)
 // 점유(OccupiedCells=차단)와 의미가 반대인 "허가" 레이어. 기존 read/write 경로와 완전 독립 —
 // 이 블록의 함수들만 FoundationCells/OJJ_FoundationToCells를 만진다(소비처 연결은 F1-c).
 
-bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& OutReason) const
+bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& OutReason,
+	float FoundationTopZ, bool bRejectBuried) const
 {
 	OutReason.Reset();
 
@@ -2382,7 +2383,7 @@ bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& Ou
 	// F1-b 디버깅·waterZ 재검토(§5-3) 근거. stale(파괴된 Foundation/점유 액터) 엔트리는 비차단 —
 	// IsCellOnFoundation/IsCellOccupied의 weak 유효 의미와 일관(const라 sweep은 write 경로에 위임).
 	const int64 OffGrid = TotalCells - InGridCells;
-	int32 Overlap = 0, VoidCount = 0, WaterCount = 0, Occupied = 0;
+	int32 Overlap = 0, VoidCount = 0, WaterCount = 0, Occupied = 0, Buried = 0;
 	for (int32 X = IterMinX; X < IterEndX; ++X)
 	{
 		for (int32 Y = IterMinY; Y < IterEndY; ++Y)
@@ -2390,6 +2391,16 @@ bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& Ou
 			const FIntPoint Cell(X, Y);  // 교집합 내부 — IsValidGridCell 보장
 			if (IsCellOnFoundation(Cell)) { ++Overlap; }
 			if (IsCellVoid(Cell)) { ++VoidCount; }
+			// [#B 묻힘 금지] 평탄 파운데이션 상면 Z가 셀 지형 Z보다 낮으면(묻힘) 거부 — 일부 셀이라도. flush(같음)는 허용.
+			// 램프는 호출측 bRejectBuried=false라 미진입(바닥 연결 담당). 지형 데이터 무효 셀은 비교 불가 → 묻힘 미판정.
+			if (bRejectBuried)
+			{
+				float TerrainZ = 0.0f;
+				if (OJJ_GetRawTerrainSurfaceZ(Cell, TerrainZ) && TerrainZ > FoundationTopZ + KINDA_SMALL_NUMBER)
+				{
+					++Buried;
+				}
+			}
 			// [WaterArea 재정의] 물 거부를 "안 가려진 WaterArea"(드러난 웅덩이)로 한정 — 묻힌 땅·깊은 구덩이(−20 오판정)는
 			// Foundation 허용. 색상(OJJ_ClassifyCellColor)과 같은 헬퍼라 색=배치 정합. 전역 IsCellWater(펌프/파이프)는 −20 유지.
 			if (OJJ_IsUncoveredWaterCell(Cell)) { ++WaterCount; }
@@ -2401,7 +2412,7 @@ bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& Ou
 		}
 	}
 
-	if (OffGrid + Overlap + VoidCount + WaterCount + Occupied == 0)
+	if (OffGrid + Overlap + VoidCount + WaterCount + Occupied + Buried == 0)
 	{
 		return true;
 	}
@@ -2413,6 +2424,7 @@ bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& Ou
 	if (VoidCount > 0)  { Parts.Add(FString::Printf(TEXT("void %d"), VoidCount)); }
 	if (WaterCount > 0) { Parts.Add(FString::Printf(TEXT("water %d"), WaterCount)); }
 	if (Occupied > 0)   { Parts.Add(FString::Printf(TEXT("occupied %d"), Occupied)); }
+	if (Buried > 0)     { Parts.Add(FString::Printf(TEXT("buried %d"), Buried)); }
 	OutReason = FString::Printf(TEXT("Foundation blocked (%dx%d=%lld cells): %s."),
 		Size.X, Size.Y, TotalCells, *FString::Join(Parts, TEXT(" / ")));
 	return false;
@@ -2510,7 +2522,10 @@ bool AOJJ_Grid::OJJ_TryPlaceFoundationInternal(AActor* Foundation, FIntPoint Ori
 		return false;
 	}
 
-	if (!CanPlaceFoundation(Origin, Size, OutReason))
+	// [#B 묻힘 금지] 평탄만 묻힘 거부, 램프는 면제(바닥 연결). 상면 Z는 셀 표면 Z(=BaseSurfaceZ, 평탄 균일)로 비교.
+	const bool bRejectBuried = (Cast<AOJJ_RampFoundation>(Foundation) == nullptr);
+	const float FoundationTopZ = SurfaceZForCell(Origin);
+	if (!CanPlaceFoundation(Origin, Size, OutReason, FoundationTopZ, bRejectBuried))
 	{
 		return false;
 	}
@@ -2971,7 +2986,8 @@ float AOJJ_Grid::OJJ_ComputeFoundationSnapLift(FIntPoint Origin, FIntPoint Size,
 	return SnapSteps * OJJ_FoundationSnapStep;
 }
 
-void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size, bool bForceInvalid, float HeightLiftZ)
+void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size, bool bForceInvalid, float HeightLiftZ,
+	float FoundationTopZ, bool bRejectBuried)
 {
 	ClearHoverPreview();
 
@@ -2997,7 +3013,7 @@ void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Siz
 	// BuildController가 같은 함수의 OutReason(사유별 셀 수)을 로그.
 	// bForceInvalid(F3.6-1)는 클릭 측도 같은 게이트(풋프린트 훅 bValid)로 거부하므로 단일원 유지.
 	FString UnusedReason;
-	const bool bCanPlace = !bForceInvalid && CanPlaceFoundation(Origin, Size, UnusedReason);
+	const bool bCanPlace = !bForceInvalid && CanPlaceFoundation(Origin, Size, UnusedReason, FoundationTopZ, bRejectBuried);
 	UInstancedStaticMeshComponent* TargetISM = bCanPlace ? ValidHoverISM.Get() : InvalidHoverISM.Get();
 	if (!TargetISM)
 	{
