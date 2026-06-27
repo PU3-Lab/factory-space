@@ -7,9 +7,11 @@
 #include "Engine/DirectionalLight.h"
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/PostProcessVolume.h"
+#include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/World.h"
+#include "OJJ_ProtectionTower.h"
 #include "Kismet/KismetMaterialLibrary.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "NiagaraComponent.h"
@@ -109,6 +111,16 @@ void AOJJ_DayNightController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AOJJ_DayNightController::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	// 자기폭풍 Kill Sphere 파라미터는 태양/날씨 비주얼 가드(bEnabled·SunLight)와 무관하게 갱신한다.
+	// 폭풍이 없으면 UpdateStormShieldParams 내부에서 즉시 반환하므로 부담 없음. 매 틱 전체 순회를 피해
+	// 짧은 주기로만 갱신(돔/플레이어 이동을 따라잡기에 0.25초면 충분).
+	ShieldParamUpdateAccumulator += DeltaSeconds;
+	if (ShieldParamUpdateAccumulator >= ShieldParamUpdateInterval)
+	{
+		ShieldParamUpdateAccumulator = 0.0f;
+		UpdateStormShieldParams();
+	}
 
 	if (!bEnabled)
 	{
@@ -236,6 +248,9 @@ void AOJJ_DayNightController::HandlePlanetEventStarted(EPlanetEventType EventTyp
 	VisualEventType = EventType;
 	VisualEventSeverity = FMath::Clamp(Severity, 0.0f, 1.0f);
 	SpawnEventNiagara(EventType);
+
+	// 폭풍 시작 직후 1회 즉시 주입 — 다음 틱(최대 0.25초)까지 돔 내부 파티클이 노출되는 깜빡임을 막는다.
+	UpdateStormShieldParams();
 }
 
 void AOJJ_DayNightController::HandlePlanetEventEnded(EPlanetEventType EventType)
@@ -410,6 +425,66 @@ void AOJJ_DayNightController::ClearEventNiagara()
 	{
 		ActiveEventNiagaraComponent->DestroyComponent();
 		ActiveEventNiagaraComponent = nullptr;
+	}
+}
+
+void AOJJ_DayNightController::UpdateStormShieldParams()
+{
+	// 자기폭풍이 아니거나(다른 이벤트/없음) 스폰된 Niagara가 없으면 할 일 없음.
+	if (!ActiveEventNiagaraComponent || VisualEventType != EPlanetEventType::MagneticStorm)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 기준점은 플레이어 위치(차폐장 선택 기준). 플레이어를 못 찾으면 컨트롤러 위치로 폴백.
+	FVector ReferenceLocation = GetActorLocation();
+	if (const APlayerController* PlayerController = World->GetFirstPlayerController())
+	{
+		if (const APawn* PlayerPawn = PlayerController->GetPawn())
+		{
+			ReferenceLocation = PlayerPawn->GetActorLocation();
+		}
+	}
+
+	// 가장 가까운 "활성" 차폐장 탐색. RegisteredShields(Chan 서브시스템)를 건드리지 않고 OJJ 액터를 자체 순회.
+	const AOJJ_ProtectionTower* NearestShield = nullptr;
+	float NearestDistSq = TNumericLimits<float>::Max();
+	for (TActorIterator<AOJJ_ProtectionTower> It(World); It; ++It)
+	{
+		const AOJJ_ProtectionTower* Shield = *It;
+		if (!Shield || !Shield->IsShieldActive())
+		{
+			continue;
+		}
+
+		const float DistSq = FVector::DistSquared(ReferenceLocation, Shield->GetActorLocation());
+		if (DistSq < NearestDistSq)
+		{
+			NearestDistSq = DistSq;
+			NearestShield = Shield;
+		}
+	}
+
+	// User 파라미터 이름은 "User." 접두를 포함한 풀네임이어야 OverrideParameters 스토어와 매칭된다.
+	// (Niagara 에셋에 노출된 User.ShieldCenter[Vector] / User.ShieldRadius[float]와 1:1)
+	static const FName ShieldCenterParam(TEXT("User.ShieldCenter"));
+	static const FName ShieldRadiusParam(TEXT("User.ShieldRadius"));
+
+	if (NearestShield)
+	{
+		ActiveEventNiagaraComponent->SetVariableVec3(ShieldCenterParam, NearestShield->GetActorLocation());
+		ActiveEventNiagaraComponent->SetVariableFloat(ShieldRadiusParam, NearestShield->GetShieldRadius());
+	}
+	else
+	{
+		// 활성 돔 없음 → 반경 0으로 Kill 무력화(스크래치 가드: ShieldRadius>0 일 때만 제거).
+		ActiveEventNiagaraComponent->SetVariableFloat(ShieldRadiusParam, 0.0f);
 	}
 }
 

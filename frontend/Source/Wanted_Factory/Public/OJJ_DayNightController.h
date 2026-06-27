@@ -237,4 +237,17 @@ private:
 	void ApplyPlanetEventVisuals(float DeltaSeconds);
 	void SpawnEventNiagara(EPlanetEventType EventType);
 	void ClearEventNiagara();
+
+	// 자기폭풍 중 플레이어에게 가장 가까운 "활성" 차폐장(AOJJ_ProtectionTower)의 위치/반경을 NS_Magnetic의
+	// User 파라미터(User.ShieldCenter/User.ShieldRadius)에 주입한다. Niagara 측 Particle Update 스크래치가
+	// distance(Position, ShieldCenter) < ShieldRadius 인 파티클을 Kill → 돔 내부가 깨끗해진다.
+	// 활성 돔이 없으면 반경 0을 넣어 무력화(아무 파티클도 죽지 않음). World Space 시뮬레이션이므로 파티클
+	// 월드 좌표와 돔 월드 좌표를 직접 비교할 수 있다. 자기폭풍이 아니거나 컴포넌트가 없으면 즉시 반환.
+	// ⚠️ Chan의 PlanetEventManagerSubsystem(RegisteredShields)은 건드리지 않고 OJJ 액터를 자체 순회한다.
+	void UpdateStormShieldParams();
+
+	// Kill Sphere User 파라미터 갱신 누적 타이머. 매 틱 전체 차폐장 순회를 피하려고 ShieldParamUpdateInterval
+	// 주기로만 갱신(폭풍 시작 시에는 HandlePlanetEventStarted에서 즉시 1회 주입).
+	float ShieldParamUpdateAccumulator = 0.0f;
+	static constexpr float ShieldParamUpdateInterval = 0.25f;
 };
