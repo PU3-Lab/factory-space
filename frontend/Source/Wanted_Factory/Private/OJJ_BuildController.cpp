@@ -6,6 +6,9 @@
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/GameInstance.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/HitResult.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
@@ -194,6 +197,18 @@ AOJJ_BuildController::AOJJ_BuildController()
 	SignalAmplifierClass = ASignalAmplifier::StaticClass();
 	// [#184] ?щ떎由?湲곕낯 ?대옒??BP 誘몄????? ??C++ AOJJ_Ladder. BP ?놁씠??C??諛곗튂 ?숈옉.
 	LadderClass = AOJJ_Ladder::StaticClass();
+
+	// [#5 전선 미리보기] 메시/머티리얼 기본값 로드(에디터 재지정 가능). BP 와이어링 없이도 동작.
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> PreviewCylinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (PreviewCylinder.Succeeded())
+	{
+		PowerLinePreviewMesh = PreviewCylinder.Object;
+	}
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> PreviewGhostMat(TEXT("/Game/OJJ/Materials/M_Ghost_Preview.M_Ghost_Preview"));
+	if (PreviewGhostMat.Succeeded())
+	{
+		PowerLinePreviewMaterial = PreviewGhostMat.Object;
+	}
 }
 
 void AOJJ_BuildController::Tick(float DeltaSeconds)
@@ -378,6 +393,9 @@ void AOJJ_BuildController::ExitBuildMode()
 	PowerLineStartMachine.Reset();
 
 	// ?몃쾭 Tick ?뺤? (鍮뚮뱶紐⑤뱶 諛?0鍮꾩슜)
+	// [#5] 빌드 해제 시 전선 미리보기 소등(Tick 중단 후엔 갱신이 안 돌아 잔상 방지 — 명시적 숨김 필요).
+	HidePowerLinePreview();
+
 	SetActorTickEnabled(false);
 
 	// [공중 Foundation] 종료 시 높이 오프셋 0으로 리셋(다음 진입이 어차피 0으로 덮지만 명시적 정리).
@@ -705,6 +723,8 @@ void AOJJ_BuildController::UpdateMouseHover()
 		// ?몃젅?댁뒪 ?ㅽ뙣 ??stale 誘몃━蹂닿린/罹먯떆媛 ?ㅼ쓬 ?대┃???섎せ ?곸슜?섏? ?딅룄濡?紐낆떆??由ъ뀑
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+		// [#5] 트레이스 미스(커서가 허공) 시에도 전선 미리보기 잔상 제거.
+		HidePowerLinePreview();
 		return;
 	}
 
@@ -723,46 +743,7 @@ void AOJJ_BuildController::UpdateMouseHover()
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 
-#if ENABLE_DRAW_DEBUG
-		// ?꾩꽑 ?쒕옒洹?誘몃━蹂닿린 ???쎄린 ?꾩슜 ?쒓컖??????곌껐 濡쒖쭅 鍮꾩묠踰? ?몃쾭??BuildController ?곸뿭).
-		// Shipping ??ENABLE_DRAW_DEBUG=0 鍮뚮뱶?먯꽑 釉붾줉 ?꾩껜媛 而댄뙆???꾩썐 ???고???鍮꾩슜 0.
-		// ?ш린 ?꾨떖 ?쒖젏????(!bHit) 媛?쒕? ?대? ?듦낵???곹깭?대?濡?Hit / Hit.Location ?좏슚.
-		if (bIsDraggingPowerLine)
-		{
-			if (UWorld* World = GetWorld())
-			{
-				if (AMachineBase* StartMachine = PowerLineStartMachine.Get())
-				{
-					// ?꾩꽦??APowerLine::LineHeightOffset 湲곕낯媛?350)怨??믪씠瑜?留욎땄. LineHeightOffset??
-					// protected쨌寃뚰꽣 ?놁쓬 ???곸닔 ?ъ슜. ??먯씠 洹?湲곕낯媛믪쓣 諛붽씀硫??ш린???숆린???꾩슂.
-					constexpr float PreviewEndpointHeightOffset = 20.0f;
-					const FVector StartLoc = APowerLine::GetEndpointLocationForActor(StartMachine, PreviewEndpointHeightOffset);
-
-					// ?쒖옉 ?몃뱶(StartLoc) ??而ㅼ꽌(CursorLoc)濡?誘몃━蹂닿린 ??留??꾨젅??鍮꾩쁺??.
-					// 而ㅼ꽌 ?꾨옒 ?몃뱶媛 ?곌껐 媛?ν븯硫?珥덈줉, ?꾨땲硫?鍮④컯. HoverNode媛 non-null???뚮쭔
-					// CanConnect ?됯?(?⑤씫 ?됯?) ???몃뱶 ?꾧? ?꾨땲硫?留??꾨젅??洹몃옒???쒗쉶 鍮꾩슜 ?놁쓬.
-					AMachineBase* HoverMachine = Cast<AMachineBase>(Hit.GetActor());
-					if (!IsPowerLineEndpoint(HoverMachine))
-					{
-						HoverMachine = FindPowerLineEndpointNearLocation(Hit.Location);
-					}
-					const FVector CursorLoc = HoverMachine
-						? APowerLine::GetEndpointLocationForActor(HoverMachine, PreviewEndpointHeightOffset)
-						: Hit.Location + FVector(0.0f, 0.0f, PreviewEndpointHeightOffset);
-					UGameInstance* GameInstance = GetGameInstance();
-					UFactoryManagerSubsystem* FactoryManager = GameInstance
-						? GameInstance->GetSubsystem<UFactoryManagerSubsystem>()
-						: nullptr;
-					const bool bCanConnect = HoverMachine && FactoryManager
-						&& FactoryManager->CanConnectPowerLineEndpoints(StartMachine, HoverMachine);
-					DrawDebugLine(World, StartLoc, CursorLoc,
-						bCanConnect ? FColor::Green : FColor::Red, /*bPersistent=*/ false, /*LifeTime=*/ -1.0f, 0, 4.0f);
-				}
-			}
-		}
-		// [?듭뀡쨌誘멸뎄?? 鍮꾨뱶?섍렇 ?곹깭?먯꽌 而ㅼ꽌 ?꾨옒 ?몃뱶瑜??ㅽ뵾?대줈 媛뺤“?섎㈃ "?좏깮 媛?? ?뚰듃媛 ?섏?留?
-		// ?붿껌 踰붿쐞(?쒕옒洹?以??쇰뱶諛?瑜??섏뼱 ?앸왂. ?꾩슂 ????if 諛붽묑??HoverNode 媛뺤“瑜?異붽?.
-#endif
+		UpdatePowerLinePreview(Hit);
 		return;
 	}
 
@@ -2354,6 +2335,218 @@ void AOJJ_BuildController::CancelPowerLineDrag()
 
 	bIsDraggingPowerLine = false;
 	PowerLineStartMachine.Reset();
+	// [#5] 미리보기 소등 — 취소/커밋(Commit이 본 함수 호출)/모드전환(SetPlacementMode가 본 함수 호출) 공통 경로.
+	HidePowerLinePreview();
+}
+
+void AOJJ_BuildController::EnsurePowerLinePreviewMID()
+{
+	if (!PowerLinePreviewMaterial)
+	{
+		// 머티리얼이 (에디터에서) 해제된 경우: 낡은 MID와 세그먼트 오버라이드를 명시적으로 정리한다.
+		// (SetMaterial 오버라이드는 해제 전까지 유지되므로 stale MID 색이 남는 것 방지)
+		if (PowerLinePreviewMID)
+		{
+			PowerLinePreviewMID = nullptr;
+			for (UStaticMeshComponent* Segment : PowerLinePreviewSegments)
+			{
+				if (Segment)
+				{
+					Segment->SetMaterial(0, nullptr);
+				}
+			}
+		}
+		return;
+	}
+	// 베이스 머티리얼이 에디터에서 교체됐으면 재생성(옛 parent MID 잔류 방지).
+	if (PowerLinePreviewMID && PowerLinePreviewMID->Parent != PowerLinePreviewMaterial)
+	{
+		PowerLinePreviewMID = nullptr;
+	}
+	if (!PowerLinePreviewMID)
+	{
+		PowerLinePreviewMID = UMaterialInstanceDynamic::Create(PowerLinePreviewMaterial, this);
+		if (PowerLinePreviewMID)
+		{
+			PowerLinePreviewMID->SetFlags(RF_Transient); // 레벨 dirty 방지(고스트 MID 패턴 미러).
+		}
+	}
+}
+
+void AOJJ_BuildController::HidePowerLinePreview()
+{
+	for (UStaticMeshComponent* Segment : PowerLinePreviewSegments)
+	{
+		if (Segment)
+		{
+			Segment->SetVisibility(false);
+		}
+	}
+}
+
+FVector AOJJ_BuildController::ComputePowerLineSagPoint(const FVector& Start, const FVector& End, float Alpha, float SagDepth)
+{
+	// APowerLine::GetSagPoint 공식 복제(포물선): 4α(1-α)는 중앙(α=0.5)에서 1, 양끝에서 0.
+	const FVector Point = FMath::Lerp(Start, End, Alpha);
+	const float SagAlpha = 4.0f * Alpha * (1.0f - Alpha);
+	return Point - FVector(0.0f, 0.0f, SagDepth * SagAlpha);
+}
+
+void AOJJ_BuildController::UpdatePowerLinePreview(const FHitResult& Hit)
+{
+	// 드래그 중 + 시작 머신 유효일 때만 그린다. 아니면 전부 숨김.
+	AMachineBase* StartMachine = bIsDraggingPowerLine ? PowerLineStartMachine.Get() : nullptr;
+	if (!StartMachine || !PowerLinePreviewMesh)
+	{
+		HidePowerLinePreview();
+		return;
+	}
+
+	// 끝점 위치 — APowerLine 룩 복제(EndpointHeightOffset 20 + Node -90 / Plant -110).
+	constexpr float EndpointHeightOffset = 20.0f;
+	constexpr float NodeLowerOffset = 90.0f;
+	constexpr float PlantLowerOffset = 110.0f;
+
+	FVector StartLoc = APowerLine::GetEndpointLocationForActor(StartMachine, EndpointHeightOffset);
+	if (StartMachine->IsA<APowerGridNode>())
+	{
+		StartLoc.Z -= NodeLowerOffset;
+	}
+	else if (StartMachine->IsA<APowerPlant>())
+	{
+		StartLoc.Z -= PlantLowerOffset;
+	}
+
+	// 조준 끝점 — 유효 단자 위면 그 단자, 아니면 커서 위치.
+	AMachineBase* HoverMachine = Cast<AMachineBase>(Hit.GetActor());
+	if (!IsPowerLineEndpoint(HoverMachine))
+	{
+		HoverMachine = FindPowerLineEndpointNearLocation(Hit.Location);
+	}
+
+	FVector EndLoc;
+	if (HoverMachine)
+	{
+		EndLoc = APowerLine::GetEndpointLocationForActor(HoverMachine, EndpointHeightOffset);
+		if (HoverMachine->IsA<APowerGridNode>())
+		{
+			EndLoc.Z -= NodeLowerOffset;
+		}
+		else if (HoverMachine->IsA<APowerPlant>())
+		{
+			EndLoc.Z -= PlantLowerOffset;
+		}
+	}
+	else
+	{
+		EndLoc = Hit.Location + FVector(0.0f, 0.0f, EndpointHeightOffset);
+	}
+
+	// 색 3단계.
+	FLinearColor PreviewColor;
+	if (HoverMachine)
+	{
+		// 타겟 있음 — Chan 판정(거리/타입/중복 포함) 읽기. 가능=초록, 불가(범위밖 포함)=빨강.
+		UGameInstance* GameInstance = GetGameInstance();
+		UFactoryManagerSubsystem* FactoryManager = GameInstance ? GameInstance->GetSubsystem<UFactoryManagerSubsystem>() : nullptr;
+		const bool bCanConnect = FactoryManager && FactoryManager->CanConnectPowerLineEndpoints(StartMachine, HoverMachine);
+		PreviewColor = bCanConnect ? PowerLinePreviewColorValid : PowerLinePreviewColorInvalid;
+	}
+	else
+	{
+		// 타겟 없음 = 드래그 중(노랑). 단, 시작이 Node면 거리 > ConnectionRadius일 때 허공 범위밖(빨강).
+		PreviewColor = PowerLinePreviewColorDragging;
+		if (const APowerGridNode* StartNode = Cast<APowerGridNode>(StartMachine))
+		{
+			const float Radius = StartNode->GetConnectionRadius();
+			if (Radius > 0.0f && FVector::Dist(StartLoc, EndLoc) > Radius)
+			{
+				PreviewColor = PowerLinePreviewColorInvalid;
+			}
+		}
+	}
+
+	const float Length = FVector::Dist(StartLoc, EndLoc);
+	if (Length <= UE_KINDA_SMALL_NUMBER)
+	{
+		HidePowerLinePreview();
+		return;
+	}
+
+	// sag 깊이 + 세그먼트 수(APowerLine 공식 복제 — Chan 무접촉).
+	constexpr float SagRatio = 0.035f;
+	constexpr float MaxSagDepth = 120.0f;
+	constexpr float SegmentTargetLength = 150.0f;
+	constexpr int32 MinSagSegments = 6;
+	constexpr int32 MaxSagSegments = 24;
+	const float HorizontalDistance = FVector::Dist2D(StartLoc, EndLoc);
+	const float SagDepth = FMath::Clamp(HorizontalDistance * SagRatio, 0.0f, MaxSagDepth);
+	const int32 SegmentCount = FMath::Clamp(FMath::CeilToInt(Length / SegmentTargetLength), MinSagSegments, MaxSagSegments);
+
+	EnsurePowerLinePreviewMID();
+	if (PowerLinePreviewMID)
+	{
+		PowerLinePreviewMID->SetVectorParameterValue(TEXT("TintColor"), PreviewColor);
+		PowerLinePreviewMID->SetScalarParameterValue(TEXT("Opacity"), PowerLinePreviewOpacity);
+	}
+
+	// 실린더 메시 치수(스케일 환산용). 엔진 Cylinder는 피벗 중앙이라 SetWorldLocation=세그먼트 중점으로 정렬.
+	const FBoxSphereBounds MeshBounds = PowerLinePreviewMesh->GetBounds();
+	const FVector MeshSize = MeshBounds.BoxExtent * 2.0f;
+	const float MeshDiameterX = FMath::Max(MeshSize.X, UE_KINDA_SMALL_NUMBER);
+	const float MeshDiameterY = FMath::Max(MeshSize.Y, UE_KINDA_SMALL_NUMBER);
+	const float MeshLength = FMath::Max(MeshSize.Z, UE_KINDA_SMALL_NUMBER);
+
+	for (int32 i = 0; i < SegmentCount; ++i)
+	{
+		const float StartAlpha = static_cast<float>(i) / static_cast<float>(SegmentCount);
+		const float EndAlpha = static_cast<float>(i + 1) / static_cast<float>(SegmentCount);
+		const FVector SegStart = ComputePowerLineSagPoint(StartLoc, EndLoc, StartAlpha, SagDepth);
+		const FVector SegEnd = ComputePowerLineSagPoint(StartLoc, EndLoc, EndAlpha, SagDepth);
+
+		// 세그먼트 풀 재사용(없으면 1회 생성). 매 프레임 spawn/destroy 금지.
+		UStaticMeshComponent* Segment = PowerLinePreviewSegments.IsValidIndex(i) ? PowerLinePreviewSegments[i] : nullptr;
+		if (!Segment)
+		{
+			Segment = NewObject<UStaticMeshComponent>(this);
+			Segment->SetMobility(EComponentMobility::Movable);
+			Segment->SetStaticMesh(PowerLinePreviewMesh);
+			Segment->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Segment->SetCastShadow(false);
+			Segment->RegisterComponent();
+			PowerLinePreviewSegments.Add(Segment);
+		}
+		if (PowerLinePreviewMID && Segment->GetMaterial(0) != PowerLinePreviewMID)
+		{
+			Segment->SetMaterial(0, PowerLinePreviewMID);
+		}
+
+		const FVector Delta = SegEnd - SegStart;
+		const float SegLength = Delta.Size();
+		if (SegLength <= UE_KINDA_SMALL_NUMBER)
+		{
+			Segment->SetVisibility(false);
+			continue;
+		}
+		const FVector Direction = Delta / SegLength;
+		const FQuat Rotation = FQuat::FindBetweenNormals(FVector::UpVector, Direction);
+
+		Segment->SetVisibility(true);
+		Segment->SetWorldLocationAndRotation((SegStart + SegEnd) * 0.5f, Rotation);
+		Segment->SetWorldScale3D(FVector(
+			PowerLinePreviewThickness / MeshDiameterX,
+			PowerLinePreviewThickness / MeshDiameterY,
+			SegLength / MeshLength));
+	}
+
+	// 남는 세그먼트 숨김(길이가 짧아져 SegmentCount가 줄었을 때).
+	for (int32 i = SegmentCount; i < PowerLinePreviewSegments.Num(); ++i)
+	{
+		if (PowerLinePreviewSegments[i])
+		{
+			PowerLinePreviewSegments[i]->SetVisibility(false);
+		}
+	}
 }
 
 bool AOJJ_BuildController::CancelPendingConnectAnchor()
