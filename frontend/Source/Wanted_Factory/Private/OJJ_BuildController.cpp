@@ -38,6 +38,7 @@
 #include "Machines/BaseCamp.h"
 #include "Machines/SignalAmplifier.h"
 #include "OJJ_Foundation.h"
+#include "OJJ_HologramBuildUpComponent.h"
 #include "OJJ_Ladder.h"
 #include "OJJ_ProtectionTower.h"
 #include "Pipe.h"
@@ -1388,6 +1389,8 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	const FTransform PlaceXform =
 		TargetGrid->OJJ_GetMachinePlacementTransform(NewMachine, Origin, HoverRotationSteps);
 	NewMachine->SetActorLocationAndRotation(PlaceXform.GetLocation(), PlaceXform.GetRotation());
+	// [#3 점진 건설] 신규 배치 머신에 홀로그램 빌드업(신규 전용 — 로드는 FactorySave 경로라 안 거침).
+	StartBuildUpEffect(NewMachine, NewMachine->GetMeshComponent());
 	NotifyMainQuestMachinePlaced(this, GetQuestPlacementTargetId(PlacementMode));
 
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s 癒몄떊 諛곗튂 ?깃났"),
@@ -1419,6 +1422,24 @@ float AOJJ_BuildController::OJJ_ComputeFoundationTopZ(AOJJ_Foundation* Foundatio
 	const float SnapLift = FoundationCDO->OJJ_ComputeSnapLift(*TargetGrid, Origin, EffSize, RotationSteps, nullptr);
 	const float HeightLift = GetFoundationHeightLiftZ(FoundationCDO, Origin, EffSize);
 	return PlaceZ + SnapLift + HeightLift + FoundationCDO->GetThickness();
+}
+
+void AOJJ_BuildController::StartBuildUpEffect(AActor* Building, UStaticMeshComponent* Mesh)
+{
+	// [#3 점진 건설] 신규 배치 전용 — 동적 컴포넌트 부여 후 빌드업 시작. 머티리얼 미지정이면 컴포넌트가 무동작.
+	if (!Building || !Mesh)
+	{
+		return;
+	}
+	UOJJ_HologramBuildUpComponent* Effect = NewObject<UOJJ_HologramBuildUpComponent>(Building);
+	if (!Effect)
+	{
+		return;
+	}
+	Effect->HologramMaterial = HologramBuildUpMaterial; // null이면 StartBuildUp이 안전하게 skip(배치 정상).
+	Effect->Duration = HologramBuildUpDuration;
+	Effect->RegisterComponent();
+	Effect->StartBuildUp(Mesh);
 }
 
 void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHitResult& Hit)
@@ -1602,6 +1623,8 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 	NewFoundation->SetActorLocationAndRotation(
 		SnappedLocation, FRotator(0.0f, 90.0f * Fit.EffectiveRotationSteps, 0.0f));
 	NewFoundation->OJJ_NotifyPlacedOnGrid(TargetGrid);
+	// [#3 점진 건설] 신규 배치 파운데이션에 홀로그램 빌드업(v1 슬래브만 — LegISM 다리는 후속). 신규 전용.
+	StartBuildUpEffect(NewFoundation, NewFoundation->GetSlabMesh());
 
 	// N + ?믪씠 異쒖쿂(寃곗젙 ?ㅒ룔돴 蹂닿컯) + 諛⑺뼢 異쒖쿂(??蹂닿컯 ???먮룞/?섎룞) 湲곕줉 ???뺤콉 ?숈옉 ?ㅼ륫.
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s Foundation 諛곗튂 ?깃났 (%dx%d, R=%d, N=%d?? %s%s%s)"),
