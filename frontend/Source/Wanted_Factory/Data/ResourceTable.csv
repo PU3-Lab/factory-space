@@ -9,7 +9,7 @@ iron_ore,solid,iron,metal,ore,철광석,"(R=0.47,G=0.43,B=0.39,A=1.0)",/Game/Ass
 iron_ingot,solid,iron,metal,ingot,철괴,"(R=0.67,G=0.69,B=0.72,A=1.0)",/Game/Assets/UIImg/Resource/iron_ingot.iron_ingot,/Game/Assets/Ingot/iron/SM_iron_ingot.SM_iron_ingot
 iron_powder,solid,iron,metal,powder,철가루,"(R=0.58,G=0.60,B=0.63,A=1.0)",/Game/Assets/UIImg/Resource/iron_powder.iron_powder,
 copper_ore,solid,copper,metal,ore,구리광석,"(R=0.62,G=0.34,B=0.20,A=1.0)",/Game/Assets/UIImg/Resource/copper_ore.copper_ore,/Game/Assets/Ore/copper/SM_copper_ore.SM_copper_ore
-copper_ingot,solid,copper,metal,ingot,구리괴,"(R=0.84,G=0.49,B=0.22,A=1.0)",/Game/Assets/UIImg/Resource/copper_ingot.copper_ingot,/Game/Assets/Ore/copper/SM_copper_ore.SM_copper_ingot
+copper_ingot,solid,copper,metal,ingot,구리괴,"(R=0.84,G=0.49,B=0.22,A=1.0)",/Game/Assets/UIImg/Resource/copper_ingot.copper_ingot,/Game/Assets/Ingot/copper/SM_copper_ingot.SM_copper_ingot
 copper_powder,solid,copper,metal,powder,구리가루,"(R=0.76,G=0.42,B=0.18,A=1.0)",/Game/Assets/UIImg/Resource/copper_powder.copper_powder,
 zinc_ore,solid,zinc,metal,ore,아연광석,"(R=0.53,G=0.58,B=0.65,A=1.0)",/Game/Assets/UIImg/Resource/zinc_ore.zinc_ore,
 zinc_ingot,solid,zinc,metal,ingot,아연괴,"(R=0.72,G=0.77,B=0.84,A=1.0)",/Game/Assets/UIImg/Resource/zinc_ingot.zinc_ingot,
@@ -57,5 +57,5 @@ nitrogen,gas,nitrogen,,,질소,"(R=0.40,G=0.62,B=0.95,A=0.35)",/Game/Assets/UIIm
 helium,gas,helium,,,헬륨,"(R=0.95,G=0.73,B=0.88,A=0.30)",/Game/Assets/UIImg/Resource/helium.helium,
 iron_bar,solid,iron,metal,bar,철근,"(R=0.46,G=0.48,B=0.52,A=1.0)",/Game/Assets/UIImg/Resource/rebar.rebar,/Game/Assets/Resource/Bar/SM_Bar.SM_Bar
 copper_wire,solid,copper,metal,wire,구리선,"(R=0.87,G=0.50,B=0.22,A=1.0)",/Game/Assets/UIImg/Resource/copperwire.copperwire,/Game/Assets/Resource/Wire/SM_wire.SM_wire
-tin_plate,solid,tin ,metal,plate,주석판,"(R=0.75,G=0.79,B=0.84,A=1.0)",/Game/Assets/UIImg/Resource/tinboard.tinboard,/Game/Assets/Resource/Plate/SM_plate.SM_plate
+tin_plate,solid,tin,metal,plate,주석판,"(R=0.75,G=0.79,B=0.84,A=1.0)",/Game/Assets/UIImg/Resource/tinboard.tinboard,/Game/Assets/Resource/Plate/SM_plate.SM_plate
 TeleCommunicationTower,solid,telecommunication,machine,,통신탑,"(R=0.55,G=0.82,B=1.0,A=1.0)",/Game/Assets/UIImg/etc/telecommunicationtower.telecommunicationtower,
