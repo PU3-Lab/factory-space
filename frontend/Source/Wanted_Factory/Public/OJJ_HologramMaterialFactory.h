@@ -25,9 +25,13 @@ class WANTED_FACTORY_API UOJJ_HologramMaterialFactory : public UBlueprintFunctio
 
 public:
 #if WITH_EDITOR
-	// /Game/OJJ/Materials/M_Hologram_BuildUp 생성. bOverwriteExisting=false면 이미 있을 때 중단(덮어쓰기 방지),
-	// true면 기존 머티리얼의 노드를 모두 지우고 재구성(패키지 삭제 없이 in-place 재생성 — 안전). 실패 시 null.
+	// 홀로그램 빌드업 머티리얼 생성.
+	//  bPathMode=false → M_Hologram_BuildUp (머신/파운데이션: 월드 Z 마스크, 아래서위 차오름).
+	//  bPathMode=true  → M_Hologram_BuildUp_Path (컨베이어/파이프: 월드위치를 경로축 투영 마스크, 시작→끝 차오름.
+	//                    PathStart/PathDir/PathLength 파라미터를 C++가 주입. per-instance 커스텀데이터 미사용 →
+	//                    파이프 액체 커스텀데이터 무접촉).
+	//  bOverwriteExisting=true면 기존 머티리얼 노드만 지우고 in-place 재구성(패키지 삭제 없음). 실패 시 null.
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "OJJ|Hologram")
-	static UMaterial* GenerateHologramBuildUpMaterial(bool bOverwriteExisting = false);
+	static UMaterial* GenerateHologramBuildUpMaterial(bool bOverwriteExisting = false, bool bPathMode = false);
 #endif
 };

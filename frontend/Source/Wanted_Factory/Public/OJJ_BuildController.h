@@ -337,9 +337,16 @@ public:
 	// 배치 함수에서만 호출 → 신규 전용(로드 경로는 안 거침). HologramBuildUpMaterial 미지정이면 무동작(배치 정상).
 	void StartBuildUpEffect(class AActor* Building, class UStaticMeshComponent* Mesh);
 
+	// [#3 확장] 컨베이어/파이프(ISM 세그먼트) 시작→끝 길이 방향 빌드업. Cells로 경로 시작/끝 월드좌표 산출.
+	void StartPathBuildUpEffect(class AActor* Building, const TArray<FIntPoint>& Cells);
+
 	// 빌드업 머티리얼(M_Hologram_BuildUp). 미지정이면 효과 비활성 — 에디터 제작 후 이 슬롯에 지정.
 	UPROPERTY(EditAnywhere, Category = "BuildController|Hologram")
 	TObjectPtr<class UMaterialInterface> HologramBuildUpMaterial;
+
+	// 경로 빌드업 머티리얼(M_Hologram_BuildUp_Path, 길이 마스크). 컨베이어/파이프용. 미지정이면 비활성.
+	UPROPERTY(EditAnywhere, Category = "BuildController|Hologram")
+	TObjectPtr<class UMaterialInterface> HologramPathMaterial;
 
 	UPROPERTY(EditAnywhere, Category = "BuildController|Hologram", meta = (ClampMin = "0.01"))
 	float HologramBuildUpDuration = 1.0f;

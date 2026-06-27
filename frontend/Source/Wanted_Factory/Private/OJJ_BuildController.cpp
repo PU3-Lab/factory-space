@@ -37,8 +37,10 @@
 #include "Machines/EscapePod.h"
 #include "Machines/BaseCamp.h"
 #include "Machines/SignalAmplifier.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "OJJ_Foundation.h"
 #include "OJJ_HologramBuildUpComponent.h"
+#include "OJJ_HologramPathBuildUpComponent.h"
 #include "OJJ_Ladder.h"
 #include "OJJ_ProtectionTower.h"
 #include "Pipe.h"
@@ -1442,6 +1444,34 @@ void AOJJ_BuildController::StartBuildUpEffect(AActor* Building, UStaticMeshCompo
 	Effect->StartBuildUp(Mesh);
 }
 
+void AOJJ_BuildController::StartPathBuildUpEffect(AActor* Building, const TArray<FIntPoint>& Cells)
+{
+	// [#3 확장] 컨베이어/파이프 — 신규 배치 전용. 경로 시작/끝 월드좌표 산출 + ISM 머티 스왑 빌드업.
+	if (!Building || !TargetGrid || Cells.Num() == 0)
+	{
+		return;
+	}
+	const FVector PathStart = TargetGrid->GridToWorld(Cells[0]);
+	const FVector PathEnd = TargetGrid->GridToWorld(Cells.Last());
+
+	TArray<UInstancedStaticMeshComponent*> ISMs;
+	Building->GetComponents<UInstancedStaticMeshComponent>(ISMs);
+	if (ISMs.Num() == 0)
+	{
+		return;
+	}
+
+	UOJJ_HologramPathBuildUpComponent* Effect = NewObject<UOJJ_HologramPathBuildUpComponent>(Building);
+	if (!Effect)
+	{
+		return;
+	}
+	Effect->PathHologramMaterial = HologramPathMaterial; // null이면 StartBuildUp이 안전하게 skip(배치 정상).
+	Effect->Duration = HologramBuildUpDuration;
+	Effect->RegisterComponent();
+	Effect->StartBuildUp(ISMs, PathStart, PathEnd);
+}
+
 void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHitResult& Hit)
 {
 	// 癒몄떊 ?몃쾭? ?숈씪???쒕㈃ 寃뚯씠?? floor/癒몄떊 ?꾩뿉?쒕쭔 ?좏슚(洹????쒕㈃? off-grid ???꾨━酉??대━??.
@@ -2330,6 +2360,11 @@ void AOJJ_BuildController::CommitConveyorDrag()
 			UE_LOG(LogTemp, Warning, TEXT("[BuildController] OJJ_TryPlacePipe failed: %s"), *OutReason);
 			Pipe->Destroy();
 		}
+		else
+		{
+			// [#3 확장] 신규 배치 파이프 — 시작→끝 길이 방향 홀로그램 빌드업.
+			StartPathBuildUpEffect(Pipe, PlacementCells);
+		}
 		// ?뚯씠?꾨뒗 ?섏뒪??諛곗튂 ?源?誘몃벑濡?NotifyMainQuestMachinePlaced 鍮꾪샇異???而⑤쿋?댁뼱 ?꾩슜 ??.
 		ConveyorDragCells.Reset();
 		TargetGrid->ClearHoverPreview();
@@ -2360,6 +2395,9 @@ void AOJJ_BuildController::CommitConveyorDrag()
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 		return;
 	}
+
+	// [#3 확장] 신규 배치 컨베이어 — 시작→끝 길이 방향 홀로그램 빌드업.
+	StartPathBuildUpEffect(Conveyor, PlacementCells);
 
 	NotifyMainQuestMachinePlaced(this, GetQuestPlacementTargetId(EOJJ_BuildPlacementMode::Conveyor));
 	ConveyorDragCells.Reset();
