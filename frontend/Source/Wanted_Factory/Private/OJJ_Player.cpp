@@ -682,8 +682,8 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::Nine,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot9);
 	PlayerInputComponent->BindKey(EKeys::Zero,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot10); // 0키 = 10번 슬롯
 
-	// [카테고리 순환] ←/→ 방향키 = TPS 빌드모드 설치 카테고리 순환(기계↔전력↔건물). 슬롯키와 동일한 레거시
-	// BindKey 패턴(IA 에셋 불필요). TPS 전용 가드는 핸들러(CycleBuildCategory)에서 처리 — TopDown/None 무동작.
+	// [카테고리 순환] ←/→ 방향키 = 빌드모드(TPS+TopDown) 설치 카테고리 순환(기계↔전력↔건물). 슬롯키와 동일한
+	// 레거시 BindKey 패턴(IA 에셋 불필요). 빌드모드 가드는 핸들러(CycleBuildCategory)에서 처리 — None(빌드 밖) 무동작.
 	PlayerInputComponent->BindKey(EKeys::Right, IE_Pressed, this, &AOJJ_Player::CycleCategoryNext);
 	PlayerInputComponent->BindKey(EKeys::Left,  IE_Pressed, this, &AOJJ_Player::CycleCategoryPrev);
 }
@@ -1568,11 +1568,11 @@ void AOJJ_Player::SetHotbarSlot9()  { ExecuteHotbarSlot(9); }
 void AOJJ_Player::SetHotbarSlot10() { ExecuteHotbarSlot(10); }
 
 // [카테고리 순환] ←/→ → 현재 카테고리(LDJ UI_BuildModeMain)를 Dir 방향으로 1칸 순환 위임.
-// ExecuteHotbarSlot과 동일 위임 구조이나, 가드는 IsInBuildMode()가 아니라 GetBuildViewMode()==TPS로 강화
-// — TopDown/None 빌드에서 ←/→가 카테고리를 바꾸는 오발동을 차단(TPS 전용 기능).
+// ExecuteHotbarSlot과 동일 위임 구조이나, 가드는 IsInBuildMode()가 아니라 GetBuildViewMode()==None 차단으로
+// — 빌드모드(TPS+TopDown) 공용. None(빌드 밖)에서만 ←/→ 카테고리 오발동을 차단한다.
 void AOJJ_Player::CycleBuildCategory(int32 Dir)
 {
-	if (!BuildController || BuildController->GetBuildViewMode() != EBuildViewMode::TPS)
+	if (!BuildController || BuildController->GetBuildViewMode() == EBuildViewMode::None)
 	{
 		return;
 	}
