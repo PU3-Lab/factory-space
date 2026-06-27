@@ -392,7 +392,8 @@ void AOJJ_RampFoundation::ApplySaveState(
 	float InLoEndLowestGroundRaw,
 	bool bInLoEndLowestValid)
 {
-	PlacedRiseSteps = InRiseSteps;
+	// [#7] NotifyFitResult와 동일 클램프 — 비정상 세이브값(음수)이 평평 판정(OJJ_IsFlatRamp: ==0)을 깨지 않도록.
+	PlacedRiseSteps = FMath::Max(0, InRiseSteps);
 	bPlacedOneSideGroundRamp = bInOneSideGroundRamp;
 	PlacedLoEndLowestGroundZ = InLoEndLowestGroundRaw;
 	bPlacedLoEndLowestValid = bInLoEndLowestValid;
