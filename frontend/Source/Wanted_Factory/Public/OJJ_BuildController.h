@@ -328,6 +328,11 @@ public:
 	// 고스트(슬래브/타일)·스폰이 모두 이 값을 써 프리뷰=배치 일치. FoundationCDO는 Thickness(이웃 판정 기준)용.
 	float GetFoundationHeightLiftZ(const class AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize) const;
 
+	// [#B 묻힘 금지] 파운데이션 상면 Z 단일원 — 호버/타일색/배치가 동일 값을 쓰도록(정합 보장).
+	//   TopZ = GetFoundationPlacementLocation().Z + OJJ_ComputeSnapLift + GetFoundationHeightLiftZ + Thickness.
+	// 배치의 BaseSurfaceZ 산식과 동일. CDO는 비-const(OJJ_ComputeSnapLift가 비-const virtual, 읽기전용 안전).
+	float OJJ_ComputeFoundationTopZ(class AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize, int32 RotationSteps) const;
+
 	// 빌드 모드 상태 토글. Enter/Exit의 자체 가드(이미 같은 상태면 no-op) 덕분에 안전.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void ToggleBuildMode();
