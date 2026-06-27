@@ -58,4 +58,4 @@ helium,gas,helium,,,헬륨,"(R=0.95,G=0.73,B=0.88,A=0.30)",/Game/Assets/UIImg/Re
 iron_bar,solid,iron,metal,bar,철근,"(R=0.46,G=0.48,B=0.52,A=1.0)",/Game/Assets/UIImg/Resource/rebar.rebar,/Game/Assets/Resource/Bar/SM_Bar.SM_Bar
 copper_wire,solid,copper,metal,wire,구리선,"(R=0.87,G=0.50,B=0.22,A=1.0)",/Game/Assets/UIImg/Resource/copperwire.copperwire,/Game/Assets/Resource/Wire/SM_wire.SM_wire
 tin_plate,solid,tin,metal,plate,주석판,"(R=0.75,G=0.79,B=0.84,A=1.0)",/Game/Assets/UIImg/Resource/tinboard.tinboard,/Game/Assets/Resource/Plate/SM_plate.SM_plate
-TeleCommunicationTower,solid,telecommunication,machine,,통신탑,"(R=0.55,G=0.82,B=1.0,A=1.0)",/Game/Assets/UIImg/etc/telecommunicationtower.telecommunicationtower,
+TeleCommunicationTower,solid,telecommunication,machine,,통신탑,"(R=0.55,G=0.82,B=1.0,A=1.0)",/Game/Assets/UIImg/etc/telecommunicationtower.telecommunicationtower,/Game/Assets/Machine/TeleCommunication_Tower/SM_TeleCommunication_Tower.SM_TeleCommunication_Tower
