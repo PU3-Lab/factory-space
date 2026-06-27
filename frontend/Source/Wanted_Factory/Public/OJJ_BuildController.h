@@ -333,6 +333,17 @@ public:
 	// 배치의 BaseSurfaceZ 산식과 동일. CDO는 비-const(OJJ_ComputeSnapLift가 비-const virtual, 읽기전용 안전).
 	float OJJ_ComputeFoundationTopZ(class AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize, int32 RotationSteps) const;
 
+	// [#3 점진 건설] 신규 배치된 건물에 홀로그램 빌드업 효과를 부여한다(동적 컴포넌트 — 건물 클래스 무수정).
+	// 배치 함수에서만 호출 → 신규 전용(로드 경로는 안 거침). HologramBuildUpMaterial 미지정이면 무동작(배치 정상).
+	void StartBuildUpEffect(class AActor* Building, class UStaticMeshComponent* Mesh);
+
+	// 빌드업 머티리얼(M_Hologram_BuildUp). 미지정이면 효과 비활성 — 에디터 제작 후 이 슬롯에 지정.
+	UPROPERTY(EditAnywhere, Category = "BuildController|Hologram")
+	TObjectPtr<class UMaterialInterface> HologramBuildUpMaterial;
+
+	UPROPERTY(EditAnywhere, Category = "BuildController|Hologram", meta = (ClampMin = "0.01"))
+	float HologramBuildUpDuration = 1.0f;
+
 	// 빌드 모드 상태 토글. Enter/Exit의 자체 가드(이미 같은 상태면 no-op) 덕분에 안전.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void ToggleBuildMode();
