@@ -1400,6 +1400,8 @@ void AOJJ_BuildController::OnLeftClickPressed()
 
 	// 吏곸쟾 origin???댁젣 ?먯쑀?????ㅼ쓬 UpdateMouseHover?먯꽌 鍮④컯?쇰줈 媛뺤젣 ?ы몴??
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+	// [손 비우기] 단일 배치(머신) 성공 후 선택 해제 — 빌드모드 유지(PlacementMode만 None). Z키와 동일 경로(고스트 숨김/호버 리셋). 컨베이어/파이프 드래그·철거는 무관.
+	SetPlacementMode(EOJJ_BuildPlacementMode::None);
 }
 
 // === Foundation 紐⑤뱶 (F1-b ??癒몄떊 寃쎈줈? ?낅┰, 而ㅻ쾭由ъ? 諛곗튂) ===
@@ -1670,6 +1672,8 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 
 	// 吏곸쟾 ?곸뿭???댁젣 而ㅻ쾭??寃뱀묠 湲덉?) ???ㅼ쓬 ?몃쾭?먯꽌 鍮④컯 ?ы몴??媛뺤젣(癒몄떊 寃쎈줈? ?숈씪).
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+	// [손 비우기] 단일 배치(파운데이션) 성공 후 선택 해제 — 빌드모드 유지. 머신과 동일.
+	SetPlacementMode(EOJJ_BuildPlacementMode::None);
 }
 
 void AOJJ_BuildController::OJJ_LiftPawnsOntoFoundation(FIntPoint Origin, FIntPoint Size, float SlabThickness)
