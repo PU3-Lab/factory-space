@@ -305,6 +305,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "BuildController")
 	EOJJ_BuildPlacementMode GetPlacementMode() const { return PlacementMode; }
+	
+	UFUNCTION(BlueprintPure, Category = "BuildController")
+	bool IsRampFoundationSelected() const { return bRampFoundationSelected; }
 
 	// 진행 중인 컨베이어 드래그 취소(좌클릭 취소 트리거 / 모드 전환 시).
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
