@@ -4,6 +4,7 @@
 #include "OJJ_BuildCamera.h"
 
 #include "Camera/CameraComponent.h"
+#include "Components/SpotLightComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 
 AOJJ_BuildCamera::AOJJ_BuildCamera()
@@ -29,6 +30,20 @@ AOJJ_BuildCamera::AOJJ_BuildCamera()
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
 	Camera->bUsePawnControlRotation = false;
+
+	// [빌드 작업등] 카메라에 부착 → 카메라 forward(하향, SpringArm pitch -90)를 그대로 따라 아래를 비춘다.
+	// 상대 회전 0이면 스폿 forward = 카메라 시선 = 빌드 영역. 줌(ArmLength)에 따라 높이가 변해도 자동 정합.
+	// 밤 분위기 유지를 위해 NightSpotLight와 동일하게 비물리 falloff로 은은하게.
+	WorkLight = CreateDefaultSubobject<USpotLightComponent>(TEXT("WorkLight"));
+	WorkLight->SetupAttachment(Camera);
+	WorkLight->SetRelativeRotation(FRotator::ZeroRotator);
+	WorkLight->Intensity = WorkLightIntensity;
+	WorkLight->AttenuationRadius = WorkLightAttenuationRadius;
+	WorkLight->InnerConeAngle = WorkLightInnerCone;
+	WorkLight->OuterConeAngle = WorkLightOuterCone;
+	WorkLight->bUseInverseSquaredFalloff = false;
+	WorkLight->LightFalloffExponent = 2.5f;
+	WorkLight->SetVisibility(false); // 기본 off — L키 토글로만 켠다.
 }
 
 void AOJJ_BuildCamera::BeginPlay()
@@ -40,6 +55,15 @@ void AOJJ_BuildCamera::BeginPlay()
 	{
 		SpringArm->TargetArmLength = ArmLength;
 		SpringArm->SetRelativeRotation(FRotator(CameraPitch, 0.f, 0.f));
+	}
+
+	// 작업등 튜닝값도 인스턴스 값으로 재반영(에디터에서 바뀌었을 수 있음). 가시성은 건드리지 않음(기본 off 유지).
+	if (WorkLight)
+	{
+		WorkLight->SetIntensity(WorkLightIntensity);
+		WorkLight->SetAttenuationRadius(WorkLightAttenuationRadius);
+		WorkLight->SetInnerConeAngle(WorkLightInnerCone);
+		WorkLight->SetOuterConeAngle(WorkLightOuterCone);
 	}
 }
 
@@ -91,4 +115,12 @@ void AOJJ_BuildCamera::Zoom(float ScrollDelta)
 	// 스크롤 업(+) → 줌인(팔 길이 감소). ArmLength를 현재값으로 갱신해 BeginPlay 재적용/재진입과 정합.
 	ArmLength = FMath::Clamp(SpringArm->TargetArmLength - ScrollDelta * ZoomStep, MinArmLength, MaxArmLength);
 	SpringArm->TargetArmLength = ArmLength;
+}
+
+void AOJJ_BuildCamera::SetWorkLightEnabled(bool bEnabled)
+{
+	if (WorkLight && WorkLight->IsVisible() != bEnabled)
+	{
+		WorkLight->SetVisibility(bEnabled);
+	}
 }

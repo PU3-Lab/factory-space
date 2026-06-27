@@ -317,6 +317,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Light", meta = (ClampMin = "0", ClampMax = "23"))
 	int32 NightLightEndHour24 = 6;
 
+	// [빌드 작업등] TPS 빌드모드에서 작업등(L) ON 시 NightSpotLight를 이 값으로 상향(작업등답게, 과하지 않게).
+	// 밤 일반 점등 시에는 생성자 기본값(BeginPlay에서 캡처)으로 되돌린다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Light|WorkLight", meta = (ClampMin = "0.0"))
+	float TPSWorkLightIntensity = 120.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Light|WorkLight", meta = (ClampMin = "0.0"))
+	float TPSWorkLightRadius = 2500.f;
+
 	// --- 사다리 등반 (#184) ---
 	// 등반 중 수직 이동 속도(MaxFlySpeed). W/S로 위/아래.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
@@ -503,8 +511,18 @@ protected:
 	// 않도록 몽타주 길이 기준으로 잡으며, 어떤 경로로도 입력이 영구 잠기지 않게 하는 최종 방어선(진짜 비정상 전용).
 	void ForceFinishIntro();
 
+	// [빌드 작업등] L키 토글 상태(빌드모드 한정). UpdateNightSpotLightVisibility가 매 틱 이 값을 읽어
+	// TPS=NightSpotLight, TopDown=BuildCamera 하향광으로 분배한다. 빌드 해제 시 false로 리셋.
+	bool bWorkLightOn = false;
+
+	// NightSpotLight의 생성자 기본 Intensity/AttenuationRadius. BeginPlay에서 캡처해 작업등 상향 후 원복에 사용.
+	float BaseNightLightIntensity = 50.f;
+	float BaseNightLightRadius = 1500.f;
+
 	// --- Input handlers ---
 	void UpdateNightSpotLightVisibility();
+	// [빌드 작업등] L키 핸들러 — 빌드모드일 때만 bWorkLightOn 토글(빌드 밖 무동작).
+	void ToggleWorkLight();
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void Zoom(const FInputActionValue& Value);
