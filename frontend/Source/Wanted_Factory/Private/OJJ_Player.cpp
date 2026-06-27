@@ -681,6 +681,11 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::Eight, IE_Pressed, this, &AOJJ_Player::SetHotbarSlot8);
 	PlayerInputComponent->BindKey(EKeys::Nine,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot9);
 	PlayerInputComponent->BindKey(EKeys::Zero,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot10); // 0키 = 10번 슬롯
+
+	// [카테고리 순환] ←/→ 방향키 = TPS 빌드모드 설치 카테고리 순환(기계↔전력↔건물). 슬롯키와 동일한 레거시
+	// BindKey 패턴(IA 에셋 불필요). TPS 전용 가드는 핸들러(CycleBuildCategory)에서 처리 — TopDown/None 무동작.
+	PlayerInputComponent->BindKey(EKeys::Right, IE_Pressed, this, &AOJJ_Player::CycleCategoryNext);
+	PlayerInputComponent->BindKey(EKeys::Left,  IE_Pressed, this, &AOJJ_Player::CycleCategoryPrev);
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -1212,10 +1217,10 @@ void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
     if (NewMode != EBuildViewMode::None)
     {
        // ── 진입 또는 모드 전환 공통: 열려 있던 기계창/창고/가방 UI 정리 ──
-       if (MachineInteractWidgetInstance.IsValid() || WarehouseInteractWidgetInstance)
-       {
-          CloseMachineInteractWidget(PC);
-       }
+    	if (MachineInteractWidgetInstance.IsValid() || WarehouseInteractWidgetInstance || SynthesizerInteractWidgetInstance)
+    	{
+    		CloseMachineInteractWidget(PC);
+    	}
        if (bIsInventoryOpen && InventoryWidgetInstance)
        {
           InventoryWidgetInstance->RemoveFromParent();
@@ -1561,6 +1566,30 @@ void AOJJ_Player::SetHotbarSlot7()  { ExecuteHotbarSlot(7); }
 void AOJJ_Player::SetHotbarSlot8()  { ExecuteHotbarSlot(8); }
 void AOJJ_Player::SetHotbarSlot9()  { ExecuteHotbarSlot(9); }
 void AOJJ_Player::SetHotbarSlot10() { ExecuteHotbarSlot(10); }
+
+// [카테고리 순환] ←/→ → 현재 카테고리(LDJ UI_BuildModeMain)를 Dir 방향으로 1칸 순환 위임.
+// ExecuteHotbarSlot과 동일 위임 구조이나, 가드는 IsInBuildMode()가 아니라 GetBuildViewMode()==TPS로 강화
+// — TopDown/None 빌드에서 ←/→가 카테고리를 바꾸는 오발동을 차단(TPS 전용 기능).
+void AOJJ_Player::CycleBuildCategory(int32 Dir)
+{
+	if (!BuildController || BuildController->GetBuildViewMode() != EBuildViewMode::TPS)
+	{
+		return;
+	}
+	// BuildModeWidgetClass = WBP_BuildModeMain(UI_BuildModeMain) 전제. 안전망: 아니면 무동작+경고.
+	if (UUI_BuildModeMain* BuildMenu = Cast<UUI_BuildModeMain>(BuildModeWidgetInstance))
+	{
+		BuildMenu->CycleSubMode(Dir);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] 카테고리 순환 무시 — BuildModeWidgetInstance가 UUI_BuildModeMain 아님/없음(BuildModeWidgetClass 확인)"));
+	}
+}
+
+void AOJJ_Player::CycleCategoryNext() { CycleBuildCategory(+1); }
+void AOJJ_Player::CycleCategoryPrev() { CycleBuildCategory(-1); }
 
 // 철거 모드 진입(X키). 호버 대상 빨강 하이라이트 + 좌클릭 제거.
 void AOJJ_Player::SetDemolishMode(const FInputActionValue& Value)

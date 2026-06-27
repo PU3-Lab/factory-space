@@ -128,9 +128,11 @@ void UUI_BuildModeMain::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
     UpdateSelectedPreview();
 }
 
-void UUI_BuildModeMain::OnMachineModeClicked()   { SwitchBuildSubMode(EBuildSubMode::Machine); }
-void UUI_BuildModeMain::OnPowerModeClicked()     { SwitchBuildSubMode(EBuildSubMode::Power); }
-void UUI_BuildModeMain::OnStructureModeClicked() { SwitchBuildSubMode(EBuildSubMode::Structure); }
+// 카테고리 버튼 클릭은 슬롯1 자동선택을 하지 않음(기존 UX). 순환(←/→) 애니 진행 중 버튼이 끼어들면
+// 직전 CycleSubMode가 세운 플래그를 이 클릭의 OnHotbarOutFinished가 소비해 오발동하므로, 진입부에서 명시적으로 끈다.
+void UUI_BuildModeMain::OnMachineModeClicked()   { bAutoSelectFirstSlotOnSwitch = false; SwitchBuildSubMode(EBuildSubMode::Machine); }
+void UUI_BuildModeMain::OnPowerModeClicked()     { bAutoSelectFirstSlotOnSwitch = false; SwitchBuildSubMode(EBuildSubMode::Power); }
+void UUI_BuildModeMain::OnStructureModeClicked() { bAutoSelectFirstSlotOnSwitch = false; SwitchBuildSubMode(EBuildSubMode::Structure); }
 
 void UUI_BuildModeMain::SwitchBuildSubMode(EBuildSubMode NewMode)
 {
@@ -147,14 +149,34 @@ void UUI_BuildModeMain::OnHotbarOutFinished()
     CachedMachineLevels.Empty();
     RefreshHotbarSlotsVisual();
 
+    // [카테고리 순환] 순환 경로(←/→)로 전환된 경우에만 새 카테고리의 슬롯1 자동선택.
+    // CurrentSubMode가 방금 갱신됐으므로 ExecutePlacementMode(1)이 정확히 새 카테고리 기준으로 해석됨.
+    // (CycleSubMode 직후가 아니라 여기서 부르는 이유: out-애니 완료 전엔 CurrentSubMode가 이전 값)
+    if (bAutoSelectFirstSlotOnSwitch)
+    {
+        bAutoSelectFirstSlotOnSwitch = false;
+        ExecutePlacementMode(1);
+    }
+
     if (Anim_HotbarIn) PlayAnimation(Anim_HotbarIn);
+}
+
+void UUI_BuildModeMain::CycleSubMode(int32 Dir)
+{
+    // Machine(0)↔Power(1)↔Structure(2) 3분류 래핑. +1=다음, +2=(-1 등가) 이전 — uint8 언더플로 없이 역순.
+    const uint8 Cur = (uint8)CurrentSubMode;
+    const uint8 Nxt = (uint8)((Cur + (Dir > 0 ? 1 : 2)) % 3);
+    if ((EBuildSubMode)Nxt == CurrentSubMode) return; // 동일 카테고리면 무동작(이론상 없음)
+
+    bAutoSelectFirstSlotOnSwitch = true; // OnHotbarOutFinished에서 슬롯1 자동선택 게이트
+    SwitchBuildSubMode((EBuildSubMode)Nxt);
 }
 
 void UUI_BuildModeMain::InitializeHotbarRegistry()
 {
     SubModeHotbarRegistry.Empty();
 
-    // 🤖 [1. 기계 설치 모드 한글 이름표 완벽 바인딩]
+    // 🤖 [1. 기계 설치 모드 한글 이름표 바인딩]
     TArray<FHotbarSlotData>& MachineHotbar = SubModeHotbarRegistry.FindOrAdd(EBuildSubMode::Machine);
     MachineHotbar.SetNum(10);
     MachineHotbar[0] = { EOJJ_BuildPlacementMode::Conveyor,       TEXT("Conveyor"),       FText::FromString(TEXT("컨베이어")) };
@@ -168,7 +190,7 @@ void UUI_BuildModeMain::InitializeHotbarRegistry()
     MachineHotbar[8] = { EOJJ_BuildPlacementMode::LiquidTank,     TEXT("LiquidTank"),     FText::FromString(TEXT("액체 탱크")) };
     MachineHotbar[9] = { EOJJ_BuildPlacementMode::Pipe,           TEXT("Pipe"),           FText::FromString(TEXT("파이프")) };
 
-    // ⚡ [2. 전력 설치 모드 한글 이름표 완벽 바인딩]
+    // ⚡ [2. 전력 설치 모드 한글 이름표 바인딩]
     TArray<FHotbarSlotData>& PowerHotbar = SubModeHotbarRegistry.FindOrAdd(EBuildSubMode::Power);
     PowerHotbar.SetNum(10);
     PowerHotbar[0] = { EOJJ_BuildPlacementMode::PowerLine,  TEXT("Cable"),  FText::FromString(TEXT("전선")) };
@@ -176,7 +198,7 @@ void UUI_BuildModeMain::InitializeHotbarRegistry()
     PowerHotbar[2] = { EOJJ_BuildPlacementMode::PowerPlant, TEXT("PowerPlant"), FText::FromString(TEXT("기본 발전소")) };
     // 4~10번 자리는 미래에 구현될 수력, 화력 발전소 등을 위해 깔끔하게 빈 칸 유지
 
-    // 🏢 [3. 건물 설치 모드 한글 이름표 완벽 바인딩]
+    // 🏢 [3. 건물 설치 모드 한글 이름표 바인딩]
     TArray<FHotbarSlotData>& StructHotbar = SubModeHotbarRegistry.FindOrAdd(EBuildSubMode::Structure);
     StructHotbar.SetNum(10);
     StructHotbar[0] = { EOJJ_BuildPlacementMode::BaseCamp,               TEXT("BaseCamp"), FText::FromString(TEXT("중앙 거점")) };

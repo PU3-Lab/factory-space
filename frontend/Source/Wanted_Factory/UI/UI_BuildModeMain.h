@@ -51,6 +51,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Build Mode")
     void ExecutePlacementMode(int32 SlotIndex);
 
+    // [카테고리 순환] Dir(+1=다음/-1=이전)로 CurrentSubMode를 1칸 순환(Machine↔Power↔Structure 래핑).
+    // TPS 빌드모드의 ←/→ 방향키가 OJJ_Player 경유 호출. SwitchBuildSubMode 재사용 + 전환 완료 후
+    // 슬롯1 자동선택(bAutoSelectFirstSlotOnSwitch). 카테고리 버튼 클릭 경로는 플래그 false라 영향 없음.
+    UFUNCTION(BlueprintCallable, Category = "Build Mode")
+    void CycleSubMode(int32 Dir);
+
 protected:
     UPROPERTY(meta = (BindWidget)) UButton* BTN_SubMode_Machine;
     UPROPERTY(meta = (BindWidget)) UButton* BTN_SubMode_Power;
@@ -68,6 +74,10 @@ protected:
 private:
     EBuildSubMode CurrentSubMode = EBuildSubMode::Machine;
     EBuildSubMode PendingSubMode = EBuildSubMode::Machine;
+
+    // [카테고리 순환] CycleSubMode 경로에서만 true. OnHotbarOutFinished(CurrentSubMode 갱신 시점)에서
+    // 슬롯1을 자동선택할지 결정하는 1회성 게이트. 카테고리 버튼 클릭은 false 유지 → 기존 UX 보존.
+    bool bAutoSelectFirstSlotOnSwitch = false;
 
     // 가비지 컬렉션(GC) 보호막이 완벽히 씌워진 핫바 3대 컴포넌트 배열
     UPROPERTY() TArray<UButton*> HotbarButtons;
