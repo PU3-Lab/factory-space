@@ -118,7 +118,8 @@ void AOJJ_DayNightController::Tick(float DeltaSeconds)
 	ShieldParamUpdateAccumulator += DeltaSeconds;
 	if (ShieldParamUpdateAccumulator >= ShieldParamUpdateInterval)
 	{
-		ShieldParamUpdateAccumulator = 0.0f;
+		// 0으로 리셋하지 않고 주기만큼 차감 — 초과분을 보존해 갱신 주기가 드리프트되지 않게 한다.
+		ShieldParamUpdateAccumulator -= ShieldParamUpdateInterval;
 		UpdateStormShieldParams();
 	}
 
@@ -431,7 +432,9 @@ void AOJJ_DayNightController::ClearEventNiagara()
 void AOJJ_DayNightController::UpdateStormShieldParams()
 {
 	// 자기폭풍이 아니거나(다른 이벤트/없음) 스폰된 Niagara가 없으면 할 일 없음.
-	if (!ActiveEventNiagaraComponent || VisualEventType != EPlanetEventType::MagneticStorm)
+	// ⚠️ 월드 스폰 경로는 bAutoDestroy=true라 시스템 완료 시 컴포넌트가 PendingKill될 수 있다. raw 포인터는
+	//    GC 전까지 non-null로 남으므로 IsValid()로 소멸/PendingKill까지 방어한다(stale 포인터에 SetVariable 금지).
+	if (!IsValid(ActiveEventNiagaraComponent) || VisualEventType != EPlanetEventType::MagneticStorm)
 	{
 		return;
 	}
