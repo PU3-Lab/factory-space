@@ -36,7 +36,7 @@ AOJJ_PortraitCapture::AOJJ_PortraitCapture()
 		TEXT("/Game/OJJ/Character/Robot/Meshy_AI_Character_output__2_.Meshy_AI_Character_output__2_"));
 	if (RobotMeshFinder.Succeeded())
 	{
-		RobotMesh->SetSkeletalMesh(RobotMeshFinder.Object);
+		RobotMesh->SetSkeletalMeshAsset(RobotMeshFinder.Object);
 	}
 
 	// idle 애니메이션 기본 로드(에디터에서 교체 가능).
@@ -97,8 +97,10 @@ AOJJ_PortraitCapture::AOJJ_PortraitCapture()
 	Capture->FOVAngle = 55.f;
 
 	// 빈 배경이 회색(스카이/대기/안개 환경광)으로 오염되는 것을 차단. 로봇은 KeyLight/FillLight로만 조명한다.
+	// 알파 반전(SceneColorHDR의 역불투명도 → 로봇=불투명)은 UI 머티리얼 M_Portrait_UI(1-Alpha)에서
+	// 한 번만 처리한다. ShowFlags.AlphaInvert는 SceneColorHDR 경로에 적용되지 않아(무동작) 여기서 켜지 않는다
+	// — 켜두면 향후 엔진/설정 변화로 적용될 때 UI 측과 이중 반전될 위험만 남는다.
 	FEngineShowFlags& SF = Capture->ShowFlags;
-	SF.SetAlphaInvert(true);                 // 역불투명도 알파를 UI용(로봇=불투명)으로 교정
 	SF.SetAtmosphere(false);
 	SF.SetFog(false);
 	SF.SetVolumetricFog(false);
@@ -163,10 +165,22 @@ void AOJJ_PortraitCapture::BeginPlay()
 			TEXT("[OJJ_PortraitCapture] 자동프레이밍 — 메시높이 %.1f, 피벗Z %.1f, 거리 %.1f"),
 			FullHeight, FrameCenterZ, Dist);
 	}
+	else if (!RobotMesh || !RobotMesh->GetSkeletalMeshAsset())
+	{
+		// 메시 미할당 시 자동 프레이밍 스킵 → 생성자 fallback 값(피벗/거리)으로 캡처된다.
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_PortraitCapture] RobotMesh/SkeletalMesh 없음 — 자동 프레이밍 스킵(fallback 카메라값 사용). 메시 경로를 확인하세요."));
+	}
 
 	// idle 애니 루프 재생.
 	if (RobotMesh && IdleAnimation)
 	{
 		RobotMesh->PlayAnimation(IdleAnimation, /*bLooping=*/true);
+	}
+	else if (!IdleAnimation)
+	{
+		// 애니 미할당 시 정지 포즈로 퇴화 — 원인 파악용 경고.
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_PortraitCapture] IdleAnimation 없음 — 정지 포즈로 표시됨. 애니 경로/할당을 확인하세요."));
 	}
 }

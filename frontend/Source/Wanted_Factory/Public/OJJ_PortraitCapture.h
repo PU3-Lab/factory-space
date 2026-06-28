@@ -32,7 +32,14 @@ class UAnimationAsset;
  *   2) 레벨에 본 액터 배치(메인 카메라에 안 잡히도록 멀리/지하에 두는 것을 권장 — 배경/메인뷰 격리는 다음 단계).
  *   3) PIE 실행 → RT_RobotPortrait 더블클릭하면 idle 도는 로봇이 보여야 함.
  *
- * 다음 단계(이번 범위 밖): 배경 투명(알파) 처리 + WBP_DialogueBalloon 포트레이트 Image 연결.
+ * 배경 투명: 캡처는 SCS_SceneColorHDR(알파=역불투명도)로 찍고, 알파 반전(로봇=불투명)은 UI 머티리얼
+ * M_Portrait_UI(1-Alpha)에서 한 번만 한다 — 본 액터에서 ShowFlags.AlphaInvert는 켜지 않는다(이중 반전 방지).
+ *
+ * ⚠️ 전제/후속:
+ *  - 단일 인스턴스 전제: 하나의 PortraitRenderTarget을 공유하므로 본 액터는 레벨에 1개만 둔다.
+ *    여러 개가 같은 RT에 매 프레임 캡처하면 서로 덮어써 포트레이트가 깜빡인다(복수 필요 시 인스턴스별 RT 주입으로 분리).
+ *  - bCaptureEveryFrame=true로 상시 캡처한다(MVP). 대화 패널이 항상 떠있지 않다면 패널 open/close에 맞춰
+ *    bCaptureEveryFrame을 토글하거나 CaptureScene() 단발 호출로 비용을 줄이는 것이 후속 과제다.
  */
 UCLASS()
 class WANTED_FACTORY_API AOJJ_PortraitCapture : public AActor
