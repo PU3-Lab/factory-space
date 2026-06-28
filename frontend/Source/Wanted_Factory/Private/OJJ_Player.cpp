@@ -1872,6 +1872,7 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 
     AMachineBase* Machine = Cast<AMachineBase>(Hit.GetActor());
     if (!Machine) return;
+    if (!Machine->CanPlayerInteract()) return;
 
     // 1. 창고 포트 및 액체 탱크 레이아웃 개방 분기
     if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
@@ -2611,6 +2612,31 @@ void AOJJ_Player::TriggerPlanetEvent(const FString& EventName, float Severity, f
 		*UEnum::GetValueAsString(EventType),
 		Severity,
 		DurationSeconds);
+}
+
+void AOJJ_Player::TimeSet(int32 TotalMinutes)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[TimeSet] World is null."));
+		return;
+	}
+
+	UPlanetEventManagerSubsystem* PlanetManager = World->GetSubsystem<UPlanetEventManagerSubsystem>();
+	if (!PlanetManager)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[TimeSet] PlanetEventManagerSubsystem not found."));
+		return;
+	}
+
+	PlanetManager->SetCurrentTimeByMinutes(TotalMinutes);
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("[TimeSet] Input=%d CurrentTime=%s"),
+		TotalMinutes,
+		*PlanetManager->GetCurrentTime24String());
 }
 
 void AOJJ_Player::UpdateInventoryRealtime()

@@ -114,6 +114,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.1"))
 	float EventVisualInterpSpeed = 1.5f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.1"))
+	float EventVisualBlendInSeconds = 7.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.1"))
+	float EventVisualBlendOutSeconds = 10.5f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
 	FLinearColor MagneticStormSunColor = FLinearColor(0.62f, 0.34f, 0.95f, 1.0f);
 
@@ -200,6 +206,7 @@ private:
 	// 직전에 적용한 별 강도. skip-if-unchanged용(변화 없으면 MPC 갱신 생략).
 	float LastStarIntensity = TNumericLimits<float>::Max();
 	EPlanetEventType VisualEventType = EPlanetEventType::None;
+	EPlanetEventType VisualBlendEventType = EPlanetEventType::None;
 	float VisualEventSeverity = 0.0f;
 	float CurrentEventVisualAlpha = 0.0f;
 	FLinearColor BaseSunLightColor = FLinearColor::White;

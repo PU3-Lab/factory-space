@@ -44,6 +44,12 @@ AOJJ_ProtectionTower::AOJJ_ProtectionTower()
 	}
 }
 
+void AOJJ_ProtectionTower::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	UpdateDomeVisual(DeltaSeconds);
+}
+
 void AOJJ_ProtectionTower::BeginPlay()
 {
 	// AMachineBase::BeginPlay가 PlanetEventManager에 "머신"으로, FactoryManager에 등록한다.
@@ -75,6 +81,7 @@ void AOJJ_ProtectionTower::BeginPlay()
 	}
 
 	// [#353] 표시 확정은 단일 진입점 경유(디버그 플래그 OR 자기폭풍 활성+가동). ⚠️ 직접 SetVisibility 금지.
+	ShieldVisualAlpha = (bShowShieldDome || (bMagneticStormActive && IsShieldActive())) ? 1.0f : 0.0f;
 	UpdateDomeVisibility();
 
 	// PIE 디버그 반경 표시(에디터 상시 기즈모는 컴포넌트가 필요해 최소화 — 보고 참조).
@@ -167,5 +174,25 @@ void AOJJ_ProtectionTower::UpdateDomeVisibility()
 		return;
 	}
 	const bool bShow = bShowShieldDome || (bMagneticStormActive && IsShieldActive());
-	ShieldDomeComponent->SetVisibility(bShow);
+	ShieldDomeComponent->SetVisibility(bShow || ShieldVisualAlpha > KINDA_SMALL_NUMBER);
+}
+
+void AOJJ_ProtectionTower::UpdateDomeVisual(float DeltaSeconds)
+{
+	if (!ShieldDomeComponent)
+	{
+		return;
+	}
+
+	const bool bTargetShow = bShowShieldDome || (bMagneticStormActive && IsShieldActive());
+	const float TargetAlpha = bTargetShow ? 1.0f : 0.0f;
+	const bool bBlendingIn = TargetAlpha > ShieldVisualAlpha;
+	const float BlendSeconds = bBlendingIn ? ShieldBlendInSeconds : ShieldBlendOutSeconds;
+	const float BlendRate = BlendSeconds > KINDA_SMALL_NUMBER ? (1.0f / BlendSeconds) : 1.0f;
+	ShieldVisualAlpha = FMath::FInterpConstantTo(ShieldVisualAlpha, TargetAlpha, DeltaSeconds, BlendRate);
+
+	const float SmoothedAlpha = FMath::InterpEaseInOut(0.0f, 1.0f, ShieldVisualAlpha, 2.0f);
+	const float DomeScale = (GetShieldRadius() / 50.0f) * FMath::Lerp(0.05f, 1.0f, SmoothedAlpha);
+	ShieldDomeComponent->SetRelativeScale3D(FVector(DomeScale));
+	ShieldDomeComponent->SetVisibility(bTargetShow || ShieldVisualAlpha > KINDA_SMALL_NUMBER);
 }
