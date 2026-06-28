@@ -48,6 +48,7 @@
 #include "UI/UI_QuestWindow.h"
 #include "UI/UI_DialogueBalloon.h"
 #include "UI/UI_SynthesizerInteract.h"
+#include "UI/UI_BaseCampInteract.h"
 #include "Resource/ResourceBase.h"
 #include "Resource/ResourceData.h"
 #include "UI/UI_MoldingMachineInteract.h"
@@ -1390,7 +1391,8 @@ void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
     if (NewMode != EBuildViewMode::None)
     {
        // ── 진입 또는 모드 전환 공통: 열려 있던 기계창/창고/가방 UI 정리 ──
-    	if (MachineInteractWidgetInstance.IsValid() || WarehouseInteractWidgetInstance || SynthesizerInteractWidgetInstance || MoldingMachineInteractWidgetInstance)
+    	if (MachineInteractWidgetInstance.IsValid() || WarehouseInteractWidgetInstance || 
+		   SynthesizerInteractWidgetInstance || MoldingMachineInteractWidgetInstance || BaseCampInteractWidgetInstance)
     	{
     		CloseMachineInteractWidget(PC);
     	}
@@ -1940,52 +1942,60 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
     QuickFixMode.SetWidgetToFocus(nullptr); 
     PC->SetInputMode(QuickFixMode);
 
-    // 이미 켜져 있을 때 끄고 탈출하는 가드 조건에 합성기 위젯 인스턴스도 병합합니다.
-	if (bIsInventoryOpen || 
-		(MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()) ||
-		(WarehouseInteractWidgetInstance && WarehouseInteractWidgetInstance->IsInViewport()) ||
-		(SynthesizerInteractWidgetInstance && SynthesizerInteractWidgetInstance->IsInViewport()) ||
-		(MoldingMachineInteractWidgetInstance && MoldingMachineInteractWidgetInstance->IsInViewport()))
-	{
-		if (MachineInteractWidgetInstance.IsValid())
-		{
-			MachineInteractWidgetInstance->RemoveFromParent();
-			MachineInteractWidgetInstance = nullptr;
-		}
+    // 1. 이미 UI 창이 켜져 있을 때 F키를 한 번 더 누르면 리셋하고 탈출하는 가드 구역
+    if (bIsInventoryOpen || 
+       (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()) ||
+       (WarehouseInteractWidgetInstance && WarehouseInteractWidgetInstance->IsInViewport()) ||
+       (SynthesizerInteractWidgetInstance && SynthesizerInteractWidgetInstance->IsInViewport()) ||
+       (MoldingMachineInteractWidgetInstance && MoldingMachineInteractWidgetInstance->IsInViewport()) ||
+       (BaseCampInteractWidgetInstance && BaseCampInteractWidgetInstance->IsInViewport()))
+    {
+       if (MachineInteractWidgetInstance.IsValid())
+       {
+          MachineInteractWidgetInstance->RemoveFromParent();
+          MachineInteractWidgetInstance = nullptr;
+       }
 
-		if (WarehouseInteractWidgetInstance)
-		{
-			WarehouseInteractWidgetInstance->RemoveFromParent();
-			WarehouseInteractWidgetInstance = nullptr;
-		}
+       if (WarehouseInteractWidgetInstance)
+       {
+          WarehouseInteractWidgetInstance->RemoveFromParent();
+          WarehouseInteractWidgetInstance = nullptr;
+       }
 
-		if (SynthesizerInteractWidgetInstance)
-		{
-			SynthesizerInteractWidgetInstance->RemoveFromParent();
-			SynthesizerInteractWidgetInstance = nullptr;
-		}
+       if (SynthesizerInteractWidgetInstance)
+       {
+          SynthesizerInteractWidgetInstance->RemoveFromParent();
+          SynthesizerInteractWidgetInstance = nullptr;
+       }
 
-		if (MoldingMachineInteractWidgetInstance)
-		{
-			MoldingMachineInteractWidgetInstance->RemoveFromParent();
-			MoldingMachineInteractWidgetInstance = nullptr;
-		}
+       if (MoldingMachineInteractWidgetInstance)
+       {
+          MoldingMachineInteractWidgetInstance->RemoveFromParent();
+          MoldingMachineInteractWidgetInstance = nullptr;
+       }
+       
+       if (BaseCampInteractWidgetInstance)
+       {
+          BaseCampInteractWidgetInstance->RemoveFromParent();
+          BaseCampInteractWidgetInstance = nullptr;
+       }
 
-		if (InventoryWidgetInstance)
-		{
-			InventoryWidgetInstance->RemoveFromParent();
-		}
-		bIsInventoryOpen = false;
-		GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
+       if (InventoryWidgetInstance)
+       {
+          InventoryWidgetInstance->RemoveFromParent();
+       }
+       bIsInventoryOpen = false;
+       GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
 
-		PC->SetInputMode(FInputModeGameOnly());
-		PC->SetShowMouseCursor(false);
-		return;
-	}
+       PC->SetInputMode(FInputModeGameOnly());
+       PC->SetShowMouseCursor(false);
+       return;
+    }
 
     UWorld* World = GetWorld();
     if (!Camera || !World) return;
 
+    // 시선 방향 레이캐스트 연산
     const FVector TraceStart = Camera->GetComponentLocation();
     const FVector TraceEnd = TraceStart + Camera->GetForwardVector() * MaxInteractDistance;
     FHitResult Hit;
@@ -1997,7 +2007,9 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
     if (!Machine) return;
     if (!Machine->CanPlayerInteract()) return;
 
-    // 1. 창고 포트 및 액체 탱크 레이아웃 개방 분기
+    // ── [인터랙트 생성 라우팅 분기점] ──
+    
+    // 분기 ① : 창고 포트 및 액체 탱크 레이아웃 개방
     if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
     {
        if (!WarehouseInteractWidgetClass)
@@ -2020,43 +2032,61 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
           WHWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
        }
     }
-    // 합성기 전용
+    // 분기 ② : 합성기 전용 개방
     else if (Machine->GetMachineType() == TEXT("Synthesizer"))
     {
-    	if (!SynthesizerInteractWidgetClass)
-    	{
-    		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] SynthesizerInteractWidgetClass 미할당! BP에서 할당하세요."));
-    		return;
-    	}
+        if (!SynthesizerInteractWidgetClass)
+        {
+           UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] SynthesizerInteractWidgetClass 미할당! BP에서 할당하세요."));
+           return;
+        }
 
-    	UUI_SynthesizerInteract* SynWidget = CreateWidget<UUI_SynthesizerInteract>(PC, SynthesizerInteractWidgetClass);
-    	if (SynWidget)
-    	{
-    		SynWidget->SetTargetMachine(Machine);
-    		SynthesizerInteractWidgetInstance = SynWidget;
-    		SynWidget->AddToViewport();
-    		SynWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
-    	}
+        UUI_SynthesizerInteract* SynWidget = CreateWidget<UUI_SynthesizerInteract>(PC, SynthesizerInteractWidgetClass);
+        if (SynWidget)
+        {
+           SynWidget->SetTargetMachine(Machine);
+           SynthesizerInteractWidgetInstance = SynWidget;
+           SynWidget->AddToViewport();
+           SynWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
+        }
     }
-	// 🌟 [성형기 스폰 분기 추가] 바라본 기계 타입이 MoldingMachine 일 때
+    // 바라본 기계 타입이 중앙거점(BaseCamp) 일 때의 전용 분기 설정
+    else if (Machine->GetMachineType() == TEXT("BaseCamp")) 
+    {
+        if (!BaseCampInteractWidgetClass)
+        {
+           UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] BaseCampInteractWidgetClass 미할당! BP에서 할당하세요."));
+           return;
+        }
+
+        UUI_BaseCampInteract* BCWidget = CreateWidget<UUI_BaseCampInteract>(PC, BaseCampInteractWidgetClass);
+        if (BCWidget)
+        {
+           BCWidget->SetTargetMachine(Machine);
+           BaseCampInteractWidgetInstance = BCWidget;
+           BCWidget->AddToViewport();
+           BCWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode); // 델리게이트 마감
+        }
+    }
+    // 분기 ④ : 성형기 전용 개방
     else if (Machine->GetMachineType() == TEXT("MoldingMachine"))
     {
-    	if (!MoldingMachineInteractWidgetClass)
-    	{
-    		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] MoldingMachineInteractWidgetClass 미할당! BP에서 할당하세요."));
-    		return;
-    	}
+        if (!MoldingMachineInteractWidgetClass)
+        {
+           UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] MoldingMachineInteractWidgetClass 미할당! BP에서 할당하세요."));
+           return;
+        }
 
-    	UUI_MoldingMachineInteract* MoldWidget = CreateWidget<UUI_MoldingMachineInteract>(PC, MoldingMachineInteractWidgetClass);
-    	if (MoldWidget)
-    	{
-    		MoldWidget->SetTargetMachine(Machine);
-    		MoldingMachineInteractWidgetInstance = MoldWidget;
-    		MoldWidget->AddToViewport();
-    		MoldWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode); // 델리게이트 마감
-    	}
+        UUI_MoldingMachineInteract* MoldWidget = CreateWidget<UUI_MoldingMachineInteract>(PC, MoldingMachineInteractWidgetClass);
+        if (MoldWidget)
+        {
+           MoldWidget->SetTargetMachine(Machine);
+           MoldingMachineInteractWidgetInstance = MoldWidget;
+           MoldWidget->AddToViewport();
+           MoldWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode); // 델리게이트 마감
+        }
     }
-    // 3. 일반 기계 분기 (제련기, 분쇄기 등)
+    // 분기 ⑤ : 일반 기계 분기 (제련기, 분쇄기 등)
     else
     {
        if (!MachineInteractWidgetClass) return;
@@ -2071,7 +2101,7 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
        }
     }
 
-    // 창고 포트뿐만 아니라 '액체 탱크' 계열 상호작용 시에도 우측에 인벤토리 생성
+    // ── 후속 가방 인벤토리 동시 처리 및 마우스 활성화 활성 (기존 로직 유지) ──
     if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
     {
        if (!InventoryWidgetInstance && InventoryWidgetClass)
@@ -2133,6 +2163,12 @@ void AOJJ_Player::CloseMachineInteractWidget(APlayerController* PC)
 		MoldingMachineInteractWidgetInstance = nullptr;
 	}
 	
+	if (BaseCampInteractWidgetInstance)
+	{
+		BaseCampInteractWidgetInstance->RemoveFromParent();
+		BaseCampInteractWidgetInstance = nullptr;
+	}
+	
 	if (PC)
 	{
 		PC->SetInputMode(FInputModeGameOnly());
@@ -2144,20 +2180,16 @@ void AOJJ_Player::RestoreGameInputMode()
 {
 	if ((MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()) ||
 	   (SynthesizerInteractWidgetInstance && SynthesizerInteractWidgetInstance->IsInViewport()) ||
-	   (MoldingMachineInteractWidgetInstance && MoldingMachineInteractWidgetInstance->IsInViewport()))
+	   (MoldingMachineInteractWidgetInstance && MoldingMachineInteractWidgetInstance->IsInViewport()) ||
+	   (BaseCampInteractWidgetInstance && BaseCampInteractWidgetInstance->IsInViewport()))
 	{
 		return;
 	}
-    
-	if (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport())
-	{
-		return;
-	}
-
-	// 멱등 약포인터 캐시 일제 소독
+	
 	MachineInteractWidgetInstance = nullptr;
 	SynthesizerInteractWidgetInstance = nullptr;
 	MoldingMachineInteractWidgetInstance = nullptr;
+	BaseCampInteractWidgetInstance = nullptr;
 
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
