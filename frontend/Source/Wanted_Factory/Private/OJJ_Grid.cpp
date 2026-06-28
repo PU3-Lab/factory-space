@@ -4831,6 +4831,15 @@ void AOJJ_Grid::SetVisualizationVisible(bool bVisible)
 
 	// 빌드모드 시각화 상태 기록 — RefreshGridVisual/콘솔 토글이 참조.
 	bVisualizationActive = bVisible;
+	if (bVisible)
+	{
+		RefreshPlacedMachineArrows();
+	}
+	else
+	{
+		ClearPlacedMachineArrows();
+		ClearHoverMachineArrows();
+	}
 
 	// per-cell 그리드 비주얼 갱신(가능=초록/blocked=빨강/void=없음). 진입 시 채우고 퇴장 시 비움(강제표시 중이면 blocked 유지).
 	RefreshGridVisual();
