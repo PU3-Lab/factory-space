@@ -37,6 +37,9 @@ public class Wanted_Factory : ModuleRules
 		if (Target.bBuildEditor)
 		{
 			PrivateDependencyModuleNames.Add("UnrealEd");
+			// [#3 점진 건설] M_Hologram_BuildUp 그래프 코드 생성(UMaterialEditingLibrary) — 에디터 전용.
+			PrivateDependencyModuleNames.Add("MaterialEditor");
+			PrivateDependencyModuleNames.Add("AssetRegistry");
 		}
 
 		PublicIncludePaths.AddRange(new string[] {

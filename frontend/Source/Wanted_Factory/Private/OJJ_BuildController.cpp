@@ -37,7 +37,10 @@
 #include "Machines/EscapePod.h"
 #include "Machines/BaseCamp.h"
 #include "Machines/SignalAmplifier.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "OJJ_Foundation.h"
+#include "OJJ_HologramBuildUpComponent.h"
+#include "OJJ_HologramPathBuildUpComponent.h"
 #include "OJJ_Ladder.h"
 #include "OJJ_ProtectionTower.h"
 #include "Pipe.h"
@@ -1388,6 +1391,8 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	const FTransform PlaceXform =
 		TargetGrid->OJJ_GetMachinePlacementTransform(NewMachine, Origin, HoverRotationSteps);
 	NewMachine->SetActorLocationAndRotation(PlaceXform.GetLocation(), PlaceXform.GetRotation());
+	// [#3 점진 건설] 신규 배치 머신에 홀로그램 빌드업(신규 전용 — 로드는 FactorySave 경로라 안 거침).
+	StartBuildUpEffect(NewMachine, NewMachine->GetMeshComponent());
 	NotifyMainQuestMachinePlaced(this, GetQuestPlacementTargetId(PlacementMode));
 
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s 癒몄떊 諛곗튂 ?깃났"),
@@ -1395,6 +1400,8 @@ void AOJJ_BuildController::OnLeftClickPressed()
 
 	// 吏곸쟾 origin???댁젣 ?먯쑀?????ㅼ쓬 UpdateMouseHover?먯꽌 鍮④컯?쇰줈 媛뺤젣 ?ы몴??
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+	// [손 비우기] 단일 배치(머신) 성공 후 선택 해제 — 빌드모드 유지(PlacementMode만 None). Z키와 동일 경로(고스트 숨김/호버 리셋). 컨베이어/파이프 드래그·철거는 무관.
+	SetPlacementMode(EOJJ_BuildPlacementMode::None);
 }
 
 // === Foundation 紐⑤뱶 (F1-b ??癒몄떊 寃쎈줈? ?낅┰, 而ㅻ쾭由ъ? 諛곗튂) ===
@@ -1419,6 +1426,52 @@ float AOJJ_BuildController::OJJ_ComputeFoundationTopZ(AOJJ_Foundation* Foundatio
 	const float SnapLift = FoundationCDO->OJJ_ComputeSnapLift(*TargetGrid, Origin, EffSize, RotationSteps, nullptr);
 	const float HeightLift = GetFoundationHeightLiftZ(FoundationCDO, Origin, EffSize);
 	return PlaceZ + SnapLift + HeightLift + FoundationCDO->GetThickness();
+}
+
+void AOJJ_BuildController::StartBuildUpEffect(AActor* Building, UStaticMeshComponent* Mesh)
+{
+	// [#3 점진 건설] 신규 배치 전용 — 동적 컴포넌트 부여 후 빌드업 시작. 머티리얼 미지정이면 컴포넌트가 무동작.
+	if (!Building || !Mesh)
+	{
+		return;
+	}
+	UOJJ_HologramBuildUpComponent* Effect = NewObject<UOJJ_HologramBuildUpComponent>(Building);
+	if (!Effect)
+	{
+		return;
+	}
+	Effect->HologramMaterial = HologramBuildUpMaterial; // null이면 StartBuildUp이 안전하게 skip(배치 정상).
+	Effect->Duration = HologramBuildUpDuration;
+	Effect->RegisterComponent();
+	Effect->StartBuildUp(Mesh);
+}
+
+void AOJJ_BuildController::StartPathBuildUpEffect(AActor* Building, const TArray<FIntPoint>& Cells)
+{
+	// [#3 확장] 컨베이어/파이프 — 신규 배치 전용. 경로 시작/끝 월드좌표 산출 + ISM 머티 스왑 빌드업.
+	if (!Building || !TargetGrid || Cells.Num() == 0)
+	{
+		return;
+	}
+	const FVector PathStart = TargetGrid->GridToWorld(Cells[0]);
+	const FVector PathEnd = TargetGrid->GridToWorld(Cells.Last());
+
+	TArray<UInstancedStaticMeshComponent*> ISMs;
+	Building->GetComponents<UInstancedStaticMeshComponent>(ISMs);
+	if (ISMs.Num() == 0)
+	{
+		return;
+	}
+
+	UOJJ_HologramPathBuildUpComponent* Effect = NewObject<UOJJ_HologramPathBuildUpComponent>(Building);
+	if (!Effect)
+	{
+		return;
+	}
+	Effect->PathHologramMaterial = HologramPathMaterial; // null이면 StartBuildUp이 안전하게 skip(배치 정상).
+	Effect->Duration = HologramBuildUpDuration;
+	Effect->RegisterComponent();
+	Effect->StartBuildUp(ISMs, PathStart, PathEnd);
 }
 
 void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHitResult& Hit)
@@ -1602,6 +1655,8 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 	NewFoundation->SetActorLocationAndRotation(
 		SnappedLocation, FRotator(0.0f, 90.0f * Fit.EffectiveRotationSteps, 0.0f));
 	NewFoundation->OJJ_NotifyPlacedOnGrid(TargetGrid);
+	// [#3 점진 건설] 신규 배치 파운데이션에 홀로그램 빌드업(v1 슬래브만 — LegISM 다리는 후속). 신규 전용.
+	StartBuildUpEffect(NewFoundation, NewFoundation->GetSlabMesh());
 
 	// N + ?믪씠 異쒖쿂(寃곗젙 ?ㅒ룔돴 蹂닿컯) + 諛⑺뼢 異쒖쿂(??蹂닿컯 ???먮룞/?섎룞) 湲곕줉 ???뺤콉 ?숈옉 ?ㅼ륫.
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s Foundation 諛곗튂 ?깃났 (%dx%d, R=%d, N=%d?? %s%s%s)"),
@@ -1617,6 +1672,8 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 
 	// 吏곸쟾 ?곸뿭???댁젣 而ㅻ쾭??寃뱀묠 湲덉?) ???ㅼ쓬 ?몃쾭?먯꽌 鍮④컯 ?ы몴??媛뺤젣(癒몄떊 寃쎈줈? ?숈씪).
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+	// [손 비우기] 단일 배치(파운데이션) 성공 후 선택 해제 — 빌드모드 유지. 머신과 동일.
+	SetPlacementMode(EOJJ_BuildPlacementMode::None);
 }
 
 void AOJJ_BuildController::OJJ_LiftPawnsOntoFoundation(FIntPoint Origin, FIntPoint Size, float SlabThickness)
@@ -2307,6 +2364,11 @@ void AOJJ_BuildController::CommitConveyorDrag()
 			UE_LOG(LogTemp, Warning, TEXT("[BuildController] OJJ_TryPlacePipe failed: %s"), *OutReason);
 			Pipe->Destroy();
 		}
+		else
+		{
+			// [#3 확장] 신규 배치 파이프 — 시작→끝 길이 방향 홀로그램 빌드업.
+			StartPathBuildUpEffect(Pipe, PlacementCells);
+		}
 		// ?뚯씠?꾨뒗 ?섏뒪??諛곗튂 ?源?誘몃벑濡?NotifyMainQuestMachinePlaced 鍮꾪샇異???而⑤쿋?댁뼱 ?꾩슜 ??.
 		ConveyorDragCells.Reset();
 		TargetGrid->ClearHoverPreview();
@@ -2337,6 +2399,9 @@ void AOJJ_BuildController::CommitConveyorDrag()
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 		return;
 	}
+
+	// [#3 확장] 신규 배치 컨베이어 — 시작→끝 길이 방향 홀로그램 빌드업.
+	StartPathBuildUpEffect(Conveyor, PlacementCells);
 
 	NotifyMainQuestMachinePlaced(this, GetQuestPlacementTargetId(EOJJ_BuildPlacementMode::Conveyor));
 	ConveyorDragCells.Reset();

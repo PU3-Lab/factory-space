@@ -2837,9 +2837,14 @@ bool AOJJ_Grid::OJJ_GetUniformSurfaceZ(const TArray<FIntPoint>& Cells, float& Ou
 		float CellSurfaceZ = 0.0f;
 		const bool bCellOnFoundation = GetFoundationSurfaceZ(Cell, CellSurfaceZ);
 		// 램프 셀 식별: FoundationCells 셀 구조체엔 표식이 없어 점유 Foundation 액터 타입으로 판별(이미 :417 동일 패턴).
-		if (bCellOnFoundation && Cast<AOJJ_RampFoundation>(GetFoundationAtCell(Cell)))
+		// [#7] 단 평평 램프(상승 0 = 평지 브리지)는 표면/충돌이 평탄이라 평탄 파운데이션처럼 건물 허용 → 경사 램프만 거부.
+		if (bCellOnFoundation)
 		{
-			bAnyRampCell = true;
+			const AOJJ_RampFoundation* RampCell = Cast<AOJJ_RampFoundation>(GetFoundationAtCell(Cell));
+			if (RampCell && !RampCell->OJJ_IsFlatRamp())
+			{
+				bAnyRampCell = true;
+			}
 		}
 		if (bFirst)
 		{
