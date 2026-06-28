@@ -8,6 +8,7 @@
 
 class USpringArmComponent;
 class UCameraComponent;
+class USpotLightComponent;
 
 /**
  * 빌드모드 전용 탑다운 카메라 액터 (3단계).
@@ -39,6 +40,11 @@ public:
 	// 빌드모드에서 AOJJ_Player::Zoom()이 위임 호출(TPS/빌드 동일 휠 UX).
 	void Zoom(float ScrollDelta);
 
+	// [빌드 작업등] 탑다운 빌드모드에서 L키 작업등 on/off. 플레이어가 매 틱 현재 상태를 위임한다.
+	// 플레이어 NightSpotLight는 탑다운에서 SetActorHiddenInGame으로 렌더가 차단되므로, 탑다운 전용으로
+	// 카메라에 부착된 하향 SpotLight를 따로 켠다(밤 분위기 유지 위해 은은하게).
+	void SetWorkLightEnabled(bool bEnabled);
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -51,6 +57,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> Camera;
+
+	// [빌드 작업등] 카메라에 부착돼 아래(빌드 영역)를 비추는 하향 SpotLight. 기본 off, L키로 토글.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BuildCamera|WorkLight")
+	TObjectPtr<USpotLightComponent> WorkLight;
 
 	// --- Tuning ---
 	// 초당 패닝 이동 속도(언리얼 단위/초).
@@ -79,4 +89,19 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildCamera|Zoom", meta = (ClampMin = "0.0"))
 	float MaxArmLength = 4000.f;
+
+	// [빌드 작업등] 하향 SpotLight 튜닝. 밤 분위기를 유지하도록 과하지 않게(은은하게) 기본값을 잡는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildCamera|WorkLight", meta = (ClampMin = "0.0"))
+	float WorkLightIntensity = 50.f;
+
+	// 카메라 높이(최대 줌아웃 ArmLength)에서도 지면까지 닿도록 넉넉히. 비물리 falloff라 반경이 곧 도달거리.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildCamera|WorkLight", meta = (ClampMin = "0.0"))
+	float WorkLightAttenuationRadius = 6000.f;
+
+	// 빌드 영역을 넓게 덮도록 콘 각을 크게. 너무 좁으면 스폿이 점처럼 보임.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildCamera|WorkLight", meta = (ClampMin = "0.0", ClampMax = "80.0"))
+	float WorkLightInnerCone = 35.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildCamera|WorkLight", meta = (ClampMin = "0.0", ClampMax = "80.0"))
+	float WorkLightOuterCone = 55.f;
 };

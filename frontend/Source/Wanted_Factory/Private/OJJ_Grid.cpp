@@ -1491,19 +1491,34 @@ bool AOJJ_Grid::OJJ_GetPipeOutputStartCell(FIntPoint ClickedCell, int32 MaxSnap,
 	return bFound;
 }
 
-bool AOJJ_Grid::OJJ_FindLiquidOutputPortUnderCursorScreen(APlayerController* PC, float MaxScreenDist, FIntPoint& OutPortCell) const
+bool AOJJ_Grid::OJJ_FindLiquidOutputPortUnderCursorScreen(APlayerController* PC, float MaxScreenDist, FIntPoint& OutPortCell, bool bUseScreenCenter) const
 {
 	if (!PC)
 	{
 		return false;
 	}
-	float MouseX = 0.0f;
-	float MouseY = 0.0f;
-	if (!PC->GetMousePosition(MouseX, MouseY))
+	// [M3] 기준 스크린 점: TopDown=마우스 커서, TPS=뷰포트 중앙(크로스헤어). TPS는 마우스가 중앙고정/숨김이라 마우스 좌표 무의미.
+	FVector2D Mouse = FVector2D::ZeroVector;
+	if (bUseScreenCenter)
 	{
-		return false;
+		int32 ViewX = 0, ViewY = 0;
+		PC->GetViewportSize(ViewX, ViewY);
+		if (ViewX <= 0 || ViewY <= 0)
+		{
+			return false;
+		}
+		Mouse = FVector2D(ViewX * 0.5f, ViewY * 0.5f);
 	}
-	const FVector2D Mouse(MouseX, MouseY);
+	else
+	{
+		float MouseX = 0.0f;
+		float MouseY = 0.0f;
+		if (!PC->GetMousePosition(MouseX, MouseY))
+		{
+			return false;
+		}
+		Mouse = FVector2D(MouseX, MouseY);
+	}
 
 	float BestDist = MaxScreenDist;
 	bool bFound = false;
@@ -1534,6 +1549,138 @@ bool AOJJ_Grid::OJJ_FindLiquidOutputPortUnderCursorScreen(APlayerController* PC,
 		}
 	}
 	return bFound;
+}
+
+bool AOJJ_Grid::OJJ_FindConveyorRoute(FIntPoint Start, FIntPoint Goal, bool bAllowWater, TArray<FIntPoint>& OutCells) const
+{
+	OutCells.Reset();
+	if (Start == Goal)
+	{
+		OutCells.Add(Start);
+		return true;
+	}
+	if (!IsValidGridCell(Start) || !IsValidGridCell(Goal))
+	{
+		return false;
+	}
+
+	// 탐색 범위: 시작↔끝 바운딩박스 + 여유(Margin). 그리드가 커도 국소 영역만 탐색해 부하 상한.
+	const int32 Margin = FMath::Max(0, OJJ_RouteSearchMargin);
+	const int32 MinX = FMath::Max(0, FMath::Min(Start.X, Goal.X) - Margin);
+	const int32 MaxX = FMath::Min(GridSize.X - 1, FMath::Max(Start.X, Goal.X) + Margin);
+	const int32 MinY = FMath::Max(0, FMath::Min(Start.Y, Goal.Y) - Margin);
+	const int32 MaxY = FMath::Min(GridSize.Y - 1, FMath::Max(Start.Y, Goal.Y) + Margin);
+
+	// 통행 가능: 박스 내 + 유효 + 머신 점유 없음 + 건설가능(파이프는 물 허용). 시작/끝은 예외(엔드포인트 규칙은 최종 검증 담당).
+	auto Passable = [&](const FIntPoint& C) -> bool
+	{
+		if (C == Start || C == Goal)
+		{
+			return true;
+		}
+		if (C.X < MinX || C.X > MaxX || C.Y < MinY || C.Y > MaxY)
+		{
+			return false;
+		}
+		if (OJJ_GetMachineAtCell(OccupiedCells, C) != nullptr)
+		{
+			return false;
+		}
+		if (IsCellConstructible(C))
+		{
+			return true;
+		}
+		return bAllowWater && IsCellWater(C);
+	};
+
+	static const FIntPoint Dirs[4] = { FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1) };
+	const float StepCost = 1.0f;
+	const float TurnCost = FMath::Max(0.0f, OJJ_RouteTurnPenalty);
+	auto Heur = [&](const FIntPoint& C) -> float
+	{
+		return StepCost * (FMath::Abs(C.X - Goal.X) + FMath::Abs(C.Y - Goal.Y));
+	};
+
+	struct FNode { FIntPoint Cell; float F; };
+	auto Cmp = [](const FNode& A, const FNode& B) { return A.F < B.F; }; // min-heap
+
+	TArray<FNode> Open;
+	TMap<FIntPoint, float> G;
+	TMap<FIntPoint, FIntPoint> Came;
+	TMap<FIntPoint, FIntPoint> ArriveDir; // 노드에 도달한 진행방향(꺾임 비용 판정)
+
+	G.Add(Start, 0.0f);
+	ArriveDir.Add(Start, FIntPoint::ZeroValue);
+	Open.HeapPush({ Start, Heur(Start) }, Cmp);
+
+	// 노드 확장 상한(완전 안전망) — 박스 면적 또는 8000 중 작은 값.
+	const int32 MaxExpand = FMath::Min(8000, (MaxX - MinX + 1) * (MaxY - MinY + 1) + 1);
+	int32 Expanded = 0;
+	bool bFound = false;
+
+	while (Open.Num() > 0)
+	{
+		FNode Cur;
+		Open.HeapPop(Cur, Cmp);
+		if (Cur.Cell == Goal)
+		{
+			bFound = true;
+			break;
+		}
+		if (++Expanded > MaxExpand)
+		{
+			break;
+		}
+		const float CurG = G.FindRef(Cur.Cell);
+		const FIntPoint InDir = ArriveDir.FindRef(Cur.Cell);
+		for (const FIntPoint& D : Dirs)
+		{
+			const FIntPoint Nb = Cur.Cell + D;
+			if (!Passable(Nb))
+			{
+				continue;
+			}
+			float Tentative = CurG + StepCost;
+			if (InDir != FIntPoint::ZeroValue && D != InDir)
+			{
+				Tentative += TurnCost; // 직선 선호 — 방향 바뀌면 가중
+			}
+			const float* Existing = G.Find(Nb);
+			if (!Existing || Tentative < *Existing)
+			{
+				G.Add(Nb, Tentative);
+				Came.Add(Nb, Cur.Cell);
+				ArriveDir.Add(Nb, D);
+				Open.HeapPush({ Nb, Tentative + Heur(Nb) }, Cmp);
+			}
+		}
+	}
+
+	if (!bFound)
+	{
+		return false;
+	}
+
+	// 역추적 → Start..Goal 연속 셀.
+	TArray<FIntPoint> Rev;
+	FIntPoint C = Goal;
+	Rev.Add(C);
+	while (C != Start)
+	{
+		const FIntPoint* Prev = Came.Find(C);
+		if (!Prev || Rev.Num() > 4096) // 안전망(사이클/과대 경로)
+		{
+			return false;
+		}
+		C = *Prev;
+		Rev.Add(C);
+	}
+	for (int32 I = 0, J = Rev.Num() - 1; I < J; ++I, --J)
+	{
+		Rev.Swap(I, J);
+	}
+	OutCells = MoveTemp(Rev);
+	return true;
 }
 
 void AOJJ_Grid::BakeBuildableCells(bool bVerbose, bool bWriteCache)
@@ -2209,7 +2356,8 @@ void AOJJ_Grid::SetForceShowWater(bool bShow)
 // 점유(OccupiedCells=차단)와 의미가 반대인 "허가" 레이어. 기존 read/write 경로와 완전 독립 —
 // 이 블록의 함수들만 FoundationCells/OJJ_FoundationToCells를 만진다(소비처 연결은 F1-c).
 
-bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& OutReason) const
+bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& OutReason,
+	float FoundationTopZ, bool bRejectBuried) const
 {
 	OutReason.Reset();
 
@@ -2235,7 +2383,7 @@ bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& Ou
 	// F1-b 디버깅·waterZ 재검토(§5-3) 근거. stale(파괴된 Foundation/점유 액터) 엔트리는 비차단 —
 	// IsCellOnFoundation/IsCellOccupied의 weak 유효 의미와 일관(const라 sweep은 write 경로에 위임).
 	const int64 OffGrid = TotalCells - InGridCells;
-	int32 Overlap = 0, VoidCount = 0, WaterCount = 0, Occupied = 0;
+	int32 Overlap = 0, VoidCount = 0, WaterCount = 0, Occupied = 0, Buried = 0;
 	for (int32 X = IterMinX; X < IterEndX; ++X)
 	{
 		for (int32 Y = IterMinY; Y < IterEndY; ++Y)
@@ -2243,6 +2391,16 @@ bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& Ou
 			const FIntPoint Cell(X, Y);  // 교집합 내부 — IsValidGridCell 보장
 			if (IsCellOnFoundation(Cell)) { ++Overlap; }
 			if (IsCellVoid(Cell)) { ++VoidCount; }
+			// [#B 묻힘 금지] 평탄 파운데이션 상면 Z가 셀 지형 Z보다 낮으면(묻힘) 거부 — 일부 셀이라도. flush(같음)는 허용.
+			// 램프는 호출측 bRejectBuried=false라 미진입(바닥 연결 담당). 지형 데이터 무효 셀은 비교 불가 → 묻힘 미판정.
+			if (bRejectBuried)
+			{
+				float TerrainZ = 0.0f;
+				if (OJJ_GetRawTerrainSurfaceZ(Cell, TerrainZ) && TerrainZ > FoundationTopZ + KINDA_SMALL_NUMBER)
+				{
+					++Buried;
+				}
+			}
 			// [WaterArea 재정의] 물 거부를 "안 가려진 WaterArea"(드러난 웅덩이)로 한정 — 묻힌 땅·깊은 구덩이(−20 오판정)는
 			// Foundation 허용. 색상(OJJ_ClassifyCellColor)과 같은 헬퍼라 색=배치 정합. 전역 IsCellWater(펌프/파이프)는 −20 유지.
 			if (OJJ_IsUncoveredWaterCell(Cell)) { ++WaterCount; }
@@ -2254,7 +2412,7 @@ bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& Ou
 		}
 	}
 
-	if (OffGrid + Overlap + VoidCount + WaterCount + Occupied == 0)
+	if (OffGrid + Overlap + VoidCount + WaterCount + Occupied + Buried == 0)
 	{
 		return true;
 	}
@@ -2266,6 +2424,7 @@ bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& Ou
 	if (VoidCount > 0)  { Parts.Add(FString::Printf(TEXT("void %d"), VoidCount)); }
 	if (WaterCount > 0) { Parts.Add(FString::Printf(TEXT("water %d"), WaterCount)); }
 	if (Occupied > 0)   { Parts.Add(FString::Printf(TEXT("occupied %d"), Occupied)); }
+	if (Buried > 0)     { Parts.Add(FString::Printf(TEXT("buried %d"), Buried)); }
 	OutReason = FString::Printf(TEXT("Foundation blocked (%dx%d=%lld cells): %s."),
 		Size.X, Size.Y, TotalCells, *FString::Join(Parts, TEXT(" / ")));
 	return false;
@@ -2363,7 +2522,10 @@ bool AOJJ_Grid::OJJ_TryPlaceFoundationInternal(AActor* Foundation, FIntPoint Ori
 		return false;
 	}
 
-	if (!CanPlaceFoundation(Origin, Size, OutReason))
+	// [#B 묻힘 금지] 평탄만 묻힘 거부, 램프는 면제(바닥 연결). 상면 Z는 셀 표면 Z(=BaseSurfaceZ, 평탄 균일)로 비교.
+	const bool bRejectBuried = (Cast<AOJJ_RampFoundation>(Foundation) == nullptr);
+	const float FoundationTopZ = SurfaceZForCell(Origin);
+	if (!CanPlaceFoundation(Origin, Size, OutReason, FoundationTopZ, bRejectBuried))
 	{
 		return false;
 	}
@@ -2668,11 +2830,22 @@ bool AOJJ_Grid::OJJ_GetUniformSurfaceZ(const TArray<FIntPoint>& Cells, float& Ou
 
 	bool bFirst = true;
 	bool bOnFoundation = false;
+	bool bAnyRampCell = false; // [#7 b] 램프(경사) 셀 포함 여부 — 평탄 균일면이 아니므로 그 위 안착 거부용.
 	float SurfaceZ = 0.0f;
 	for (const FIntPoint& Cell : Cells)
 	{
 		float CellSurfaceZ = 0.0f;
 		const bool bCellOnFoundation = GetFoundationSurfaceZ(Cell, CellSurfaceZ);
+		// 램프 셀 식별: FoundationCells 셀 구조체엔 표식이 없어 점유 Foundation 액터 타입으로 판별(이미 :417 동일 패턴).
+		// [#7] 단 평평 램프(상승 0 = 평지 브리지)는 표면/충돌이 평탄이라 평탄 파운데이션처럼 건물 허용 → 경사 램프만 거부.
+		if (bCellOnFoundation)
+		{
+			const AOJJ_RampFoundation* RampCell = Cast<AOJJ_RampFoundation>(GetFoundationAtCell(Cell));
+			if (RampCell && !RampCell->OJJ_IsFlatRamp())
+			{
+				bAnyRampCell = true;
+			}
+		}
 		if (bFirst)
 		{
 			bFirst = false;
@@ -2686,6 +2859,14 @@ bool AOJJ_Grid::OJJ_GetUniformSurfaceZ(const TArray<FIntPoint>& Cells, float& Ou
 		{
 			return false;
 		}
+	}
+
+	// [#7 버그 b 수정] 램프 셀 위에는 평탄 안착이 성립하지 않는다. 충돌은 쐐기 convex(경사 아래 빈공간 미포함)인데
+	// 셀 장부 SurfaceZ만 보던 기존 판정(특히 1×1 풋프린트 자명통과, F3.10 b②)이 컨베이어/직배치물을 쐐기에
+	// 묻거나 허공에 깔리게 했다. 램프 셀이 하나라도 포함되면 균일면 아님으로 거부(평탄 Foundation은 무영향).
+	if (bOnFoundation && bAnyRampCell)
+	{
+		return false;
 	}
 
 	if (bOnFoundation)
@@ -2810,7 +2991,8 @@ float AOJJ_Grid::OJJ_ComputeFoundationSnapLift(FIntPoint Origin, FIntPoint Size,
 	return SnapSteps * OJJ_FoundationSnapStep;
 }
 
-void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size, bool bForceInvalid)
+void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size, bool bForceInvalid, float HeightLiftZ,
+	float FoundationTopZ, bool bRejectBuried)
 {
 	ClearHoverPreview();
 
@@ -2836,7 +3018,7 @@ void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Siz
 	// BuildController가 같은 함수의 OutReason(사유별 셀 수)을 로그.
 	// bForceInvalid(F3.6-1)는 클릭 측도 같은 게이트(풋프린트 훅 bValid)로 거부하므로 단일원 유지.
 	FString UnusedReason;
-	const bool bCanPlace = !bForceInvalid && CanPlaceFoundation(Origin, Size, UnusedReason);
+	const bool bCanPlace = !bForceInvalid && CanPlaceFoundation(Origin, Size, UnusedReason, FoundationTopZ, bRejectBuried);
 	UInstancedStaticMeshComponent* TargetISM = bCanPlace ? ValidHoverISM.Get() : InvalidHoverISM.Get();
 	if (!TargetISM)
 	{
@@ -2851,7 +3033,7 @@ void AOJJ_Grid::OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Siz
 		{
 			const FIntPoint PreviewCell((int32)X, (int32)Y);
 			const FVector CellCenter = GridToWorld(PreviewCell);
-			const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(PreviewCell) + 2.0f + HoverExtraZLift);
+			const FVector InstanceLocation(CellCenter.X, CellCenter.Y, OJJ_GetCellVisualBaseZ(PreviewCell) + 2.0f + HoverExtraZLift + HeightLiftZ);
 			const FVector InstanceScale(CellSize / 100.0f, CellSize / 100.0f, 1.0f);
 			TargetISM->AddInstance(FTransform(FRotator::ZeroRotator, InstanceLocation, InstanceScale), /*bWorldSpace=*/true);
 		}
@@ -4957,7 +5139,7 @@ void AOJJ_Grid::OJJ_ShowGhostForMachine(AMachineBase* MachineCDO, FIntPoint Orig
 	GhostMeshComp->SetVisibility(true);
 }
 
-void AOJJ_Grid::OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize, bool bValid)
+void AOJJ_Grid::OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize, bool bValid, float HeightLiftZ)
 {
 	if (!GhostMeshComp || !FoundationCDO || EffSize.X < 1 || EffSize.Y < 1)
 	{
@@ -5009,7 +5191,7 @@ void AOJJ_Grid::OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntP
 	GhostMeshComp->SetWorldScale3D(Scale);
 	GhostMeshComp->SetWorldLocationAndRotation(
 		FVector(LowerLeftCenter.X + OffsetX + Offset.X, LowerLeftCenter.Y + OffsetY + Offset.Y,
-			LowerLeftCenter.Z + SnapLift + Offset.Z),
+			LowerLeftCenter.Z + SnapLift + HeightLiftZ + Offset.Z),
 		SlabRot);
 
 	// 틴트는 Overlay Material 패스(#187 B안) — 머신 고스트와 동일. 베이스(슬래브 원본) 위에 초록/빨강 합성.

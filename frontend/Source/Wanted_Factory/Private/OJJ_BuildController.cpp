@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "OJJ_BuildController.h"
@@ -6,6 +6,9 @@
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/GameInstance.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/HitResult.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
@@ -34,7 +37,10 @@
 #include "Machines/EscapePod.h"
 #include "Machines/BaseCamp.h"
 #include "Machines/SignalAmplifier.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "OJJ_Foundation.h"
+#include "OJJ_HologramBuildUpComponent.h"
+#include "OJJ_HologramPathBuildUpComponent.h"
 #include "OJJ_Ladder.h"
 #include "OJJ_ProtectionTower.h"
 #include "Pipe.h"
@@ -194,6 +200,18 @@ AOJJ_BuildController::AOJJ_BuildController()
 	SignalAmplifierClass = ASignalAmplifier::StaticClass();
 	// [#184] ?щ떎由?湲곕낯 ?대옒??BP 誘몄????? ??C++ AOJJ_Ladder. BP ?놁씠??C??諛곗튂 ?숈옉.
 	LadderClass = AOJJ_Ladder::StaticClass();
+
+	// [#5 전선 미리보기] 메시/머티리얼 기본값 로드(에디터 재지정 가능). BP 와이어링 없이도 동작.
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> PreviewCylinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (PreviewCylinder.Succeeded())
+	{
+		PowerLinePreviewMesh = PreviewCylinder.Object;
+	}
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> PreviewGhostMat(TEXT("/Game/OJJ/Materials/M_Ghost_Preview.M_Ghost_Preview"));
+	if (PreviewGhostMat.Succeeded())
+	{
+		PowerLinePreviewMaterial = PreviewGhostMat.Object;
+	}
 }
 
 void AOJJ_BuildController::Tick(float DeltaSeconds)
@@ -201,7 +219,7 @@ void AOJJ_BuildController::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	// Enter/Exit?먯꽌 Tick??on/off?섏?留? 諛⑹뼱?곸쑝濡?紐⑤뱶 媛?쒕룄 ?좎?(UpdateMouseHover ?대??먮룄 媛???덉쓬).
-	if (bIsBuildMode)
+	if (IsInBuildMode())
 	{
 		UpdateMouseHover();
 		UpdateCharacterCellOverlay();
@@ -210,7 +228,7 @@ void AOJJ_BuildController::Tick(float DeltaSeconds)
 
 void AOJJ_BuildController::EnterBuildMode()
 {
-	if (bIsBuildMode)
+	if (IsInBuildMode())
 	{
 		return;
 	}
@@ -222,6 +240,12 @@ void AOJJ_BuildController::EnterBuildMode()
 	}
 
 	// 紐⑤뱶蹂??대옒??誘몄꽕??媛????癒몄떊 紐⑤뱶??MachineClass, 而⑤쿋?댁뼱 紐⑤뱶??ConveyorClass ?꾩슂.
+	// [진입 선택없음] 빌드모드는 항상 선택없음(None)으로 시작 — 직전 선택/기본값(Machine) 잔류로 고스트가 바로
+	// 들리는 것 방지. 카테고리/숫자키로 골라야 고스트가 뜬다(UpdateMouseHover의 None 분기가 호버 클리어).
+	// ⚠️ 아래 클래스 검증 가드 '이전'에 둠 — None이면 가드 전부 통과 → 직전 선택의 클래스 누락으로 진입이
+	// 막히던 엣지도 해소. 실제 클래스 검증은 선택 시점으로 이동(UpdateMouseHover가 !ActiveMachineClass면 no-op).
+	PlacementMode = EOJJ_BuildPlacementMode::None;
+
 	if (PlacementMode == EOJJ_BuildPlacementMode::Machine && !MachineClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BuildController] MachineClass 誘몄꽕????EnterBuildMode 以묐떒"));
@@ -312,7 +336,8 @@ void AOJJ_BuildController::EnterBuildMode()
 	// 吏꾩엯 利됱떆 諛곗튂 癒몄떊 ?ы듃 ?붿궡???쒖떆(泥??몃쾭 ?꾩씠?쇰룄 蹂댁씠?꾨줉). ?몃쾭 ?붿궡?쒕뒗 泥?UpdateMouseHover?먯꽌.
 	TargetGrid->RefreshPlacedMachineArrows();
 
-	bIsBuildMode = true;
+	// 진입은 항상 TopDown으로 확정(EnterBuildMode = 기존 B 경로). TPS 요청 시 SetBuildViewMode가 직후 갱신.
+	BuildViewMode = EBuildViewMode::TopDown;
 
 	// 鍮뚮뱶 ?몄뀡? ??긽 ?뚯쟾 0(誘명쉶???쇰줈 ?쒖옉 ???덉륫 媛?ν븳 湲곕낯 諛⑺뼢.
 	HoverRotationSteps = 0;
@@ -328,6 +353,9 @@ void AOJJ_BuildController::EnterBuildMode()
 
 	// 鍮뚮뱶紐⑤뱶 ?숈븞?먮쭔 ?몃쾭 Tick 媛??
 	SetActorTickEnabled(true);
+
+	// [공중 Foundation] 진입 시 높이 오프셋 0으로 리셋(회전/Foundation종류와 동일 — 이전 세션 잔류 방지).
+	BuildHeightOffset = 0;
 
 	if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
 	{
@@ -345,7 +373,7 @@ void AOJJ_BuildController::EnterBuildMode()
 
 void AOJJ_BuildController::ExitBuildMode()
 {
-	if (!bIsBuildMode)
+	if (!IsInBuildMode())
 	{
 		return;
 	}
@@ -359,7 +387,7 @@ void AOJJ_BuildController::ExitBuildMode()
 	}
 	CharacterOverlayCells.Reset();
 
-	bIsBuildMode = false;
+	BuildViewMode = EBuildViewMode::None;
 
 	// 而⑤쿋?댁뼱 ?쒕옒洹??곹깭 ?뺣━.
 	bIsDraggingConveyor = false;
@@ -368,7 +396,13 @@ void AOJJ_BuildController::ExitBuildMode()
 	PowerLineStartMachine.Reset();
 
 	// ?몃쾭 Tick ?뺤? (鍮뚮뱶紐⑤뱶 諛?0鍮꾩슜)
+	// [#5] 빌드 해제 시 전선 미리보기 소등(Tick 중단 후엔 갱신이 안 돌아 잔상 방지 — 명시적 숨김 필요).
+	HidePowerLinePreview();
+
 	SetActorTickEnabled(false);
+
+	// [공중 Foundation] 종료 시 높이 오프셋 0으로 리셋(다음 진입이 어차피 0으로 덮지만 명시적 정리).
+	BuildHeightOffset = 0;
 
 	if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
 	{
@@ -395,21 +429,51 @@ void AOJJ_BuildController::ExitBuildMode()
 
 void AOJJ_BuildController::ToggleBuildMode()
 {
-	if (bIsBuildMode)
+	// 레거시 토글(B 단독 시절). 이제 SetBuildViewMode로 위임 — 빌드 중이면 해제, 아니면 TopDown 진입.
+	// 신규 B/V 라우팅(모드 전환 포함)은 플레이어가 SetBuildViewMode를 직접 호출한다.
+	SetBuildViewMode(IsInBuildMode() ? EBuildViewMode::None : EBuildViewMode::TopDown);
+}
+
+void AOJJ_BuildController::SetBuildViewMode(EBuildViewMode NewMode)
+{
+	if (NewMode == BuildViewMode)
 	{
-		ExitBuildMode();
+		return; // 동일 모드 — no-op
+	}
+
+	if (NewMode == EBuildViewMode::None)
+	{
+		ExitBuildMode(); // BuildViewMode → None
+		UE_LOG(LogTemp, Log, TEXT("[BuildController] BuildViewMode -> None (해제)"));
+		return;
+	}
+
+	if (!IsInBuildMode())
+	{
+		// 신규 진입(현재 None). EnterBuildMode는 검증 실패 시 early-return(BuildViewMode None 유지).
+		EnterBuildMode(); // 성공 시 BuildViewMode = TopDown
+		if (IsInBuildMode())
+		{
+			BuildViewMode = NewMode; // 요청이 TPS면 TopDown→TPS로 갱신
+		}
 	}
 	else
 	{
-		EnterBuildMode();
+		// 이미 빌드모드 — TopDown↔TPS 전환(1단계 골격: 그리드 상태 유지, 모드 플래그만 교체).
+		BuildViewMode = NewMode;
 	}
+
+	UE_LOG(LogTemp, Log, TEXT("[BuildController] BuildViewMode -> %s"),
+		BuildViewMode == EBuildViewMode::TopDown ? TEXT("TopDown")
+		: BuildViewMode == EBuildViewMode::TPS ? TEXT("TPS")
+		: TEXT("None"));
 }
 
 void AOJJ_BuildController::RotateHoverClockwise()
 {
 	// R? IMC_Build ?꾩슜?대씪 鍮뚮뱶紐⑤뱶?먯꽌留?諛쒕룞?섏?留? 諛⑹뼱?곸쑝濡?媛??
 	// ?뚯쟾? 癒몄떊 + Foundation(F3-0 ?????⑦봽 諛⑺뼢???鍮? ?몃쾭 ?꾩슜 ??而⑤쿋?댁뼱 紐⑤뱶?먯꽌??臾댁떆(Dummy parity).
-	if (!bIsBuildMode
+	if (!IsInBuildMode()
 		|| (PlacementMode != EOJJ_BuildPlacementMode::Machine
 			&& PlacementMode != EOJJ_BuildPlacementMode::PowerNode
 			&& PlacementMode != EOJJ_BuildPlacementMode::Shield
@@ -623,7 +687,7 @@ void AOJJ_BuildController::UpdateGridColorForCurrentMode()
 
 void AOJJ_BuildController::UpdateMouseHover()
 {
-	if (!bIsBuildMode)
+	if (!IsInBuildMode())
 	{
 		return;
 	}
@@ -655,16 +719,15 @@ void AOJJ_BuildController::UpdateMouseHover()
 	}
 
 	FHitResult Hit;
-	const bool bHit = PC->GetHitResultUnderCursorByChannel(
-		UEngineTypes::ConvertToTraceType(ECC_Visibility),
-		/*bTraceComplex=*/ false,
-		Hit);
+	const bool bHit = ResolveBuildTraceHit(PC, Hit); // 모드별 소스(탑다운=커서 / TPS=화면중앙 전방레이+클램프)
 
 	if (!bHit)
 	{
 		// ?몃젅?댁뒪 ?ㅽ뙣 ??stale 誘몃━蹂닿린/罹먯떆媛 ?ㅼ쓬 ?대┃???섎せ ?곸슜?섏? ?딅룄濡?紐낆떆??由ъ뀑
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+		// [#5] 트레이스 미스(커서가 허공) 시에도 전선 미리보기 잔상 제거.
+		HidePowerLinePreview();
 		return;
 	}
 
@@ -683,46 +746,7 @@ void AOJJ_BuildController::UpdateMouseHover()
 		TargetGrid->ClearHoverPreview();
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 
-#if ENABLE_DRAW_DEBUG
-		// ?꾩꽑 ?쒕옒洹?誘몃━蹂닿린 ???쎄린 ?꾩슜 ?쒓컖??????곌껐 濡쒖쭅 鍮꾩묠踰? ?몃쾭??BuildController ?곸뿭).
-		// Shipping ??ENABLE_DRAW_DEBUG=0 鍮뚮뱶?먯꽑 釉붾줉 ?꾩껜媛 而댄뙆???꾩썐 ???고???鍮꾩슜 0.
-		// ?ш린 ?꾨떖 ?쒖젏????(!bHit) 媛?쒕? ?대? ?듦낵???곹깭?대?濡?Hit / Hit.Location ?좏슚.
-		if (bIsDraggingPowerLine)
-		{
-			if (UWorld* World = GetWorld())
-			{
-				if (AMachineBase* StartMachine = PowerLineStartMachine.Get())
-				{
-					// ?꾩꽦??APowerLine::LineHeightOffset 湲곕낯媛?350)怨??믪씠瑜?留욎땄. LineHeightOffset??
-					// protected쨌寃뚰꽣 ?놁쓬 ???곸닔 ?ъ슜. ??먯씠 洹?湲곕낯媛믪쓣 諛붽씀硫??ш린???숆린???꾩슂.
-					constexpr float PreviewEndpointHeightOffset = 20.0f;
-					const FVector StartLoc = APowerLine::GetEndpointLocationForActor(StartMachine, PreviewEndpointHeightOffset);
-
-					// ?쒖옉 ?몃뱶(StartLoc) ??而ㅼ꽌(CursorLoc)濡?誘몃━蹂닿린 ??留??꾨젅??鍮꾩쁺??.
-					// 而ㅼ꽌 ?꾨옒 ?몃뱶媛 ?곌껐 媛?ν븯硫?珥덈줉, ?꾨땲硫?鍮④컯. HoverNode媛 non-null???뚮쭔
-					// CanConnect ?됯?(?⑤씫 ?됯?) ???몃뱶 ?꾧? ?꾨땲硫?留??꾨젅??洹몃옒???쒗쉶 鍮꾩슜 ?놁쓬.
-					AMachineBase* HoverMachine = Cast<AMachineBase>(Hit.GetActor());
-					if (!IsPowerLineEndpoint(HoverMachine))
-					{
-						HoverMachine = FindPowerLineEndpointNearLocation(Hit.Location);
-					}
-					const FVector CursorLoc = HoverMachine
-						? APowerLine::GetEndpointLocationForActor(HoverMachine, PreviewEndpointHeightOffset)
-						: Hit.Location + FVector(0.0f, 0.0f, PreviewEndpointHeightOffset);
-					UGameInstance* GameInstance = GetGameInstance();
-					UFactoryManagerSubsystem* FactoryManager = GameInstance
-						? GameInstance->GetSubsystem<UFactoryManagerSubsystem>()
-						: nullptr;
-					const bool bCanConnect = HoverMachine && FactoryManager
-						&& FactoryManager->CanConnectPowerLineEndpoints(StartMachine, HoverMachine);
-					DrawDebugLine(World, StartLoc, CursorLoc,
-						bCanConnect ? FColor::Green : FColor::Red, /*bPersistent=*/ false, /*LifeTime=*/ -1.0f, 0, 4.0f);
-				}
-			}
-		}
-		// [?듭뀡쨌誘멸뎄?? 鍮꾨뱶?섍렇 ?곹깭?먯꽌 而ㅼ꽌 ?꾨옒 ?몃뱶瑜??ㅽ뵾?대줈 媛뺤“?섎㈃ "?좏깮 媛?? ?뚰듃媛 ?섏?留?
-		// ?붿껌 踰붿쐞(?쒕옒洹?以??쇰뱶諛?瑜??섏뼱 ?앸왂. ?꾩슂 ????if 諛붽묑??HoverNode 媛뺤“瑜?異붽?.
-#endif
+		UpdatePowerLinePreview(Hit);
 		return;
 	}
 
@@ -1172,7 +1196,7 @@ void AOJJ_BuildController::OnLeftClickPressed()
 		return;
 	}
 
-	if (!bIsBuildMode)
+	if (!IsInBuildMode())
 	{
 		return;
 	}
@@ -1188,6 +1212,18 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor
 		|| PlacementMode == EOJJ_BuildPlacementMode::Pipe)
 	{
+		// [TPS 2클릭] 컨베이어·파이프 둘 다 TPS서 2클릭. 오토라우터(L자)·드래그 상태머신 공유,
+		// 커밋만 bPipeMode 분기(OJJ_BuildPipePlacementPath). 탑다운은 드래그 유지.
+		const bool bPathTwoClick = IsTwoClickConnectMode()
+			&& (PlacementMode == EOJJ_BuildPlacementMode::Conveyor
+				|| PlacementMode == EOJJ_BuildPlacementMode::Pipe);
+		if (bPathTwoClick && bIsDraggingConveyor)
+		{
+			// 2번째 클릭 = 커밋(앵커셀↔조준셀 자동 L경로). CommitConveyorDrag가 현재 ConveyorDragCells 사용.
+			CommitConveyorDrag();
+			return;
+		}
+
 		FIntPoint CursorCell;
 		if (GetCursorCell(CursorCell))
 		{
@@ -1199,7 +1235,10 @@ void AOJJ_BuildController::OnLeftClickPressed()
 				// 2?쒖쐞(?대갚): 洹몃━??? 洹쇰갑 2移??ㅻ깄. ?????ㅽ뙣硫??먮옒 ? ?좎?.
 				APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 				FIntPoint SnapCell;
-				if (PC && TargetGrid->OJJ_FindLiquidOutputPortUnderCursorScreen(PC, /*MaxScreenDist=*/64.0f, SnapCell))
+				// [M3] 포트스냅 기준점: TopDown=마우스 커서, TPS=화면중앙(크로스헤어). TPS는 마우스가 중앙고정/숨김이라
+				// 마우스 좌표가 무의미 → 화면중앙 기준으로 출력포트 탐색해야 조준점과 일치.
+				const bool bUseScreenCenter = IsTwoClickConnectMode();
+				if (PC && TargetGrid->OJJ_FindLiquidOutputPortUnderCursorScreen(PC, /*MaxScreenDist=*/64.0f, SnapCell, bUseScreenCenter))
 				{
 					CursorCell = SnapCell;
 				}
@@ -1215,7 +1254,17 @@ void AOJJ_BuildController::OnLeftClickPressed()
 
 	if (PlacementMode == EOJJ_BuildPlacementMode::PowerLine)
 	{
-		BeginPowerLineDrag(GetPowerLineEndpointUnderCursor());
+		// [TPS 2클릭] 탑다운=드래그(누름=앵커, 릴리스=커밋). TPS=2클릭(누름1=앵커, 누름2=커밋, 릴리스 무시).
+		if (IsTwoClickConnectMode() && bIsDraggingPowerLine)
+		{
+			// 2번째 클릭 = 커밋(앵커 머신 ↔ 현재 조준 머신). 내부에서 CancelPowerLineDrag로 앵커 정리.
+			CommitPowerLineDrag();
+		}
+		else
+		{
+			// 1번째 클릭(TPS) 또는 드래그 시작(탑다운) = 앵커 머신 픽(미스 시 BeginPowerLineDrag가 no-op).
+			BeginPowerLineDrag(GetPowerLineEndpointUnderCursor());
+		}
 		return;
 	}
 
@@ -1342,6 +1391,8 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	const FTransform PlaceXform =
 		TargetGrid->OJJ_GetMachinePlacementTransform(NewMachine, Origin, HoverRotationSteps);
 	NewMachine->SetActorLocationAndRotation(PlaceXform.GetLocation(), PlaceXform.GetRotation());
+	// [#3 점진 건설] 신규 배치 머신에 홀로그램 빌드업(신규 전용 — 로드는 FactorySave 경로라 안 거침).
+	StartBuildUpEffect(NewMachine, NewMachine->GetMeshComponent());
 	NotifyMainQuestMachinePlaced(this, GetQuestPlacementTargetId(PlacementMode));
 
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s 癒몄떊 諛곗튂 ?깃났"),
@@ -1349,6 +1400,8 @@ void AOJJ_BuildController::OnLeftClickPressed()
 
 	// 吏곸쟾 origin???댁젣 ?먯쑀?????ㅼ쓬 UpdateMouseHover?먯꽌 鍮④컯?쇰줈 媛뺤젣 ?ы몴??
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+	// [손 비우기] 단일 배치(머신) 성공 후 선택 해제 — 빌드모드 유지(PlacementMode만 None). Z키와 동일 경로(고스트 숨김/호버 리셋). 컨베이어/파이프 드래그·철거는 무관.
+	SetPlacementMode(EOJJ_BuildPlacementMode::None);
 }
 
 // === Foundation 紐⑤뱶 (F1-b ??癒몄떊 寃쎈줈? ?낅┰, 而ㅻ쾭由ъ? 諛곗튂) ===
@@ -1359,6 +1412,66 @@ TSubclassOf<AOJJ_Foundation> AOJJ_BuildController::GetActiveFoundationClass() co
 	// OJJ_SelectFoundationKind 寃뚯씠?멸? 李⑤떒?섎?濡??뺤긽 ?먮쫫?먯꽑 ?꾨떖 遺덇? ??洹몃옒??null?대㈃
 	// ?ъ슜泥??몃쾭/諛곗튂)??湲곗〈 null 媛?쒓? ?숈옉?쒕떎.
 	return bRampFoundationSelected ? RampFoundationClass : FlatFoundationClass;
+}
+
+float AOJJ_BuildController::OJJ_ComputeFoundationTopZ(AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize, int32 RotationSteps) const
+{
+	// [#B 묻힘 금지] 파운데이션 상면 Z 단일원 — 배치 PlaceFoundationAtCursor의 BaseSurfaceZ 산식과 동일.
+	// 정보 부족 시 큰 값 반환 = 묻힘 게이트 사실상 통과(거부 안 함, 안전측).
+	if (!TargetGrid || !FoundationCDO)
+	{
+		return TNumericLimits<float>::Max();
+	}
+	const float PlaceZ = TargetGrid->GetFoundationPlacementLocation(Origin, EffSize).Z;
+	const float SnapLift = FoundationCDO->OJJ_ComputeSnapLift(*TargetGrid, Origin, EffSize, RotationSteps, nullptr);
+	const float HeightLift = GetFoundationHeightLiftZ(FoundationCDO, Origin, EffSize);
+	return PlaceZ + SnapLift + HeightLift + FoundationCDO->GetThickness();
+}
+
+void AOJJ_BuildController::StartBuildUpEffect(AActor* Building, UStaticMeshComponent* Mesh)
+{
+	// [#3 점진 건설] 신규 배치 전용 — 동적 컴포넌트 부여 후 빌드업 시작. 머티리얼 미지정이면 컴포넌트가 무동작.
+	if (!Building || !Mesh)
+	{
+		return;
+	}
+	UOJJ_HologramBuildUpComponent* Effect = NewObject<UOJJ_HologramBuildUpComponent>(Building);
+	if (!Effect)
+	{
+		return;
+	}
+	Effect->HologramMaterial = HologramBuildUpMaterial; // null이면 StartBuildUp이 안전하게 skip(배치 정상).
+	Effect->Duration = HologramBuildUpDuration;
+	Effect->RegisterComponent();
+	Effect->StartBuildUp(Mesh);
+}
+
+void AOJJ_BuildController::StartPathBuildUpEffect(AActor* Building, const TArray<FIntPoint>& Cells)
+{
+	// [#3 확장] 컨베이어/파이프 — 신규 배치 전용. 경로 시작/끝 월드좌표 산출 + ISM 머티 스왑 빌드업.
+	if (!Building || !TargetGrid || Cells.Num() == 0)
+	{
+		return;
+	}
+	const FVector PathStart = TargetGrid->GridToWorld(Cells[0]);
+	const FVector PathEnd = TargetGrid->GridToWorld(Cells.Last());
+
+	TArray<UInstancedStaticMeshComponent*> ISMs;
+	Building->GetComponents<UInstancedStaticMeshComponent>(ISMs);
+	if (ISMs.Num() == 0)
+	{
+		return;
+	}
+
+	UOJJ_HologramPathBuildUpComponent* Effect = NewObject<UOJJ_HologramPathBuildUpComponent>(Building);
+	if (!Effect)
+	{
+		return;
+	}
+	Effect->PathHologramMaterial = HologramPathMaterial; // null이면 StartBuildUp이 안전하게 skip(배치 정상).
+	Effect->Duration = HologramBuildUpDuration;
+	Effect->RegisterComponent();
+	Effect->StartBuildUp(ISMs, PathStart, PathEnd);
 }
 
 void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHitResult& Hit)
@@ -1405,16 +1518,22 @@ void AOJJ_BuildController::UpdateFoundationHover(FIntPoint CursorCell, const FHi
 		*TargetGrid, CursorCell, HoverRotationSteps);
 	// F3.6-1(??: ?뗮봽由고듃 援ъ꽦 遺덇?(?먮룞 留욎땄 寃쎌궗 ?쒓퀎)???대┃??媛숈? ??bValid濡?嫄곕? ??鍮④컯 媛뺤젣濡?
 	// ???⑥씪 吏꾩떎???좎?. ?ъ쑀 ?띿뒪?몃뒗 ?대┃ ??濡쒓렇(?꾨옒 ?몃쾭 濡쒓렇?먮룄 ?숇컲 ??? 蹂寃??쒕쭔?대씪 ?鍮덈룄).
-	TargetGrid->OJJ_UpdateFoundationHoverPreview(Fit.Origin, Fit.EffSize, !Fit.bValid);
+	// [공중 Foundation] 높이 오프셋 Z 1회 계산 — 타일 프리뷰·슬래브 고스트·스폰이 동일 값을 쓰도록(이웃 조회 중복 방지).
+	const float FoundationHeightLiftZ = GetFoundationHeightLiftZ(DefaultFoundation, Fit.Origin, Fit.EffSize);
+	// [#B 묻힘 금지] 상면 Z 단일원 + 램프 예외(램프는 묻힘 허용). 호버 타일색/고스트/배치가 같은 TopZ로 정합.
+	const float FoundationTopZ = OJJ_ComputeFoundationTopZ(ActiveClass.GetDefaultObject(), Fit.Origin, Fit.EffSize, Fit.EffectiveRotationSteps);
+	const bool bRejectBuried = !bRampFoundationSelected;
+	TargetGrid->OJJ_UpdateFoundationHoverPreview(Fit.Origin, Fit.EffSize, !Fit.bValid, FoundationHeightLiftZ, FoundationTopZ, bRejectBuried);
 
 	// 怨좎뒪???꾨━酉?#187): ?됲뙋 ?꾩슜. ???먯젙?먯? ?몃쾭 ??쇨낵 ?숈씪(Fit.bValid AND CanPlaceFoundation)濡??쇱튂.
 	// ?⑦봽???꾩냽 踰붿쐞??怨좎뒪??誘명몴????OJJ_HideGhost濡??꾪솚 ?붿〈 諛⑹?(ClearHoverPreview???④린吏留?紐낆떆??.
 	if (!bRampFoundationSelected)
 	{
 		FString GhostReason;
-		const bool bGhostValid = Fit.bValid && TargetGrid->CanPlaceFoundation(Fit.Origin, Fit.EffSize, GhostReason);
+		// 평탄 고스트 — 묻힘 거부 적용(bRejectBuried=true). 램프 분기(else)는 면제.
+		const bool bGhostValid = Fit.bValid && TargetGrid->CanPlaceFoundation(Fit.Origin, Fit.EffSize, GhostReason, FoundationTopZ, /*bRejectBuried=*/true);
 		TargetGrid->OJJ_ShowGhostForFoundation(
-			ActiveClass.GetDefaultObject(), Fit.Origin, Fit.EffSize, bGhostValid);
+			ActiveClass.GetDefaultObject(), Fit.Origin, Fit.EffSize, bGhostValid, FoundationHeightLiftZ);
 	}
 	else
 	{
@@ -1508,7 +1627,10 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 	FString HeightSource;
 	const float SnapLift = NewFoundation->OJJ_ComputeSnapLift(
 		*TargetGrid, Origin, EffSize, Fit.EffectiveRotationSteps, &HeightSource);
-	const FVector SnappedLocation = PlaceLocation + FVector(0.0f, 0.0f, SnapLift);
+	// [공중 Foundation] 지형 스냅 위에 빌드 높이 오프셋(층×100, TPS Flat 전용) 추가 적층 → 허공 배치.
+	// SnappedLocation이 액터 위치 + 등록 SurfaceZ(BaseSurfaceZ) 둘 다의 기준이라 한 곳만 더하면 둘 다 반영.
+	// 다리(LegISM)는 OJJ_NotifyPlacedOnGrid→UpdateLegVisual이 ActorZ↔지형 차이로 자동 연장(무작업).
+	const FVector SnappedLocation = PlaceLocation + FVector(0.0f, 0.0f, SnapLift + GetFoundationHeightLiftZ(NewFoundation, Origin, EffSize));
 	const float BaseSurfaceZ = SnappedLocation.Z + NewFoundation->GetThickness();
 
 	// F3-2: 鍮꾪룊???⑦봽) Foundation? ?蹂?SurfaceZ ???곗떇? ?대옒??梨낆엫(寃곗젙 ??, ?깅줉? PerCell 寃쎌쑀
@@ -1533,6 +1655,8 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 	NewFoundation->SetActorLocationAndRotation(
 		SnappedLocation, FRotator(0.0f, 90.0f * Fit.EffectiveRotationSteps, 0.0f));
 	NewFoundation->OJJ_NotifyPlacedOnGrid(TargetGrid);
+	// [#3 점진 건설] 신규 배치 파운데이션에 홀로그램 빌드업(v1 슬래브만 — LegISM 다리는 후속). 신규 전용.
+	StartBuildUpEffect(NewFoundation, NewFoundation->GetSlabMesh());
 
 	// N + ?믪씠 異쒖쿂(寃곗젙 ?ㅒ룔돴 蹂닿컯) + 諛⑺뼢 異쒖쿂(??蹂닿컯 ???먮룞/?섎룞) 湲곕줉 ???뺤콉 ?숈옉 ?ㅼ륫.
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] origin %s Foundation 諛곗튂 ?깃났 (%dx%d, R=%d, N=%d?? %s%s%s)"),
@@ -1548,6 +1672,8 @@ void AOJJ_BuildController::PlaceFoundationAtCursor()
 
 	// 吏곸쟾 ?곸뿭???댁젣 而ㅻ쾭??寃뱀묠 湲덉?) ???ㅼ쓬 ?몃쾭?먯꽌 鍮④컯 ?ы몴??媛뺤젣(癒몄떊 寃쎈줈? ?숈씪).
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+	// [손 비우기] 단일 배치(파운데이션) 성공 후 선택 해제 — 빌드모드 유지. 머신과 동일.
+	SetPlacementMode(EOJJ_BuildPlacementMode::None);
 }
 
 void AOJJ_BuildController::OJJ_LiftPawnsOntoFoundation(FIntPoint Origin, FIntPoint Size, float SlabThickness)
@@ -1668,14 +1794,27 @@ void AOJJ_BuildController::UpdateCharacterCellOverlay()
 
 void AOJJ_BuildController::OnLeftClickReleased()
 {
+	// [TPS 2클릭] TPS 컨베이어·파이프는 누름2에서 커밋 → 릴리스 커밋 억제(억제 안 하면 앵커 클릭 직후 릴리스에 즉시 커밋돼 깨짐).
+	// 탑다운은 둘 다 릴리스=커밋(드래그).
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor
 		|| PlacementMode == EOJJ_BuildPlacementMode::Pipe)
 	{
-		CommitConveyorDrag();
+		const bool bPathTwoClick = IsTwoClickConnectMode()
+			&& (PlacementMode == EOJJ_BuildPlacementMode::Conveyor
+				|| PlacementMode == EOJJ_BuildPlacementMode::Pipe);
+		if (!bPathTwoClick)
+		{
+			CommitConveyorDrag();
+		}
 	}
 	else if (PlacementMode == EOJJ_BuildPlacementMode::PowerLine)
 	{
-		CommitPowerLineDrag();
+		// [TPS 2클릭] 전선만 TPS에서 누름2(OnLeftClickPressed)에서 커밋 → 릴리스 커밋 억제.
+		// (릴리스 커밋이 살아 있으면 앵커 클릭 직후 릴리스에 즉시 커밋돼 2클릭이 깨짐.) 탑다운은 릴리스=커밋.
+		if (!IsTwoClickConnectMode())
+		{
+			CommitPowerLineDrag();
+		}
 	}
 }
 
@@ -1926,6 +2065,86 @@ void AOJJ_BuildController::SetPlacementMode(EOJJ_BuildPlacementMode NewMode)
 	UpdateMouseHover();
 }
 
+bool AOJJ_BuildController::ResolveBuildTraceHit(APlayerController* PC, FHitResult& OutHit) const
+{
+	if (!PC)
+	{
+		return false;
+	}
+
+	// 탑다운/None: 기존 — 마우스 커서 아래 트레이스. (탑다운은 커서가 곧 조준점)
+	if (GetBuildViewMode() != EBuildViewMode::TPS)
+	{
+		return PC->GetHitResultUnderCursorByChannel(
+			UEngineTypes::ConvertToTraceType(ECC_Visibility),
+			/*bTraceComplex=*/false,
+			OutHit);
+	}
+
+	// === TPS: 화면 중앙(크로스헤어) deproject → 전방 LineTrace ===
+	// ⭐ deproject(전방벡터 아님): 카메라 투영/FOV를 그대로 반영해 화면중앙 픽셀이 실제로 가리키는 월드 레이를
+	//    얻는다. 카메라 위치+전방벡터 방식은 SpringArm 소켓 오프셋만큼 조준점이 어긋날 수 있어 deproject가 정확.
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	int32 ViewX = 0, ViewY = 0;
+	PC->GetViewportSize(ViewX, ViewY);
+	if (ViewX <= 0 || ViewY <= 0)
+	{
+		return false;
+	}
+
+	FVector RayOrigin = FVector::ZeroVector;
+	FVector RayDir = FVector::ZeroVector;
+	if (!PC->DeprojectScreenPositionToWorld(ViewX * 0.5f, ViewY * 0.5f, RayOrigin, RayDir))
+	{
+		return false;
+	}
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(OJJ_BuildTPSTrace), /*bTraceComplex=*/false);
+	APawn* OwnerPawn = PC->GetPawn();
+	if (OwnerPawn)
+	{
+		Params.AddIgnoredActor(OwnerPawn); // 전방 근거리에서 자기 캡슐을 맞혀 조준이 막히는 것 방지
+	}
+
+	FHitResult Hit;
+	const FVector TraceEnd = RayOrigin + RayDir * BuildTPSTraceLength;
+	if (!World->LineTraceSingleByChannel(Hit, RayOrigin, TraceEnd, ECC_Visibility, Params))
+	{
+		// 전방에 표면 없음 → 고스트 없음(탑다운 !bHit과 동일 처리)
+		return false;
+	}
+
+	// === 10m 도달거리 클램프 (TPS 전용) ===
+	const FVector PlayerLoc = OwnerPawn ? OwnerPawn->GetActorLocation() : RayOrigin;
+	const FVector ToHit = Hit.Location - PlayerLoc;
+	if (ToHit.SizeSquared() > FMath::Square(BuildTPSMaxReach))
+	{
+		// 너무 멀다 → 도달거리 링 방향(같은 조준 방향)의 지면으로 클램프: 클램프된 XY에서 수직 하향 트레이스.
+		// ⚠️ 클램프 후에도 그리드 스냅은 호출부의 WorldToGrid가 동일하게 처리(좌표만 바뀜).
+		constexpr float ProbeUp = 500.f;
+		constexpr float ProbeDown = 5000.f;
+		const FVector Clamped = PlayerLoc + ToHit.GetClampedToMaxSize(BuildTPSMaxReach);
+		const FVector DownStart(Clamped.X, Clamped.Y, Clamped.Z + ProbeUp);
+		const FVector DownEnd(Clamped.X, Clamped.Y, Clamped.Z - ProbeDown);
+		FHitResult GroundHit;
+		if (World->LineTraceSingleByChannel(GroundHit, DownStart, DownEnd, ECC_Visibility, Params))
+		{
+			OutHit = GroundHit;
+			return true;
+		}
+		// 클램프 지점 지면도 못 찾으면 설치 불가(고스트 없음).
+		return false;
+	}
+
+	OutHit = Hit;
+	return true;
+}
+
 bool AOJJ_BuildController::GetCursorCell(FIntPoint& OutCell) const
 {
 	if (!TargetGrid)
@@ -1940,12 +2159,7 @@ bool AOJJ_BuildController::GetCursorCell(FIntPoint& OutCell) const
 	}
 
 	FHitResult Hit;
-	const bool bHit = PC->GetHitResultUnderCursorByChannel(
-		UEngineTypes::ConvertToTraceType(ECC_Visibility),
-		/*bTraceComplex=*/false,
-		Hit);
-
-	if (!bHit)
+	if (!ResolveBuildTraceHit(PC, Hit)) // 모드별 소스(탑다운=커서 / TPS=화면중앙 전방레이+클램프)
 	{
 		return false;
 	}
@@ -2003,9 +2217,65 @@ void AOJJ_BuildController::BeginConveyorDrag(FIntPoint StartCell)
 
 void AOJJ_BuildController::UpdateConveyorDrag(FIntPoint CursorCell)
 {
-	AppendConveyorPathTo(CursorCell);
+	// [성능] 조준 셀이 직전과 같으면 재계산 스킵 — A*가 매 틱 도는 것 방지(셀 바뀔 때만 라우팅).
+	// 탑다운 드래그(AppendConveyorPathTo)도 같은 셀이면 어차피 no-op이라 동치.
+	if (CursorCell == CurrentHoverCell)
+	{
+		return;
+	}
+
+	// [TPS 2클릭] 컨베이어·파이프는 앵커↔조준 자동 L경로로 매 호버 재구성(드래그 스윕 아님 — 마우스=카메라).
+	// 탑다운은 기존 증분 누적(드래그 스윕) 유지.
+	if (IsTwoClickConnectMode()
+		&& (PlacementMode == EOJJ_BuildPlacementMode::Conveyor
+			|| PlacementMode == EOJJ_BuildPlacementMode::Pipe))
+	{
+		OJJ_BuildConveyorAutoRoute(CursorCell);
+	}
+	else
+	{
+		AppendConveyorPathTo(CursorCell);
+	}
 	UpdatePathDragHoverPreview(ConveyorDragCells);
 	CurrentHoverCell = CursorCell;
+}
+
+void AOJJ_BuildController::OJJ_BuildConveyorAutoRoute(FIntPoint TargetCell)
+{
+	// 앵커(드래그 시작셀) 보존 + 그 뒤를 L경로로 재생성. 앵커 없으면 no-op(방어).
+	if (ConveyorDragCells.Num() == 0)
+	{
+		return;
+	}
+	const FIntPoint Anchor = ConveyorDragCells[0];
+
+	// A* 우회 경로 우선(장애물=머신 점유·비건설 셀 돌아가기). 파이프는 물 위 허용(bAllowWater).
+	// 점유맵·분류는 OJJ_Grid 소유라 그리드 라우터에 위임. 시그니처/호출부는 그대로 — 내부만 A*.
+	const bool bAllowWater = (PlacementMode == EOJJ_BuildPlacementMode::Pipe);
+	TArray<FIntPoint> Route;
+	if (TargetGrid && TargetGrid->OJJ_FindConveyorRoute(Anchor, TargetCell, bAllowWater, Route) && Route.Num() > 0)
+	{
+		ConveyorDragCells = MoveTemp(Route);
+		return;
+	}
+
+	// 우회로 없음(완전 포위/탐색범위 밖) → L자 폴백(직선 시도). 최종 검증/프리뷰가 빨강 처리.
+	// L자 = 가로 먼저(x1→x2) then 세로(y1→y2). 4방향 인접 연속 셀.
+	ConveyorDragCells.Reset();
+	ConveyorDragCells.Add(Anchor);
+	FIntPoint Cur = Anchor;
+	const int32 StepX = (TargetCell.X >= Cur.X) ? 1 : -1;
+	while (Cur.X != TargetCell.X)
+	{
+		Cur.X += StepX;
+		ConveyorDragCells.Add(Cur);
+	}
+	const int32 StepY = (TargetCell.Y >= Cur.Y) ? 1 : -1;
+	while (Cur.Y != TargetCell.Y)
+	{
+		Cur.Y += StepY;
+		ConveyorDragCells.Add(Cur);
+	}
 }
 
 void AOJJ_BuildController::CancelConveyorDrag()
@@ -2094,6 +2364,11 @@ void AOJJ_BuildController::CommitConveyorDrag()
 			UE_LOG(LogTemp, Warning, TEXT("[BuildController] OJJ_TryPlacePipe failed: %s"), *OutReason);
 			Pipe->Destroy();
 		}
+		else
+		{
+			// [#3 확장] 신규 배치 파이프 — 시작→끝 길이 방향 홀로그램 빌드업.
+			StartPathBuildUpEffect(Pipe, PlacementCells);
+		}
 		// ?뚯씠?꾨뒗 ?섏뒪??諛곗튂 ?源?誘몃벑濡?NotifyMainQuestMachinePlaced 鍮꾪샇異???而⑤쿋?댁뼱 ?꾩슜 ??.
 		ConveyorDragCells.Reset();
 		TargetGrid->ClearHoverPreview();
@@ -2125,6 +2400,9 @@ void AOJJ_BuildController::CommitConveyorDrag()
 		return;
 	}
 
+	// [#3 확장] 신규 배치 컨베이어 — 시작→끝 길이 방향 홀로그램 빌드업.
+	StartPathBuildUpEffect(Conveyor, PlacementCells);
+
 	NotifyMainQuestMachinePlaced(this, GetQuestPlacementTargetId(EOJJ_BuildPlacementMode::Conveyor));
 	ConveyorDragCells.Reset();
 	TargetGrid->ClearHoverPreview();
@@ -2140,6 +2418,294 @@ void AOJJ_BuildController::CancelPowerLineDrag()
 
 	bIsDraggingPowerLine = false;
 	PowerLineStartMachine.Reset();
+	// [#5] 미리보기 소등 — 취소/커밋(Commit이 본 함수 호출)/모드전환(SetPlacementMode가 본 함수 호출) 공통 경로.
+	HidePowerLinePreview();
+}
+
+void AOJJ_BuildController::EnsurePowerLinePreviewMID()
+{
+	if (!PowerLinePreviewMaterial)
+	{
+		// 머티리얼이 (에디터에서) 해제된 경우: 낡은 MID와 세그먼트 오버라이드를 명시적으로 정리한다.
+		// (SetMaterial 오버라이드는 해제 전까지 유지되므로 stale MID 색이 남는 것 방지)
+		if (PowerLinePreviewMID)
+		{
+			PowerLinePreviewMID = nullptr;
+			for (UStaticMeshComponent* Segment : PowerLinePreviewSegments)
+			{
+				if (Segment)
+				{
+					Segment->SetMaterial(0, nullptr);
+				}
+			}
+		}
+		return;
+	}
+	// 베이스 머티리얼이 에디터에서 교체됐으면 재생성(옛 parent MID 잔류 방지).
+	if (PowerLinePreviewMID && PowerLinePreviewMID->Parent != PowerLinePreviewMaterial)
+	{
+		PowerLinePreviewMID = nullptr;
+	}
+	if (!PowerLinePreviewMID)
+	{
+		PowerLinePreviewMID = UMaterialInstanceDynamic::Create(PowerLinePreviewMaterial, this);
+		if (PowerLinePreviewMID)
+		{
+			PowerLinePreviewMID->SetFlags(RF_Transient); // 레벨 dirty 방지(고스트 MID 패턴 미러).
+		}
+	}
+}
+
+void AOJJ_BuildController::HidePowerLinePreview()
+{
+	for (UStaticMeshComponent* Segment : PowerLinePreviewSegments)
+	{
+		if (Segment)
+		{
+			Segment->SetVisibility(false);
+		}
+	}
+}
+
+FVector AOJJ_BuildController::ComputePowerLineSagPoint(const FVector& Start, const FVector& End, float Alpha, float SagDepth)
+{
+	// APowerLine::GetSagPoint 공식 복제(포물선): 4α(1-α)는 중앙(α=0.5)에서 1, 양끝에서 0.
+	const FVector Point = FMath::Lerp(Start, End, Alpha);
+	const float SagAlpha = 4.0f * Alpha * (1.0f - Alpha);
+	return Point - FVector(0.0f, 0.0f, SagDepth * SagAlpha);
+}
+
+void AOJJ_BuildController::UpdatePowerLinePreview(const FHitResult& Hit)
+{
+	// 드래그 중 + 시작 머신 유효일 때만 그린다. 아니면 전부 숨김.
+	AMachineBase* StartMachine = bIsDraggingPowerLine ? PowerLineStartMachine.Get() : nullptr;
+	if (!StartMachine || !PowerLinePreviewMesh)
+	{
+		HidePowerLinePreview();
+		return;
+	}
+
+	// 끝점 위치 — APowerLine 룩 복제(EndpointHeightOffset 20 + Node -90 / Plant -110).
+	constexpr float EndpointHeightOffset = 20.0f;
+	constexpr float NodeLowerOffset = 90.0f;
+	constexpr float PlantLowerOffset = 110.0f;
+
+	FVector StartLoc = APowerLine::GetEndpointLocationForActor(StartMachine, EndpointHeightOffset);
+	if (StartMachine->IsA<APowerGridNode>())
+	{
+		StartLoc.Z -= NodeLowerOffset;
+	}
+	else if (StartMachine->IsA<APowerPlant>())
+	{
+		StartLoc.Z -= PlantLowerOffset;
+	}
+
+	// 조준 끝점 — 유효 단자 위면 그 단자, 아니면 커서 위치.
+	AMachineBase* HoverMachine = Cast<AMachineBase>(Hit.GetActor());
+	if (!IsPowerLineEndpoint(HoverMachine))
+	{
+		HoverMachine = FindPowerLineEndpointNearLocation(Hit.Location);
+	}
+
+	FVector EndLoc;
+	if (HoverMachine)
+	{
+		EndLoc = APowerLine::GetEndpointLocationForActor(HoverMachine, EndpointHeightOffset);
+		if (HoverMachine->IsA<APowerGridNode>())
+		{
+			EndLoc.Z -= NodeLowerOffset;
+		}
+		else if (HoverMachine->IsA<APowerPlant>())
+		{
+			EndLoc.Z -= PlantLowerOffset;
+		}
+	}
+	else
+	{
+		EndLoc = Hit.Location + FVector(0.0f, 0.0f, EndpointHeightOffset);
+	}
+
+	// 색 3단계.
+	FLinearColor PreviewColor;
+	if (HoverMachine)
+	{
+		// 타겟 있음 — Chan 판정(거리/타입/중복 포함) 읽기. 가능=초록, 불가(범위밖 포함)=빨강.
+		UGameInstance* GameInstance = GetGameInstance();
+		UFactoryManagerSubsystem* FactoryManager = GameInstance ? GameInstance->GetSubsystem<UFactoryManagerSubsystem>() : nullptr;
+		const bool bCanConnect = FactoryManager && FactoryManager->CanConnectPowerLineEndpoints(StartMachine, HoverMachine);
+		PreviewColor = bCanConnect ? PowerLinePreviewColorValid : PowerLinePreviewColorInvalid;
+	}
+	else
+	{
+		// 타겟 없음 = 드래그 중(노랑). 단, 시작이 Node면 거리 > ConnectionRadius일 때 허공 범위밖(빨강).
+		PreviewColor = PowerLinePreviewColorDragging;
+		if (const APowerGridNode* StartNode = Cast<APowerGridNode>(StartMachine))
+		{
+			const float Radius = StartNode->GetConnectionRadius();
+			if (Radius > 0.0f && FVector::Dist(StartLoc, EndLoc) > Radius)
+			{
+				PreviewColor = PowerLinePreviewColorInvalid;
+			}
+		}
+	}
+
+	const float Length = FVector::Dist(StartLoc, EndLoc);
+	if (Length <= UE_KINDA_SMALL_NUMBER)
+	{
+		HidePowerLinePreview();
+		return;
+	}
+
+	// sag 깊이 + 세그먼트 수(APowerLine 공식 복제 — Chan 무접촉).
+	constexpr float SagRatio = 0.035f;
+	constexpr float MaxSagDepth = 120.0f;
+	constexpr float SegmentTargetLength = 150.0f;
+	constexpr int32 MinSagSegments = 6;
+	constexpr int32 MaxSagSegments = 24;
+	const float HorizontalDistance = FVector::Dist2D(StartLoc, EndLoc);
+	const float SagDepth = FMath::Clamp(HorizontalDistance * SagRatio, 0.0f, MaxSagDepth);
+	const int32 SegmentCount = FMath::Clamp(FMath::CeilToInt(Length / SegmentTargetLength), MinSagSegments, MaxSagSegments);
+
+	EnsurePowerLinePreviewMID();
+	if (PowerLinePreviewMID)
+	{
+		PowerLinePreviewMID->SetVectorParameterValue(TEXT("TintColor"), PreviewColor);
+		PowerLinePreviewMID->SetScalarParameterValue(TEXT("Opacity"), PowerLinePreviewOpacity);
+	}
+
+	// 실린더 메시 치수(스케일 환산용). 엔진 Cylinder는 피벗 중앙이라 SetWorldLocation=세그먼트 중점으로 정렬.
+	const FBoxSphereBounds MeshBounds = PowerLinePreviewMesh->GetBounds();
+	const FVector MeshSize = MeshBounds.BoxExtent * 2.0f;
+	const float MeshDiameterX = FMath::Max(MeshSize.X, UE_KINDA_SMALL_NUMBER);
+	const float MeshDiameterY = FMath::Max(MeshSize.Y, UE_KINDA_SMALL_NUMBER);
+	const float MeshLength = FMath::Max(MeshSize.Z, UE_KINDA_SMALL_NUMBER);
+
+	for (int32 i = 0; i < SegmentCount; ++i)
+	{
+		const float StartAlpha = static_cast<float>(i) / static_cast<float>(SegmentCount);
+		const float EndAlpha = static_cast<float>(i + 1) / static_cast<float>(SegmentCount);
+		const FVector SegStart = ComputePowerLineSagPoint(StartLoc, EndLoc, StartAlpha, SagDepth);
+		const FVector SegEnd = ComputePowerLineSagPoint(StartLoc, EndLoc, EndAlpha, SagDepth);
+
+		// 세그먼트 풀 재사용(없으면 1회 생성). 매 프레임 spawn/destroy 금지.
+		UStaticMeshComponent* Segment = PowerLinePreviewSegments.IsValidIndex(i) ? PowerLinePreviewSegments[i] : nullptr;
+		if (!Segment)
+		{
+			Segment = NewObject<UStaticMeshComponent>(this);
+			Segment->SetMobility(EComponentMobility::Movable);
+			Segment->SetStaticMesh(PowerLinePreviewMesh);
+			Segment->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Segment->SetCastShadow(false);
+			Segment->RegisterComponent();
+			PowerLinePreviewSegments.Add(Segment);
+		}
+		if (PowerLinePreviewMID && Segment->GetMaterial(0) != PowerLinePreviewMID)
+		{
+			Segment->SetMaterial(0, PowerLinePreviewMID);
+		}
+
+		const FVector Delta = SegEnd - SegStart;
+		const float SegLength = Delta.Size();
+		if (SegLength <= UE_KINDA_SMALL_NUMBER)
+		{
+			Segment->SetVisibility(false);
+			continue;
+		}
+		const FVector Direction = Delta / SegLength;
+		const FQuat Rotation = FQuat::FindBetweenNormals(FVector::UpVector, Direction);
+
+		Segment->SetVisibility(true);
+		Segment->SetWorldLocationAndRotation((SegStart + SegEnd) * 0.5f, Rotation);
+		Segment->SetWorldScale3D(FVector(
+			PowerLinePreviewThickness / MeshDiameterX,
+			PowerLinePreviewThickness / MeshDiameterY,
+			SegLength / MeshLength));
+	}
+
+	// 남는 세그먼트 숨김(길이가 짧아져 SegmentCount가 줄었을 때).
+	for (int32 i = SegmentCount; i < PowerLinePreviewSegments.Num(); ++i)
+	{
+		if (PowerLinePreviewSegments[i])
+		{
+			PowerLinePreviewSegments[i]->SetVisibility(false);
+		}
+	}
+}
+
+bool AOJJ_BuildController::CancelPendingConnectAnchor()
+{
+	// [경로형 2클릭 공통 골격] 진행 중인 연결 앵커를 무른다(전선 먼저, 컨/파이프 확장 예정).
+	// 무른 게 있으면 호버 미리보기도 정리하고 true 반환(호출부=Z가 모드 None 전환 대신 모드 유지).
+	bool bCancelled = false;
+
+	if (bIsDraggingPowerLine)
+	{
+		CancelPowerLineDrag();
+		bCancelled = true;
+	}
+
+	// 컨베이어 2클릭 앵커(또는 진행 중 드래그)도 무름. CancelConveyorDrag가 ConveyorDragCells/프리뷰 정리.
+	// (파이프 드래그도 같은 상태머신이라 함께 취소됨 — 앵커 무르고 모드 유지가 드래그 중 Z보다 자연스러움.)
+	if (bIsDraggingConveyor)
+	{
+		CancelConveyorDrag();
+		bCancelled = true;
+	}
+
+	if (bCancelled && TargetGrid)
+	{
+		TargetGrid->ClearHoverPreview();
+	}
+	return bCancelled;
+}
+
+void AOJJ_BuildController::AdjustBuildHeight(int32 Delta)
+{
+	// Foundation(Flat) 전용 — TPS(Q/E) + 탑다운(↑↓) 둘 다 동작(같은 BuildHeightOffset 공유 → 전환 시 높이 유지).
+	// ⚠️ 램프=다리 미지원(UpdateLegVisual flat-only), 머신/기타 모드=대상 아님. None(빌드 아님)이면 무동작.
+	// 입력: IA_BuildHeight를 IMC_BuildTPS(Q/E)·IMC_Build(↑↓) 양쪽에 매핑(에디터). 탑다운 Q/E는 IA_BuildRotate(카메라)라 ↑↓ 사용.
+	if (!IsInBuildMode()
+		|| PlacementMode != EOJJ_BuildPlacementMode::Foundation
+		|| bRampFoundationSelected)
+	{
+		return;
+	}
+
+	constexpr int32 MaxBuildHeightOffset = 20; // 공중 Foundation 최대 층수(필요 시 여기만 조정)
+	const int32 NewOffset = FMath::Clamp(BuildHeightOffset + Delta, 0, MaxBuildHeightOffset); // 0~20층(지면 아래 금지 / 상한)
+	if (NewOffset == BuildHeightOffset)
+	{
+		return; // 0에서 더 내리기 등 — no-op
+	}
+	BuildHeightOffset = NewOffset;
+
+	UE_LOG(LogTemp, Log, TEXT("[BuildController] BuildHeightOffset = %d층 (%.0fuu)"),
+		BuildHeightOffset, BuildHeightOffset * AOJJ_Grid::OJJ_FoundationSnapStep);
+
+	// 다음 Tick UpdateMouseHover가 같은 셀이면 스킵하므로, 높이만 바뀐 경우 고스트가 갱신되도록 sentinel로 강제 재렌더.
+	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+}
+
+float AOJJ_BuildController::GetFoundationHeightLiftZ(const AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize) const
+{
+	// [공중 Foundation] 빌드모드(TPS 또는 TopDown) && Flat && offset>0 일 때만 후보. None/램프 차단.
+	// TPS↔TopDown은 BuildHeightOffset 공유라 전환해도 높이 유지 — 양 모드 동일하게 적용(고스트/스폰 일치).
+	if (!IsInBuildMode() || bRampFoundationSelected
+		|| BuildHeightOffset <= 0 || !TargetGrid || !FoundationCDO)
+	{
+		return 0.0f;
+	}
+
+	// ⚠️(b) 이웃 Foundation 접촉(상속)이면 coplanar 확장 — offset 무시. 씨앗(고립) 배치에만 높이 적용.
+	// 스폰의 OJJ_ComputeSnapLift ① 상속과 동일 판정 소스(OJJ_GetNeighborFoundationSurfaceZ)라 프리뷰=배치 일치.
+	const float SnapGridOriginZ = TargetGrid->GetActorLocation().Z + FoundationCDO->GetThickness();
+	float NeighborZ = 0.0f;
+	int32 ContactCells = 0;
+	if (TargetGrid->OJJ_GetNeighborFoundationSurfaceZ(Origin, EffSize, SnapGridOriginZ, NeighborZ, ContactCells))
+	{
+		return 0.0f; // 이웃 접촉 → 평면 확장(높이 무시)
+	}
+	return BuildHeightOffset * AOJJ_Grid::OJJ_FoundationSnapStep;
 }
 
 AMachineBase* AOJJ_BuildController::GetPowerLineEndpointUnderCursor() const
@@ -2151,12 +2717,7 @@ AMachineBase* AOJJ_BuildController::GetPowerLineEndpointUnderCursor() const
 	}
 
 	FHitResult Hit;
-	const bool bHit = PC->GetHitResultUnderCursorByChannel(
-		UEngineTypes::ConvertToTraceType(ECC_Visibility),
-		/*bTraceComplex=*/false,
-		Hit);
-
-	if (!bHit)
+	if (!ResolveBuildTraceHit(PC, Hit)) // 모드별 소스(탑다운=커서 / TPS=화면중앙 전방레이+클램프)
 	{
 		return nullptr;
 	}

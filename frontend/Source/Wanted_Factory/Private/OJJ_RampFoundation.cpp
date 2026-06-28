@@ -241,7 +241,13 @@ FOJJFoundationFitResult AOJJ_RampFoundation::OJJ_ComputeHoverFootprint(const AOJ
 		const int32 WalkGap = FMath::CeilToInt(
 			OneSideRiseSteps * AOJJ_Grid::OJJ_FoundationSnapStep / WalkLimit) + 1;
 		const int32 DistFound = bNeg ? DistNeg : DistPos;
-		const int32 DistGround = FMath::Max(1, WalkGap - DistFound);
+		// [#7 커서거리 제거] 길이는 커서거리(DistFound)와 무관하게 보행 슬로프로 지면까지 = (WalkGap-1)칸 고정.
+		// GapLength = DistFound + DistGround - 1 인데, DistGround = WalkGap - DistFound 면 DistFound가 상쇄돼
+		// GapLength = WalkGap-1 (커서 무관). Origin = CursorCell-(DistNeg-1) 은 DistFound가 파운데이션을 추적하므로
+		// 이미 파운데이션 변에 앵커됨(커서 절대위치 무관). 커서가 멀어 DistFound>=WalkGap이면 DistGround<=0이 되나
+		// GapLength에만 반영돼 길이를 줄일 뿐(WalkGap>=2 → GapLength>=1 보장). 기존 Max(1,..) 클램프가
+		// DistFound>=WalkGap에서 GapLength=DistFound(커서거리)로 새던 "커서로 늘어남" 버그를 제거한다.
+		const int32 DistGround = WalkGap - DistFound;
 
 		// (f) 누락측 합성 Dist/Z 채움 → ①이 양쪽을 다 보게 한다. Z는 SynthGroundZ(FoundationZ 앵커).
 		if (bNeg) { DistPos = DistGround; ZPos = SynthGroundZ; }  // Foundation −쪽, 맨땅 +쪽 합성
@@ -386,7 +392,8 @@ void AOJJ_RampFoundation::ApplySaveState(
 	float InLoEndLowestGroundRaw,
 	bool bInLoEndLowestValid)
 {
-	PlacedRiseSteps = InRiseSteps;
+	// [#7] NotifyFitResult와 동일 클램프 — 비정상 세이브값(음수)이 평평 판정(OJJ_IsFlatRamp: ==0)을 깨지 않도록.
+	PlacedRiseSteps = FMath::Max(0, InRiseSteps);
 	bPlacedOneSideGroundRamp = bInOneSideGroundRamp;
 	PlacedLoEndLowestGroundZ = InLoEndLowestGroundRaw;
 	bPlacedLoEndLowestValid = bInLoEndLowestValid;
@@ -522,10 +529,13 @@ void AOJJ_RampFoundation::UpdateSlabVisual()
 	// 미확정(에디터 프리뷰/스폰 직후 OnConstruction)은 CDO 고정 램프 규격(기존과 동일).
 	const int32 R = PlacedClimbLengthCells > 0 ? PlacedClimbLengthCells : FMath::Max(1, FoundationSize.X);
 	const int32 Rise = PlacedClimbLengthCells > 0 ? PlacedRiseSteps : 1;
-	const int32 Cols = FMath::Max(1, FoundationSize.Y);
-	const float SlabThickness = FMath::Max(1.0f, Thickness);
-	// F3.8': 확정 step 전달(미확정 에디터 프리뷰 0 — 역회전 항등, 기존 프리뷰와 동일).
+	// F3.8': 확정 step(미확정 에디터 프리뷰 0 — 역회전 항등). Cols 폭축 parity 산출에 먼저 필요해 위로 이동.
 	const int32 Step = PlacedClimbLengthCells > 0 ? PlacedRotationSteps : 0;
+	// [#7 버그 a] 폭(Cols)도 climb과 같은 parity로 축 선택 — 회전 램프(Step 1/3)는 폭축이 X다. 로드 후
+	// FoundationSize가 비정사각 footprint로 바뀌면(SetFoundationSizeForSave) .Y 고정이 climb축을 집어 폭이
+	// 좁아지던 버그 수정. 배치 직후(CDO 정사각)는 X=Y라 결과 동일(회귀 0).
+	const int32 Cols = (Step % 2 == 0) ? FMath::Max(1, FoundationSize.Y) : FMath::Max(1, FoundationSize.X);
+	const float SlabThickness = FMath::Max(1.0f, Thickness);
 
 	// 충돌 바디 = 쐐기(시각 OFF, 충돌 유지). Rise<1(평지 브리지)은 쐐기 미생성(false) → Deck이 충돌 담당.
 	const bool bWedgeBuilt = OJJ_BuildWedgeVisual(R, Cols, Rise, CellSize, Step);

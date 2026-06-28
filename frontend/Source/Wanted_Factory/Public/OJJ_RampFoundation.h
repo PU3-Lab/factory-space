@@ -40,6 +40,11 @@ public:
 	virtual FOJJFoundationFitResult OJJ_ComputeHoverFootprint(const AOJJ_Grid& Grid, FIntPoint CursorCell,
 		int32 RotationSteps) const override;
 
+	// [#7] 평평 램프(양쪽 같은 높이 = 상승 0 = 평지 브리지) 여부. 평평하면 표면/충돌이 평탄(쐐기 미생성,
+	// Deck QueryOnly, 균일 SurfaceZ)이라 평탄 파운데이션처럼 그 위에 건물 배치를 허용한다(경사 램프는 거부 유지).
+	// PlacedRiseSteps는 OJJ_NotifyFitResult/ApplySaveState에서 Max(0, RiseSteps)로 클램프 — 음수 없음.
+	bool OJJ_IsFlatRamp() const { return PlacedRiseSteps == 0; }
+
 	// 배치 확정 풋프린트 저장(F3.6-1) — 자동 맞춤의 동적 길이/상승 단수를 계단 비주얼이 쓰도록.
 	virtual void OJJ_NotifyFitResult(const FOJJFoundationFitResult& Fit) override;
 	virtual void GetSaveState(int32& OutRiseSteps, bool& bOutOneSideGroundRamp, float& OutLoEndLowestGroundRaw, bool& bOutLoEndLowestValid) const override;

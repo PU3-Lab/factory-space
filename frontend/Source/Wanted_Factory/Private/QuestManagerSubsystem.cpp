@@ -431,15 +431,15 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	}
 	else if (QuestId == TEXT("TUT_COMM_002"))
 	{
-		SetProductionRequirement(TEXT("rebar"), 20);
+		SetProductionRequirement(TEXT("iron_bar"), 20);
 	}
 	else if (QuestId == TEXT("TUT_COMM_003"))
 	{
-		SetProductionRequirement(TEXT("copperwire"), 20);
+		SetProductionRequirement(TEXT("copper_wire"), 20);
 	}
 	else if (QuestId == TEXT("TUT_COMM_004"))
 	{
-		SetProductionRequirement(TEXT("tinboard"), 20);
+		SetProductionRequirement(TEXT("tin_plate"), 20);
 	}
 	else if (QuestId == TEXT("TUT_COMM_005"))
 	{

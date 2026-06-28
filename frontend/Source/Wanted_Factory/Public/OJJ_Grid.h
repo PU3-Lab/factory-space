@@ -171,13 +171,19 @@ protected:
 	// 가장자리 미샘플 잔존 교차 가능. 리프트는 PIE 실측 후 0 축소 재검토(F2 계획 §1).
 	// 판정 무관(시각 전용). 급경사 셀에서 오프셋으로도 부족한 잔존 교차는 F2(지형 스냅 — 셀 대표높이
 	// 평균화/타일 기울임)에서 재검토.
+	// [2026-06-26] 그리드 타일 뜸(+20uu) 축소 — 기본 20→5. z-fighting 안 나면 Details/PIE에서 0까지 내림.
+	// ⚠️ EditAnywhere라 레벨(L_Planet)의 Grid 인스턴스가 값을 오버라이드 저장했으면 이 C++ 기본값은 무시됨 →
+	//    그 경우 레벨 Details에서 직접 5(또는 0)로 내려야 적용. PIE 중에도 Details 슬라이더로 라이브 튜닝 가능.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visualization", meta = (ClampMin = "0.0"))
-	float VisualZLift = 20.0f;
+	float VisualZLift = 5.0f;
 
-	// 호버 계열(머신/Foundation/컨베이어/철거 하이라이트) 추가 리프트(uu) — 분류 오버레이 위에 떠서 식별.
+	// 호버 계열(머신/Foundation/컨베이어/철거 하이라이트 + 캐릭터 발밑 셀) 추가 리프트(uu) — 분류 오버레이 위에 떠서 식별.
 	// 대안(호버 머티리얼 에미시브 강화) 중 에셋 작업이 없는 쪽 채택.
+	// [2026-06-26] 호버 계열 6곳(캐릭터/머신/Foundation/컨베이어/철거/경로) 뜸(+30uu) 축소 — 기본 30→8.
+	// ⚠️ 식별 목적(분류 오버레이 위) 유지 위해 0은 피함. PIE Details 라이브 튜닝 가능.
+	// ⚠️ EditAnywhere라 레벨(L_Planet) Grid 인스턴스가 오버라이드 저장했으면 이 C++ 기본값 무시 → Details에서 직접 8로.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visualization", meta = (ClampMin = "0.0"))
-	float HoverExtraZLift = 30.0f;
+	float HoverExtraZLift = 8.0f;
 
 	// === 시각 위계: 오버레이(정보, 차분) vs 호버(현재 액션, 주인공) ===
 	// 문제(F1-c 후속): 오버레이와 호버가 같은 반투명 MI를 공유 → 호버가 빨강 오버레이 위에서 비쳐
@@ -819,7 +825,23 @@ public:
 	// #182 ⭐ 스크린 공간 출력 포트 스냅 — 등록된 액체 출력 포트 셀을 화면에 투영해, 커서에서 MaxScreenDist
 	// 픽셀 이내 가장 가까운 포트 셀을 반환(없으면 false). 월드 Z 패럴랙스(물 통과 레이가 깊은 지형을 맞아
 	// 셀이 빗나감)와 완전 무관 — 화면에서 보이는 포트 박스 근처를 클릭하면 그 포트로 스냅. 펌프 큐브 위 클릭도 OK.
-	bool OJJ_FindLiquidOutputPortUnderCursorScreen(class APlayerController* PC, float MaxScreenDist, FIntPoint& OutPortCell) const;
+	// [M3] bUseScreenCenter=false면 마우스 커서(TopDown) 기준, true면 뷰포트 중앙(TPS 크로스헤어) 기준으로 탐색.
+	// TPS는 마우스가 중앙고정/숨김이라 마우스 좌표가 무의미 → 화면중앙으로 분기해야 조준점과 일치.
+	bool OJJ_FindLiquidOutputPortUnderCursorScreen(class APlayerController* PC, float MaxScreenDist, FIntPoint& OutPortCell, bool bUseScreenCenter = false) const;
+
+	// [TPS 2클릭 라우터] Start↔Goal 사이 장애물(머신 점유·비건설 셀) 우회 경로를 A*로 찾는다(4방향, 대각선 없음).
+	// 성공 시 OutCells = Start..Goal 연속 셀(인접). 완전 포위/탐색범위 밖이면 false → 호출부가 L자 폴백(빨강 표시 유도).
+	// bAllowWater=true면 물 셀도 통과 허용(파이프). 부하 대책: 탐색을 Start↔Goal 바운딩박스+여유(Margin)로 제한 + 노드 상한.
+	// 꺾임 비용(TurnPenalty)으로 직선 선호. 점유맵(OccupiedCells)·분류(IsCellConstructible/IsCellWater)는 OJJ_Grid 소유.
+	bool OJJ_FindConveyorRoute(FIntPoint Start, FIntPoint Goal, bool bAllowWater, TArray<FIntPoint>& OutCells) const;
+
+	// [TPS 2클릭 라우터 튜닝] A* 탐색 박스 여유(셀). 시작↔끝 bbox를 이만큼 확장한 범위만 탐색(부하 상한 + 우회 허용량).
+	UPROPERTY(EditAnywhere, Category = "OJJ|Route", meta = (ClampMin = "0"))
+	int32 OJJ_RouteSearchMargin = 16;
+
+	// [TPS 2클릭 라우터 튜닝] 방향 전환 1회당 추가 비용(직선 1.0 대비). 클수록 꺾임 줄고 직선 선호. PIE 튜닝.
+	UPROPERTY(EditAnywhere, Category = "OJJ|Route", meta = (ClampMin = "0.0"))
+	float OJJ_RouteTurnPenalty = 0.4f;
 
 	// 지형 높이 베이크 — GridSize 전 셀 ↓트레이스로 buildable/blocked/void/water 재계산. BeginPlay 폴백 + 콘솔 재호출.
 	// bVerbose: 평탄(바닥)이 아닌 셀마다 (좌표/hit/Z/부호델타/분류)를 로그(캡 있음) — 큐브 등 베이크 진단용.
@@ -855,8 +877,12 @@ public:
 	// 게이트: off-grid·겹침(기존 Foundation)·void·water(§5-3 미결 — F1 기본 금지)·점유(머신/컨베이어/자원) 금지.
 	// blocked(높이 단차)는 의도적으로 허용 — 단차 흡수가 Foundation의 존재 이유.
 	// ※ 자원 점유 셀 거부는 F1 보수 기본값 — "광맥 위 Foundation+추출기" 시나리오는 §5-2 결정 후 재검토(F1-c).
+	// [#B 묻힘 금지] FoundationTopZ/bRejectBuried: 평탄 파운데이션 상면 Z가 셀 지형 Z보다 낮으면(일부라도) 거부.
+	// 기본 인자(bRejectBuried=false)라 기존 호출처 무영향. 램프는 호출측이 bRejectBuried=false로 면제(바닥 연결).
+	// (FoundationTopZ 기본 0은 bRejectBuried=false일 때 미사용 — UHT 리터럴 제약 회피용 placeholder.)
 	UFUNCTION(BlueprintPure, Category = "Grid|Foundation")
-	bool CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& OutReason) const;
+	bool CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& OutReason,
+		float FoundationTopZ = 0.0f, bool bRejectBuried = false) const;
 
 	// Foundation 커버리지 등록 — 검증(CanPlaceFoundation) + 양방향 맵 등록만 수행. 액터 위치/비주얼은
 	// 건드리지 않음(F1-b BuildController 책임 — 그리드는 Foundation 메시/Thickness를 모름).
@@ -971,8 +997,10 @@ public:
 	// (셀별 색은 실제 배치 판정과 어긋나는 "거짓말"이라 과거 회귀로 제거된 방식 — 재도입 금지).
 	// bForceInvalid(F3.6-1): 풋프린트 자체가 구성 불가(자동 맞춤 경사 한계 — 클릭도 같은 훅 bValid로
 	// 거부되므로 단일 진실원 유지)일 때 호출자가 빨강을 강제.
+	// [공중 Foundation] HeightLiftZ(uu) = 빌드 높이 오프셋(층×100). 프리뷰 타일을 그만큼 더 들어올려 슬래브 고스트와 정합.
 	UFUNCTION(BlueprintCallable, Category = "Grid|Hover")
-	void OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size, bool bForceInvalid = false);
+	void OJJ_UpdateFoundationHoverPreview(FIntPoint Origin, FIntPoint Size, bool bForceInvalid = false, float HeightLiftZ = 0.0f,
+		float FoundationTopZ = 0.0f, bool bRejectBuried = false);
 
 	// 캐릭터 점유 셀 표시 갱신(F2-4 후속 ② — 시각 전용). 빈 배열 = 클리어. 셀 변경 시에만 호출하는
 	// 책임은 호출자(BuildController가 이전 셀 비교) — 여기는 ClearInstances+재적재만. Z는
@@ -1226,7 +1254,8 @@ bool OJJ_BuildConveyorPlacementPath(
 
 	// 평판 Foundation CDO의 슬래브(엔진 Cube)를 호버 풋프린트에 반투명으로 그린다. UpdateSlabVisual 산식 재현.
 	// 평판 전용(램프는 호출하지 않음). MID 미비 시 안전하게 고스트 숨김.
-	void OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize, bool bValid);
+	// [공중 Foundation] HeightLiftZ(uu) = 빌드 높이 오프셋(층×100). 슬래브 고스트를 그만큼 더 들어올림 → 프리뷰=배치(스폰도 동일 오프셋).
+	void OJJ_ShowGhostForFoundation(AOJJ_Foundation* FoundationCDO, FIntPoint Origin, FIntPoint EffSize, bool bValid, float HeightLiftZ = 0.0f);
 
 	// 램프 Foundation 고스트 — 경사 Deck를 RampFoundation::UpdateSlabVisual 산식(빗변 스케일 + pitch 틸트)으로
 	// 재현해 반투명 미리보기. EffRotSteps/RiseSteps는 호버 Fit 결과(CDO 비변형 — 가상 OJJ_ComputeSnapLift로 Z).

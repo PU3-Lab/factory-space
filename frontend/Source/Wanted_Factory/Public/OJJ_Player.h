@@ -13,6 +13,8 @@ class USpotLightComponent;
 class UInputMappingContext;
 class UInputAction;
 class AOJJ_BuildController;
+// 빌드 뷰 모드(None/TopDown/TPS) — 정의는 OJJ_BuildController.h. B/V 입력 라우팅에서 값으로 사용.
+enum class EBuildViewMode : uint8;
 class AOJJ_BuildCamera;
 class AOJJ_Ladder;
 class AMachineBase;
@@ -190,11 +192,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputMappingContext> IMC_Player;
 
-	// 빌드모드 전용 IMC. 빌드모드 진입 시 IMC_Player와 교체된다.
+	// 탑다운 빌드모드 전용 IMC. 탑다운 빌드 진입 시 IMC_Player와 교체된다.
 	// ⚠️ 이 IMC에는 IA_Look을 매핑하지 않아야 빌드모드에서 마우스 카메라 회전이 차단된다.
 	// B(IA_Build)/좌클릭(IA_BuildPlace)은 포함해야 토글·배치가 동작.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputMappingContext> IMC_Build;
+
+	// [TPS 빌드] 3인칭 빌드모드 전용 IMC. TPS 빌드 진입 시 IMC_Player와 교체된다.
+	// ⚠️ IMC_Build와 달리 IA_Look을 포함(3인칭 카메라 회전 필요) + 일반 이동(IA_Move 등)도 포함(걸으며 빌드).
+	//    빌드 입력(IA_BuildPlace/IA_MachineRotate/카테고리 숫자키/IA_SetDemolishMode/IA_Build/IA_BuildTPS)도 포함.
+	// ⚠️ 미할당 시 ApplyBuildInputContext가 IMC_Player 제거를 막아(입력 먹통 방지) TPS 진입은 되지만 입력은 IMC_Player 유지.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputMappingContext> IMC_BuildTPS;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_Move;
@@ -248,9 +257,16 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_Sprint;
 
-	// 빌드모드 토글(B키). 레벨의 BuildController로 위임.
+	// 빌드모드 토글(B키) = 탑다운 빌드. 레벨의 BuildController로 위임.
+	// 규칙: None→TopDown, TopDown→None, TPS→TopDown(전환). HandleBuildModeKey(TopDown).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_Build;
+
+	// [TPS 빌드] 빌드모드 토글(V키) = 3인칭 빌드. IA_Build와 동일 패턴.
+	// 규칙: None→TPS, TPS→None, TopDown→TPS(전환). HandleBuildModeKey(TPS).
+	// ⚠️ IA_BuildTPS .uasset(V 매핑)은 에디터에서 생성 후 BP_OJJ_Player에 할당해야 동작(미할당 시 V 무반응 + 경고 로그).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_BuildTPS;
 
 	// 빌드모드 머신 배치(좌클릭). 빌드모드 밖에서는 BuildController 내부 가드로 no-op.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
@@ -278,6 +294,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_SetDemolishMode;
 
+	// [공중 Foundation] 빌드 높이 층 증감(1D Axis: +1=올림/-1=내림). Foundation(Flat)에서 Z 층 올림/내림.
+	// ⚠️ 양쪽 IMC 매핑(에디터): IMC_BuildTPS=Q(+1)/E... 실제는 E=+1/Q=Negate, IMC_Build(탑다운)=↑(+1)/↓(Negate).
+	//    탑다운은 Q/E가 IA_BuildRotate(카메라)라 화살표 ↑↓ 사용. TPS·탑다운 동일 IA·핸들러·BuildHeightOffset 공유(전환 시 높이 유지).
+	// 신규 .uasset(Value Type = Axis1D). 미할당 시 무반응 + 경고 로그.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+	TObjectPtr<UInputAction> IA_BuildHeight;
+
 	// --- 이동 속도 ---
 	// 평상시 걷기 속도. BeginPlay에서 MaxWalkSpeed의 권위 있는 초기값으로 적용(BP CharacterMovement 기본값 덮음).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (ClampMin = "0.0"))
@@ -293,6 +316,14 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Light", meta = (ClampMin = "0", ClampMax = "23"))
 	int32 NightLightEndHour24 = 6;
+
+	// [빌드 작업등] TPS 빌드모드에서 작업등(L) ON 시 NightSpotLight를 이 값으로 상향(작업등답게, 과하지 않게).
+	// 밤 일반 점등 시에는 생성자 기본값(BeginPlay에서 캡처)으로 되돌린다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Light|WorkLight", meta = (ClampMin = "0.0"))
+	float TPSWorkLightIntensity = 120.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Light|WorkLight", meta = (ClampMin = "0.0"))
+	float TPSWorkLightRadius = 2500.f;
 
 	// --- 사다리 등반 (#184) ---
 	// 등반 중 수직 이동 속도(MaxFlySpeed). W/S로 위/아래.
@@ -480,17 +511,32 @@ protected:
 	// 않도록 몽타주 길이 기준으로 잡으며, 어떤 경로로도 입력이 영구 잠기지 않게 하는 최종 방어선(진짜 비정상 전용).
 	void ForceFinishIntro();
 
+	// [빌드 작업등] L키 토글 상태(빌드모드 한정). UpdateNightSpotLightVisibility가 매 틱 이 값을 읽어
+	// TPS=NightSpotLight, TopDown=BuildCamera 하향광으로 분배한다. 빌드 해제 시 false로 리셋.
+	bool bWorkLightOn = false;
+
+	// NightSpotLight의 생성자 기본 Intensity/AttenuationRadius. BeginPlay에서 캡처해 작업등 상향 후 원복에 사용.
+	float BaseNightLightIntensity = 50.f;
+	float BaseNightLightRadius = 1500.f;
+
 	// --- Input handlers ---
 	void UpdateNightSpotLightVisibility();
+	// [빌드 작업등] L키 핸들러 — 빌드모드일 때만 bWorkLightOn 토글(빌드 밖 무동작).
+	void ToggleWorkLight();
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void Zoom(const FInputActionValue& Value);
 	void StartJumpAction(const FInputActionValue& Value);
+	// B키 핸들러 — 탑다운 빌드 토글. HandleBuildModeKey(TopDown)로 위임.
 	void ToggleBuild(const FInputActionValue& Value);
+	// V키 핸들러 — TPS 빌드 토글. HandleBuildModeKey(TPS)로 위임.
+	void ToggleBuildTPS(const FInputActionValue& Value);
 	void BuildPlace(const FInputActionValue& Value);
 	void BuildPan(const FInputActionValue& Value);
 	void BuildRotate(const FInputActionValue& Value);
 	void BuildRotateMachine(const FInputActionValue& Value);
+	// [공중 Foundation] Q/E 높이 층 증감 — 축 부호(E=+1/Q=-1)로 BuildController->AdjustBuildHeight(±1) 위임.
+	void BuildAdjustHeight(const FInputActionValue& Value);
 	void ConnectFactoryAgentClient();
 	void SendOperatorGuideRequest();
 	void TriggerHUDQuestRequest();
@@ -571,13 +617,31 @@ protected:
 	void SetHotbarSlot8();
 	void SetHotbarSlot9();
 	void SetHotbarSlot10();
+	// [카테고리 순환] 빌드모드(TPS+TopDown) ←/→ 방향키로 설치 카테고리(기계/전력/건물) 순환.
+	// CycleBuildCategory: GetBuildViewMode()==None 차단 가드 + 위젯(UI_BuildModeMain) CycleSubMode 위임.
+	// None(빌드 밖)에서는 무동작(←/→ 오발동 차단). ExecuteHotbarSlot과 동일 위임 구조.
+	void CycleBuildCategory(int32 Dir);
+	void CycleCategoryNext(); // → : Dir=+1 (기계→전력→건물)
+	void CycleCategoryPrev(); // ← : Dir=-1 (역순)
 	void SetDemolishMode(const FInputActionValue& Value);
 
 	// 스프린트 — Started=달리기 속도, Completed=걷기 속도로 복귀.
 	void StartSprint(const FInputActionValue& Value);
 	void StopSprint(const FInputActionValue& Value);
 
-	// 빌드모드 상태에 맞춰 카메라 뷰타겟/플레이어 가시성을 전환. BuildController가 단일 진실원이므로
-	// ToggleBuild에서 IsInBuildMode() 결과(bEntering)를 받아 호출한다. (3b에서 IMC 교체 추가 예정)
-	void ApplyBuildModeView(bool bEntering);
+	// B/V 키 공통 라우팅. 토글 규칙(현재==대상이면 해제, 아니면 대상 모드로 진입/전환)을 적용하고,
+	// 빌드 활성 상태가 실제로 토글된 경우에만 ApplyBuildModeView 호출(TopDown↔TPS 전환 시 뷰 재적용 방지).
+	// (1단계: ApplyBuildModeView는 TopDown 동작만 — TPS 카메라/좌표 분기는 2·3단계)
+	void HandleBuildModeKey(EBuildViewMode TargetMode);
+
+	// 빌드 뷰 모드(None/TopDown/TPS)에 맞춰 카메라 뷰타겟·플레이어 가시성·입력 컨텍스트를 전환.
+	// BuildController가 단일 진실원 — HandleBuildModeKey가 실제 전환된 모드를 넘겨 호출한다.
+	//  - None    : 뷰타겟=플레이어, 캐릭터 보임, IMC_Player 복귀(해제)
+	//  - TopDown : 빌드캠 뷰타겟, 캐릭터 숨김, IMC_Build (마우스 커서 + Look 차단)
+	//  - TPS     : 뷰타겟=플레이어(3인칭 유지), 캐릭터 보임, IMC_BuildTPS (Look 허용 + 이동 허용)
+	void ApplyBuildModeView(EBuildViewMode NewMode);
+
+	// 빌드 뷰 모드별 입력 컨텍스트 적용 헬퍼. 후보 IMC(Player/Build/BuildTPS)를 전부 제거 후 목표만 추가
+	// → 모드 전환 시 누락/중복 원천 차단. ⚠️ 목표 IMC가 미할당이면 기존 컨텍스트를 제거하지 않는다(입력 먹통=못 빠져나옴 방지).
+	void ApplyBuildInputContext(EBuildViewMode Mode);
 };

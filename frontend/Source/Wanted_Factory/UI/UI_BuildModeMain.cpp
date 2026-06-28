@@ -128,9 +128,11 @@ void UUI_BuildModeMain::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
     UpdateSelectedPreview();
 }
 
-void UUI_BuildModeMain::OnMachineModeClicked()   { SwitchBuildSubMode(EBuildSubMode::Machine); }
-void UUI_BuildModeMain::OnPowerModeClicked()     { SwitchBuildSubMode(EBuildSubMode::Power); }
-void UUI_BuildModeMain::OnStructureModeClicked() { SwitchBuildSubMode(EBuildSubMode::Structure); }
+// 카테고리 버튼 클릭은 슬롯1 자동선택을 하지 않음(기존 UX). 순환(←/→) 애니 진행 중 버튼이 끼어들면
+// 직전 CycleSubMode가 세운 플래그를 이 클릭의 OnHotbarOutFinished가 소비해 오발동하므로, 진입부에서 명시적으로 끈다.
+void UUI_BuildModeMain::OnMachineModeClicked()   { bAutoSelectFirstSlotOnSwitch = false; SwitchBuildSubMode(EBuildSubMode::Machine); }
+void UUI_BuildModeMain::OnPowerModeClicked()     { bAutoSelectFirstSlotOnSwitch = false; SwitchBuildSubMode(EBuildSubMode::Power); }
+void UUI_BuildModeMain::OnStructureModeClicked() { bAutoSelectFirstSlotOnSwitch = false; SwitchBuildSubMode(EBuildSubMode::Structure); }
 
 void UUI_BuildModeMain::SwitchBuildSubMode(EBuildSubMode NewMode)
 {
@@ -147,14 +149,34 @@ void UUI_BuildModeMain::OnHotbarOutFinished()
     CachedMachineLevels.Empty();
     RefreshHotbarSlotsVisual();
 
+    // [카테고리 순환] 순환 경로(←/→)로 전환된 경우에만 새 카테고리의 슬롯1 자동선택.
+    // CurrentSubMode가 방금 갱신됐으므로 ExecutePlacementMode(1)이 정확히 새 카테고리 기준으로 해석됨.
+    // (CycleSubMode 직후가 아니라 여기서 부르는 이유: out-애니 완료 전엔 CurrentSubMode가 이전 값)
+    if (bAutoSelectFirstSlotOnSwitch)
+    {
+        bAutoSelectFirstSlotOnSwitch = false;
+        ExecutePlacementMode(1);
+    }
+
     if (Anim_HotbarIn) PlayAnimation(Anim_HotbarIn);
+}
+
+void UUI_BuildModeMain::CycleSubMode(int32 Dir)
+{
+    // Machine(0)↔Power(1)↔Structure(2) 3분류 래핑. +1=다음, +2=(-1 등가) 이전 — uint8 언더플로 없이 역순.
+    const uint8 Cur = (uint8)CurrentSubMode;
+    const uint8 Nxt = (uint8)((Cur + (Dir > 0 ? 1 : 2)) % 3);
+    if ((EBuildSubMode)Nxt == CurrentSubMode) return; // 동일 카테고리면 무동작(이론상 없음)
+
+    bAutoSelectFirstSlotOnSwitch = true; // OnHotbarOutFinished에서 슬롯1 자동선택 게이트
+    SwitchBuildSubMode((EBuildSubMode)Nxt);
 }
 
 void UUI_BuildModeMain::InitializeHotbarRegistry()
 {
     SubModeHotbarRegistry.Empty();
 
-    // 🤖 [1. 기계 설치 모드 한글 이름표 완벽 바인딩]
+    // 🤖 [1. 기계 설치 모드 한글 이름표 바인딩]
     TArray<FHotbarSlotData>& MachineHotbar = SubModeHotbarRegistry.FindOrAdd(EBuildSubMode::Machine);
     MachineHotbar.SetNum(10);
     MachineHotbar[0] = { EOJJ_BuildPlacementMode::Conveyor,       TEXT("Conveyor"),       FText::FromString(TEXT("컨베이어")) };
@@ -168,7 +190,7 @@ void UUI_BuildModeMain::InitializeHotbarRegistry()
     MachineHotbar[8] = { EOJJ_BuildPlacementMode::LiquidTank,     TEXT("LiquidTank"),     FText::FromString(TEXT("액체 탱크")) };
     MachineHotbar[9] = { EOJJ_BuildPlacementMode::Pipe,           TEXT("Pipe"),           FText::FromString(TEXT("파이프")) };
 
-    // ⚡ [2. 전력 설치 모드 한글 이름표 완벽 바인딩]
+    // ⚡ [2. 전력 설치 모드 한글 이름표 바인딩]
     TArray<FHotbarSlotData>& PowerHotbar = SubModeHotbarRegistry.FindOrAdd(EBuildSubMode::Power);
     PowerHotbar.SetNum(10);
     PowerHotbar[0] = { EOJJ_BuildPlacementMode::PowerLine,  TEXT("Cable"),  FText::FromString(TEXT("전선")) };
@@ -176,7 +198,7 @@ void UUI_BuildModeMain::InitializeHotbarRegistry()
     PowerHotbar[2] = { EOJJ_BuildPlacementMode::PowerPlant, TEXT("PowerPlant"), FText::FromString(TEXT("기본 발전소")) };
     // 4~10번 자리는 미래에 구현될 수력, 화력 발전소 등을 위해 깔끔하게 빈 칸 유지
 
-    // 🏢 [3. 건물 설치 모드 한글 이름표 완벽 바인딩]
+    // 🏢 [3. 건물 설치 모드 한글 이름표 바인딩]
     TArray<FHotbarSlotData>& StructHotbar = SubModeHotbarRegistry.FindOrAdd(EBuildSubMode::Structure);
     StructHotbar.SetNum(10);
     StructHotbar[0] = { EOJJ_BuildPlacementMode::BaseCamp,               TEXT("BaseCamp"), FText::FromString(TEXT("중앙 거점")) };
@@ -294,7 +316,9 @@ void UUI_BuildModeMain::UpdateSelectedPreview()
 
     EOJJ_BuildPlacementMode CurrentMode = BuildController->GetPlacementMode();
 
-    if (CurrentMode == EOJJ_BuildPlacementMode::Demolish || CurrentMode == EOJJ_BuildPlacementMode::Foundation)
+    // 가드 조건에서 Foundation(바닥)을 완벽히 제거합니다.
+    // 그래야 F, G 키를 눌렀을 때 프리뷰 칸이 강제로 Collapsed 되지 않고 로직이 정상 작동합니다.
+    if (CurrentMode == EOJJ_BuildPlacementMode::Demolish)
     {
         IMG_SelectedPreview->SetVisibility(ESlateVisibility::Collapsed);
         TXT_SelectedName->SetVisibility(ESlateVisibility::Collapsed);
@@ -318,9 +342,29 @@ void UUI_BuildModeMain::UpdateSelectedPreview()
         case EOJJ_BuildPlacementMode::PowerNode:      TargetDTKey = TEXT("PowerGridNode"); break;
         case EOJJ_BuildPlacementMode::PowerPlant:     TargetDTKey = TEXT("PowerPlant"); break;
         case EOJJ_BuildPlacementMode::TeleCommunicationTower: TargetDTKey = TEXT("TeleCommunicationTower"); break;
-        case EOJJ_BuildPlacementMode::BaseCamp:      TargetDTKey = TEXT("BaseCamp"); break;
+        case EOJJ_BuildPlacementMode::BaseCamp:       TargetDTKey = TEXT("BaseCamp"); break;
         case EOJJ_BuildPlacementMode::SignalAmplifier: TargetDTKey = TEXT("Signal_Amplifier"); break;
         case EOJJ_BuildPlacementMode::Shield:         TargetDTKey = TEXT("MagneticShield"); break;
+        
+        // [사다리 H 분기 추가]
+        case EOJJ_BuildPlacementMode::Ladder:         
+            TargetDTKey = TEXT("Ladder"); 
+            break; 
+
+        // [바닥 F, G 분기 추가] 1단계에서 개방한 퍼블릭 함수로 정확하게 분기합니다.
+        case EOJJ_BuildPlacementMode::Foundation:
+            {
+                if (BuildController->IsRampFoundationSelected()) 
+                {
+                    TargetDTKey = TEXT("SlantedFloor"); // G 키를 누른 경사 바닥 상태일 때
+                }
+                else
+                {
+                    TargetDTKey = TEXT("FlatFloor");    // F 키를 누른 평평한 바닥 상태일 때
+                }
+            }
+            break;
+
         default: break;
     }
 
@@ -331,44 +375,43 @@ void UUI_BuildModeMain::UpdateSelectedPreview()
         return;
     }
     
-    // InitializeHotbarRegistry() 장판에 우리가 이미 적어둔 한글 이름표(DisplayName)를 
-    // 중복 코드 없이 전체 모드 장부에서 동적으로 역추적
-    FText SelectedItemDisplayName = FText::GetEmpty();
-    for (const auto& Pair : SubModeHotbarRegistry)
-    {
-        for (const FHotbarSlotData& SlotData : Pair.Value)
-        {
-            if (SlotData.PlacementMode == CurrentMode)
-            {
-                SelectedItemDisplayName = SlotData.DisplayName;
-                break;
-            }
-        }
-        if (!SelectedItemDisplayName.IsEmpty()) break;
-    }
-
-    // 이름표를 안전하게 찾았다면 화면 가시화 및 글자 세팅
-    if (!SelectedItemDisplayName.IsEmpty())
-    {
-        TXT_SelectedName->SetVisibility(ESlateVisibility::Visible);
-        TXT_SelectedName->SetText(SelectedItemDisplayName);
-    }
-    else
-    {
-        TXT_SelectedName->SetVisibility(ESlateVisibility::Collapsed);
-    }
-
-    // 데이터 테이블에서 실시간 썸네일 이미지 파일 구역
     UGameInstance* GameInstance = GetGameInstance();
     UMachineSubsystem* MachineSubsystem = GameInstance ? GameInstance->GetSubsystem<UMachineSubsystem>() : nullptr;
     
     FMachineTableRow MachineData;
     if (MachineSubsystem && MachineSubsystem->FindMachineData(TargetDTKey, MachineData))
     {
-        UTexture2D* PreviewTexture = MachineData.ImgAsset.IsValid()
-            ? MachineData.ImgAsset.Get()
-            : MachineData.ImgAsset.LoadSynchronous();
+        FText SelectedItemDisplayName = FText::GetEmpty();
+        for (const auto& Pair : SubModeHotbarRegistry)
+        {
+            for (const FHotbarSlotData& SlotData : Pair.Value)
+            {
+                if (SlotData.PlacementMode == CurrentMode)
+                {
+                    SelectedItemDisplayName = SlotData.DisplayName;
+                    break;
+                }
+            }
+            if (!SelectedItemDisplayName.IsEmpty()) break;
+        }
 
+        // 구조체 실제 멤버 변수명인 DisplayName(FString)을 FText로 안전하게 변환하여 매핑합니다.
+        if (SelectedItemDisplayName.IsEmpty())
+        {
+            SelectedItemDisplayName = FText::FromString(MachineData.DisplayName); 
+        }
+
+        if (!SelectedItemDisplayName.IsEmpty())
+        {
+            TXT_SelectedName->SetVisibility(ESlateVisibility::Visible);
+            TXT_SelectedName->SetText(SelectedItemDisplayName);
+        }
+        else
+        {
+            TXT_SelectedName->SetVisibility(ESlateVisibility::Collapsed);
+        }
+
+        UTexture2D* PreviewTexture = MachineData.ImgAsset.IsValid() ? MachineData.ImgAsset.Get() : MachineData.ImgAsset.LoadSynchronous();
         if (PreviewTexture)
         {
             IMG_SelectedPreview->SetVisibility(ESlateVisibility::Visible);
@@ -382,6 +425,7 @@ void UUI_BuildModeMain::UpdateSelectedPreview()
     else
     {
         IMG_SelectedPreview->SetVisibility(ESlateVisibility::Collapsed);
+        TXT_SelectedName->SetVisibility(ESlateVisibility::Collapsed);
     }
 }
 

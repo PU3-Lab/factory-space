@@ -87,12 +87,12 @@ AOJJ_Player::AOJJ_Player()
 
 	NightSpotLight = CreateDefaultSubobject<USpotLightComponent>(TEXT("NightSpotLight"));
 	NightSpotLight->SetupAttachment(RootComponent);
-	NightSpotLight->SetRelativeLocation(FVector(90.0f, 0.0f, 55.0f));
-	NightSpotLight->SetRelativeRotation(FRotator(-8.0f, 0.0f, 0.0f));
-	NightSpotLight->Intensity = 100.0f;
-	NightSpotLight->AttenuationRadius = 2200.0f;
-	NightSpotLight->InnerConeAngle = 18.0f;
-	NightSpotLight->OuterConeAngle = 36.0f;
+	NightSpotLight->SetRelativeLocation(FVector(30.0f, 0.0f, 30.0f));
+	NightSpotLight->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
+	NightSpotLight->Intensity = 50.f;
+	NightSpotLight->AttenuationRadius = 1500.f;
+	NightSpotLight->InnerConeAngle = 30.0f;
+	NightSpotLight->OuterConeAngle = 45.0f;
 	NightSpotLight->bUseInverseSquaredFalloff = false;
 	NightSpotLight->LightFalloffExponent = 2.5f;
 	NightSpotLight->SetVisibility(false);
@@ -177,6 +177,13 @@ void AOJJ_Player::BeginPlay()
 		}
 	}
 	
+	// [빌드 작업등] NightSpotLight 기본 강도/반경 캡처 — TPS 작업등 상향 후 밤 일반 점등으로 원복할 때 사용.
+	if (NightSpotLight)
+	{
+		BaseNightLightIntensity = NightSpotLight->Intensity;
+		BaseNightLightRadius = NightSpotLight->AttenuationRadius;
+	}
+
 	UpdateNightSpotLightVisibility();
 	ConnectFactoryAgentClient();
 
@@ -589,6 +596,17 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 		UE_LOG(LogTemp, Warning,
 			TEXT("[OJJ_Player] IA_Build 미할당 — 빌드모드 토글(B키) 비활성. BP_OJJ_Player에 IA_Build 에셋 할당 필요."));
 	}
+	// [TPS 빌드] V키 = 3인칭 빌드 토글. IA_Build와 동일하게 항상 활성인 IMC_Player에 매핑(빌드모드 밖에서도 진입 가능).
+	if (IA_BuildTPS)
+	{
+		EnhancedInput->BindAction(IA_BuildTPS, ETriggerEvent::Started, this, &AOJJ_Player::ToggleBuildTPS);
+	}
+	else
+	{
+		// IA_BuildTPS .uasset(V 매핑)은 에디터에서 생성 후 BP_OJJ_Player에 할당해야 함 → 미할당 시 V 무반응
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] IA_BuildTPS 미할당 — TPS 빌드 토글(V키) 비활성. BP_OJJ_Player에 IA_BuildTPS 에셋 할당 필요."));
+	}
 	if (IA_BuildPlace)
 	{
 		// 누름(Started)=배치/드래그시작, 뗌(Completed)=드래그커밋, 취소(Canceled)=드래그취소.
@@ -628,13 +646,23 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 		UE_LOG(LogTemp, Warning,
 			TEXT("[OJJ_Player] IA_MachineRotate 미할당 — 호버 머신 회전(R) 비활성. IMC_Build/BP_OJJ_Player에 IA_MachineRotate 할당 필요."));
 	}
+	// [공중 Foundation] 높이 층 증감(Q/E). 한 번 누를 때 1층 — 이산 스텝이라 Started(머신 회전과 동일 패턴).
+	if (IA_BuildHeight)
+	{
+		EnhancedInput->BindAction(IA_BuildHeight, ETriggerEvent::Started, this, &AOJJ_Player::BuildAdjustHeight);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] IA_BuildHeight 미할당 — TPS Foundation 높이 조절(Q/E) 비활성. IMC_BuildTPS/BP_OJJ_Player에 IA_BuildHeight 할당 필요."));
+	}
 
 	PlayerInputComponent->BindKey(EKeys::M, IE_Pressed, this, &AOJJ_Player::SendOperatorGuideRequest);
 	PlayerInputComponent->BindKey(EKeys::K, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestRequest);
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
 	PlayerInputComponent->BindKey(EKeys::Slash, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
-	PlayerInputComponent->BindKey(EKeys::Period, IE_Pressed, this, &AOJJ_Player::TriggerTutorialDialogueReveal);
+	PlayerInputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &AOJJ_Player::TriggerTutorialDialogueReveal);
 	// [옛 빌드 입력 경로 전수 정리] O(성형)/P(합성)/T(통신) 직행 BindKey는 카테고리 숫자키 슬롯이 완전 대체하여 제거.
 	// 콘솔 SetBuildMode tower(통신탑)는 계속 동작.
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AOJJ_Player::SetDemolishModeShortcut);
@@ -660,6 +688,15 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::Eight, IE_Pressed, this, &AOJJ_Player::SetHotbarSlot8);
 	PlayerInputComponent->BindKey(EKeys::Nine,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot9);
 	PlayerInputComponent->BindKey(EKeys::Zero,  IE_Pressed, this, &AOJJ_Player::SetHotbarSlot10); // 0키 = 10번 슬롯
+
+	// [카테고리 순환] ←/→ 방향키 = 빌드모드(TPS+TopDown) 설치 카테고리 순환(기계↔전력↔건물). 슬롯키와 동일한
+	// 레거시 BindKey 패턴(IA 에셋 불필요). 빌드모드 가드는 핸들러(CycleBuildCategory)에서 처리 — None(빌드 밖) 무동작.
+	PlayerInputComponent->BindKey(EKeys::Right, IE_Pressed, this, &AOJJ_Player::CycleCategoryNext);
+	PlayerInputComponent->BindKey(EKeys::Left,  IE_Pressed, this, &AOJJ_Player::CycleCategoryPrev);
+
+	// [빌드 작업등] L = 빌드모드 작업등 토글. 핸들러(ToggleWorkLight)가 IsInBuildMode 가드 — 빌드 밖 무동작.
+	// TPS=NightSpotLight 재활용, TopDown=BuildCamera 하향광. 실제 점등은 UpdateNightSpotLightVisibility가 매 틱 분배.
+	PlayerInputComponent->BindKey(EKeys::L, IE_Pressed, this, &AOJJ_Player::ToggleWorkLight);
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -670,12 +707,14 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 		return;
 	}
 
-	// step-off 안착 보간 중엔 이동 입력 잠금(보간이 위치를 전담 → 진동/끼임 방지).
-	if (BuildController && BuildController->IsInBuildMode())
+	// 탑다운 빌드모드에선 캐릭터 이동 잠금(팀 의도 — 탑다운은 캐릭터 조작 없음).
+	// TPS 빌드모드/None은 통과 → 캐릭터 이동 유지. (IsInBuildMode는 TPS도 true라 TPS 먹통 회귀 → TopDown 한정)
+	if (BuildController && BuildController->GetBuildViewMode() == EBuildViewMode::TopDown)
 	{
 		return;
 	}
 
+	// step-off 안착 보간 중엔 이동 입력 잠금(보간이 위치를 전담 → 진동/끼임 방지).
 	if (bSteppingOff)
 	{
 		return;
@@ -948,25 +987,63 @@ void AOJJ_Player::Tick(float DeltaSeconds)
 
 void AOJJ_Player::UpdateNightSpotLightVisibility()
 {
-	if (!NightSpotLight)
-	{
-		return;
-	}
+	// ⚠️ 매 틱 호출 — 모든 조명 상태(밤 점등 + 빌드 작업등)의 단일 진입점. 외부에서 SetVisibility 하면
+	//    다음 틱에 여기서 덮어쓰므로, 작업등 토글(bWorkLightOn)도 반드시 이 함수에서 분배해야 한다.
 
-	bool bShouldEnable = false;
+	// 1) 밤 시간대 판정(기존 로직): 18시~6시.
+	bool bNight = false;
 	if (const UWorld* World = GetWorld())
 	{
 		if (const UPlanetEventManagerSubsystem* EventManager = World->GetSubsystem<UPlanetEventManagerSubsystem>())
 		{
 			const int32 CurrentHour24 = EventManager->GetCurrentHour24();
-			bShouldEnable = CurrentHour24 >= NightLightStartHour24 || CurrentHour24 < NightLightEndHour24;
+			bNight = CurrentHour24 >= NightLightStartHour24 || CurrentHour24 < NightLightEndHour24;
 		}
 	}
 
-	if (NightSpotLight->IsVisible() != bShouldEnable)
+	// 2) 빌드 작업등 상태 — 모드별 분배.
+	const EBuildViewMode ViewMode = BuildController ? BuildController->GetBuildViewMode() : EBuildViewMode::None;
+	const bool bWorkLightActive = bWorkLightOn && ViewMode != EBuildViewMode::None;
+	const bool bTPSWorkLight = bWorkLightActive && ViewMode == EBuildViewMode::TPS;
+	const bool bTopDownWorkLight = bWorkLightActive && ViewMode == EBuildViewMode::TopDown;
+
+	// 3) NightSpotLight(플레이어 정면): 밤이거나 TPS 작업등이면 점등. TPS 작업등일 땐 작업등답게 상향,
+	//    그 외(밤 일반)엔 기본값으로 원복. (탑다운에선 플레이어가 숨겨져 어차피 렌더 안 됨 → BuildCamera 담당)
+	if (NightSpotLight)
 	{
-		NightSpotLight->SetVisibility(bShouldEnable);
+		const bool bSpotOn = bNight || bTPSWorkLight;
+		if (NightSpotLight->IsVisible() != bSpotOn)
+		{
+			NightSpotLight->SetVisibility(bSpotOn);
+		}
+
+		const float TargetIntensity = bTPSWorkLight ? TPSWorkLightIntensity : BaseNightLightIntensity;
+		const float TargetRadius = bTPSWorkLight ? TPSWorkLightRadius : BaseNightLightRadius;
+		if (!FMath::IsNearlyEqual(NightSpotLight->Intensity, TargetIntensity))
+		{
+			NightSpotLight->SetIntensity(TargetIntensity);
+		}
+		if (!FMath::IsNearlyEqual(NightSpotLight->AttenuationRadius, TargetRadius))
+		{
+			NightSpotLight->SetAttenuationRadius(TargetRadius);
+		}
 	}
+
+	// 4) BuildCamera 하향광(탑다운 전용): 탑다운 작업등일 때만 점등.
+	if (BuildCamera)
+	{
+		BuildCamera->SetWorkLightEnabled(bTopDownWorkLight);
+	}
+}
+
+void AOJJ_Player::ToggleWorkLight()
+{
+	// 빌드모드(TPS/TopDown)에서만 토글. 빌드 밖이면 무동작(키 오발동 차단). 실제 점등 분배는 매 틱 갱신.
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+	bWorkLightOn = !bWorkLightOn;
 }
 
 void AOJJ_Player::AbortClimb()
@@ -1015,7 +1092,9 @@ void AOJJ_Player::NotifyLadderEndOverlap(AOJJ_Ladder* Ladder)
 
 void AOJJ_Player::Look(const FInputActionValue& Value)
 {
-	if (BuildController && BuildController->IsInBuildMode())
+	// 탑다운 빌드모드에선 마우스룩 잠금(팀 의도). TPS 빌드모드/None은 통과 → 마우스 카메라 유지.
+	// (IsInBuildMode는 TPS도 true라 TPS 진입 시 마우스룩 먹통 회귀 → TopDown 한정)
+	if (BuildController && BuildController->GetBuildViewMode() == EBuildViewMode::TopDown)
 	{
 		return;
 	}
@@ -1035,8 +1114,9 @@ void AOJJ_Player::Zoom(const FInputActionValue& Value)
 		return;
 	}
 
-	// 빌드모드면 뷰타겟인 BuildCamera를 줌(플레이어 SpringArm은 안 보이므로). 양쪽 모드 동일 휠 UX.
-	if (BuildController && BuildController->IsInBuildMode())
+	// 탑다운 빌드만 뷰타겟이 BuildCamera라 그쪽을 줌(플레이어 SpringArm은 안 보임).
+	// ⚠️ TPS 빌드는 뷰타겟이 플레이어 SpringArm이므로 가드를 통과시켜 아래 일반 SpringArm 줌(150~800)을 탄다.
+	if (BuildController && BuildController->GetBuildViewMode() == EBuildViewMode::TopDown)
 	{
 		if (BuildCamera)
 		{
@@ -1129,6 +1209,18 @@ bool AOJJ_Player::ShouldPlayFallAnim() const
 
 void AOJJ_Player::ToggleBuild(const FInputActionValue& Value)
 {
+	// B키 = 탑다운 빌드. 토글 규칙은 HandleBuildModeKey가 담당(None→TopDown / TopDown→None / TPS→TopDown).
+	HandleBuildModeKey(EBuildViewMode::TopDown);
+}
+
+void AOJJ_Player::ToggleBuildTPS(const FInputActionValue& Value)
+{
+	// V키 = TPS 빌드. 토글 규칙: None→TPS / TPS→None / TopDown→TPS.
+	HandleBuildModeKey(EBuildViewMode::TPS);
+}
+
+void AOJJ_Player::HandleBuildModeKey(EBuildViewMode TargetMode)
+{
 	if (!BuildController)
 	{
 		return;
@@ -1136,14 +1228,23 @@ void AOJJ_Player::ToggleBuild(const FInputActionValue& Value)
 
 	// 등반/step-off 중 빌드모드 진입 시 MOVE_Flying/중력0이 잔존하지 않도록 먼저 청산(걷기 복귀).
 	AbortClimb();
-	// Enter/Exit 자체 가드(같은 상태면 no-op) 덕분에 토글 라우팅만 하면 됨
-	BuildController->ToggleBuildMode();
 
-	// BuildController가 단일 진실원 — 실제 전환 결과(early-return 시 미전환)에 맞춰 플레이어측 적용.
-	// 이로써 TargetGrid 미설정 등으로 Enter가 무산되면 카메라/가시성도 안 바뀜(half-state 방지).
-	ApplyBuildModeView(BuildController->IsInBuildMode());
+	// 토글 규칙: 이미 대상 모드면 해제(None), 아니면 대상 모드로 진입/전환.
+	const EBuildViewMode PrevMode = BuildController->GetBuildViewMode();
+	const EBuildViewMode Desired = (PrevMode == TargetMode) ? EBuildViewMode::None : TargetMode;
 
-	if (BuildController->IsInBuildMode())
+	BuildController->SetBuildViewMode(Desired); // 단일 진실원 — 진입/해제/전환을 내부 처리
+	const EBuildViewMode NewMode = BuildController->GetBuildViewMode();
+
+	// 모드가 실제로 바뀐 경우에만 뷰 적용(진입/해제/TopDown↔TPS 전환 모두 포함).
+	// SetBuildViewMode가 검증 실패로 미전환(NewMode==PrevMode)이면 카메라/IMC도 안 건드림(half-state 방지).
+	if (NewMode != PrevMode)
+	{
+		ApplyBuildModeView(NewMode);
+	}
+
+	// 퀘스트/튜토리얼 알림은 None→빌드 최초 진입에서만(모드 전환 시 중복 발사 방지).
+	if (PrevMode == EBuildViewMode::None && NewMode != EBuildViewMode::None)
 	{
 		if (UGameInstance* GameInstance = GetGameInstance())
 		{
@@ -1156,23 +1257,19 @@ void AOJJ_Player::ToggleBuild(const FInputActionValue& Value)
 	}
 }
 
-void AOJJ_Player::ApplyBuildModeView(bool bEntering)
+void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
 {
-    // 카메라 뷰타겟 블렌드 + 플레이어 가시성 + IMC 교체(Look 차단). (Pan/Rotate 핸들러는 3c에서 추가)
+    // 카메라 뷰타겟 블렌드 + 플레이어 가시성 + 입력 컨텍스트를 모드별로 전환.
+    // None=해제, TopDown=빌드캠+숨김+IMC_Build, TPS=플레이어캠+보임+IMC_BuildTPS.
     APlayerController* PC = Cast<APlayerController>(GetController());
-    UEnhancedInputLocalPlayerSubsystem* Subsystem = PC
-       ? ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer())
-       : nullptr;
 
-    if (bEntering)
+    if (NewMode != EBuildViewMode::None)
     {
-       // 빌드모드 진입 시 일반 기계창이나 창고 세부화면이 열려 있다면 자동으로 연동을 끊고 제거합니다.
-       if (MachineInteractWidgetInstance.IsValid() || WarehouseInteractWidgetInstance)
-       {
-          CloseMachineInteractWidget(PC);
-       }
-
-       // 빌드모드 진입 시 가방 창이 열려 있다면 뷰포트에서 제거하고 리프레시 타이머까지 깔끔하게 폭파합니다.
+       // ── 진입 또는 모드 전환 공통: 열려 있던 기계창/창고/가방 UI 정리 ──
+    	if (MachineInteractWidgetInstance.IsValid() || WarehouseInteractWidgetInstance || SynthesizerInteractWidgetInstance)
+    	{
+    		CloseMachineInteractWidget(PC);
+    	}
        if (bIsInventoryOpen && InventoryWidgetInstance)
        {
           InventoryWidgetInstance->RemoveFromParent();
@@ -1188,24 +1285,63 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
           }
        }
 
-       if (BuildCamera && BuildController)
+       // ── 카메라 + 가시성: 모드별 ──
+       if (NewMode == EBuildViewMode::TopDown)
        {
-          // 진입 시 1회: 카메라 XY = 플레이어 현재 위치, Z = 그리드 평면(GetGridCenter().Z).
-          if (const AOJJ_Grid* Grid = BuildController->GetTargetGrid())
+          // 빌드캠 XY = 플레이어 현재 위치, Z = 그리드 평면. 그 후 빌드캠으로 블렌드 + 캐릭터 숨김.
+          if (BuildCamera && BuildController)
           {
-             const FVector PlayerLoc = GetActorLocation();
-             const FVector AnchorXY = Grid->IsValidGridCell(Grid->WorldToGrid(PlayerLoc))
-                ? PlayerLoc : Grid->GetGridCenter();
-             const FVector CamLoc(AnchorXY.X, AnchorXY.Y, Grid->GetGridCenter().Z);
-             BuildCamera->SetActorLocation(CamLoc);
+             if (const AOJJ_Grid* Grid = BuildController->GetTargetGrid())
+             {
+                const FVector PlayerLoc = GetActorLocation();
+                const FVector AnchorXY = Grid->IsValidGridCell(Grid->WorldToGrid(PlayerLoc))
+                   ? PlayerLoc : Grid->GetGridCenter();
+                const FVector CamLoc(AnchorXY.X, AnchorXY.Y, Grid->GetGridCenter().Z);
+                BuildCamera->SetActorLocation(CamLoc);
+             }
+          }
+          if (PC && BuildCamera)
+          {
+             PC->SetViewTargetWithBlend(BuildCamera, CameraBlendTime);
+          }
+          // 탑다운에서 플레이어가 안 보이도록 숨김
+          SetActorHiddenInGame(true);
+
+          // 마우스: 커서 보임 + GameAndUI(커서로 셀 조준/클릭). EnterBuildMode가 켠 커서를 모드별로 확정.
+          // (IMC_Build엔 IA_Look 없음 → 마우스는 카메라 회전 안 하고 커서로만 동작.)
+          if (PC)
+          {
+             FInputModeGameAndUI TopDownInputMode;
+             TopDownInputMode.SetHideCursorDuringCapture(false);
+             PC->SetInputMode(TopDownInputMode);
+             PC->bShowMouseCursor = true;
           }
        }
-       if (PC && BuildCamera)
+       else // EBuildViewMode::TPS
        {
-          PC->SetViewTargetWithBlend(BuildCamera, CameraBlendTime);
+          // ⚠️ 3인칭 유지: 뷰타겟 = 플레이어(소유 Pawn). TopDown→TPS 전환 시 빌드캠에서 플레이어로 복귀.
+          //    None→TPS면 이미 플레이어 뷰라 사실상 no-op(블렌드만). 캐릭터는 계속 보임.
+          if (PC)
+          {
+             PC->SetViewTargetWithBlend(this, CameraBlendTime);
+          }
+          SetActorHiddenInGame(false);
+
+          // [빌드 작업등] TopDown→TPS 전환 시 BuildCamera 하향광 즉시 끔(월드 스폿이라 1프레임 잔광이 TPS 뷰에
+          // 보이는 것 방지). TPS 작업등은 NightSpotLight가 담당 — 다음 틱 UpdateNightSpotLightVisibility가 분배.
+          if (BuildCamera)
+          {
+             BuildCamera->SetWorkLightEnabled(false);
+          }
+
+          // ⚠️ 마우스: 커서 숨김 + GameOnly(마우스 = 3인칭 카메라 Look). 화면중앙 조준이라 OS 커서 불필요.
+          //    EnterBuildMode가 켠 커서를 여기서 끔. (크로스헤어 UI는 후속 — 일단 화면중앙 감각.)
+          if (PC)
+          {
+             PC->SetInputMode(FInputModeGameOnly());
+             PC->bShowMouseCursor = false;
+          }
        }
-       // 뷰타겟이 빌드캠이라 시각적 의미만 있지만, 탑다운에서 플레이어가 안 보이도록 숨김
-       SetActorHiddenInGame(true);
 
        // 안전장치: 질주 중 진입 시 속도 고착 방지
        if (UCharacterMovementComponent* Movement = GetCharacterMovement())
@@ -1213,24 +1349,14 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
           Movement->MaxWalkSpeed = WalkSpeed;
        }
 
-       // 입력: TPS IMC 제거 + 빌드 IMC 추가
-       if (Subsystem && IMC_Build)
-       {
-          Subsystem->RemoveMappingContext(IMC_Player);
-          Subsystem->AddMappingContext(IMC_Build, 0);
-       }
-       else if (!IMC_Build)
-       {
-          UE_LOG(LogTemp, Warning,
-             TEXT("[OJJ_Player] IMC_Build 미할당 — 빌드모드 Look 차단 불가(IMC_Player 유지). ")
-             TEXT("BP_OJJ_Player에 IMC_Build 할당 필요."));
-       }
-       
+       // 입력 컨텍스트(모드별 + 미할당 함정 가드)
+       ApplyBuildInputContext(NewMode);
+
+       // HUD 숨김 + 빌드 위젯 표시(두 빌드 모드 공통)
        if (MainHUDWidgetInstance)
        {
           MainHUDWidgetInstance->SetVisibility(ESlateVisibility::Collapsed);
        }
-       
        if (PC && BuildModeWidgetClass && !BuildModeWidgetInstance)
        {
           BuildModeWidgetInstance = CreateWidget<UUserWidget>(PC, BuildModeWidgetClass);
@@ -1239,7 +1365,6 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
              BuildModeWidgetInstance->AddToViewport();
           }
        }
-
        if (BuildModeWidgetInstance)
        {
           BuildModeWidgetInstance->SetVisibility(ESlateVisibility::Visible);
@@ -1247,6 +1372,15 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
     }
     else
     {
+       // ── 빌드모드 해제(None) ──
+       // [빌드 작업등] 빌드 나가면 작업등 끔(리셋). 라이트 실소등은 다음 틱 UpdateNightSpotLightVisibility가 처리하나,
+       // BuildCamera 하향광은 즉시 꺼 1프레임 잔광을 막는다.
+       bWorkLightOn = false;
+       if (BuildCamera)
+       {
+          BuildCamera->SetWorkLightEnabled(false);
+       }
+
        if (PC)
        {
           // 복귀 뷰타겟은 플레이어 자신(소유 Pawn)
@@ -1254,29 +1388,77 @@ void AOJJ_Player::ApplyBuildModeView(bool bEntering)
        }
        SetActorHiddenInGame(false);
 
-       // 입력 복귀: 빌드 IMC 제거 + TPS IMC 복원
-       if (Subsystem)
+       // 마우스: 일반 플레이 복귀 — 커서 숨김 + GameOnly. (TopDown/TPS에서 바꾼 커서·입력모드 원복)
+       if (PC)
        {
-          if (IMC_Build)
-          {
-             Subsystem->RemoveMappingContext(IMC_Build);
-          }
-          if (IMC_Player)
-          {
-             Subsystem->AddMappingContext(IMC_Player, 0);
-          }
+          PC->SetInputMode(FInputModeGameOnly());
+          PC->bShowMouseCursor = false;
        }
+
+       // 입력 복귀: 빌드 IMC 제거 + IMC_Player 복원
+       ApplyBuildInputContext(EBuildViewMode::None);
+
        if (BuildModeWidgetInstance)
        {
           BuildModeWidgetInstance->SetVisibility(ESlateVisibility::Collapsed);
        }
-       
        if (MainHUDWidgetInstance)
        {
           // 드래그 씹힘 방지
           MainHUDWidgetInstance->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
        }
     }
+}
+
+void AOJJ_Player::ApplyBuildInputContext(EBuildViewMode Mode)
+{
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    UEnhancedInputLocalPlayerSubsystem* Subsystem = PC
+       ? ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer())
+       : nullptr;
+    if (!Subsystem)
+    {
+       return;
+    }
+
+    // [codex M1] None(빌드 종료) 케이스 분리. 빌드 IMC(Build/BuildTPS)는 IMC_Player 유무와 무관하게 무조건 제거 —
+    // 종료 후 빌드 입력이 잔류해 이동/시점/상호작용이 먹통되는 회귀 방지(기존 Exit 동작 보존). IMC_Player는 있으면 복원
+    // (중복 방지 위해 제거 후 재추가). 미할당이면 복원만 스킵(빌드 IMC 제거는 그대로 — 최소한 빌드 컨트롤은 안 남김).
+    if (Mode == EBuildViewMode::None)
+    {
+       if (IMC_Build)    { Subsystem->RemoveMappingContext(IMC_Build); }
+       if (IMC_BuildTPS) { Subsystem->RemoveMappingContext(IMC_BuildTPS); }
+       if (IMC_Player)
+       {
+          Subsystem->RemoveMappingContext(IMC_Player);
+          Subsystem->AddMappingContext(IMC_Player, 0);
+       }
+       else
+       {
+          UE_LOG(LogTemp, Warning,
+             TEXT("[OJJ_Player] IMC_Player 미할당 — 빌드 종료 시 복원할 일반 입력 컨텍스트 없음. BP_OJJ_Player에 할당 필요."));
+       }
+       return;
+    }
+
+    // 진입/전환(TopDown/TPS): 목표 빌드 IMC.
+    UInputMappingContext* Desired = (Mode == EBuildViewMode::TopDown) ? IMC_Build : IMC_BuildTPS;
+
+    // ⚠️ 락아웃 가드(진입/전환 한정): 목표 빌드 IMC가 미할당이면 현재 컨텍스트를 제거하지 않는다(입력 먹통 = 못 빠져나옴).
+    //    Exit(None)은 위에서 별도 처리되므로 이 가드가 종료 경로의 빌드 IMC 제거를 막지 않는다.
+    if (!Desired)
+    {
+       UE_LOG(LogTemp, Warning,
+          TEXT("[OJJ_Player] %s 미할당 — 입력 컨텍스트 전환 중단(기존 IMC 유지). BP_OJJ_Player에 할당 필요."),
+          Mode == EBuildViewMode::TopDown ? TEXT("IMC_Build") : TEXT("IMC_BuildTPS"));
+       return;
+    }
+
+    // 후보 컨텍스트 전부 제거(추가 안 돼 있으면 no-op) → 목표만 추가. 모드 전환 시 누락/중복 원천 차단.
+    if (IMC_Player)   { Subsystem->RemoveMappingContext(IMC_Player); }
+    if (IMC_Build)    { Subsystem->RemoveMappingContext(IMC_Build); }
+    if (IMC_BuildTPS) { Subsystem->RemoveMappingContext(IMC_BuildTPS); }
+    Subsystem->AddMappingContext(Desired, 0);
 }
 
 void AOJJ_Player::BuildPlace(const FInputActionValue& Value)
@@ -1409,6 +1591,11 @@ void AOJJ_Player::CancelPlacementShortcut()
 	{
 		return;
 	}
+	// [TPS 2클릭] 경로형 앵커(전선 등)가 잡혀 있으면 앵커만 무르고 모드 유지(2클릭 재시도). 없으면 기존 동작(모드 None 초기화).
+	if (BuildController->CancelPendingConnectAnchor())
+	{
+		return;
+	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::None);
 }
 
@@ -1443,6 +1630,30 @@ void AOJJ_Player::SetHotbarSlot7()  { ExecuteHotbarSlot(7); }
 void AOJJ_Player::SetHotbarSlot8()  { ExecuteHotbarSlot(8); }
 void AOJJ_Player::SetHotbarSlot9()  { ExecuteHotbarSlot(9); }
 void AOJJ_Player::SetHotbarSlot10() { ExecuteHotbarSlot(10); }
+
+// [카테고리 순환] ←/→ → 현재 카테고리(LDJ UI_BuildModeMain)를 Dir 방향으로 1칸 순환 위임.
+// ExecuteHotbarSlot과 동일 위임 구조이나, 가드는 IsInBuildMode()가 아니라 GetBuildViewMode()==None 차단으로
+// — 빌드모드(TPS+TopDown) 공용. None(빌드 밖)에서만 ←/→ 카테고리 오발동을 차단한다.
+void AOJJ_Player::CycleBuildCategory(int32 Dir)
+{
+	if (!BuildController || BuildController->GetBuildViewMode() == EBuildViewMode::None)
+	{
+		return;
+	}
+	// BuildModeWidgetClass = WBP_BuildModeMain(UI_BuildModeMain) 전제. 안전망: 아니면 무동작+경고.
+	if (UUI_BuildModeMain* BuildMenu = Cast<UUI_BuildModeMain>(BuildModeWidgetInstance))
+	{
+		BuildMenu->CycleSubMode(Dir);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] 카테고리 순환 무시 — BuildModeWidgetInstance가 UUI_BuildModeMain 아님/없음(BuildModeWidgetClass 확인)"));
+	}
+}
+
+void AOJJ_Player::CycleCategoryNext() { CycleBuildCategory(+1); }
+void AOJJ_Player::CycleCategoryPrev() { CycleBuildCategory(-1); }
 
 // 철거 모드 진입(X키). 호버 대상 빨강 하이라이트 + 좌클릭 제거.
 void AOJJ_Player::SetDemolishMode(const FInputActionValue& Value)
@@ -1508,7 +1719,7 @@ void AOJJ_Player::BuildRotate(const FInputActionValue& Value)
 		return;
 	}
 
-	const float RotateInput = Value.Get<float>() * -1;
+	const float RotateInput = Value.Get<float>();
 
 	if (BuildCamera)
 	{
@@ -1528,6 +1739,21 @@ void AOJJ_Player::BuildRotate(const FInputActionValue& Value)
 				RotateInput > 0.0f ? TEXT("RotateViewRight") : TEXT("RotateViewLeft"));
 		}
 	}
+}
+
+void AOJJ_Player::BuildAdjustHeight(const FInputActionValue& Value)
+{
+	// [공중 Foundation] Q/E 축 부호 → ±1층. 대상/모드 가드(TPS·Foundation·Flat)는 BuildController::AdjustBuildHeight가 담당.
+	if (!BuildController)
+	{
+		return;
+	}
+	const float Axis = Value.Get<float>();
+	if (FMath::IsNearlyZero(Axis))
+	{
+		return;
+	}
+	BuildController->AdjustBuildHeight(Axis > 0.0f ? 1 : -1);
 }
 
 void AOJJ_Player::BuildRotateMachine(const FInputActionValue& Value)
