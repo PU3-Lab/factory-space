@@ -502,4 +502,39 @@ private:
 
 	UPROPERTY(EditAnywhere, Category = "BuildController|Power|Preview", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float PowerLinePreviewOpacity = 0.6f;
+
+	// === [송전탑 전력 범위 표시] 호버 중 송전탑(PowerNode)을 들고 있을 때 SupplyRadius를 노란 전기
+	//     플라즈마 구로 표시. 차폐장 돔과 동일 패턴(Sphere 메시 + 스케일=반경/50), 머티리얼만 전기 플라즈마.
+	//     호버 중에만 표시(배치 후 사라짐), TPS/탑다운 공통. PowerGridNode/호버는 OJJ 영역이라 자유 구현. ===
+
+	// PowerNode 모드 호버 시 커서 위치에 구를 표시. 그 외 모드/트레이스 실패 시 HidePowerRangePreview.
+	void UpdatePowerRangePreview(const FVector& Center);
+	// 범위 구 숨김(비-PowerNode 모드/트레이스 미스/빌드 해제). 매 프레임 spawn/destroy 금지 — 컴포넌트 재사용.
+	void HidePowerRangePreview();
+	// 범위 구 컴포넌트 + 동적 머티리얼 멱등 보장(최초 1회 생성). 실패 시 메시만(머티리얼 null) 동작.
+	void EnsurePowerRangeSphere();
+
+	// 범위 구 메시(재사용 — 매 프레임 생성/파괴 금지).
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> PowerRangeSphere;
+
+	// 구에 입힐 동적 머티리얼(M_PowerRange_Plasma 기반, 런타임 생성). 색/투명도/치지직 파라미터.
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> PowerRangeMID;
+
+	// 범위 구 베이스 머티리얼(기본 M_PowerRange_Plasma, 생성자 로드 — 에디터 재지정 가능).
+	UPROPERTY(EditAnywhere, Category = "BuildController|Power|Range")
+	TObjectPtr<UMaterialInterface> PowerRangeMaterial;
+
+	// 범위 구 메시(기본 /Engine/BasicShapes/Sphere, 생성자 로드). 기본 반경 50uu → 스케일=SupplyRadius/50.
+	UPROPERTY(EditAnywhere, Category = "BuildController|Power|Range")
+	TObjectPtr<UStaticMesh> PowerRangeSphereMesh;
+
+	// 플라즈마 색(노랑/황금). MID의 PlasmaColor 파라미터로 주입.
+	UPROPERTY(EditAnywhere, Category = "BuildController|Power|Range")
+	FLinearColor PowerRangePlasmaColor = FLinearColor(1.0f, 0.78f, 0.12f);
+
+	// 구 반투명도(안 비칠 정도). MID의 Opacity 파라미터.
+	UPROPERTY(EditAnywhere, Category = "BuildController|Power|Range", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float PowerRangeOpacity = 0.4f;
 };
