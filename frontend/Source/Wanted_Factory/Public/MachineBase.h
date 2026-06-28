@@ -103,6 +103,10 @@ public:
 	FTimerHandle GetProcessTimer() const { return ProcessTimer; }
 	float GetProcessTime() const { return ProcessTime; }
 	FName GetMachineType() const { return MachineType; }
+	
+	UFUNCTION(BlueprintPure, Category = "Machine | Interact")
+	virtual bool CanPlayerInteract() const { return true; }
+
 	virtual void ApplyMachineData(const FMachineTableRow& MachineData);
 
 protected:

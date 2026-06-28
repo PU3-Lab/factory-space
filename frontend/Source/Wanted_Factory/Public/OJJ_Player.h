@@ -602,6 +602,9 @@ public:
 	UFUNCTION(Exec)
 	void TriggerPlanetEvent(const FString& EventName, float Severity = 1.0f, float DurationSeconds = -1.0f);
 
+	UFUNCTION(Exec)
+	void TimeSet(int32 TotalMinutes);
+
 protected:
 	void SetDemolishModeShortcut();
 	// [#184] C키 — 사다리 빌드 서브모드 진입(빌드모드 중에만, SetDemolishModeShortcut 패턴). 공용키 개편서 H로 이동.

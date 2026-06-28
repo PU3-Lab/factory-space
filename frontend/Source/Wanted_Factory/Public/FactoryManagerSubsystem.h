@@ -3,11 +3,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "MachineBase.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "FactoryManagerSubsystem.generated.h"
 
 class AConveyor;
-class AMachineBase;
 class APowerLine;
 class APowerGridNode;
 
@@ -87,6 +87,81 @@ struct FFactorySectorSnapshot
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Sector")
 	TArray<FName> EdgeIDs;
+};
+
+USTRUCT(BlueprintType)
+struct FFactoryPowerOverview
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	int32 InstalledGeneratorCount = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	int32 ActiveGeneratorCount = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	int32 RunningConsumerCount = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	float CurrentDemandPower = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	float CurrentAvailablePower = 0.0f;
+};
+
+USTRUCT(BlueprintType)
+struct FFactoryMachineProductionState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	FName MachineID = NAME_None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	FName MachineType = NAME_None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	FName SectorID = NAME_None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	EMachineState MachineState = EMachineState::Idle;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	FName PrimaryOutputItemID = NAME_None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	float PrimaryOutputPerSecond = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	FName SecondaryOutputItemID = NAME_None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	float SecondaryOutputPerSecond = 0.0f;
+};
+
+USTRUCT(BlueprintType)
+struct FFactoryItemProductionStat
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	FName ItemID = NAME_None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	int32 ProducingMachineCount = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	float ActualProductionPerSecond = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Manager|Dashboard")
+	float TheoreticalProductionPerSecond = 0.0f;
+};
+
+struct FFactoryObservedItemSample
+{
+	double TimestampSeconds = 0.0;
+	int32 Count = 0;
 };
 
 UCLASS()
@@ -184,6 +259,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Factory Manager|Power")
 	bool IsPowerLineEnergized(const APowerLine* PowerLine);
 
+	UFUNCTION(BlueprintPure, Category = "Factory Manager|Power")
+	bool IsPowerGridNodeEnergized(const APowerGridNode* PowerGridNode) const;
+
 	UFUNCTION(BlueprintPure, Category = "Factory Manager")
 	bool IsGraphDirty() const { return bGraphDirty; }
 
@@ -192,6 +270,18 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Factory Manager|Power")
 	float GetLastTotalDemandPower() const { return LastTotalDemandPower; }
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Manager|Dashboard")
+	FFactoryPowerOverview GetFactoryPowerOverview();
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Manager|Dashboard")
+	TArray<FFactoryMachineProductionState> GetMachineProductionStates();
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Manager|Dashboard")
+	TArray<FFactoryItemProductionStat> GetItemProductionStats();
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Manager|Dashboard")
+	void RecordObservedItemProduction(FName ItemID, int32 Count);
 
 private:
 	TArray<TWeakObjectPtr<AMachineBase>> RegisteredMachines;
@@ -203,11 +293,13 @@ private:
 	TMap<FName, FConnectionEdge> Connections;
 	TMap<FName, FPowerConnectionEdge> PowerConnections;
 	TMap<FName, FFactorySectorSnapshot> SectorSnapshots;
+	TMap<FName, TArray<FFactoryObservedItemSample>> ObservedItemSamples;
 	TMap<FName, FName> MachineToSector;
 	TSet<FName> DirtySectorIDs;
 	TSet<FName> RemovedSectorIDs;
 	bool bGraphDirty = true;
 	bool bPowerDirty = true;
+	float ObservedProductionWindowSeconds = 10.0f;
 
 	float LastTotalGeneratedPower = 0.0f;
 	float LastTotalDemandPower = 0.0f;
@@ -241,4 +333,7 @@ private:
 	bool IsMachineSuppliedByComponent(const AMachineBase* Machine, const TArray<APowerGridNode*>& ComponentNodes) const;
 	void SetMachinePowerIfChanged(AMachineBase* Machine, float NewPower) const;
 	FName MakeSectorID(const TArray<FName>& CellIDs) const;
+	bool BuildMachineProductionState(AMachineBase* Machine, FFactoryMachineProductionState& OutState);
+	void PruneObservedItemSamples(double CurrentTimeSeconds);
+	float CalculateObservedProductionRate(FName ItemID, double CurrentTimeSeconds);
 };
