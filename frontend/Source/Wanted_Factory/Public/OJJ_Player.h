@@ -170,6 +170,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> Camera;
 
+	// [#405 일부] TPS 빌드 1인칭 토글 상태. ArmLength 0 + GetMesh() OwnerNoSee 방식(머리 본 흔들림이
+	// 빌드 정밀 배치를 방해해 HeadSocket 부착에서 롤백). 진입 직전 ArmLength를 저장(줌 반영)해 복귀 시 복원.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+	bool bFirstPersonBuild = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+	float SavedBuildArmLength = 270.0f;
+
 	// 야간(18시~06시) 전방 시야 확보용 스포트라이트. 플레이어 앞에 붙어 밤에만 켠다.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Light")
 	TObjectPtr<USpotLightComponent> NightSpotLight;
@@ -629,6 +637,11 @@ protected:
 	void SetFoundationModeShortcut();
 	void SetRampFoundationModeShortcut();
 	void CancelPlacementShortcut();
+	// [#405 일부] C키 — TPS 빌드모드에서만 1인칭↔3인칭 토글(레거시 BindKey + IsInBuildMode·TPS 가드).
+	// 1인칭=SpringArm ArmLength 0 + GetMesh() OwnerNoSee(자기 뷰에서만 몸 숨김, 멀티 안전).
+	void ToggleBuildFPVShortcut();
+	// 1인칭 상태 강제 해제(3인칭 복귀 + 메시 복원). 모드 전환(ApplyBuildModeView) 시 호출 — 잔류 방지.
+	void ResetFirstPersonBuild();
 	// [카테고리 숫자키] 1~9,0 → 현재 카테고리(LDJ UI_BuildModeMain)의 N번 슬롯 실행. 0키=10번 슬롯(1-base).
 	// ExecuteHotbarSlot: IsInBuildMode 가드 + BuildModeWidgetInstance Cast(null이면 무동작+로그). 10개 thin BindKey 래퍼.
 	void ExecuteHotbarSlot(int32 SlotIndex);
