@@ -1865,6 +1865,7 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 
     AMachineBase* Machine = Cast<AMachineBase>(Hit.GetActor());
     if (!Machine) return;
+    if (!Machine->CanPlayerInteract()) return;
 
     // 1. 창고 포트 및 액체 탱크 레이아웃 개방 분기
     if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))

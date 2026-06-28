@@ -51,6 +51,7 @@ void AOJJ_DayNightController::BeginPlay()
 
 		const FPlanetEventState EventState = EventManager->GetEventState();
 		VisualEventType = EventState.Type;
+		VisualBlendEventType = EventState.Type;
 		VisualEventSeverity = EventState.Severity;
 		CurrentEventVisualAlpha = EventState.Type == EPlanetEventType::None ? 0.0f : EventState.Severity;
 	}
@@ -247,6 +248,7 @@ void AOJJ_DayNightController::ApplyStars(float SunPitch)
 void AOJJ_DayNightController::HandlePlanetEventStarted(EPlanetEventType EventType, float Severity)
 {
 	VisualEventType = EventType;
+	VisualBlendEventType = EventType;
 	VisualEventSeverity = FMath::Clamp(Severity, 0.0f, 1.0f);
 	SpawnEventNiagara(EventType);
 
@@ -285,7 +287,20 @@ void AOJJ_DayNightController::CacheBaseVisualState()
 void AOJJ_DayNightController::ApplyPlanetEventVisuals(float DeltaSeconds)
 {
 	const float TargetAlpha = VisualEventType == EPlanetEventType::None ? 0.0f : VisualEventSeverity;
-	CurrentEventVisualAlpha = FMath::FInterpTo(CurrentEventVisualAlpha, TargetAlpha, DeltaSeconds, EventVisualInterpSpeed);
+	const bool bBlendingIn = TargetAlpha > CurrentEventVisualAlpha;
+	const float BlendSeconds = bBlendingIn ? EventVisualBlendInSeconds : EventVisualBlendOutSeconds;
+	const float BlendRate = BlendSeconds > KINDA_SMALL_NUMBER ? (1.0f / BlendSeconds) : EventVisualInterpSpeed;
+	CurrentEventVisualAlpha = FMath::FInterpConstantTo(CurrentEventVisualAlpha, TargetAlpha, DeltaSeconds, BlendRate);
+
+	if (VisualEventType == EPlanetEventType::None && CurrentEventVisualAlpha <= KINDA_SMALL_NUMBER)
+	{
+		VisualBlendEventType = EPlanetEventType::None;
+	}
+
+	const float SmoothedVisualAlpha = FMath::InterpEaseInOut(0.0f, 1.0f, CurrentEventVisualAlpha, 2.0f);
+	const EPlanetEventType BlendEventType = VisualEventType != EPlanetEventType::None
+		? VisualEventType
+		: VisualBlendEventType;
 
 	FLinearColor TargetSunColor = BaseSunLightColor;
 	FLinearColor TargetFogColor = BaseFogInscatteringColor;
@@ -293,32 +308,32 @@ void AOJJ_DayNightController::ApplyPlanetEventVisuals(float DeltaSeconds)
 	float TargetSunIntensity = BaseSunIntensity;
 	FVector TargetCameraColorScale = FVector(1.0f, 1.0f, 1.0f);
 
-	if (VisualEventType == EPlanetEventType::MagneticStorm)
+	if (BlendEventType == EPlanetEventType::MagneticStorm)
 	{
-		TargetSunColor = FLinearColor::LerpUsingHSV(BaseSunLightColor, MagneticStormSunColor, CurrentEventVisualAlpha);
-		TargetFogColor = FLinearColor::LerpUsingHSV(BaseFogInscatteringColor, MagneticStormFogColor, CurrentEventVisualAlpha);
-		TargetFogDensity = BaseFogDensity + MagneticStormFogDensityBonus * CurrentEventVisualAlpha;
-		TargetSunIntensity = FMath::Lerp(BaseSunIntensity, BaseSunIntensity * MagneticStormSunIntensityScale, CurrentEventVisualAlpha);
-		TargetCameraColorScale = FMath::Lerp(FVector(1.0f, 1.0f, 1.0f), MagneticStormCameraColorScale, CurrentEventVisualAlpha);
+		TargetSunColor = FLinearColor::LerpUsingHSV(BaseSunLightColor, MagneticStormSunColor, SmoothedVisualAlpha);
+		TargetFogColor = FLinearColor::LerpUsingHSV(BaseFogInscatteringColor, MagneticStormFogColor, SmoothedVisualAlpha);
+		TargetFogDensity = BaseFogDensity + MagneticStormFogDensityBonus * SmoothedVisualAlpha;
+		TargetSunIntensity = FMath::Lerp(BaseSunIntensity, BaseSunIntensity * MagneticStormSunIntensityScale, SmoothedVisualAlpha);
+		TargetCameraColorScale = FMath::Lerp(FVector(1.0f, 1.0f, 1.0f), MagneticStormCameraColorScale, SmoothedVisualAlpha);
 	}
-	else if (VisualEventType == EPlanetEventType::SandStorm)
+	else if (BlendEventType == EPlanetEventType::SandStorm)
 	{
-		TargetSunColor = FLinearColor::LerpUsingHSV(BaseSunLightColor, SandStormSunColor, CurrentEventVisualAlpha);
-		TargetFogColor = FLinearColor::LerpUsingHSV(BaseFogInscatteringColor, SandStormFogColor, CurrentEventVisualAlpha);
-		TargetFogDensity = BaseFogDensity + SandStormFogDensityBonus * CurrentEventVisualAlpha;
-		TargetSunIntensity = FMath::Lerp(BaseSunIntensity, BaseSunIntensity * SandStormSunIntensityScale, CurrentEventVisualAlpha);
-		TargetCameraColorScale = FMath::Lerp(FVector(1.0f, 1.0f, 1.0f), SandStormCameraColorScale, CurrentEventVisualAlpha);
+		TargetSunColor = FLinearColor::LerpUsingHSV(BaseSunLightColor, SandStormSunColor, SmoothedVisualAlpha);
+		TargetFogColor = FLinearColor::LerpUsingHSV(BaseFogInscatteringColor, SandStormFogColor, SmoothedVisualAlpha);
+		TargetFogDensity = BaseFogDensity + SandStormFogDensityBonus * SmoothedVisualAlpha;
+		TargetSunIntensity = FMath::Lerp(BaseSunIntensity, BaseSunIntensity * SandStormSunIntensityScale, SmoothedVisualAlpha);
+		TargetCameraColorScale = FMath::Lerp(FVector(1.0f, 1.0f, 1.0f), SandStormCameraColorScale, SmoothedVisualAlpha);
 	}
 
 	if (MagneticStormPostProcessVolume)
 	{
 		MagneticStormPostProcessVolume->BlendWeight =
-			VisualEventType == EPlanetEventType::MagneticStorm ? CurrentEventVisualAlpha : 0.0f;
+			BlendEventType == EPlanetEventType::MagneticStorm ? SmoothedVisualAlpha : 0.0f;
 	}
 	if (SandStormPostProcessVolume)
 	{
 		SandStormPostProcessVolume->BlendWeight =
-			VisualEventType == EPlanetEventType::SandStorm ? CurrentEventVisualAlpha : 0.0f;
+			BlendEventType == EPlanetEventType::SandStorm ? SmoothedVisualAlpha : 0.0f;
 	}
 
 	if (SunLight)

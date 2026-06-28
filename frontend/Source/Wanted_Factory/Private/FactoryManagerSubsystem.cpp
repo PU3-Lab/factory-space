@@ -69,6 +69,7 @@ void UFactoryManagerSubsystem::Deinitialize()
 	Connections.Reset();
 	PowerConnections.Reset();
 	SectorSnapshots.Reset();
+	ObservedItemSamples.Reset();
 	MachineToSector.Reset();
 	DirtySectorIDs.Reset();
 	RemovedSectorIDs.Reset();
@@ -512,6 +513,136 @@ TArray<FConnectionEdge> UFactoryManagerSubsystem::GetConnectionEdges()
 	TArray<FConnectionEdge> Result;
 	Connections.GenerateValueArray(Result);
 	return Result;
+}
+
+FFactoryPowerOverview UFactoryManagerSubsystem::GetFactoryPowerOverview()
+{
+	EnsureCachedData();
+
+	FFactoryPowerOverview Overview;
+	for (const TWeakObjectPtr<AMachineBase>& WeakMachine : RegisteredMachines)
+	{
+		AMachineBase* Machine = WeakMachine.Get();
+		if (!Machine)
+		{
+			continue;
+		}
+
+		if (APowerPlant* PowerPlant = Cast<APowerPlant>(Machine))
+		{
+			++Overview.InstalledGeneratorCount;
+			if (PowerPlant->CanGeneratePower())
+			{
+				++Overview.ActiveGeneratorCount;
+				Overview.CurrentAvailablePower += PowerPlant->GetCurrentPowerOutput();
+			}
+			continue;
+		}
+
+		if (Machine->NeedsPower() && Machine->GetMachineState() == EMachineState::Working)
+		{
+			++Overview.RunningConsumerCount;
+			Overview.CurrentDemandPower += FMath::Max(0.0f, Machine->GetPowerConsumption());
+		}
+	}
+
+	return Overview;
+}
+
+TArray<FFactoryMachineProductionState> UFactoryManagerSubsystem::GetMachineProductionStates()
+{
+	EnsureCachedData();
+
+	TArray<FFactoryMachineProductionState> Result;
+	for (const TWeakObjectPtr<AMachineBase>& WeakMachine : RegisteredMachines)
+	{
+		if (FFactoryMachineProductionState State; BuildMachineProductionState(WeakMachine.Get(), State))
+		{
+			Result.Add(State);
+		}
+	}
+
+	Result.Sort([](const FFactoryMachineProductionState& Left, const FFactoryMachineProductionState& Right)
+	{
+		if (Left.SectorID != Right.SectorID)
+		{
+			return Left.SectorID.LexicalLess(Right.SectorID);
+		}
+
+		return Left.MachineID.LexicalLess(Right.MachineID);
+	});
+	return Result;
+}
+
+TArray<FFactoryItemProductionStat> UFactoryManagerSubsystem::GetItemProductionStats()
+{
+	EnsureCachedData();
+
+	const UWorld* World = GetWorld();
+	const double CurrentTimeSeconds = World ? World->GetTimeSeconds() : 0.0;
+	PruneObservedItemSamples(CurrentTimeSeconds);
+
+	TMap<FName, FFactoryItemProductionStat> StatsByItem;
+	for (const TWeakObjectPtr<AMachineBase>& WeakMachine : RegisteredMachines)
+	{
+		FFactoryMachineProductionState MachineState;
+		if (!BuildMachineProductionState(WeakMachine.Get(), MachineState))
+		{
+			continue;
+		}
+
+		auto AccumulateOutput = [&StatsByItem](FName ItemID, float RatePerSecond)
+		{
+			if (ItemID.IsNone() || RatePerSecond <= 0.0f)
+			{
+				return;
+			}
+
+			FFactoryItemProductionStat& Stat = StatsByItem.FindOrAdd(ItemID);
+			Stat.ItemID = ItemID;
+			++Stat.ProducingMachineCount;
+			Stat.TheoreticalProductionPerSecond += RatePerSecond;
+		};
+
+		AccumulateOutput(MachineState.PrimaryOutputItemID, MachineState.PrimaryOutputPerSecond);
+		AccumulateOutput(MachineState.SecondaryOutputItemID, MachineState.SecondaryOutputPerSecond);
+	}
+
+	for (const TPair<FName, TArray<FFactoryObservedItemSample>>& Pair : ObservedItemSamples)
+	{
+		FFactoryItemProductionStat& Stat = StatsByItem.FindOrAdd(Pair.Key);
+		Stat.ItemID = Pair.Key;
+	}
+
+	TArray<FFactoryItemProductionStat> Result;
+	StatsByItem.GenerateValueArray(Result);
+	for (FFactoryItemProductionStat& Stat : Result)
+	{
+		Stat.ActualProductionPerSecond = CalculateObservedProductionRate(Stat.ItemID, CurrentTimeSeconds);
+	}
+	Result.Sort([](const FFactoryItemProductionStat& Left, const FFactoryItemProductionStat& Right)
+	{
+		return Left.ItemID.LexicalLess(Right.ItemID);
+	});
+	return Result;
+}
+
+void UFactoryManagerSubsystem::RecordObservedItemProduction(FName ItemID, int32 Count)
+{
+	if (ItemID.IsNone() || Count <= 0)
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	const double CurrentTimeSeconds = World ? World->GetTimeSeconds() : 0.0;
+
+	PruneObservedItemSamples(CurrentTimeSeconds);
+
+	FFactoryObservedItemSample Sample;
+	Sample.TimestampSeconds = CurrentTimeSeconds;
+	Sample.Count = Count;
+	ObservedItemSamples.FindOrAdd(ItemID).Add(Sample);
 }
 
 TArray<FFactorySectorSnapshot> UFactoryManagerSubsystem::GetSectorSnapshots()
@@ -1120,4 +1251,93 @@ void UFactoryManagerSubsystem::SetMachinePowerIfChanged(AMachineBase* Machine, f
 	}
 
 	Machine->SetProvidedPower(NewPower);
+}
+
+bool UFactoryManagerSubsystem::BuildMachineProductionState(
+	AMachineBase* Machine,
+	FFactoryMachineProductionState& OutState)
+{
+	if (!Machine || Machine->GetMachineState() != EMachineState::Working)
+	{
+		return false;
+	}
+
+	const FRecipeTable& Recipe = Machine->GetCurrentRecipe();
+	if (Recipe.OutputItem1.IsNone() && Recipe.OutputItem2.IsNone())
+	{
+		return false;
+	}
+
+	const float EffectiveProcessTime = Machine->GetEffectiveProcessTime(
+		FMath::Max(0.01f, Recipe.CraftingTime));
+	if (EffectiveProcessTime <= 0.0f)
+	{
+		return false;
+	}
+
+	OutState.MachineID = MakeMachineID(Machine);
+	OutState.MachineType = Machine->GetMachineType();
+	OutState.SectorID = MachineToSector.FindRef(OutState.MachineID);
+	OutState.MachineState = Machine->GetMachineState();
+	OutState.PrimaryOutputItemID = Recipe.OutputItem1;
+	OutState.PrimaryOutputPerSecond = Recipe.OutputItem1.IsNone()
+		? 0.0f
+		: static_cast<float>(Recipe.OutputQty1) / EffectiveProcessTime;
+	OutState.SecondaryOutputItemID = Recipe.OutputItem2;
+	OutState.SecondaryOutputPerSecond = Recipe.OutputItem2.IsNone()
+		? 0.0f
+		: static_cast<float>(Recipe.OutputQty2) / EffectiveProcessTime;
+	return true;
+}
+
+void UFactoryManagerSubsystem::PruneObservedItemSamples(double CurrentTimeSeconds)
+{
+	const double CutoffTimeSeconds = CurrentTimeSeconds - FMath::Max(0.1, static_cast<double>(ObservedProductionWindowSeconds));
+	TArray<FName> EmptyItemIDs;
+
+	for (TPair<FName, TArray<FFactoryObservedItemSample>>& Pair : ObservedItemSamples)
+	{
+		Pair.Value.RemoveAll([CutoffTimeSeconds](const FFactoryObservedItemSample& Sample)
+		{
+			return Sample.TimestampSeconds < CutoffTimeSeconds;
+		});
+
+		if (Pair.Value.Num() == 0)
+		{
+			EmptyItemIDs.Add(Pair.Key);
+		}
+	}
+
+	for (const FName& ItemID : EmptyItemIDs)
+	{
+		ObservedItemSamples.Remove(ItemID);
+	}
+}
+
+float UFactoryManagerSubsystem::CalculateObservedProductionRate(FName ItemID, double CurrentTimeSeconds)
+{
+	if (ItemID.IsNone())
+	{
+		return 0.0f;
+	}
+
+	const TArray<FFactoryObservedItemSample>* Samples = ObservedItemSamples.Find(ItemID);
+	if (!Samples || Samples->Num() == 0)
+	{
+		return 0.0f;
+	}
+
+	const double WindowSeconds = FMath::Max(0.1, static_cast<double>(ObservedProductionWindowSeconds));
+	const double CutoffTimeSeconds = CurrentTimeSeconds - WindowSeconds;
+	int32 TotalCount = 0;
+
+	for (const FFactoryObservedItemSample& Sample : *Samples)
+	{
+		if (Sample.TimestampSeconds >= CutoffTimeSeconds)
+		{
+			TotalCount += Sample.Count;
+		}
+	}
+
+	return static_cast<float>(TotalCount / WindowSeconds);
 }

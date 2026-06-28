@@ -17,6 +17,7 @@ public:
 	virtual void ApplyMachineData(const FMachineTableRow& MachineData) override;
 	virtual bool AddItem(FName ItemID, int32 Count) override;
 	virtual bool CanReceiveConveyorItem(FName ItemID, int32 Count = 1) const override;
+	virtual bool CanPlayerInteract() const override { return false; }
 
 	UFUNCTION(BlueprintPure, Category = "Machine | Power Grid")
 	float GetConnectionRadius() const { return ConnectionRadius; }
