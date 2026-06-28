@@ -212,6 +212,19 @@ AOJJ_BuildController::AOJJ_BuildController()
 	{
 		PowerLinePreviewMaterial = PreviewGhostMat.Object;
 	}
+
+	// [송전탑 범위] Sphere 메시 + 전기 플라즈마 머티리얼 기본 로드(에디터 재지정 가능).
+	// M_PowerRange_Plasma는 별도 스크립트로 생성 — 미존재 시 머티리얼 null(메시 기본 머티리얼로 동작).
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> RangeSphere(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	if (RangeSphere.Succeeded())
+	{
+		PowerRangeSphereMesh = RangeSphere.Object;
+	}
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> RangePlasmaMat(TEXT("/Game/OJJ/Materials/M_PowerRange_Plasma.M_PowerRange_Plasma"));
+	if (RangePlasmaMat.Succeeded())
+	{
+		PowerRangeMaterial = RangePlasmaMat.Object;
+	}
 }
 
 void AOJJ_BuildController::Tick(float DeltaSeconds)
@@ -398,6 +411,8 @@ void AOJJ_BuildController::ExitBuildMode()
 	// ?몃쾭 Tick ?뺤? (鍮뚮뱶紐⑤뱶 諛?0鍮꾩슜)
 	// [#5] 빌드 해제 시 전선 미리보기 소등(Tick 중단 후엔 갱신이 안 돌아 잔상 방지 — 명시적 숨김 필요).
 	HidePowerLinePreview();
+	// [송전탑 범위] 빌드 해제 시 범위 구도 소등(동일 이유 — Tick 중단 후 잔상 방지).
+	HidePowerRangePreview();
 
 	SetActorTickEnabled(false);
 
@@ -697,6 +712,12 @@ void AOJJ_BuildController::UpdateMouseHover()
 		return;
 	}
 
+	// [송전탑 범위] PowerNode 모드가 아니면 범위 구를 항상 숨김(아래 모든 early-return 경로를 한 번에 커버).
+	if (PlacementMode != EOJJ_BuildPlacementMode::PowerNode)
+	{
+		HidePowerRangePreview();
+	}
+
 	// [怨듭슜??Z] None = ?ㅺ퀬 ?덈뒗 placement ?놁쓬. 怨좎뒪??ISM/?붿궡?쒕쭔 ?대━?댄븯怨?臾대룞??鍮뚮뱶紐⑤뱶 ?좎?).
 	if (PlacementMode == EOJJ_BuildPlacementMode::None)
 	{
@@ -728,12 +749,20 @@ void AOJJ_BuildController::UpdateMouseHover()
 		CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
 		// [#5] 트레이스 미스(커서가 허공) 시에도 전선 미리보기 잔상 제거.
 		HidePowerLinePreview();
+		// [송전탑 범위] PowerNode 모드 트레이스 실패 시 범위 구도 숨김(멱등 — 타 모드는 위에서 이미 숨김).
+		HidePowerRangePreview();
 		return;
 	}
 
 	const FIntPoint CursorCell = ResolveCursorCellOverWater(Hit.Location); // #182 臾????⑤윺?숈뒪 蹂댁젙(?몃쾭=?대┃ ?숈씪 ?)
 
 	// Conveyor/Pipe 紐⑤뱶: ?쒕옒洹??⑥씪 ? 誘몃━蹂닿린濡?遺꾧린 (癒몄떊 寃쎈줈? ?낅┰ ???뚯씠?꾨뒗 ?꾨━酉곕쭔 遺꾧린).
+	// [송전탑 범위] PowerNode 모드: 커서 위치(송전탑 놓일 자리)에 SupplyRadius 전기 플라즈마 구 표시.
+	if (PlacementMode == EOJJ_BuildPlacementMode::PowerNode)
+	{
+		UpdatePowerRangePreview(Hit.Location);
+	}
+
 	if (PlacementMode == EOJJ_BuildPlacementMode::Conveyor
 		|| PlacementMode == EOJJ_BuildPlacementMode::Pipe)
 	{
@@ -2468,6 +2497,72 @@ void AOJJ_BuildController::HidePowerLinePreview()
 		{
 			Segment->SetVisibility(false);
 		}
+	}
+}
+
+void AOJJ_BuildController::EnsurePowerRangeSphere()
+{
+	if (PowerRangeSphere)
+	{
+		return;
+	}
+
+	PowerRangeSphere = NewObject<UStaticMeshComponent>(this);
+	if (!PowerRangeSphere)
+	{
+		return;
+	}
+	PowerRangeSphere->SetMobility(EComponentMobility::Movable);
+	if (PowerRangeSphereMesh)
+	{
+		PowerRangeSphere->SetStaticMesh(PowerRangeSphereMesh);
+	}
+	PowerRangeSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	PowerRangeSphere->SetCastShadow(false);
+	PowerRangeSphere->RegisterComponent();
+	PowerRangeSphere->SetVisibility(false);
+
+	// 전기 플라즈마 동적 머티리얼(베이스 미존재 시 메시 기본 머티리얼로 표시 — 가드).
+	if (PowerRangeMaterial)
+	{
+		PowerRangeMID = UMaterialInstanceDynamic::Create(PowerRangeMaterial, this);
+		if (PowerRangeMID)
+		{
+			PowerRangeMID->SetFlags(RF_Transient);
+			PowerRangeSphere->SetMaterial(0, PowerRangeMID);
+		}
+	}
+}
+
+void AOJJ_BuildController::UpdatePowerRangePreview(const FVector& Center)
+{
+	EnsurePowerRangeSphere();
+	if (!PowerRangeSphere)
+	{
+		return;
+	}
+
+	// 송전탑(PowerGridNode) CDO의 공급 반경 — 구 기본 반경 50uu이므로 스케일=반경/50(차폐장 돔과 동일 공식).
+	const APowerGridNode* NodeCDO = Cast<APowerGridNode>(PowerGridNodeClass ? PowerGridNodeClass->GetDefaultObject() : nullptr);
+	const float Radius = NodeCDO ? NodeCDO->GetSupplyRadius() : 700.0f;
+	const float Scale = (Radius > 0.0f ? Radius : 700.0f) / 50.0f;
+
+	PowerRangeSphere->SetWorldLocation(Center);
+	PowerRangeSphere->SetWorldScale3D(FVector(Scale));
+	PowerRangeSphere->SetVisibility(true);
+
+	if (PowerRangeMID)
+	{
+		PowerRangeMID->SetVectorParameterValue(TEXT("PlasmaColor"), PowerRangePlasmaColor);
+		PowerRangeMID->SetScalarParameterValue(TEXT("Opacity"), PowerRangeOpacity);
+	}
+}
+
+void AOJJ_BuildController::HidePowerRangePreview()
+{
+	if (PowerRangeSphere && PowerRangeSphere->IsVisible())
+	{
+		PowerRangeSphere->SetVisibility(false);
 	}
 }
 
