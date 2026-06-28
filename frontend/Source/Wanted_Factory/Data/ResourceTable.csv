@@ -56,6 +56,12 @@ hydrogen,gas,hydrogen,,,수소,"(R=0.88,G=0.97,B=1.0,A=0.25)",/Game/Assets/UIImg
 nitrogen,gas,nitrogen,,,질소,"(R=0.40,G=0.62,B=0.95,A=0.35)",/Game/Assets/UIImg/Resource/nitorgen.nitorgen,
 helium,gas,helium,,,헬륨,"(R=0.95,G=0.73,B=0.88,A=0.30)",/Game/Assets/UIImg/Resource/helium.helium,
 iron_bar,solid,iron,metal,bar,철근,"(R=0.46,G=0.48,B=0.52,A=1.0)",/Game/Assets/UIImg/Resource/rebar.rebar,/Game/Assets/Resource/Bar/SM_Bar.SM_Bar
+iron_wire,solid,iron,metal,wire,철선,"(R=0.60,G=0.62,B=0.66,A=1.0)",/Game/Assets/UIImg/Resource/copperwire.copperwire,/Game/Assets/Resource/Wire/SM_wire.SM_wire
+iron_plate,solid,iron,metal,plate,철판,"(R=0.60,G=0.63,B=0.68,A=1.0)",/Game/Assets/UIImg/Resource/tinboard.tinboard,/Game/Assets/Resource/Plate/SM_plate.SM_plate
+copper_bar,solid,copper,metal,bar,구리봉,"(R=0.84,G=0.49,B=0.22,A=1.0)",/Game/Assets/UIImg/Resource/rebar.rebar,/Game/Assets/Resource/Bar/SM_Bar.SM_Bar
 copper_wire,solid,copper,metal,wire,구리선,"(R=0.87,G=0.50,B=0.22,A=1.0)",/Game/Assets/UIImg/Resource/copperwire.copperwire,/Game/Assets/Resource/Wire/SM_wire.SM_wire
+copper_plate,solid,copper,metal,plate,구리판,"(R=0.86,G=0.52,B=0.24,A=1.0)",/Game/Assets/UIImg/Resource/tinboard.tinboard,/Game/Assets/Resource/Plate/SM_plate.SM_plate
+tin_bar,solid,tin,metal,bar,주석봉,"(R=0.72,G=0.75,B=0.80,A=1.0)",/Game/Assets/UIImg/Resource/rebar.rebar,/Game/Assets/Resource/Bar/SM_Bar.SM_Bar
+tin_wire,solid,tin,metal,wire,주석선,"(R=0.75,G=0.78,B=0.83,A=1.0)",/Game/Assets/UIImg/Resource/copperwire.copperwire,/Game/Assets/Resource/Wire/SM_wire.SM_wire
 tin_plate,solid,tin,metal,plate,주석판,"(R=0.75,G=0.79,B=0.84,A=1.0)",/Game/Assets/UIImg/Resource/tinboard.tinboard,/Game/Assets/Resource/Plate/SM_plate.SM_plate
 TeleCommunicationTower,solid,telecommunication,machine,,통신탑,"(R=0.55,G=0.82,B=1.0,A=1.0)",/Game/Assets/UIImg/etc/telecommunicationtower.telecommunicationtower,/Game/Assets/Machine/TeleCommunication_Tower/SM_TeleCommunication_Tower.SM_TeleCommunication_Tower
