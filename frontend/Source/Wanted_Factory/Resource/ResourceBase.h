@@ -9,6 +9,7 @@
 #include "ResourceBase.generated.h"
 
 class AMachineBase;
+class UWidgetComponent;
 
 UCLASS()
 class WANTED_FACTORY_API AResourceBase : public AActor
@@ -29,6 +30,16 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	UStaticMeshComponent* Mesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Resource|Nameplate")
+	UWidgetComponent* NameplateWidget;
+
+	// 액터 전체 bounds 상단을 기준으로 더할 이름표 위치. 광맥 BP/인스턴스 Details에서 조절 가능.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Resource|Nameplate")
+	FVector NameplateOffset = FVector(0.0f, 0.0f, 300.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Resource|Nameplate", meta = (ClampMin = "1.0"))
+	float NameplateWorldSize = 40.0f;
 
 	// 레거시 호환용. 실제 런타임 조회는 ResourceID + 기본 리소스 테이블을 사용한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Resource")
@@ -68,6 +79,10 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category="Resource")
 	bool GetResourceData(FResourceData& OutResourceData) const;
+
+	void SetNameplateVisible(bool bVisible, const FVector& ViewerLocation);
+
+	bool IsOreResource() const;
 	
 	UFUNCTION(BlueprintCallable)
 	FName GetResourceRowName() const;
