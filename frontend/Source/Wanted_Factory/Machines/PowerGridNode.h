@@ -51,7 +51,7 @@ protected:
 	int32 NightLightEndHour24 = 6;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Power Grid|Light")
-	FVector NightIndicatorLightOffset = FVector(0.0f, 0.0f, 420.0f);
+	FVector NightIndicatorLightOffset = FVector(0.0f, 0.0f, 650.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Power Grid|Light", meta = (ClampMin = "0.0"))
 	float NightIndicatorLightIntensity = 2200.0f;
@@ -60,7 +60,7 @@ protected:
 	float NightIndicatorLightRadius = 900.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Power Grid|Light")
-	FLinearColor NightIndicatorLightColor = FLinearColor(1.0f, 0.72f, 0.18f, 1.0f);
+	FLinearColor NightIndicatorLightColor = FLinearColor::White;
 
 private:
 	void UpdateNightIndicatorLight();

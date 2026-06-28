@@ -24,7 +24,7 @@ APowerGridNode::APowerGridNode()
 	NightIndicatorLight->SetLightColor(NightIndicatorLightColor);
 	NightIndicatorLight->SetIntensity(NightIndicatorLightIntensity);
 	NightIndicatorLight->SetAttenuationRadius(NightIndicatorLightRadius);
-	NightIndicatorLight->SetCastShadows(false);
+	NightIndicatorLight->SetCastShadows(true);
 	NightIndicatorLight->SetVisibility(false);
 }
 
