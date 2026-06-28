@@ -4,19 +4,16 @@
 #include "Blueprint/UserWidget.h"
 #include "UI_BaseCampInteract.generated.h"
 
-class UButton;
-class UWidgetSwitcher;
 class AMachineBase;
 
-// ── 중앙 거점 서브 화면 분류 상태 구조 정의 ──
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBaseCampInteractClosedSignature);
+
 UENUM(BlueprintType)
 enum class EBaseCampSubMode : uint8
 {
-	FactoryStatus, // 공장 상태 레이아웃
-	LevelUpgrade   // 기계 레벨 업그레이드 레이아웃
+	FactoryStatus,
+	LevelUpgrade
 };
-
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBaseCampClosedSignature);
 
 UCLASS()
 class WANTED_FACTORY_API UUI_BaseCampInteract : public UUserWidget
@@ -24,30 +21,40 @@ class WANTED_FACTORY_API UUI_BaseCampInteract : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	// 타겟 중앙거점 머신 주입 통로
-	void SetTargetMachine(AMachineBase* InMachine);
-	void RefreshAllUpgradeNodes();
 	
-	UPROPERTY(BlueprintAssignable, Category = "BaseCamp | UI")
-	FBaseCampClosedSignature OnClosed;
+	UPROPERTY(BlueprintAssignable, Category = "BaseCamp UI")
+	FBaseCampInteractClosedSignature OnClosed;
+
+	UFUNCTION(BlueprintCallable, Category = "BaseCamp UI")
+	void SetTargetMachine(AMachineBase* InMachine);
+
+	UFUNCTION(BlueprintCallable, Category = "BaseCamp UI")
+	void RefreshFactoryStatus();
+
+	void RefreshAllUpgradeNodes();
 
 protected:
 	virtual void NativeConstruct() override;
-	virtual void NativeDestruct() override;
+	virtual void NativeDestruct() override; // 🌟 창이 소멸될 때 플레이어에게 신호를 쏠 구역
 
-	// ── [우측 고정 카테고리 메뉴 버튼 바인딩] ──
-	UPROPERTY(meta = (BindWidget)) UButton* BTN_Tab_FactoryStatus;
-	UPROPERTY(meta = (BindWidget)) UButton* BTN_Tab_LevelUpgrade;
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Tab_FactoryStatus;
+	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Tab_LevelUpgrade;
+	UPROPERTY(meta = (BindWidget)) class UWidgetSwitcher* WS_SubPaneSwitcher;
 
-	// ── [좌측 메인 화면 제어 스위처 바인딩] ──
-	UPROPERTY(meta = (BindWidget)) UWidgetSwitcher* WS_SubPaneSwitcher;
+	UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_PowerStatus;
+	UPROPERTY(meta = (BindWidget)) class UScrollBox* SB_ResourceList;
 
-private:
-	UPROPERTY() AMachineBase* TargetBaseCamp;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseCamp UI|Config")
+	TSubclassOf<class UUI_FactoryStatusRow> FactoryStatusRowClass;
 
-	// 카테고리 탭 전환 함수
-	void SwitchSubPaneMode(EBaseCampSubMode NewMode);
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseCamp UI|Config")
+	class UDataTable* ResourceDataTable;
 
 	UFUNCTION() void OnStatusTabClicked();
 	UFUNCTION() void OnUpgradeTabClicked();
+	void SwitchSubPaneMode(EBaseCampSubMode NewMode);
+
+private:
+	UPROPERTY()
+	AMachineBase* TargetBaseCamp;
 };
