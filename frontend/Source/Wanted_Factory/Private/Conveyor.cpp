@@ -127,6 +127,19 @@ bool IsBuildModeActive(const AActor* WorldContextActor)
 		Cast<AOJJ_BuildController>(UGameplayStatics::GetActorOfClass(World, AOJJ_BuildController::StaticClass()));
 	return BuildController && BuildController->IsInBuildMode();
 }
+
+bool ShouldUseVisualColorTint(const FResourceData* ResourceData)
+{
+	if (!ResourceData)
+	{
+		return false;
+	}
+
+	return ResourceData->shape == EResourceShape::Powder
+		|| ResourceData->shape == EResourceShape::bar
+		|| ResourceData->shape == EResourceShape::wire
+		|| ResourceData->shape == EResourceShape::plate;
+}
 }
 
 AConveyor::AConveyor()
@@ -1036,6 +1049,7 @@ UStaticMeshComponent* AConveyor::CreateVisualComponentForItem(int32 VisualId, FN
 
 	const FResourceData* ResourceData = FindResourceData(ItemId);
 	const bool bUsePowderVisual = ResourceData && ResourceData->shape == EResourceShape::Powder;
+	const bool bUseVisualColorTint = ShouldUseVisualColorTint(ResourceData);
 	UStaticMesh* ItemMesh = bUsePowderVisual ? PowderVisualMesh.Get() : ResolveItemStaticMesh(ItemId);
 	UStaticMesh* FallbackMesh = ItemVisualInstances ? ItemVisualInstances->GetStaticMesh() : nullptr;
 	UStaticMesh* MeshToUse = ItemMesh ? ItemMesh : FallbackMesh;
@@ -1059,22 +1073,27 @@ UStaticMeshComponent* AConveyor::CreateVisualComponentForItem(int32 VisualId, FN
 	NewComponent->SetVisibleInRayTracing(false);
 	NewComponent->SetStaticMesh(MeshToUse);
 	NewComponent->SetCanEverAffectNavigation(false);
-	if (bUsePowderVisual)
+	if (bUseVisualColorTint)
 	{
-		UMaterialInterface* BaseMaterial = PowderVisualMaterialBase
-			? PowderVisualMaterialBase.Get()
-			: UMaterial::GetDefaultMaterial(MD_Surface);
-		if (UMaterialInstanceDynamic* MaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this))
+		const FLinearColor ItemColor = ResourceData ? ResourceData->VisualColor : FLinearColor::White;
+		const int32 MaterialCount = FMath::Max(1, MeshToUse->GetStaticMaterials().Num());
+		for (int32 MaterialIndex = 0; MaterialIndex < MaterialCount; ++MaterialIndex)
 		{
-			MaterialInstance->SetFlags(RF_Transient);
-			const FLinearColor PowderColor = ResourceData ? ResourceData->VisualColor : FLinearColor::White;
-			MaterialInstance->SetVectorParameterValue(TEXT("Color"), PowderColor);
-			MaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), PowderColor);
-			MaterialInstance->SetVectorParameterValue(TEXT("Tint"), PowderColor);
-			MaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor::Black);
-			MaterialInstance->SetScalarParameterValue(TEXT("Opacity"), PowderColor.A);
-			MaterialInstance->SetScalarParameterValue(TEXT("Alpha"), PowderColor.A);
-			NewComponent->SetMaterial(0, MaterialInstance);
+			UMaterialInterface* BaseMaterial = PowderVisualMaterialBase
+				? PowderVisualMaterialBase.Get()
+				: UMaterial::GetDefaultMaterial(MD_Surface);
+
+			if (UMaterialInstanceDynamic* MaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this))
+			{
+				MaterialInstance->SetFlags(RF_Transient);
+				MaterialInstance->SetVectorParameterValue(TEXT("Color"), ItemColor);
+				MaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), ItemColor);
+				MaterialInstance->SetVectorParameterValue(TEXT("Tint"), ItemColor);
+				MaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), FLinearColor::Black);
+				MaterialInstance->SetScalarParameterValue(TEXT("Opacity"), ItemColor.A);
+				MaterialInstance->SetScalarParameterValue(TEXT("Alpha"), ItemColor.A);
+				NewComponent->SetMaterial(MaterialIndex, MaterialInstance);
+			}
 		}
 	}
 	else

@@ -12,6 +12,7 @@
 #include "Machines/EscapePod.h"
 #include "Machines/LiquidTank.h"
 #include "Machines/MachineSubsystem.h"
+#include "Machines/MoldingMachine.h"
 #include "Machines/PowerLine.h"
 #include "Machines/WarehousePort.h"
 #include "Misc/CoreDelegates.h"
@@ -297,6 +298,10 @@ bool UFactorySaveSubsystem::SaveCurrentGame()
 		{
 			SavedMachine.SelectedOutputItemId =
 				ResolveSavedLiquidTankOutput(LiquidTank->GetSelectedOutputLiquid(), SavedMachine.OutputBuffer);
+		}
+		else if (const AMoldingMachine* MoldingMachine = Cast<AMoldingMachine>(Machine))
+		{
+			SavedMachine.MoldingShape = MoldingMachine->GetMoldingShape();
 		}
 		SaveGame->Machines.Add(SavedMachine);
 		MachineIds.Add(Machine, SavedMachine.InstanceId);
@@ -585,6 +590,12 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 
 				if (bPlaced)
 				{
+					if (AMoldingMachine* MoldingMachine = Cast<AMoldingMachine>(Machine))
+					{
+						MoldingMachine->SetMoldingShape(
+							SavedMachine.MoldingShape.IsEmpty() ? TEXT("판") : SavedMachine.MoldingShape);
+					}
+
 					Machine->ApplySaveState(
 						SavedMachine.InputInventory,
 						SavedMachine.OutputBuffer,

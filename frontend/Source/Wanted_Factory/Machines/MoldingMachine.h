@@ -17,6 +17,7 @@ public:
 
 	virtual void ApplyMachineData(const FMachineTableRow& MachineData) override;
 	virtual bool AddItem(FName ItemID, int32 Count) override;
+	virtual void TryStartProcess() override;
 	virtual void AddOutputItem(FName ItemID, int32 Count) override;
 	virtual bool CanAddToOutputBuffer(const FRecipeTable& Recipe) const override;
 	virtual bool CanReceiveConveyorItem(FName ItemID, int32 Count = 1) const override;
@@ -24,6 +25,8 @@ public:
 	FString GetMoldingShape() const { return CurrentShape; }
 	
 protected:
+	bool DoesRecipeMatchCurrentShape(const FRecipeTable& Recipe) const;
+
 	// ---UI----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State")
 	FString CurrentShape = TEXT("판");

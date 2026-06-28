@@ -42,6 +42,9 @@ struct FFactorySavedMachineData
 
 	UPROPERTY()
 	FName SelectedOutputItemId = NAME_None;
+
+	UPROPERTY()
+	FString MoldingShape;
 };
 
 USTRUCT(BlueprintType)
