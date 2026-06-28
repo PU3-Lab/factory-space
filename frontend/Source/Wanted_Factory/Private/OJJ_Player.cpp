@@ -512,6 +512,9 @@ void AOJJ_Player::OJJ_DebugSetCharacter(int32 CharacterIndex)
 
 void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	// [#405] 1인칭 빌드 중 폰 파괴/언포제스 시 메시 숨김(OwnerNoSee) 잔류 방지(동일 폰 재사용 대비).
+	ResetFirstPersonBuild();
+
 	// 폰 파괴/언포제스 시 열려 있던 머신 상호작용 위젯·입력모드 정리.
 	// ⚠️ EndPlay 시점엔 PlayerController가 이미 무효일 수 있다 — Cast가 null을 반환하면
 	//    CloseMachineInteractWidget의 PC null-가드가 입력모드 복원을 스킵하고 위젯 제거만 수행한다
@@ -681,6 +684,7 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AOJJ_Player::SetRampFoundationModeShortcut); // 경사면
 	PlayerInputComponent->BindKey(EKeys::H, IE_Pressed, this, &AOJJ_Player::SetLadderModeShortcut);         // 사다리(기존 C에서 이동)
 	PlayerInputComponent->BindKey(EKeys::Z, IE_Pressed, this, &AOJJ_Player::CancelPlacementShortcut);       // 마우스 초기화(취소)
+	PlayerInputComponent->BindKey(EKeys::C, IE_Pressed, this, &AOJJ_Player::ToggleBuildFPVShortcut);        // [#405] TPS 빌드 1인칭 토글(TPS 가드)
 
 	// [카테고리 숫자키] 1~9,0 → 현재 카테고리(LDJ UI_BuildModeMain)의 N번 슬롯 실행. 0키=10번 슬롯.
 	// 참고: 옛 직행 IA BindAction(IA_SetMachineMode 등)은 C++에서 폐기됨 → 에디터에 남은 IMC_Build 매핑은
@@ -1255,6 +1259,13 @@ void AOJJ_Player::Zoom(const FInputActionValue& Value)
 		return;
 	}
 
+	// [#405] 1인칭 빌드(ArmLength 0) 중에는 줌이 SpringArm을 3인칭 범위로 밀어 카메라만 빠져나가고
+	// 메시 숨김(OwnerNoSee)이 남는 잔류가 생긴다 — 1인칭 동안 줌 입력 무시.
+	if (bFirstPersonBuild)
+	{
+		return;
+	}
+
 	// TPS: 스크롤 업(+) → 줌인(팔 길이 감소)
 	const float NewLength = SpringArm->TargetArmLength - Scroll * ZoomStep;
 	SpringArm->TargetArmLength = FMath::Clamp(NewLength, MinArmLength, MaxArmLength);
@@ -1386,6 +1397,10 @@ void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
 {
     // 카메라 뷰타겟 블렌드 + 플레이어 가시성 + 입력 컨텍스트를 모드별로 전환.
     // None=해제, TopDown=빌드캠+숨김+IMC_Build, TPS=플레이어캠+보임+IMC_BuildTPS.
+    // [#405] 모드가 바뀌면 1인칭 빌드 상태를 먼저 해제(3인칭 복귀 + 메시 복원) — 1인칭 잔류 방지.
+    //   TPS로 재진입해도 3인칭으로 시작하고, 1인칭은 C키로 다시 켠다(잔류 위험 0).
+    ResetFirstPersonBuild();
+
     APlayerController* PC = Cast<APlayerController>(GetController());
 
     if (NewMode != EBuildViewMode::None)
@@ -1723,6 +1738,65 @@ void AOJJ_Player::CancelPlacementShortcut()
 		return;
 	}
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::None);
+}
+
+// [#405 일부, 공용키 C] TPS 빌드모드에서만 1인칭↔3인칭 토글. 레거시 BindKey라 IMC 게이팅 없음 →
+// IsInBuildMode + TPS 가드 필수(탑다운/비빌드/None에서 C는 무동작).
+void AOJJ_Player::ToggleBuildFPVShortcut()
+{
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+	// TPS 빌드 카메라(= 플레이어 SpringArm)에서만 의미가 있다. 탑다운은 별도 BuildCamera라 무관.
+	if (BuildController->GetBuildViewMode() != EBuildViewMode::TPS)
+	{
+		return;
+	}
+	if (!SpringArm)
+	{
+		return;
+	}
+
+	bFirstPersonBuild = !bFirstPersonBuild;
+	if (bFirstPersonBuild)
+	{
+		// 진입 직전 거리 저장(줌으로 바뀐 값도 그대로 복원하기 위해 270 하드코딩 대신 현재값).
+		SavedBuildArmLength = SpringArm->TargetArmLength;
+		SpringArm->TargetArmLength = 0.0f;
+		if (USkeletalMeshComponent* MeshComp = GetMesh())
+		{
+			MeshComp->SetOwnerNoSee(true); // 내 뷰에서만 몸/머리 숨김(타 클라엔 보임 — 멀티 안전).
+		}
+	}
+	else
+	{
+		SpringArm->TargetArmLength = SavedBuildArmLength;
+		if (USkeletalMeshComponent* MeshComp = GetMesh())
+		{
+			MeshComp->SetOwnerNoSee(false);
+		}
+	}
+}
+
+// 1인칭 상태 강제 해제(3인칭 복귀 + 메시 복원). ApplyBuildModeView가 모드 전환마다 호출 — 1인칭인 채
+// 탑다운/빌드해제로 빠져나갈 때 메시가 계속 숨거나 카메라가 1인칭에 고착되는 잔류를 막는다.
+void AOJJ_Player::ResetFirstPersonBuild()
+{
+	if (!bFirstPersonBuild)
+	{
+		return;
+	}
+	bFirstPersonBuild = false;
+	// 3인칭 거리 복원 + 메시 숨김 해제 — 1인칭인 채 모드를 빠져나가도 카메라/메시 잔류가 없게.
+	if (SpringArm)
+	{
+		SpringArm->TargetArmLength = SavedBuildArmLength;
+	}
+	if (USkeletalMeshComponent* MeshComp = GetMesh())
+	{
+		MeshComp->SetOwnerNoSee(false);
+	}
 }
 
 // [카테고리 숫자키] 현재 카테고리의 SlotIndex(1~10)번 슬롯 실행 — LDJ UI_BuildModeMain에 위임(슬롯 클릭과 동일 경로).
