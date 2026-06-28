@@ -2587,6 +2587,31 @@ void AOJJ_Player::TriggerPlanetEvent(const FString& EventName, float Severity, f
 		DurationSeconds);
 }
 
+void AOJJ_Player::TimeSet(int32 TotalMinutes)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[TimeSet] World is null."));
+		return;
+	}
+
+	UPlanetEventManagerSubsystem* PlanetManager = World->GetSubsystem<UPlanetEventManagerSubsystem>();
+	if (!PlanetManager)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[TimeSet] PlanetEventManagerSubsystem not found."));
+		return;
+	}
+
+	PlanetManager->SetCurrentTimeByMinutes(TotalMinutes);
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("[TimeSet] Input=%d CurrentTime=%s"),
+		TotalMinutes,
+		*PlanetManager->GetCurrentTime24String());
+}
+
 void AOJJ_Player::UpdateInventoryRealtime()
 {
 	if (bIsInventoryOpen && InventoryWidgetInstance)

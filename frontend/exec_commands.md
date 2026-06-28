@@ -54,6 +54,16 @@
 - 비고: `none` 또는 `clear`를 입력하면 현재 활성 이벤트를 종료합니다.
 - 구현 위치: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
 
+## TimeSet
+
+- 목적: 인게임 시간을 분 단위로 직접 설정합니다.
+- 인자:
+  - `TotalMinutes`: 24시간 기준 누적 분
+- 명령어: `TimeSet <TotalMinutes>`
+- 예시: `TimeSet 600` -> `10:00`, `TimeSet 1200` -> `20:00`
+- 비고: 입력값은 하루 1440분 기준으로 순환 처리됩니다.
+- 구현 위치: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
+
 ## Give
 
 - 목적: 테스트용으로 원하는 아이템을 창고에 즉시 지급합니다.

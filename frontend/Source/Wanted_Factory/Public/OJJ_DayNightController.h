@@ -115,10 +115,10 @@ protected:
 	float EventVisualInterpSpeed = 1.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.1"))
-	float EventVisualBlendInSeconds = 2.5f;
+	float EventVisualBlendInSeconds = 7.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual", meta = (ClampMin = "0.1"))
-	float EventVisualBlendOutSeconds = 3.5f;
+	float EventVisualBlendOutSeconds = 10.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
 	FLinearColor MagneticStormSunColor = FLinearColor(0.62f, 0.34f, 0.95f, 1.0f);

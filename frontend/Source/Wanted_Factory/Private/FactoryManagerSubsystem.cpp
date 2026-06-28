@@ -789,6 +789,36 @@ bool UFactoryManagerSubsystem::IsPowerLineEnergized(const APowerLine* PowerLine)
 	return false;
 }
 
+bool UFactoryManagerSubsystem::IsPowerGridNodeEnergized(const APowerGridNode* PowerGridNode) const
+{
+	if (!PowerGridNode || !PowerGridNode->IsPowerGridActive())
+	{
+		return false;
+	}
+
+	const_cast<UFactoryManagerSubsystem*>(this)->EnsureCachedData();
+
+	TSet<APowerGridNode*> VisitedNodes;
+	TArray<APowerGridNode*> ComponentNodes;
+	BuildPowerGridComponent(const_cast<APowerGridNode*>(PowerGridNode), VisitedNodes, ComponentNodes);
+
+	for (const TWeakObjectPtr<AMachineBase>& WeakMachine : RegisteredMachines)
+	{
+		APowerPlant* PowerPlant = Cast<APowerPlant>(WeakMachine.Get());
+		if (!PowerPlant || !PowerPlant->CanGeneratePower())
+		{
+			continue;
+		}
+
+		if (IsMachineConnectedToComponent(PowerPlant, ComponentNodes))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void UFactoryManagerSubsystem::EnsureCachedData()
 {
 	if (bGraphDirty)

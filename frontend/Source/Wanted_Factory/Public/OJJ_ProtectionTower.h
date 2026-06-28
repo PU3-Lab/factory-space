@@ -34,6 +34,7 @@ class WANTED_FACTORY_API AOJJ_ProtectionTower : public AMachineBase
 
 public:
 	AOJJ_ProtectionTower();
+	virtual void Tick(float DeltaSeconds) override;
 
 	// 비-생산 머신: 아이템을 받지 않는다(컨베이어/직접 투입 모두 거부) — APowerGridNode 패턴.
 	virtual bool AddItem(FName ItemID, int32 Count) override;
@@ -75,6 +76,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shield|Debug")
 	bool bShowShieldDome = false;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shield|Visual", meta = (ClampMin = "0.1"))
+	float ShieldBlendInSeconds = 7.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shield|Visual", meta = (ClampMin = "0.1"))
+	float ShieldBlendOutSeconds = 10.5f;
+
 private:
 	// PlanetEventManagerSubsystem에 차폐장 등록/해제(BeginPlay/EndPlay에서 호출).
 	void RegisterToEventManager();
@@ -90,7 +97,9 @@ private:
 	// [#353] 돔 표시 단일 진입점 — bShowShieldDome(디버그) OR (자기폭풍 활성 && IsShieldActive()).
 	// ⚠️ 돔 SetVisibility는 반드시 이 함수만 경유(분기 산재 방지).
 	void UpdateDomeVisibility();
+	void UpdateDomeVisual(float DeltaSeconds);
 
 	// [#353] 자기폭풍 활성 캐시 — 이벤트 핸들러/BeginPlay 초기 동기화가 세팅, UpdateDomeVisibility가 읽음.
 	bool bMagneticStormActive = false;
+	float ShieldVisualAlpha = 0.0f;
 };

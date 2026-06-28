@@ -9,6 +9,7 @@ ABaseCamp::ABaseCamp()
 	MachineType = TEXT("BaseCamp");
 	bNeedPower = false;
 	bDisableWhenBroken = false;
+	bInfiniteDurability = true;
 	bShowDebugBufferText = false;
 }
 

@@ -191,6 +191,28 @@ FString UPlanetEventManagerSubsystem::GetCurrentTime24String() const
 	return FString::Printf(TEXT("%02d:%02d"), GetCurrentHour24(), GetCurrentMinute24());
 }
 
+void UPlanetEventManagerSubsystem::SetCurrentTimeByMinutes(int32 TotalMinutes)
+{
+	const float FullDaySeconds = GetFullDaySeconds();
+	if (FullDaySeconds <= 0.0f)
+	{
+		return;
+	}
+
+	const int32 MinutesPerDay = 24 * 60;
+	const int32 WrappedMinutes = ((TotalMinutes % MinutesPerDay) + MinutesPerDay) % MinutesPerDay;
+	const EPlanetDayPhase OldPhase = TimeState.Phase;
+
+	TimeState.DaySeconds = FullDaySeconds * (static_cast<float>(WrappedMinutes) / static_cast<float>(MinutesPerDay));
+	TimeState.Phase = ResolvePhase(TimeState.DaySeconds);
+	LastSimulationUpdateWorldTimeSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+
+	if (TimeState.Phase != OldPhase)
+	{
+		OnDayPhaseChanged.Broadcast(TimeState.Phase);
+	}
+}
+
 void UPlanetEventManagerSubsystem::RollWeatherTarget()
 {
 	WeatherStartState = WeatherState;
