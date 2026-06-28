@@ -202,6 +202,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Planet Event|Time")
 	FString GetCurrentTime24String() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Planet Event|Time")
+	void SetCurrentTimeByMinutes(int32 TotalMinutes);
+
 	UFUNCTION(BlueprintCallable, Category = "Planet Event|Weather")
 	void RollWeatherTarget();
 

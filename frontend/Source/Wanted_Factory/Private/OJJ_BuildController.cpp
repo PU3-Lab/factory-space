@@ -1391,6 +1391,10 @@ void AOJJ_BuildController::OnLeftClickPressed()
 	const FTransform PlaceXform =
 		TargetGrid->OJJ_GetMachinePlacementTransform(NewMachine, Origin, HoverRotationSteps);
 	NewMachine->SetActorLocationAndRotation(PlaceXform.GetLocation(), PlaceXform.GetRotation());
+	if (IsInBuildMode())
+	{
+		TargetGrid->RefreshPlacedMachineArrows();
+	}
 	// [#3 점진 건설] 신규 배치 머신에 홀로그램 빌드업(신규 전용 — 로드는 FactorySave 경로라 안 거침).
 	StartBuildUpEffect(NewMachine, NewMachine->GetMeshComponent());
 	NotifyMainQuestMachinePlaced(this, GetQuestPlacementTargetId(PlacementMode));

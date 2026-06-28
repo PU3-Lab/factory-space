@@ -134,6 +134,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
 	TSubclassOf<UUserWidget> SynthesizerInteractWidgetClass;
 	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
+	TSubclassOf<UUserWidget> MoldingMachineInteractWidgetClass;
+	
+	UPROPERTY()
+	UUserWidget* MoldingMachineInteractWidgetInstance;
+	
 	UPROPERTY()
 	class UUI_WarehouseInteract* WarehouseInteractWidgetInstance;
 	
@@ -605,6 +611,9 @@ public:
 
 	UFUNCTION(Exec)
 	void TriggerPlanetEvent(const FString& EventName, float Severity = 1.0f, float DurationSeconds = -1.0f);
+
+	UFUNCTION(Exec)
+	void TimeSet(int32 TotalMinutes);
 
 protected:
 	void SetDemolishModeShortcut();

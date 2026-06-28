@@ -200,6 +200,10 @@ void UUI_MachineInteract::NativeTick(const FGeometry& MyGeometry, float InDeltaT
         FRecipeTable Recipe = TargetMachine->GetCurrentRecipe();
     // 우측 출력(Output) UI 갱신
         OutputName = Recipe.OutputItem1;
+        if (OutputName.IsNone())
+        {
+            TargetMachine->PeekFirstOutputItem(OutputName);
+        }
     if (!ManualDroppedOutputItemID.IsNone())
     {
             OutputName = ManualDroppedOutputItemID;

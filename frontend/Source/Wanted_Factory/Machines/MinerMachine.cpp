@@ -24,6 +24,11 @@ namespace
 		// 채굴 광물로 취급한다. 실제 산출물 ID도 이 RowName을 그대로 사용한다.
 		return Resource->GetResourceRowName().ToString().EndsWith(TEXT("_ore"));
 	}
+
+	FName GetMinedResourceID(const AResourceBase* Resource)
+	{
+		return Resource ? Resource->GetResourceRowName() : NAME_None;
+	}
 }
 
 // Sets default values
@@ -183,6 +188,12 @@ void AMinerMachine::SetLinkedResource(AResourceBase* NewResource)
 
 bool AMinerMachine::CanMine() const
 {
+	if (isBroken() && bDisableWhenBroken)
+	{
+		LOG_SSR_W(TEXT("CanMine failed: machine is broken."));
+		return false;
+	}
+
 	if (!HasEnoughPower())
 	{
 		LOG_SSR_W(TEXT("CanMine failed: not enough power."));
@@ -201,6 +212,25 @@ bool AMinerMachine::CanMine() const
 			TEXT("CanMine failed: Resource is not mineable Ore. Resource=%s RowName=%s"),
 			*LinkedResource->GetName(),
 			*LinkedResource->GetResourceRowName().ToString()
+		);
+		return false;
+	}
+
+	const FName ResourceID = GetMinedResourceID(LinkedResource);
+	if (ResourceID.IsNone())
+	{
+		LOG_SSR_W(TEXT("CanMine failed: resource row name is None."));
+		return false;
+	}
+
+	const int32 CurrentOutputCount = OutputBuffer.FindRef(ResourceID);
+	if (CurrentOutputCount + MineAmount > MaxBufferPerItem)
+	{
+		LOG_SSR_W(
+			TEXT("CanMine failed: output buffer full. Item=%s Count=%d Max=%d"),
+			*ResourceID.ToString(),
+			CurrentOutputCount,
+			MaxBufferPerItem
 		);
 		return false;
 	}
@@ -239,6 +269,9 @@ void AMinerMachine::StartMining()
 		true
 	);
 
+	MachineState = EMachineState::Working;
+	UpdateStateIndicator();
+
 	LOG_SSR_W(TEXT("Mining started."));
 	UE_LOG(LogTemp, Warning, TEXT("Mining started."));
 }
@@ -246,6 +279,12 @@ void AMinerMachine::StartMining()
 void AMinerMachine::StopMining()
 {
 	GetWorldTimerManager().ClearTimer(MineTimerHandle);
+
+	if (MachineState == EMachineState::Working)
+	{
+		MachineState = EMachineState::Idle;
+	}
+	UpdateStateIndicator();
 	
 	LOG_SSR_W(TEXT("Mining stopped."));
 }
@@ -259,8 +298,7 @@ void AMinerMachine::MineResource()
 	}
 	
 	// RowName이 아이템 ID 역할
-	const FName ResourceID =
-		LinkedResource->GetResourceRowName();
+	const FName ResourceID = GetMinedResourceID(LinkedResource);
 
 	if (ResourceID.IsNone())
 	{
@@ -273,6 +311,8 @@ void AMinerMachine::MineResource()
 
 	if (CurrentOutputCount + MineAmount > MaxBufferPerItem)
 	{
+		MachineState = EMachineState::Blocked;
+		UpdateStateIndicator();
 		LOG_SSR_W(
 			TEXT("MineResource failed: Output buffer full. Item=%s Count=%d Max=%d"),
 			*ResourceID.ToString(),
@@ -285,12 +325,16 @@ void AMinerMachine::MineResource()
 
 	if (!LinkedResource->ConsumeResource(MineAmount))
 	{
+		MachineState = EMachineState::Idle;
+		UpdateStateIndicator();
 		LOG_SSR_W(TEXT("Resource depleted"));
 		StopMining();
 		return;
 	}
 	
 	AddOutputItem(ResourceID, MineAmount);
+	MachineState = EMachineState::Working;
+	UpdateStateIndicator();
 
 	LOG_SSR_W(TEXT("Mined Resource: %s x %d"),
 		*ResourceID.ToString(),

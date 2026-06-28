@@ -3,8 +3,35 @@
 
 #include "MoldingMachine.h"
 
+#include "Engine/DataTable.h"
 #include "RecipeManagerSubsystem.h"
+#include "Resource/ResourceData.h"
 #include "Wanted_Factory.h"
+
+namespace
+{
+	constexpr TCHAR ResourceTablePath[] = TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData");
+
+	EResourceShape ResolveMoldingShape(const FString& ShapeText)
+	{
+		if (ShapeText == TEXT("판"))
+		{
+			return EResourceShape::plate;
+		}
+
+		if (ShapeText == TEXT("봉"))
+		{
+			return EResourceShape::bar;
+		}
+
+		if (ShapeText == TEXT("선"))
+		{
+			return EResourceShape::wire;
+		}
+
+		return EResourceShape::None;
+	}
+}
 
 // Sets default values
 AMoldingMachine::AMoldingMachine()
@@ -34,6 +61,82 @@ bool AMoldingMachine::AddItem(FName ItemID, int32 Count)
 	}
 
 	return Super::AddItem(ItemID, Count);
+}
+
+void AMoldingMachine::TryStartProcess()
+{
+	RefreshMachineState();
+
+	if (MachineState == EMachineState::Working)
+	{
+		return;
+	}
+
+	if (MachineState == EMachineState::Disabled ||
+		MachineState == EMachineState::NoPower ||
+		MachineState == EMachineState::Blocked)
+	{
+		return;
+	}
+
+	if (InputInventory.Num() <= 0)
+	{
+		return;
+	}
+
+	URecipeManagerSubsystem* RecipeManager =
+		GetGameInstance() ? GetGameInstance()->GetSubsystem<URecipeManagerSubsystem>() : nullptr;
+
+	if (!RecipeManager)
+	{
+		LOG_SSR_W(TEXT("RecipeManagerSubSystem is NULL"));
+		return;
+	}
+
+	bool bHasBlockedCraftableRecipe = false;
+
+	for (const TPair<FName, int32>& InputPair : InputInventory)
+	{
+		TArray<FRecipeTable> FoundRecipes;
+		if (!RecipeManager->FindRecipesByInputItem(InputPair.Key, FoundRecipes))
+		{
+			continue;
+		}
+
+		for (const FRecipeTable& Recipe : FoundRecipes)
+		{
+			if (Recipe.MachineType != MachineType || !DoesRecipeMatchCurrentShape(Recipe))
+			{
+				continue;
+			}
+
+			if (!HasEnoughIngredients(Recipe))
+			{
+				continue;
+			}
+
+			if (!CanAddToOutputBuffer(Recipe))
+			{
+				bHasBlockedCraftableRecipe = true;
+				continue;
+			}
+
+			CurrentRecipe = Recipe;
+			ProcessTime = CurrentRecipe.CraftingTime;
+
+			StartProcess();
+			return;
+		}
+	}
+
+	if (bHasBlockedCraftableRecipe)
+	{
+		MachineState = EMachineState::Blocked;
+		LOG_SSR_W(TEXT("Cannot start process. Output Buffer Blocked."));
+		return;
+	}
+
+	LOG_SSR_W(TEXT("No craftable molding recipe found for shape: %s"), *CurrentShape);
 }
 
 void AMoldingMachine::AddOutputItem(FName ItemID, int32 Count)
@@ -114,7 +217,7 @@ bool AMoldingMachine::CanReceiveConveyorItem(FName ItemID, int32 Count) const
 	bool bHasMoldingMachineRecipe = false;
 	for (const FRecipeTable& Recipe : FoundRecipes)
 	{
-		if (Recipe.MachineType == MachineType)
+		if (Recipe.MachineType == MachineType && DoesRecipeMatchCurrentShape(Recipe))
 		{
 			bHasMoldingMachineRecipe = true;
 			break;
@@ -135,4 +238,23 @@ bool AMoldingMachine::CanReceiveConveyorItem(FName ItemID, int32 Count) const
 	}
 
 	return true;
+}
+
+bool AMoldingMachine::DoesRecipeMatchCurrentShape(const FRecipeTable& Recipe) const
+{
+	const EResourceShape DesiredShape = ResolveMoldingShape(CurrentShape);
+	if (DesiredShape == EResourceShape::None || Recipe.OutputItem1.IsNone())
+	{
+		return false;
+	}
+
+	const UDataTable* ResourceTable = LoadObject<UDataTable>(nullptr, ResourceTablePath);
+	if (!ResourceTable)
+	{
+		return false;
+	}
+
+	const FResourceData* OutputResource =
+		ResourceTable->FindRow<FResourceData>(Recipe.OutputItem1, TEXT("MoldingMachine.DoesRecipeMatchCurrentShape"));
+	return OutputResource && OutputResource->shape == DesiredShape;
 }
