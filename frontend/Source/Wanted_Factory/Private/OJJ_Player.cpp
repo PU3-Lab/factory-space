@@ -45,6 +45,7 @@
 #include "UI/UI_QuestWindow.h"
 #include "UI/UI_DialogueBalloon.h"
 #include "UI/UI_SynthesizerInteract.h"
+#include "UI/UI_MoldingMachineInteract.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Components/EditableText.h"
 #include "Machines/MachineSubsystem.h"
@@ -1266,7 +1267,7 @@ void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
     if (NewMode != EBuildViewMode::None)
     {
        // ── 진입 또는 모드 전환 공통: 열려 있던 기계창/창고/가방 UI 정리 ──
-    	if (MachineInteractWidgetInstance.IsValid() || WarehouseInteractWidgetInstance || SynthesizerInteractWidgetInstance)
+    	if (MachineInteractWidgetInstance.IsValid() || WarehouseInteractWidgetInstance || SynthesizerInteractWidgetInstance || MoldingMachineInteractWidgetInstance)
     	{
     		CloseMachineInteractWidget(PC);
     	}
@@ -1817,41 +1818,47 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
     PC->SetInputMode(QuickFixMode);
 
     // 이미 켜져 있을 때 끄고 탈출하는 가드 조건에 합성기 위젯 인스턴스도 병합합니다.
-    if (bIsInventoryOpen || 
-        (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()) ||
-        (WarehouseInteractWidgetInstance && WarehouseInteractWidgetInstance->IsInViewport()) ||
-        (SynthesizerInteractWidgetInstance && SynthesizerInteractWidgetInstance->IsInViewport()))
-    {
-       if (MachineInteractWidgetInstance.IsValid())
-       {
-          MachineInteractWidgetInstance->RemoveFromParent();
-          MachineInteractWidgetInstance = nullptr;
-       }
+	if (bIsInventoryOpen || 
+		(MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()) ||
+		(WarehouseInteractWidgetInstance && WarehouseInteractWidgetInstance->IsInViewport()) ||
+		(SynthesizerInteractWidgetInstance && SynthesizerInteractWidgetInstance->IsInViewport()) ||
+		(MoldingMachineInteractWidgetInstance && MoldingMachineInteractWidgetInstance->IsInViewport()))
+	{
+		if (MachineInteractWidgetInstance.IsValid())
+		{
+			MachineInteractWidgetInstance->RemoveFromParent();
+			MachineInteractWidgetInstance = nullptr;
+		}
 
-       if (WarehouseInteractWidgetInstance)
-       {
-          WarehouseInteractWidgetInstance->RemoveFromParent();
-          WarehouseInteractWidgetInstance = nullptr;
-       }
+		if (WarehouseInteractWidgetInstance)
+		{
+			WarehouseInteractWidgetInstance->RemoveFromParent();
+			WarehouseInteractWidgetInstance = nullptr;
+		}
 
-       // 합성기 끄기
-       if (SynthesizerInteractWidgetInstance)
-       {
-          SynthesizerInteractWidgetInstance->RemoveFromParent();
-          SynthesizerInteractWidgetInstance = nullptr;
-       }
+		if (SynthesizerInteractWidgetInstance)
+		{
+			SynthesizerInteractWidgetInstance->RemoveFromParent();
+			SynthesizerInteractWidgetInstance = nullptr;
+		}
 
-       if (InventoryWidgetInstance)
-       {
-          InventoryWidgetInstance->RemoveFromParent();
-       }
-       bIsInventoryOpen = false;
-       GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
+		if (MoldingMachineInteractWidgetInstance)
+		{
+			MoldingMachineInteractWidgetInstance->RemoveFromParent();
+			MoldingMachineInteractWidgetInstance = nullptr;
+		}
 
-       PC->SetInputMode(FInputModeGameOnly());
-       PC->SetShowMouseCursor(false);
-       return;
-    }
+		if (InventoryWidgetInstance)
+		{
+			InventoryWidgetInstance->RemoveFromParent();
+		}
+		bIsInventoryOpen = false;
+		GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
+
+		PC->SetInputMode(FInputModeGameOnly());
+		PC->SetShowMouseCursor(false);
+		return;
+	}
 
     UWorld* World = GetWorld();
     if (!Camera || !World) return;
@@ -1893,20 +1900,38 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
     // 합성기 전용
     else if (Machine->GetMachineType() == TEXT("Synthesizer"))
     {
-       if (!SynthesizerInteractWidgetClass)
-       {
-          UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] SynthesizerInteractWidgetClass 미할당! BP에서 할당하세요."));
-          return;
-       }
+    	if (!SynthesizerInteractWidgetClass)
+    	{
+    		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] SynthesizerInteractWidgetClass 미할당! BP에서 할당하세요."));
+    		return;
+    	}
 
-       UUI_SynthesizerInteract* SynWidget = CreateWidget<UUI_SynthesizerInteract>(PC, SynthesizerInteractWidgetClass);
-       if (SynWidget)
-       {
-          SynWidget->SetTargetMachine(Machine);
-          SynthesizerInteractWidgetInstance = SynWidget;
-          SynWidget->AddToViewport();
-          SynWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
-       }
+    	UUI_SynthesizerInteract* SynWidget = CreateWidget<UUI_SynthesizerInteract>(PC, SynthesizerInteractWidgetClass);
+    	if (SynWidget)
+    	{
+    		SynWidget->SetTargetMachine(Machine);
+    		SynthesizerInteractWidgetInstance = SynWidget;
+    		SynWidget->AddToViewport();
+    		SynWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
+    	}
+    }
+	// 🌟 [성형기 스폰 분기 추가] 바라본 기계 타입이 MoldingMachine 일 때
+    else if (Machine->GetMachineType() == TEXT("MoldingMachine"))
+    {
+    	if (!MoldingMachineInteractWidgetClass)
+    	{
+    		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] MoldingMachineInteractWidgetClass 미할당! BP에서 할당하세요."));
+    		return;
+    	}
+
+    	UUI_MoldingMachineInteract* MoldWidget = CreateWidget<UUI_MoldingMachineInteract>(PC, MoldingMachineInteractWidgetClass);
+    	if (MoldWidget)
+    	{
+    		MoldWidget->SetTargetMachine(Machine);
+    		MoldingMachineInteractWidgetInstance = MoldWidget;
+    		MoldWidget->AddToViewport();
+    		MoldWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode); // 델리게이트 마감
+    	}
     }
     // 3. 일반 기계 분기 (제련기, 분쇄기 등)
     else
@@ -1978,7 +2003,13 @@ void AOJJ_Player::CloseMachineInteractWidget(APlayerController* PC)
 		SynthesizerInteractWidgetInstance->RemoveFromParent();
 		SynthesizerInteractWidgetInstance = nullptr;
 	}
-
+	
+	if (MoldingMachineInteractWidgetInstance)
+	{
+		MoldingMachineInteractWidgetInstance->RemoveFromParent();
+		MoldingMachineInteractWidgetInstance = nullptr;
+	}
+	
 	if (PC)
 	{
 		PC->SetInputMode(FInputModeGameOnly());
@@ -1989,26 +2020,22 @@ void AOJJ_Player::CloseMachineInteractWidget(APlayerController* PC)
 void AOJJ_Player::RestoreGameInputMode()
 {
 	if ((MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()) ||
-		(SynthesizerInteractWidgetInstance && SynthesizerInteractWidgetInstance->IsInViewport()))
+	   (SynthesizerInteractWidgetInstance && SynthesizerInteractWidgetInstance->IsInViewport()) ||
+	   (MoldingMachineInteractWidgetInstance && MoldingMachineInteractWidgetInstance->IsInViewport()))
 	{
 		return;
 	}
-	
-	// 스테일 브로드캐스트 가드 — 우리가 위젯 A를 닫고 새 위젯 B를 연 사이에 A의 지연된
-	// NativeDestruct가 broadcast될 수 있다. 현재 살아있는 위젯이 열려 있으면 그 상태를 건드리지 않는다
-	// (B의 weak 포인터/GameAndUI를 망가뜨리지 않도록).
+    
 	if (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport())
 	{
 		return;
 	}
 
-	// 멱등 — 우리 직접 닫기(CloseMachineInteractWidget)로 이미 복원된 뒤 지연 Destruct 브로드캐스트가
-	// 한 번 더 들어와도 사실상 no-op. weak 인스턴스 정리.
+	// 멱등 약포인터 캐시 일제 소독
 	MachineInteractWidgetInstance = nullptr;
 	SynthesizerInteractWidgetInstance = nullptr;
+	MoldingMachineInteractWidgetInstance = nullptr;
 
-	// ⚠️ pawn 소멸 중 위젯 Destruct로 재진입할 수 있어 컨트롤러 유효성 체크(무효면 복원 스킵 —
-	//    복원 대상 자체가 없으므로 안전).
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
 		PC->SetInputMode(FInputModeGameOnly());

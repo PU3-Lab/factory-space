@@ -124,6 +124,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
 	TSubclassOf<UUserWidget> SynthesizerInteractWidgetClass;
 	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
+	TSubclassOf<UUserWidget> MoldingMachineInteractWidgetClass;
+	
+	UPROPERTY()
+	UUserWidget* MoldingMachineInteractWidgetInstance;
+	
 	UPROPERTY()
 	class UUI_WarehouseInteract* WarehouseInteractWidgetInstance;
 	
