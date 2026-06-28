@@ -137,6 +137,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
 	TSubclassOf<UUserWidget> MoldingMachineInteractWidgetClass;
 	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
+	TSubclassOf<class UUI_BaseCampInteract> BaseCampInteractWidgetClass;
+	
+	UPROPERTY()
+	class UUI_BaseCampInteract* BaseCampInteractWidgetInstance;
+	
 	UPROPERTY()
 	UUserWidget* MoldingMachineInteractWidgetInstance;
 	
