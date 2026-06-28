@@ -47,6 +47,15 @@ AOJJ_PortraitCapture::AOJJ_PortraitCapture()
 		IdleAnimation = IdleAnimFinder.Object;
 	}
 
+	// RenderTarget 기본 로드 — 자동 스폰(서브시스템) 시에도 RT가 연결되도록.
+	// 에디터 배치 시 PortraitRenderTarget을 다른 RT로 덮어쓸 수 있다.
+	static ConstructorHelpers::FObjectFinder<UTextureRenderTarget2D> RTFinder(
+		TEXT("/Game/OJJ/Character/Robot/RT_RobotPortrait.RT_RobotPortrait"));
+	if (RTFinder.Succeeded())
+	{
+		PortraitRenderTarget = RTFinder.Object;
+	}
+
 	// --- 키 라이트 ---
 	// 카메라(+X)와 같은 정면 위쪽에서 강하게 비춰 로봇 정면을 밝힌다. ShowOnlyActors는 메시
 	// 프리미티브만 제한하고 라이팅은 씬 전체 라이트가 적용되므로, 같은 액터에 둔 라이트로 로봇이 밝아진다.
