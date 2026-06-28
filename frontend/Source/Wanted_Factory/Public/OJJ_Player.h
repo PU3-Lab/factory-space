@@ -20,6 +20,7 @@ class AOJJ_Ladder;
 class AMachineBase;
 class UUI_MachineInteract;
 class UUI_SynthesizerInteract;
+class AResourceBase;
 class UAnimMontage;
 class UAnimSequenceBase;
 class UOJJ_CharacterAppearanceData;
@@ -108,6 +109,15 @@ protected:
 	TSubclassOf<UUserWidget> MainHUDWidgetClass;
 	UPROPERTY()
 	UUserWidget* MainHUDWidgetInstance;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Resource Nameplate", meta = (ClampMin = "0.0"))
+	float ResourceNameplateTraceDistance = 2000.0f;
+
+	TWeakObjectPtr<AResourceBase> FocusedNameplateResource;
+
+	void UpdateResourceNameplate();
+	AResourceBase* TraceFocusedOre(APlayerController* PlayerController) const;
+	void HideResourceNameplate();
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player Warehouse")
 	TArray<FWarehouseItemStack> InitialWarehouseItems;
