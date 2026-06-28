@@ -12,6 +12,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
+#include "DrawDebugHelpers.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
@@ -19,6 +21,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "Components/SpotLightComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Engine/GameInstance.h"
@@ -45,6 +48,8 @@
 #include "UI/UI_QuestWindow.h"
 #include "UI/UI_DialogueBalloon.h"
 #include "UI/UI_SynthesizerInteract.h"
+#include "Resource/ResourceBase.h"
+#include "Resource/ResourceData.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Components/EditableText.h"
 #include "Machines/MachineSubsystem.h"
@@ -922,6 +927,7 @@ void AOJJ_Player::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	UpdateNightSpotLightVisibility();
+	UpdateResourceNameplate();
 
 	// [L_Planet 인트로] getup 몽타주 종료 후 카메라를 1인칭(ArmLength 0)→3인칭(IntroArmLength)으로 부드럽게 블렌드.
 	// 아래 step-off early-return보다 먼저 처리해야 평상시에도 보간이 돈다(등반/step-off와 독립).
@@ -983,6 +989,123 @@ void AOJJ_Player::Tick(float DeltaSeconds)
 		bSteppingOff = false;
 		ResumeWalkingWithCooldown();
 	}
+}
+
+AResourceBase* AOJJ_Player::TraceFocusedOre(APlayerController* PlayerController) const
+{
+	if (!PlayerController || !PlayerController->bShowMouseCursor || !GetWorld())
+	{
+		return nullptr;
+	}
+
+	FVector RayOrigin = FVector::ZeroVector;
+	FVector RayDirection = FVector::ZeroVector;
+	if (!PlayerController->DeprojectMousePositionToWorld(RayOrigin, RayDirection))
+	{
+		return nullptr;
+	}
+
+	RayDirection.Normalize();
+	const float TraceDistance = 1000000.0f;
+	const FVector TraceEnd = RayOrigin + RayDirection * TraceDistance;
+
+	AResourceBase* ClosestResource = nullptr;
+	float ClosestDistanceAlongRay = TraceDistance;
+	for (TActorIterator<AResourceBase> It(GetWorld()); It; ++It)
+	{
+		AResourceBase* Resource = *It;
+		if (!IsValid(Resource) || !Resource->IsOreResource())
+		{
+			continue;
+		}
+
+		FBox ResourceBounds(ForceInit);
+		if (Resource->Root)
+		{
+			ResourceBounds += Resource->Root->Bounds.GetBox();
+		}
+		if (Resource->Mesh)
+		{
+			ResourceBounds += Resource->Mesh->Bounds.GetBox();
+		}
+		if (!ResourceBounds.IsValid ||
+			!FMath::LineBoxIntersection(ResourceBounds, RayOrigin, TraceEnd, RayDirection))
+		{
+			continue;
+		}
+
+		const float DistanceAlongRay =
+			FVector::DotProduct(ResourceBounds.GetCenter() - RayOrigin, RayDirection);
+		if (DistanceAlongRay >= 0.0f && DistanceAlongRay < ClosestDistanceAlongRay)
+		{
+			ClosestDistanceAlongRay = DistanceAlongRay;
+			ClosestResource = Resource;
+		}
+	}
+
+	return ClosestResource;
+}
+
+void AOJJ_Player::UpdateResourceNameplate()
+{
+	UWorld* World = GetWorld();
+	APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	if (!World || !PlayerController)
+	{
+		return;
+	}
+
+	const FVector ViewerLocation =
+		PlayerController->PlayerCameraManager
+			? PlayerController->PlayerCameraManager->GetCameraLocation()
+			: GetActorLocation();
+
+	const FVector CharacterLocation = GetActorLocation();
+	const float MaxDisplayDistanceSq = FMath::Square(ResourceNameplateTraceDistance);
+
+	// 마우스/조준과 무관하게 주변 광맥 이름을 표시하되, 캐릭터 기준 최대 거리 밖은 숨긴다.
+	for (TActorIterator<AResourceBase> It(World); It; ++It)
+	{
+		AResourceBase* Resource = *It;
+		if (!IsValid(Resource) || !Resource->IsOreResource() ||
+			FVector::DistSquared(CharacterLocation, Resource->GetActorLocation()) > MaxDisplayDistanceSq)
+		{
+			continue;
+		}
+
+		const FVector DebugTextLocation =
+			Resource->GetActorLocation() + FVector(0.0f, 0.0f, 300.0f);
+
+		FString ResourceDisplayName = Resource->GetResourceRowName().ToString();
+		FResourceData ResourceData;
+		if (Resource->GetResourceData(ResourceData) && !ResourceData.DisplayName.IsEmpty())
+		{
+			ResourceDisplayName = ResourceData.DisplayName;
+		}
+
+		const float DistanceToViewer = FVector::Distance(ViewerLocation, DebugTextLocation);
+		const float DistanceScale = 1000.0f / FMath::Max(DistanceToViewer, 1.0f);
+		const float FontScale = FMath::Clamp(2.0f * DistanceScale, 0.45f, 2.0f);
+
+		DrawDebugString(
+			World,
+			DebugTextLocation,
+			ResourceDisplayName,
+			nullptr,
+			FColor::White,
+			0.05f,
+			true,
+			FontScale);
+	}
+}
+
+void AOJJ_Player::HideResourceNameplate()
+{
+	if (AResourceBase* PreviousResource = FocusedNameplateResource.Get())
+	{
+		PreviousResource->SetNameplateVisible(false, FVector::ZeroVector);
+	}
+	FocusedNameplateResource.Reset();
 }
 
 void AOJJ_Player::UpdateNightSpotLightVisibility()

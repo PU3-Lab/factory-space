@@ -7,7 +7,9 @@
 #include "MachineBase.h"
 #include "OJJ_Grid.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/WidgetComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "UI/ResourceNameplateWidget.h"
 
 namespace
 {
@@ -41,6 +43,18 @@ AResourceBase::AResourceBase()
 
 	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
 	Mesh->SetupAttachment(Root);
+
+	NameplateWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("ResourceNameplateWidget"));
+	NameplateWidget->SetupAttachment(Root);
+	NameplateWidget->SetAbsolute(false, true, true);
+	NameplateWidget->SetWidgetSpace(EWidgetSpace::World);
+	NameplateWidget->SetWidgetClass(UResourceNameplateWidget::StaticClass());
+	NameplateWidget->SetDrawSize(FVector2D(500.0f, 100.0f));
+	NameplateWidget->SetPivot(FVector2D(0.5f, 0.5f));
+	NameplateWidget->SetTwoSided(true);
+	NameplateWidget->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	NameplateWidget->SetVisibility(false);
+	NameplateWidget->SetHiddenInGame(true);
 }
 
 // Called when the game starts or when spawned
@@ -58,6 +72,65 @@ void AResourceBase::BeginPlay()
 	Amount = FMath::Clamp(Amount, 0, MaxAmount);
 
 	RegisterToGrid();
+
+	if (NameplateWidget)
+	{
+		FResourceData NameplateData;
+		FString DisplayName = GetResourceRowName().ToString();
+		if (GetResourceData(NameplateData) && !NameplateData.DisplayName.IsEmpty())
+		{
+			DisplayName = NameplateData.DisplayName;
+		}
+
+		FBox ActorBounds(ForceInit);
+		if (Root)
+		{
+			ActorBounds += Root->Bounds.GetBox();
+		}
+		if (Mesh)
+		{
+			ActorBounds += Mesh->Bounds.GetBox();
+		}
+		const FVector BoundsTop = ActorBounds.IsValid
+			? FVector(ActorBounds.GetCenter().X, ActorBounds.GetCenter().Y, ActorBounds.Max.Z)
+			: GetActorLocation();
+		NameplateWidget->SetWorldLocation(BoundsTop + NameplateOffset);
+		NameplateWidget->SetWorldScale3D(FVector(NameplateWorldSize / 100.0f));
+		NameplateWidget->InitWidget();
+		if (UResourceNameplateWidget* Nameplate =
+			Cast<UResourceNameplateWidget>(NameplateWidget->GetWidget()))
+		{
+			Nameplate->SetResourceName(FText::FromString(DisplayName));
+		}
+		NameplateWidget->SetVisibility(false);
+		NameplateWidget->SetHiddenInGame(true);
+	}
+}
+
+void AResourceBase::SetNameplateVisible(bool bVisible, const FVector& ViewerLocation)
+{
+	if (!NameplateWidget)
+	{
+		return;
+	}
+
+	NameplateWidget->SetVisibility(bVisible);
+	NameplateWidget->SetHiddenInGame(!bVisible);
+	if (bVisible)
+	{
+		NameplateWidget->SetWorldScale3D(FVector(NameplateWorldSize / 100.0f));
+		const FVector ToViewer = ViewerLocation - NameplateWidget->GetComponentLocation();
+		if (!ToViewer.IsNearlyZero())
+		{
+			NameplateWidget->SetWorldRotation(ToViewer.Rotation());
+		}
+	}
+}
+
+bool AResourceBase::IsOreResource() const
+{
+	return HasShape(EResourceShape::Ore) ||
+		GetResourceRowName().ToString().EndsWith(TEXT("_ore"));
 }
 
 void AResourceBase::NormalizeResourceDataHandle()
