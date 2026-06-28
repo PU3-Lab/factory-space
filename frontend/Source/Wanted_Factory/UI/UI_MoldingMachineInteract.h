@@ -19,6 +19,8 @@ class WANTED_FACTORY_API UUI_MoldingMachineInteract : public UUserWidget
     GENERATED_BODY()
 
 public:
+    UUI_MoldingMachineInteract(const FObjectInitializer& ObjectInitializer);
+    
     // 타겟 성형기를 주입하는 함수
     void SetTargetMachine(class AMachineBase* InMachine);
 
@@ -54,6 +56,9 @@ protected:
     UPROPERTY(meta = (BindWidget))
     UComboBoxString* CBS_MoldingShape;
 
+    UPROPERTY()
+    class UDataTable* ResourceDataTable;
+    
 private:
     UPROPERTY()
     AMoldingMachine* TargetMoldingMachine;

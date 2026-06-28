@@ -5,7 +5,23 @@
 #include "Components/ProgressBar.h"
 #include "Components/Button.h"
 #include "Components/ComboBoxString.h"
+#include "Resource/ResourceData.h"
+#include "UI/UIInteractDisplayHelpers.h"
 #include "Machines/MachineSubsystem.h"
+
+using namespace UIInteractHelpers;
+
+UUI_MoldingMachineInteract::UUI_MoldingMachineInteract(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	// 생성자 헬퍼로 데이터 테이블 로드하던 영역
+	static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
+		TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData"));
+	if (ResourceTableFinder.Succeeded())
+	{
+		ResourceDataTable = ResourceTableFinder.Object;
+	}
+}
 
 void UUI_MoldingMachineInteract::SetTargetMachine(AMachineBase* InMachine)
 {
@@ -123,67 +139,90 @@ void UUI_MoldingMachineInteract::NativeTick(const FGeometry& MyGeometry, float I
         if (TXT_ProgressPercent) TXT_ProgressPercent->SetText(FText::FromString(TEXT("진행도: 0%")));
     }
 
-    // ── 5. 입력 인벤토리(Input Inventory) 동기화 ──
-    FName InputName = NAME_None;
-    int32 InputAmount = 0;
-    int32 MaxInputAmount = TargetMoldingMachine->GetMaxInput();
+	// ── 5. 입력 인벤토리(Input Inventory) 동기화 ──
+	FName InputName = NAME_None;
+	int32 InputAmount = 0;
+	int32 MaxInputAmount = TargetMoldingMachine->GetMaxInput();
 
-    // 퍼블릭 Getter 함수인 GetInputInventory()를 사용해 안전하게 순회합니다.
-    const TMap<FName, int32>& InputInv = TargetMoldingMachine->GetInputInventory();
-    for (const auto& Pair : InputInv)
-    {
-        if (Pair.Value > 0)
-        {
-            InputName = Pair.Key;
-            InputAmount = Pair.Value;
-            break;
-        }
-    }
+	const TMap<FName, int32>& InputInv = TargetMoldingMachine->GetInputInventory();
+	for (const auto& Pair : InputInv)
+	{
+		if (Pair.Value > 0)
+		{
+			InputName = Pair.Key;
+			InputAmount = Pair.Value;
+			break;
+		}
+	}
 
-    if (!InputName.IsNone())
-    {
-        if (TXT_InputName)  TXT_InputName->SetText(FText::FromName(InputName));
-        if (TXT_InputCount) TXT_InputCount->SetText(FText::FromString(FString::Printf(TEXT("%d / %d"), InputAmount, MaxInputAmount)));
-        if (PB_InputBuffer) PB_InputBuffer->SetPercent((MaxInputAmount > 0) ? (float)InputAmount / MaxInputAmount : 0.0f);
-        if (IMG_InputIcon)  IMG_InputIcon->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-    }
-    else
-    {
-        if (TXT_InputName)  TXT_InputName->SetText(FText::FromString(TEXT("비어 있음")));
-        if (TXT_InputCount) TXT_InputCount->SetText(FText::FromString(FString::Printf(TEXT("0 / %d"), MaxInputAmount)));
-        if (PB_InputBuffer) PB_InputBuffer->SetPercent(0.0f);
-        if (IMG_InputIcon)  IMG_InputIcon->SetVisibility(ESlateVisibility::Hidden);
-    }
+	if (!InputName.IsNone())
+	{
+		// 데이터 테이블을 거쳐 한글 이름으로 변환합니다.
+		if (TXT_InputName)  TXT_InputName->SetText(GetResourceDisplayText(ResourceDataTable, InputName));
+		if (TXT_InputCount) TXT_InputCount->SetText(FText::FromString(FString::Printf(TEXT("%d / %d"), InputAmount, MaxInputAmount)));
+		if (PB_InputBuffer) PB_InputBuffer->SetPercent((MaxInputAmount > 0) ? (float)InputAmount / MaxInputAmount : 0.0f);
+        
+		// 데이터 테이블에서 에셋 텍스처를 실시간 로드해 바인딩합니다.
+		if (IMG_InputIcon && ResourceDataTable)
+		{
+			IMG_InputIcon->SetVisibility(ESlateVisibility::Visible);
+			FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(InputName, TEXT("FindInputIconContext"));
+			if (RowData)
+			{
+				UTexture2D* IconTex = RowData->ImgAsset.IsValid() ? RowData->ImgAsset.Get() : RowData->ImgAsset.LoadSynchronous();
+				if (IconTex) IMG_InputIcon->SetBrushFromTexture(IconTex);
+			}
+			IMG_InputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
+		}
+	}
+	else
+	{
+		if (TXT_InputName)  TXT_InputName->SetText(FText::FromString(TEXT("비어 있음")));
+		if (TXT_InputCount) TXT_InputCount->SetText(FText::FromString(FString::Printf(TEXT("0 / %d"), MaxInputAmount)));
+		if (PB_InputBuffer) PB_InputBuffer->SetPercent(0.0f);
+		if (IMG_InputIcon)  IMG_InputIcon->SetVisibility(ESlateVisibility::Hidden);
+	}
 
-    // ── 6. 출력 버퍼(Output Buffer) 동기화 ──
-    FName OutputName = NAME_None;
-    int32 OutputAmount = 0;
-    int32 MaxOutputAmount = TargetMoldingMachine->GetMaxOutput();
+	// ── 6. 출력 버퍼(Output Buffer) 동기화 ──
+	FName OutputName = NAME_None;
+	int32 OutputAmount = 0;
+	int32 MaxOutputAmount = TargetMoldingMachine->GetMaxOutput();
 
-    // 레시피 결과물 항목 추적
-    FRecipeTable Recipe = TargetMoldingMachine->GetCurrentRecipe();
-    OutputName = Recipe.OutputItem1;
+	FRecipeTable Recipe = TargetMoldingMachine->GetCurrentRecipe();
+	OutputName = Recipe.OutputItem1;
 
-    // 퍼블릭 Getter 함수인 GetOutputBuffer()를 사용하여 값을 안전하게 리트리브합니다.
-    if (!OutputName.IsNone())
-    {
-        OutputAmount = TargetMoldingMachine->GetOutputBuffer().FindRef(OutputName);
-    }
+	if (!OutputName.IsNone())
+	{
+		OutputAmount = TargetMoldingMachine->GetOutputBuffer().FindRef(OutputName);
+	}
 
-    if (OutputAmount > 0)
-    {
-        if (TXT_OutputName)  TXT_OutputName->SetText(FText::FromName(OutputName));
-        if (TXT_OutputCount) TXT_OutputCount->SetText(FText::FromString(FString::Printf(TEXT("%d / %d"), OutputAmount, MaxOutputAmount)));
-        if (PB_OutputBuffer) PB_OutputBuffer->SetPercent((MaxOutputAmount > 0) ? (float)OutputAmount / MaxOutputAmount : 0.0f);
-        if (IMG_OutputIcon)   IMG_OutputIcon->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-    }
-    else
-    {
-        if (TXT_OutputName)  TXT_OutputName->SetText(FText::FromString(TEXT("비어 있음")));
-        if (TXT_OutputCount) TXT_OutputCount->SetText(FText::FromString(FString::Printf(TEXT("0 / %d"), MaxOutputAmount)));
-        if (PB_OutputBuffer) PB_OutputBuffer->SetPercent(0.0f);
-        if (IMG_OutputIcon)   IMG_OutputIcon->SetVisibility(ESlateVisibility::Hidden);
-    }
+	if (OutputAmount > 0)
+	{
+		// 출력 명칭 데이터 테이블 한글 텍스트 명칭으로
+		if (TXT_OutputName)  TXT_OutputName->SetText(GetResourceDisplayText(ResourceDataTable, OutputName));
+		if (TXT_OutputCount) TXT_OutputCount->SetText(FText::FromString(FString::Printf(TEXT("%d / %d"), OutputAmount, MaxOutputAmount)));
+		if (PB_OutputBuffer) PB_OutputBuffer->SetPercent((MaxOutputAmount > 0) ? (float)OutputAmount / MaxOutputAmount : 0.0f);
+        
+		// 출력 아이콘 텍스처 실시간 스왑.
+		if (IMG_OutputIcon && ResourceDataTable)
+		{
+			IMG_OutputIcon->SetVisibility(ESlateVisibility::Visible);
+			FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(OutputName, TEXT("FindOutputIconContext"));
+			if (RowData)
+			{
+				UTexture2D* IconTex = RowData->ImgAsset.IsValid() ? RowData->ImgAsset.Get() : RowData->ImgAsset.LoadSynchronous();
+				if (IconTex) IMG_OutputIcon->SetBrushFromTexture(IconTex);
+			}
+			IMG_OutputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
+		}
+	}
+	else
+	{
+		if (TXT_OutputName)  TXT_OutputName->SetText(FText::FromString(TEXT("비어 있음")));
+		if (TXT_OutputCount) TXT_OutputCount->SetText(FText::FromString(FString::Printf(TEXT("0 / %d"), MaxOutputAmount)));
+		if (PB_OutputBuffer) PB_OutputBuffer->SetPercent(0.0f);
+		if (IMG_OutputIcon)  IMG_OutputIcon->SetVisibility(ESlateVisibility::Hidden);
+	}
 }
 
 void UUI_MoldingMachineInteract::NativeDestruct()
