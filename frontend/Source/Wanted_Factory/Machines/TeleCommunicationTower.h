@@ -16,4 +16,5 @@ public:
 
 	virtual bool AddItem(FName ItemID, int32 Count) override;
 	virtual bool CanReceiveConveyorItem(FName ItemID, int32 Count = 1) const override;
+	virtual bool CanPlayerInteract() const override { return false; }
 };

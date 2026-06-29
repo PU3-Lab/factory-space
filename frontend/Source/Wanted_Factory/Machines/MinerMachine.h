@@ -59,6 +59,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Mining")
 	void SetLinkedResource(AResourceBase* NewResource);
 
+	UFUNCTION(BlueprintPure, Category="Mining")
+	FName GetLinkedResourceItemID() const;
+
+	UFUNCTION(BlueprintPure, Category="Mining")
+	bool HasLinkedMineableResource() const;
+
+	UFUNCTION(BlueprintPure, Category="Mining")
+	int32 GetMineAmount() const { return MineAmount; }
+
+	UFUNCTION(BlueprintPure, Category="Mining")
+	float GetMineInterval() const { return MineInterval; }
+
 	// 채굴 가능한 상태인지 확인
 	UFUNCTION(BlueprintCallable, Category="Mining")
 	bool CanMine() const;

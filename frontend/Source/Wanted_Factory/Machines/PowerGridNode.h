@@ -59,11 +59,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Power Grid|Light", meta = (ClampMin = "0.0"))
 	float NightIndicatorLightRadius = 900.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Power Grid|Light", meta = (ClampMin = "0.0"))
+	float NightIndicatorLightFadeSpeed = 2.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | Power Grid|Light")
 	FLinearColor NightIndicatorLightColor = FLinearColor::White;
 
 private:
-	void UpdateNightIndicatorLight();
+	void UpdateNightIndicatorLight(float DeltaSeconds);
 	bool ShouldEnableNightIndicatorLight() const;
 	void RegisterToPowerGrid();
 	void UnregisterFromPowerGrid();
