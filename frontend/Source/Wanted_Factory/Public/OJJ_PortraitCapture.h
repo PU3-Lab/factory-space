@@ -13,6 +13,7 @@ class USceneCaptureComponent2D;
 class UPointLightComponent;
 class UTextureRenderTarget2D;
 class UAnimationAsset;
+class UTexture2D;
 
 /**
  * 대화 패널 포트레이트용 로봇 실시간 캡처 액터 (OJJ 소유).
@@ -121,7 +122,20 @@ private:
 	/** 누적 폴링 대기 시간(초). CaptureMaxWarmupWait 안전망 비교용. */
 	float CaptureWarmupElapsed = 0.f;
 
-	/** 셰이더 컴파일이 끝났는지 폴링 → 끝났으면(또는 최대대기 초과) BeginContinuousCapture 호출. */
+	/** 로봇 머티리얼이 쓰는 텍스처 캐시(BeginPlay에서 수집 — mip resident 폴링용). */
+	UPROPERTY(Transient)
+	TArray<UTexture2D*> RobotTextures;
+
+	/** RobotTextures 각각의 원래 bForceMiplevelsToBeResident 값(EndPlay에서 원복용, RobotTextures와 인덱스 정렬). */
+	TArray<bool> RobotTexturesPrevForceResident;
+
+	/** 로봇 머티리얼 텍스처를 수집·캐시하고 전체 밉을 강제 resident로 요청(bForceMiplevelsToBeResident). */
+	void CacheAndForceRobotTextures();
+
+	/** 캐시된 로봇 텍스처가 전부 full-resident인지(GetNumResidentMips >= GetNumMips). 비어 있으면 true. */
+	bool AreRobotTexturesFullyResident() const;
+
+	/** 셰이더 컴파일(에디터) + 텍스처 스트림인(공통)이 끝났는지 폴링 → 완료/최대대기 초과 시 BeginContinuousCapture. */
 	void TryBeginCapture();
 
 	/** 연속 캡처(bCaptureEveryFrame)를 켜고 즉시 한 장 갱신. */
