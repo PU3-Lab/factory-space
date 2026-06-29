@@ -38,4 +38,16 @@ Make_CopperPlate,MoldingMachine,copper_ingot,5,,,,,copper_plate,2,,,5
 Make_TinBar,MoldingMachine,tin_ingot,5,,,,,tin_bar,2,,,5
 Make_TinWire,MoldingMachine,tin_ingot,5,,,,,tin_wire,2,,,5
 Make_TinPlate,MoldingMachine,tin_ingot,5,,,,,tin_plate,2,,,5
+Make_AluminumBar,MoldingMachine,aluminum_ingot,5,,,,,aluminum_bar,2,,,5
+Make_AluminumWire,MoldingMachine,aluminum_ingot,5,,,,,aluminum_wire,2,,,5
+Make_AluminumPlate,MoldingMachine,aluminum_ingot,5,,,,,aluminum_plate,2,,,5
+Make_GoldBar,MoldingMachine,gold_ingot,5,,,,,gold_bar,2,,,5
+Make_GoldWire,MoldingMachine,gold_ingot,5,,,,,gold_wire,2,,,5
+Make_GoldPlate,MoldingMachine,gold_ingot,5,,,,,gold_plate,2,,,5
+Make_TungstenBar,MoldingMachine,tungsten_ingot,5,,,,,tungsten_bar,2,,,5
+Make_TungstenWire,MoldingMachine,tungsten_ingot,5,,,,,tungsten_wire,2,,,5
+Make_TungstenPlate,MoldingMachine,tungsten_ingot,5,,,,,tungsten_plate,2,,,5
+Make_TitaniumBar,MoldingMachine,titanium_ingot,5,,,,,titanium_bar,2,,,5
+Make_TitaniumWire,MoldingMachine,titanium_ingot,5,,,,,titanium_wire,2,,,5
+Make_TitaniumPlate,MoldingMachine,titanium_ingot,5,,,,,titanium_plate,2,,,5
 Make_telecommunication_tower,Synthesizer,iron_bar,20,copper_wire,20,tin_plate,20,TeleCommunicationTower,1,,,30

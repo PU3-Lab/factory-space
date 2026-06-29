@@ -31,6 +31,19 @@ FString BuildSubQuestProgressText(const FQuestState& Quest)
 
     return FString::Printf(TEXT("- %s (%s) %s"), *Quest.Title.ToString(), *ProgressText, *StatusText);
 }
+
+FString BuildRewardText(const FQuestState& Quest)
+{
+    TArray<FString> RewardTexts;
+    for (const FQuestRewardItem& Reward : Quest.Rewards)
+    {
+        RewardTexts.Add(FString::Printf(TEXT("%s x%d"), *Reward.ItemId.ToString(), Reward.Quantity));
+    }
+
+    return RewardTexts.IsEmpty()
+        ? TEXT("No reward")
+        : FString::Join(RewardTexts, TEXT(", "));
+}
 }
 
 void UUI_QuestWindow::NativeConstruct()
@@ -55,6 +68,11 @@ void UUI_QuestWindow::NativeConstruct()
     QuestManager->OnMainQuestChanged.AddDynamic(this, &UUI_QuestWindow::HandleOnMainQuestChanged);
     QuestManager->OnTutorialStepChanged.AddDynamic(this, &UUI_QuestWindow::HandleOnTutorialStepChanged);
     QuestManager->OnTutorialDialogueLogged.AddDynamic(this, &UUI_QuestWindow::HandleOnTutorialDialogueLogged);
+
+    TArray<FQuestState> CurrentSubQuests;
+    QuestManager->GetSubQuests(CurrentSubQuests);
+    CacheSubQuestStatuses(CurrentSubQuests);
+    UpdateSubQuestTexts(CurrentSubQuests);
 
     FTutorialQuestStep InitialStep;
     if (QuestManager->HasPendingTutorialStartDialogue())
@@ -180,34 +198,91 @@ void UUI_QuestWindow::OnRequestQuestsClicked()
 
 void UUI_QuestWindow::HandleOnSubQuestsGenerated(const FString& RequestId, const TArray<FQuestState>& Quests)
 {
+    CacheSubQuestStatuses(Quests);
     UpdateSubQuestTexts(Quests);
 }
 
 void UUI_QuestWindow::HandleOnSubQuestsUpdated(const TArray<FQuestState>& Quests)
 {
+    for (const FQuestState& Quest : Quests)
+    {
+        const EQuestStatus* PreviousStatus = CachedSubQuestStatuses.Find(Quest.QuestId);
+        if (PreviousStatus && *PreviousStatus != EQuestStatus::Completed && Quest.Status == EQuestStatus::Completed)
+        {
+            ShowSubQuestCompletedNotify(Quest);
+        }
+    }
+
+    CacheSubQuestStatuses(Quests);
     UpdateSubQuestTexts(Quests);
+}
+
+void UUI_QuestWindow::CacheSubQuestStatuses(const TArray<FQuestState>& Quests)
+{
+    CachedSubQuestStatuses.Empty();
+
+    for (const FQuestState& Quest : Quests)
+    {
+        CachedSubQuestStatuses.Add(Quest.QuestId, Quest.Status);
+    }
+}
+
+void UUI_QuestWindow::ShowSubQuestCompletedNotify(const FQuestState& Quest)
+{
+    if (!QuestNotifyWidgetClass)
+    {
+        return;
+    }
+
+    APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+    if (!PC)
+    {
+        return;
+    }
+
+    UUI_QuestNotify* NotifyWidget = CreateWidget<UUI_QuestNotify>(PC, QuestNotifyWidgetClass);
+    if (!NotifyWidget)
+    {
+        return;
+    }
+
+    NotifyWidget->AddToViewport(100);
+    NotifyWidget->PlayNotify(Quest.Title.ToString(), BuildRewardText(Quest));
 }
 
 void UUI_QuestWindow::UpdateSubQuestTexts(const TArray<FQuestState>& Quests)
 {
     TArray<UTextBlock*> SubBoxes = { TXT_SubQuest_1, TXT_SubQuest_2, TXT_SubQuest_3, TXT_SubQuest_4, TXT_SubQuest_5 };
 
-    for (UTextBlock* Box : SubBoxes)
+    // 기존 텍스트 초기화 루프는 걷어내고, 아래 통합 루프 하나로 마감합니다.
+    for (int32 i = 0; i < SubBoxes.Num(); ++i)
     {
-        if (Box)
-        {
-            Box->SetText(FText::GetEmpty());
-        }
-    }
+        UTextBlock* Box = SubBoxes[i];
+        if (!Box) continue;
 
-    for (int32 i = 0; i < Quests.Num(); ++i)
-    {
-        if (!SubBoxes.IsValidIndex(i) || !SubBoxes[i])
-        {
-            continue;
-        }
+        // 텍스트 블록을 감싸고 있는 무명 부모 상자(Vertical Box)를 실시간으로 추적합니다.
+        UWidget* RowWrapper = Box->GetParent();
 
-        SubBoxes[i]->SetText(FText::FromString(BuildSubQuestProgressText(Quests[i])));
+        if (i < Quests.Num())
+        {
+            // 1. 퀘스트 데이터가 존재하면 글자를 채우고
+            Box->SetText(FText::FromString(BuildSubQuestProgressText(Quests[i])));
+            
+            // 2. 부모 상자를 통째로 화면에 노출합니다 (글자와 선이 세트로 예쁘게 등장)
+            if (RowWrapper)
+            {
+                RowWrapper->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+            }
+        }
+        else
+        {
+            // 3. 퀘스트 데이터가 없으면 부모 상자를 완전히 접어버립니다.
+            // Collapsed로 접히면 내부의 선(Border)까지 완벽하게 공간 밀림 없이 증발합니다!
+            if (RowWrapper)
+            {
+                RowWrapper->SetVisibility(ESlateVisibility::Collapsed);
+            }
+        }
     }
 }
 
