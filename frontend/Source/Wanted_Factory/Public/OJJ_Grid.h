@@ -529,6 +529,10 @@ protected:
 	// 대칭 경로에 얹어 OJJ_ActorToCells와 같은 수명. weak ptr이라 stale은 조회 시 null로 자연 무효화.
 	TMap<FIntPoint, TWeakObjectPtr<AResourceBase>> OJJ_ResourceCellToActor;
 
+	// [#3] 강(WaterBodyRiver)을 펌프용 액체 자원으로 노출하는 비가시 무한 수원(BeginPlay 1회 스폰). GC 방지 보유.
+	UPROPERTY()
+	TObjectPtr<AResourceBase> OJJ_RiverLiquidResource;
+
 	// === Foundation 커버리지 레이어 (F1-a — 데이터/질의만. 소비처 연결은 F1-c 게이트 교체) ===
 
 	// 셀 → 커버 Foundation + 상면 Z. OccupiedCells와 완전 독립(점유=차단 / 커버리지=허가 — 의미 반대).
@@ -798,6 +802,11 @@ public:
 	// 사전수집 WaterBody comps로 셀 수면 Z(강 우선, WaterArea 폴백). hot-path(snaplift/프리뷰)서 comps를 1회 수집해
 	// 재사용하면 per-cell TActorIterator 스캔을 피한다. GetWaterSurfaceZAtCell이 단발 호출용 래퍼(comps 매번 수집).
 	bool OJJ_WaterSurfaceForCell(FIntPoint Cell, const TArray<UWaterBodyComponent*>& WaterComps, float& OutSurfaceZ) const;
+
+	// [#3] 강 WaterCells를 액체 자원 레이어(OJJ_ResourceCellToActor)에 등록 — 강을 펌프 수원으로 노출.
+	// BeginPlay에서 WaterCells 확정 후 1회 호출(서버 권위). 자원 액터 1개 스폰 후 강 셀을 자원 레이어에만 기록
+	// (OccupiedCells 미사용 → 펌프 점유/원자성 충돌 회피). 이미 다른 액체 자원(WaterArea)이 덮은 셀은 보존.
+	void OJJ_EnsureRiverLiquidResource();
 
 	// 셀을 덮는 액체 자원(form=liquid)을 자원 전용 레이어(OJJ_ResourceCellToActor)에서 조회. 없으면 null.
 	// #182 펌프 발밑 수원 연결·수면 Z 공용 단일원 — OccupiedCells(머신 점유에 덮어쓰임)와 분리돼
