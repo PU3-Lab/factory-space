@@ -115,7 +115,35 @@ Unreal은 기본적으로 공장의 경량 상태를 주기적으로 백엔드�
   "payload": {
     "status": "success",
     "factoryRevision": 42,
-    "goal": "balance"
+    "goal": "balance",
+    "optimization_alert": {
+      "needed": true,
+      "severity": "medium",
+      "reason": "smelter_1의 입력 재고가 부족합니다.",
+      "target": {
+        "type": "machine",
+        "id": "smelter_1"
+      },
+      "suggested_subquest": {
+        "title": "제련기 입력 라인 복구",
+        "objective": "smelter_1에 철광석 공급이 다시 들어오도록 컨베이어와 상류 설비를 확인하세요.",
+        "target": {
+          "type": "machine",
+          "id": "smelter_1"
+        },
+        "severity": "medium",
+        "next_request": {
+          "agent": "process_optimizer",
+          "operation": "analyze",
+          "goal": "balance",
+          "request_source": "subquest",
+          "target": {
+            "type": "machine",
+            "id": "smelter_1"
+          }
+        }
+      }
+    }
   }
 }
 ```
@@ -502,3 +530,33 @@ sequenceDiagram
 - 측정 결과가 기대보다 낮아도 자동으로 되돌리지 않고, UI에서 재분석 또는 모니터링을 안내합니다.
 - 플레이어가 되돌리기를 누른 경우에만 `operation: "undo"` 요청을 보냅니다.
 - Undo 응답이 `undo_conflict`이면 플레이어가 적용 후 직접 수정한 것으로 보고 자동 복구를 막습니다.
+## Sprint 3 서브퀘스트 후보 연동 규칙
+
+Sprint 3부터 `state_update` 응답의 `optimization_alert.suggested_subquest`는 Unreal UI가 플레이어에게 보여줄 수 있는 서브퀘스트 후보 계약으로 사용한다. 이 후보는 자동 실행 지시가 아니며, 플레이어가 후보를 선택했을 때만 다음 단계로 이어진다.
+
+Unreal 처리 순서:
+
+```text
+1. state_update 응답에서 optimization_alert.needed=true 여부를 확인한다.
+2. suggested_subquest.title/objective/severity/target을 UI 후보 카드로 표시한다.
+3. 플레이어가 후보를 선택하면 suggested_subquest.next_request를 기반으로 analyze 요청을 만든다.
+4. 이때 Unreal은 최신 factoryRevision과 최신 factory_state를 반드시 다시 붙인다.
+5. analyze 응답은 preview이므로 commands를 실행하지 않는다.
+6. 플레이어가 preview를 승인한 뒤 apply approval=true 요청을 보낸다.
+7. apply 응답의 commands는 Unreal 월드 규칙으로 최종 검증한 뒤 실행한다.
+```
+
+`suggested_subquest.next_request`에 포함될 수 있는 기본 필드:
+
+```json
+{
+  "agent": "process_optimizer",
+  "operation": "analyze",
+  "goal": "balance",
+  "request_source": "subquest",
+  "target": {
+    "type": "machine",
+    "id": "smelter_1"
+  }
+}
+```

@@ -761,3 +761,78 @@ process_optimizer:
 5. execute_ready.commands는 Unreal 월드 규칙으로 최종 검증 후 실행한다.
 6. 적용 후 measure, 플레이어 요청 시 undo를 보낸다.
 ```
+## Sprint 3 추가 계약: process_optimizer 서브퀘스트 후보와 상세 분석 연결
+
+`process_optimizer`의 `state_update` 응답은 공장을 자동으로 바꾸지 않는다. 문제가 감지되면 `optimization_alert.suggested_subquest`를 내려주고, Unreal은 이 값을 UI 후보 카드로 보여줄 수 있다.
+
+Unreal이 후보를 표시할 때 사용할 주요 필드:
+
+```text
+optimization_alert.needed
+optimization_alert.severity
+optimization_alert.reason
+optimization_alert.target
+optimization_alert.suggested_subquest.title
+optimization_alert.suggested_subquest.objective
+optimization_alert.suggested_subquest.target
+optimization_alert.suggested_subquest.severity
+optimization_alert.suggested_subquest.next_request
+```
+
+플레이어가 후보를 클릭하면 Unreal은 `suggested_subquest.next_request`에 최신 `factoryRevision`과 `factory_state`를 붙여서 다시 `analyze` 요청을 보낸다.
+
+```json
+{
+  "type": "agent.request",
+  "request_id": "unreal-optimizer-subquest-analyze-001",
+  "session_id": "player-session-001",
+  "client_id": "unreal-client",
+  "agent": "process_optimizer",
+  "payload": {
+    "operation": "analyze",
+    "goal": "balance",
+    "request_source": "subquest",
+    "target": {
+      "type": "machine",
+      "id": "smelter_1"
+    },
+    "factoryRevision": 43,
+    "factory_state": {
+      "machines": [
+        {
+          "id": "smelter_1",
+          "type": "smelter",
+          "status": "operating",
+          "operating_rate": 0.2,
+          "inputs": [
+            {
+              "item_id": "iron_ore",
+              "amount": 0.0,
+              "max_amount": 100.0
+            }
+          ],
+          "outputs": []
+        }
+      ],
+      "conveyors": [],
+      "power_grid": {
+        "produced": 120.0,
+        "consumed": 90.0
+      }
+    }
+  },
+  "context": {
+    "language": "ko",
+    "mode": "gameplay"
+  }
+}
+```
+
+중요한 안전 규칙:
+
+```text
+state_update -> suggested_subquest 후보만 반환, commands 없음
+subquest analyze -> preview만 반환, commands 없음
+apply approval=true -> execute_ready commands 반환
+Unreal -> commands를 실제 월드 규칙으로 최종 검증 후 실행
+```

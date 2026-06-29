@@ -903,3 +903,93 @@ Unreal 처리:
 7. 적용 후 30초와 3 production cycle이 지나면 measure를 보낸다.
 8. 플레이어가 undo를 누르면 undo를 보낸다.
 ```
+## Sprint 3 추가 예시: process_optimizer state_update 서브퀘스트 후보 흐름
+
+Sprint 3 기준으로 `state_update` 응답에는 문제가 감지된 경우 `optimization_alert.suggested_subquest`가 포함될 수 있다. 이 값은 Unreal UI가 플레이어에게 "최적화 분석을 열어볼까요?" 같은 후보 카드로 보여주기 위한 데이터이며, 자동 실행 명령이 아니다.
+
+### state_update 응답에서 확인할 필드
+
+```text
+payload.optimization_alert.needed
+payload.optimization_alert.severity
+payload.optimization_alert.target
+payload.optimization_alert.suggested_subquest.title
+payload.optimization_alert.suggested_subquest.objective
+payload.optimization_alert.suggested_subquest.target
+payload.optimization_alert.suggested_subquest.severity
+payload.optimization_alert.suggested_subquest.next_request
+```
+
+`next_request`는 그대로 실행하는 완성 요청이 아니라, Unreal이 최신 `factoryRevision`과 `factory_state`를 다시 붙여서 `analyze` 요청으로 보내기 위한 기본값이다.
+
+### suggested_subquest 클릭 후 analyze 요청 예시
+
+```json
+{
+  "type": "agent.request",
+  "request_id": "optimizer-subquest-analyze-001",
+  "session_id": "optimizer-agent-test-session",
+  "client_id": "agent-test-console",
+  "agent": "process_optimizer",
+  "payload": {
+    "operation": "analyze",
+    "goal": "balance",
+    "request_source": "subquest",
+    "target": {
+      "type": "machine",
+      "id": "smelter_1"
+    },
+    "factoryRevision": 13,
+    "factory_state": {
+      "machines": [
+        {
+          "id": "smelter_1",
+          "type": "smelter",
+          "status": "operating",
+          "operating_rate": 0.2,
+          "inputs": [
+            {
+              "item_id": "iron_ore",
+              "amount": 0.0,
+              "max_amount": 100.0
+            }
+          ],
+          "outputs": []
+        }
+      ],
+      "conveyors": [],
+      "power_grid": {
+        "produced": 120.0,
+        "consumed": 90.0
+      }
+    }
+  },
+  "context": {
+    "language": "ko",
+    "mode": "agent_test"
+  }
+}
+```
+
+기대 결과:
+
+```text
+payload.status: preview
+payload.plan_id: 이후 apply/undo/measure에 사용할 id
+payload.changes[0].target.id: smelter_1 우선 배치
+payload.ui_hints.highlight_targets: smelter_1 포함
+commands 없음
+```
+
+### Sprint 3 smoke 테스트 명령
+
+```powershell
+cd C:\factory-space\backend
+uv run pytest tests/test_process_optimizer_subquest_unreal_flow.py -q
+```
+
+기대 결과:
+
+```text
+2 passed
+```
