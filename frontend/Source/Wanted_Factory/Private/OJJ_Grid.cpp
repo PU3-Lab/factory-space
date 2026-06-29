@@ -22,6 +22,7 @@
 #include "Pipe.h"
 #include "Resource/ResourceBase.h"
 #include "Resource/ResourceData.h"
+#include "Resource/OJJ_RiverLiquidResource.h"
 #include "UObject/ConstructorHelpers.h"
 // ① UE Water 플러그인 — WaterBody(강) 침수 질의 + 스플라인 폭 포함 판정.
 #include "WaterBodyActor.h"
@@ -1046,6 +1047,9 @@ void AOJJ_Grid::BeginPlay()
 	{
 		BakeBuildableCells(/*bVerbose=*/false, /*bWriteCache=*/false);
 	}
+
+	// [#3] WaterCells 확정 후 — 강을 펌프 수원으로 노출(액체 자원 레이어 등록).
+	OJJ_EnsureRiverLiquidResource();
 }
 
 void AOJJ_Grid::Tick(float DeltaTime)
@@ -1327,6 +1331,67 @@ bool AOJJ_Grid::IsCellVoid(FIntPoint Cell) const
 bool AOJJ_Grid::IsCellWater(FIntPoint Cell) const
 {
 	return WaterCells.Contains(Cell);
+}
+
+void AOJJ_Grid::OJJ_EnsureRiverLiquidResource()
+{
+	// 강(WaterBodyRiver)엔 AResourceBase가 없어 펌프 FindAdjacentWater가 수원을 못 찾는다(#3).
+	// WaterCells(①의 스플라인 폭 containment로 정확)에 비가시 무한 수원 1개를 매핑해 펌프가 강을 인식하게 한다.
+	if (!HasAuthority() || WaterCells.Num() == 0)
+	{
+		return;
+	}
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// ⭐ 라이브 WaterBody 수집(codex High) — 캐시 WaterCells가 stale(강 이동/삭제 후 미재베이크)이어도 실제
+	// 물 위 셀만 자원화해 "가짜 수원" 생성을 막는다. 강 없으면 자원도 없음.
+	TArray<UWaterBodyComponent*> WaterComps;
+	OJJ_GatherWaterBodies(World, WaterComps);
+	if (WaterComps.Num() == 0)
+	{
+		return;
+	}
+
+	if (!OJJ_RiverLiquidResource)
+	{
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		Params.Owner = this;
+		OJJ_RiverLiquidResource = World->SpawnActor<AOJJ_RiverLiquidResource>(
+			AOJJ_RiverLiquidResource::StaticClass(), GetActorLocation(), FRotator::ZeroRotator, Params);
+	}
+	if (!OJJ_RiverLiquidResource)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Grid] 강 액체 자원 스폰 실패 — 펌프 강 배치 비활성."));
+		return;
+	}
+
+	// 강 셀을 자원 레이어에만 등록(OccupiedCells/원자성 미사용 → 펌프 점유·선배치 충돌 회피).
+	int32 Registered = 0;
+	for (const FIntPoint& Cell : WaterCells)
+	{
+		// (codex High/M3) 라이브 재검증 — 이 셀이 실제로 WaterBody 안(스플라인 폭 containment 포함)일 때만.
+		// stale 캐시 가짜수원 차단 + 실제 존재하는 물(강/호수 등)만 자원화돼 스코프 자연 한정.
+		float UnusedZ = 0.0f;
+		if (!OJJ_WaterSurfaceForCell(Cell, WaterComps, UnusedZ))
+		{
+			continue;
+		}
+		// 이미 '유효한' 액체 자원(WaterArea 등)이 덮은 셀은 보존. (codex M2) stale weak ptr이면 강 자원으로 교체.
+		const TWeakObjectPtr<AResourceBase>* Existing = OJJ_ResourceCellToActor.Find(Cell);
+		if (Existing && Existing->IsValid())
+		{
+			continue;
+		}
+		OJJ_ResourceCellToActor.Add(Cell, OJJ_RiverLiquidResource);
+		++Registered;
+	}
+	UE_LOG(LogTemp, Log, TEXT("[Grid] 강 액체 자원 등록: water 셀 %d개 중 %d개 매핑(라이브 검증, 펌프 수원). RowName=water, 무한."),
+		WaterCells.Num(), Registered);
 }
 
 bool AOJJ_Grid::IsCellBlocked(FIntPoint Cell) const
