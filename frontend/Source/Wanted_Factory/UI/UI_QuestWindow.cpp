@@ -31,6 +31,19 @@ FString BuildSubQuestProgressText(const FQuestState& Quest)
 
     return FString::Printf(TEXT("- %s (%s) %s"), *Quest.Title.ToString(), *ProgressText, *StatusText);
 }
+
+FString BuildRewardText(const FQuestState& Quest)
+{
+    TArray<FString> RewardTexts;
+    for (const FQuestRewardItem& Reward : Quest.Rewards)
+    {
+        RewardTexts.Add(FString::Printf(TEXT("%s x%d"), *Reward.ItemId.ToString(), Reward.Quantity));
+    }
+
+    return RewardTexts.IsEmpty()
+        ? TEXT("No reward")
+        : FString::Join(RewardTexts, TEXT(", "));
+}
 }
 
 void UUI_QuestWindow::NativeConstruct()
@@ -55,6 +68,11 @@ void UUI_QuestWindow::NativeConstruct()
     QuestManager->OnMainQuestChanged.AddDynamic(this, &UUI_QuestWindow::HandleOnMainQuestChanged);
     QuestManager->OnTutorialStepChanged.AddDynamic(this, &UUI_QuestWindow::HandleOnTutorialStepChanged);
     QuestManager->OnTutorialDialogueLogged.AddDynamic(this, &UUI_QuestWindow::HandleOnTutorialDialogueLogged);
+
+    TArray<FQuestState> CurrentSubQuests;
+    QuestManager->GetSubQuests(CurrentSubQuests);
+    CacheSubQuestStatuses(CurrentSubQuests);
+    UpdateSubQuestTexts(CurrentSubQuests);
 
     FTutorialQuestStep InitialStep;
     if (QuestManager->HasPendingTutorialStartDialogue())
@@ -180,12 +198,56 @@ void UUI_QuestWindow::OnRequestQuestsClicked()
 
 void UUI_QuestWindow::HandleOnSubQuestsGenerated(const FString& RequestId, const TArray<FQuestState>& Quests)
 {
+    CacheSubQuestStatuses(Quests);
     UpdateSubQuestTexts(Quests);
 }
 
 void UUI_QuestWindow::HandleOnSubQuestsUpdated(const TArray<FQuestState>& Quests)
 {
+    for (const FQuestState& Quest : Quests)
+    {
+        const EQuestStatus* PreviousStatus = CachedSubQuestStatuses.Find(Quest.QuestId);
+        if (PreviousStatus && *PreviousStatus != EQuestStatus::Completed && Quest.Status == EQuestStatus::Completed)
+        {
+            ShowSubQuestCompletedNotify(Quest);
+        }
+    }
+
+    CacheSubQuestStatuses(Quests);
     UpdateSubQuestTexts(Quests);
+}
+
+void UUI_QuestWindow::CacheSubQuestStatuses(const TArray<FQuestState>& Quests)
+{
+    CachedSubQuestStatuses.Empty();
+
+    for (const FQuestState& Quest : Quests)
+    {
+        CachedSubQuestStatuses.Add(Quest.QuestId, Quest.Status);
+    }
+}
+
+void UUI_QuestWindow::ShowSubQuestCompletedNotify(const FQuestState& Quest)
+{
+    if (!QuestNotifyWidgetClass)
+    {
+        return;
+    }
+
+    APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+    if (!PC)
+    {
+        return;
+    }
+
+    UUI_QuestNotify* NotifyWidget = CreateWidget<UUI_QuestNotify>(PC, QuestNotifyWidgetClass);
+    if (!NotifyWidget)
+    {
+        return;
+    }
+
+    NotifyWidget->AddToViewport(100);
+    NotifyWidget->PlayNotify(Quest.Title.ToString(), BuildRewardText(Quest));
 }
 
 void UUI_QuestWindow::UpdateSubQuestTexts(const TArray<FQuestState>& Quests)
