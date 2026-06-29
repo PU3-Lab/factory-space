@@ -254,22 +254,35 @@ void UUI_QuestWindow::UpdateSubQuestTexts(const TArray<FQuestState>& Quests)
 {
     TArray<UTextBlock*> SubBoxes = { TXT_SubQuest_1, TXT_SubQuest_2, TXT_SubQuest_3, TXT_SubQuest_4, TXT_SubQuest_5 };
 
-    for (UTextBlock* Box : SubBoxes)
+    // 기존 텍스트 초기화 루프는 걷어내고, 아래 통합 루프 하나로 마감합니다.
+    for (int32 i = 0; i < SubBoxes.Num(); ++i)
     {
-        if (Box)
-        {
-            Box->SetText(FText::GetEmpty());
-        }
-    }
+        UTextBlock* Box = SubBoxes[i];
+        if (!Box) continue;
 
-    for (int32 i = 0; i < Quests.Num(); ++i)
-    {
-        if (!SubBoxes.IsValidIndex(i) || !SubBoxes[i])
-        {
-            continue;
-        }
+        // 텍스트 블록을 감싸고 있는 무명 부모 상자(Vertical Box)를 실시간으로 추적합니다.
+        UWidget* RowWrapper = Box->GetParent();
 
-        SubBoxes[i]->SetText(FText::FromString(BuildSubQuestProgressText(Quests[i])));
+        if (i < Quests.Num())
+        {
+            // 1. 퀘스트 데이터가 존재하면 글자를 채우고
+            Box->SetText(FText::FromString(BuildSubQuestProgressText(Quests[i])));
+            
+            // 2. 부모 상자를 통째로 화면에 노출합니다 (글자와 선이 세트로 예쁘게 등장)
+            if (RowWrapper)
+            {
+                RowWrapper->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+            }
+        }
+        else
+        {
+            // 3. 퀘스트 데이터가 없으면 부모 상자를 완전히 접어버립니다.
+            // Collapsed로 접히면 내부의 선(Border)까지 완벽하게 공간 밀림 없이 증발합니다!
+            if (RowWrapper)
+            {
+                RowWrapper->SetVisibility(ESlateVisibility::Collapsed);
+            }
+        }
     }
 }
 
