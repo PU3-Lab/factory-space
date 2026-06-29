@@ -38,8 +38,11 @@ class UAnimationAsset;
  * ⚠️ 전제/후속:
  *  - 단일 인스턴스 전제: 하나의 PortraitRenderTarget을 공유하므로 본 액터는 레벨에 1개만 둔다.
  *    여러 개가 같은 RT에 매 프레임 캡처하면 서로 덮어써 포트레이트가 깜빡인다(복수 필요 시 인스턴스별 RT 주입으로 분리).
- *  - bCaptureEveryFrame=true로 상시 캡처한다(MVP). 대화 패널이 항상 떠있지 않다면 패널 open/close에 맞춰
- *    bCaptureEveryFrame을 토글하거나 CaptureScene() 단발 호출로 비용을 줄이는 것이 후속 과제다.
+ *  - 상시 캡처(bCaptureEveryFrame=true)한다. 단 BeginPlay 직후 몇 프레임은 M_Robot 셰이더 첫 컴파일/텍스처
+ *    스트림인으로 깨진 채 렌더되므로, CaptureWarmupDelay(기본 0.3초) 동안 캡처를 끈 뒤 켠다(BeginContinuousCapture).
+ *    이로써 깨진 첫 프레임이 RT에 안 찍힌다(에디터 첫 PIE 글리치 회피 — 패키징은 셰이더 쿡되어 원래 무관).
+ *    대화창이 거의 상시 떠있어 open/close 토글은 두지 않는다(상시 캡처 유지). 비용이 문제가 되면 간헐 캡처
+ *    (타이머 CaptureScene)나 RT 해상도 축소를 검토한다.
  */
 UCLASS()
 class WANTED_FACTORY_API AOJJ_PortraitCapture : public AActor
@@ -91,4 +94,18 @@ protected:
 	/** 프레임 여백 배수(1.0=꽉참, 1.35=35% 여백). 크면 줌아웃 — 머리 양옆(귀/안테나) 잘림 방지에 사용. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait|Framing", meta = (ClampMin = "1.0", ClampMax = "2.0"))
 	float FramePadding = 1.35f;
+
+	// --- 캡처 워밍업 (첫 프레임 글리치 회피) ---
+
+	/** 캡처 시작 지연(초). BeginPlay 후 이 시간만큼 캡처를 끈 채 두어, 셰이더 첫 컴파일/텍스처 스트림인 중의
+	 *  깨진 첫 프레임이 RT에 찍히지 않게 한다. 0이면 즉시 캡처. 패키징은 셰이더가 쿡되어 무관(에디터 첫 PIE용). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait|Capture", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float CaptureWarmupDelay = 0.3f;
+
+private:
+	/** 캡처 워밍업 지연 타이머. */
+	FTimerHandle CaptureWarmupTimer;
+
+	/** 워밍업 지연 후 호출 — 연속 캡처(bCaptureEveryFrame)를 켜고 즉시 한 장 갱신. */
+	void BeginContinuousCapture();
 };
