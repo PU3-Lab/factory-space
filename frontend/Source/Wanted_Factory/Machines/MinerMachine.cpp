@@ -186,6 +186,18 @@ void AMinerMachine::SetLinkedResource(AResourceBase* NewResource)
 	}
 }
 
+FName AMinerMachine::GetLinkedResourceItemID() const
+{
+	return GetMinedResourceID(LinkedResource);
+}
+
+bool AMinerMachine::HasLinkedMineableResource() const
+{
+	return LinkedResource &&
+		IsMineableOreResource(LinkedResource) &&
+		!LinkedResource->IsEmpty();
+}
+
 bool AMinerMachine::CanMine() const
 {
 	if (isBroken() && bDisableWhenBroken)

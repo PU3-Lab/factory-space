@@ -102,6 +102,7 @@ AOJJ_Player::AOJJ_Player()
 	NightSpotLight->OuterConeAngle = 45.0f;
 	NightSpotLight->bUseInverseSquaredFalloff = false;
 	NightSpotLight->LightFalloffExponent = 2.5f;
+	NightSpotLight->SetIntensity(0.0f);
 	NightSpotLight->SetVisibility(false);
 }
 
@@ -189,9 +190,11 @@ void AOJJ_Player::BeginPlay()
 	{
 		BaseNightLightIntensity = NightSpotLight->Intensity;
 		BaseNightLightRadius = NightSpotLight->AttenuationRadius;
+		NightSpotLight->SetIntensity(0.0f);
+		NightSpotLight->SetVisibility(false);
 	}
 
-	UpdateNightSpotLightVisibility();
+	UpdateNightSpotLightVisibility(0.0f);
 	ConnectFactoryAgentClient();
 
 	// [게임진입] 선택 캐릭터 외형 적용 — 세이브 로드(HandlePlayerReady→LoadCurrentGame)가 SetSelectedCharacter로
@@ -932,7 +935,7 @@ void AOJJ_Player::ResumeWalkingWithCooldown()
 void AOJJ_Player::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	UpdateNightSpotLightVisibility();
+	UpdateNightSpotLightVisibility(DeltaSeconds);
 	UpdateResourceNameplate();
 
 	// [L_Planet 인트로] getup 몽타주 종료 후 카메라를 1인칭(ArmLength 0)→3인칭(IntroArmLength)으로 부드럽게 블렌드.
@@ -1114,7 +1117,7 @@ void AOJJ_Player::HideResourceNameplate()
 	FocusedNameplateResource.Reset();
 }
 
-void AOJJ_Player::UpdateNightSpotLightVisibility()
+void AOJJ_Player::UpdateNightSpotLightVisibility(float DeltaSeconds)
 {
 	// ⚠️ 매 틱 호출 — 모든 조명 상태(밤 점등 + 빌드 작업등)의 단일 진입점. 외부에서 SetVisibility 하면
 	//    다음 틱에 여기서 덮어쓰므로, 작업등 토글(bWorkLightOn)도 반드시 이 함수에서 분배해야 한다.
@@ -1141,20 +1144,29 @@ void AOJJ_Player::UpdateNightSpotLightVisibility()
 	if (NightSpotLight)
 	{
 		const bool bSpotOn = bNight || bTPSWorkLight;
-		if (NightSpotLight->IsVisible() != bSpotOn)
-		{
-			NightSpotLight->SetVisibility(bSpotOn);
-		}
-
-		const float TargetIntensity = bTPSWorkLight ? TPSWorkLightIntensity : BaseNightLightIntensity;
+		const float TargetIntensity = bSpotOn
+			? (bTPSWorkLight ? TPSWorkLightIntensity : BaseNightLightIntensity)
+			: 0.0f;
 		const float TargetRadius = bTPSWorkLight ? TPSWorkLightRadius : BaseNightLightRadius;
-		if (!FMath::IsNearlyEqual(NightSpotLight->Intensity, TargetIntensity))
+		const float NewIntensity = DeltaSeconds > 0.0f
+			? FMath::FInterpTo(NightSpotLight->Intensity, TargetIntensity, DeltaSeconds, NightLightFadeSpeed)
+			: TargetIntensity;
+
+		if (bSpotOn && !NightSpotLight->IsVisible())
 		{
-			NightSpotLight->SetIntensity(TargetIntensity);
+			NightSpotLight->SetVisibility(true);
+		}
+		if (!FMath::IsNearlyEqual(NightSpotLight->Intensity, NewIntensity, 0.01f))
+		{
+			NightSpotLight->SetIntensity(NewIntensity);
 		}
 		if (!FMath::IsNearlyEqual(NightSpotLight->AttenuationRadius, TargetRadius))
 		{
 			NightSpotLight->SetAttenuationRadius(TargetRadius);
+		}
+		if (!bSpotOn && NightSpotLight->IsVisible() && NewIntensity <= 0.05f)
+		{
+			NightSpotLight->SetVisibility(false);
 		}
 	}
 

@@ -22,7 +22,7 @@ APowerGridNode::APowerGridNode()
 	NightIndicatorLight->SetupAttachment(RootComponent);
 	NightIndicatorLight->SetRelativeLocation(NightIndicatorLightOffset);
 	NightIndicatorLight->SetLightColor(NightIndicatorLightColor);
-	NightIndicatorLight->SetIntensity(NightIndicatorLightIntensity);
+	NightIndicatorLight->SetIntensity(0.0f);
 	NightIndicatorLight->SetAttenuationRadius(NightIndicatorLightRadius);
 	NightIndicatorLight->SetCastShadows(true);
 	NightIndicatorLight->SetVisibility(false);
@@ -43,11 +43,11 @@ void APowerGridNode::BeginPlay()
 	{
 		NightIndicatorLight->SetRelativeLocation(NightIndicatorLightOffset);
 		NightIndicatorLight->SetLightColor(NightIndicatorLightColor);
-		NightIndicatorLight->SetIntensity(NightIndicatorLightIntensity);
+		NightIndicatorLight->SetIntensity(0.0f);
 		NightIndicatorLight->SetAttenuationRadius(NightIndicatorLightRadius);
 	}
 	RegisterToPowerGrid();
-	UpdateNightIndicatorLight();
+	UpdateNightIndicatorLight(0.0f);
 }
 
 void APowerGridNode::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -63,7 +63,7 @@ void APowerGridNode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void APowerGridNode::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	UpdateNightIndicatorLight();
+	UpdateNightIndicatorLight(DeltaSeconds);
 }
 
 bool APowerGridNode::AddItem(FName ItemID, int32 Count)
@@ -82,7 +82,7 @@ bool APowerGridNode::IsPowerGridActive() const
 	return !(isBroken() && bDisableWhenBroken);
 }
 
-void APowerGridNode::UpdateNightIndicatorLight()
+void APowerGridNode::UpdateNightIndicatorLight(float DeltaSeconds)
 {
 	if (!NightIndicatorLight)
 	{
@@ -91,13 +91,25 @@ void APowerGridNode::UpdateNightIndicatorLight()
 
 	NightIndicatorLight->SetRelativeLocation(NightIndicatorLightOffset);
 	NightIndicatorLight->SetLightColor(NightIndicatorLightColor);
-	NightIndicatorLight->SetIntensity(NightIndicatorLightIntensity);
 	NightIndicatorLight->SetAttenuationRadius(NightIndicatorLightRadius);
 
 	const bool bShouldBeVisible = ShouldEnableNightIndicatorLight();
-	if (NightIndicatorLight->IsVisible() != bShouldBeVisible)
+	const float TargetIntensity = bShouldBeVisible ? NightIndicatorLightIntensity : 0.0f;
+	const float NewIntensity = DeltaSeconds > 0.0f
+		? FMath::FInterpTo(NightIndicatorLight->Intensity, TargetIntensity, DeltaSeconds, NightIndicatorLightFadeSpeed)
+		: TargetIntensity;
+
+	if (bShouldBeVisible && !NightIndicatorLight->IsVisible())
 	{
-		NightIndicatorLight->SetVisibility(bShouldBeVisible);
+		NightIndicatorLight->SetVisibility(true);
+	}
+	if (!FMath::IsNearlyEqual(NightIndicatorLight->Intensity, NewIntensity, 0.01f))
+	{
+		NightIndicatorLight->SetIntensity(NewIntensity);
+	}
+	if (!bShouldBeVisible && NightIndicatorLight->IsVisible() && NewIntensity <= 0.05f)
+	{
+		NightIndicatorLight->SetVisibility(false);
 	}
 }
 

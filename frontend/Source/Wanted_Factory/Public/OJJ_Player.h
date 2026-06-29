@@ -355,6 +355,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Light|WorkLight", meta = (ClampMin = "0.0"))
 	float TPSWorkLightRadius = 2500.f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Light", meta = (ClampMin = "0.0"))
+	float NightLightFadeSpeed = 2.0f;
+
 	// --- 사다리 등반 (#184) ---
 	// 등반 중 수직 이동 속도(MaxFlySpeed). W/S로 위/아래.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
@@ -550,7 +553,7 @@ protected:
 	float BaseNightLightRadius = 1500.f;
 
 	// --- Input handlers ---
-	void UpdateNightSpotLightVisibility();
+	void UpdateNightSpotLightVisibility(float DeltaSeconds);
 	// [빌드 작업등] L키 핸들러 — 빌드모드일 때만 bWorkLightOn 토글(빌드 밖 무동작).
 	void ToggleWorkLight();
 	void Move(const FInputActionValue& Value);

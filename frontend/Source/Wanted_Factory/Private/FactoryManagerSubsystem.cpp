@@ -4,6 +4,7 @@
 
 #include "Conveyor.h"
 #include "MachineBase.h"
+#include "Machines/MinerMachine.h"
 #include "Machines/PowerLine.h"
 #include "Machines/PowerGridNode.h"
 #include "Machines/PowerPlant.h"
@@ -531,10 +532,10 @@ FFactoryPowerOverview UFactoryManagerSubsystem::GetFactoryPowerOverview()
 		if (APowerPlant* PowerPlant = Cast<APowerPlant>(Machine))
 		{
 			++Overview.InstalledGeneratorCount;
+			Overview.CurrentAvailablePower += FMath::Max(0.0f, PowerPlant->GetBasePowerOutput());
 			if (PowerPlant->CanGeneratePower())
 			{
 				++Overview.ActiveGeneratorCount;
-				Overview.CurrentAvailablePower += PowerPlant->GetCurrentPowerOutput();
 			}
 			continue;
 		}
@@ -1287,9 +1288,39 @@ bool UFactoryManagerSubsystem::BuildMachineProductionState(
 	AMachineBase* Machine,
 	FFactoryMachineProductionState& OutState)
 {
-	if (!Machine || Machine->GetMachineState() != EMachineState::Working)
+	if (!Machine)
 	{
 		return false;
+	}
+
+	if (AMinerMachine* MinerMachine = Cast<AMinerMachine>(Machine))
+	{
+		const FName ResourceID = MinerMachine->GetLinkedResourceItemID();
+		const float MineInterval = MinerMachine->GetMineInterval();
+		if (ResourceID.IsNone() ||
+			!MinerMachine->HasLinkedMineableResource() ||
+			MinerMachine->GetMineAmount() <= 0 ||
+			MineInterval <= 0.0f)
+		{
+			return false;
+		}
+
+		const float EffectiveMineInterval = MinerMachine->GetEffectiveProcessTime(
+			FMath::Max(0.01f, MineInterval));
+		if (EffectiveMineInterval <= 0.0f)
+		{
+			return false;
+		}
+
+		OutState.MachineID = MakeMachineID(MinerMachine);
+		OutState.MachineType = MinerMachine->GetMachineType();
+		OutState.SectorID = MachineToSector.FindRef(OutState.MachineID);
+		OutState.MachineState = MinerMachine->GetMachineState();
+		OutState.PrimaryOutputItemID = ResourceID;
+		OutState.PrimaryOutputPerSecond = static_cast<float>(MinerMachine->GetMineAmount()) / EffectiveMineInterval;
+		OutState.SecondaryOutputItemID = NAME_None;
+		OutState.SecondaryOutputPerSecond = 0.0f;
+		return true;
 	}
 
 	const FRecipeTable& Recipe = Machine->GetCurrentRecipe();

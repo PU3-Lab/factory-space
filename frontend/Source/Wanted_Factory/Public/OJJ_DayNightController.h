@@ -156,11 +156,19 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
 	TObjectPtr<UNiagaraSystem> SandStormNiagara;
 
+	// 모래폭풍의 부피감 있는 구름 레이어와 별도로, 잘게 날리는 입자 레이어를 추가로 붙인다.
+	// 기존 SandStormNiagara를 구름용으로 유지하고 이 슬롯에는 입자용 Niagara를 지정한다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	TObjectPtr<UNiagaraSystem> SandStormParticleNiagara;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
 	FVector MagneticStormNiagaraOffset = FVector(20.0f, 0.0f, 70.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
 	FVector SandStormNiagaraOffset = FVector(40.0f, 0.0f, 60.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	FVector SandStormParticleNiagaraOffset = FVector(40.0f, 0.0f, 60.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
 	bool bSpawnPlanetEventNiagaraInWorld = false;
@@ -172,10 +180,23 @@ protected:
 	FVector SandStormNiagaraWorldOffset = FVector(0.0f, 0.0f, 400.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	FVector SandStormParticleNiagaraWorldOffset = FVector(0.0f, 0.0f, 400.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
 	FVector MagneticStormNiagaraWorldScale = FVector(25.0f, 25.0f, 10.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
 	FVector SandStormNiagaraWorldScale = FVector(25.0f, 25.0f, 10.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	FVector SandStormParticleNiagaraWorldScale = FVector(25.0f, 25.0f, 10.0f);
+
+	// 반투명 카드 기반 모래 구름과 입자가 서로 가리지 않도록, 입자 레이어를 더 높은 우선순위로 그린다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	int32 SandStormCloudSortPriority = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
+	int32 SandStormParticleSortPriority = 10;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Post Process")
 	TObjectPtr<APostProcessVolume> MagneticStormPostProcessVolume;
@@ -214,6 +235,7 @@ private:
 	FLinearColor BaseFogInscatteringColor = FLinearColor::White;
 	float BaseFogDensity = 0.0f;
 	TObjectPtr<UNiagaraComponent> ActiveEventNiagaraComponent;
+	TObjectPtr<UNiagaraComponent> ActiveEventSecondaryNiagaraComponent;
 
 	// progress(0~1)를 태양 Pitch(도)로 변환. Pitch = -90 * sin(progress * 2π).
 	static float ProgressToSunPitch(float Progress01);
@@ -244,6 +266,8 @@ private:
 	void ApplyPlanetEventVisuals(float DeltaSeconds);
 	void SpawnEventNiagara(EPlanetEventType EventType);
 	void ClearEventNiagara();
+	void UpdateAttachedEventNiagaraTransforms();
+	void UpdateEventNiagaraParams(float SmoothedVisualAlpha) const;
 
 	// 자기폭풍 중 플레이어에게 가장 가까운 "활성" 차폐장(AOJJ_ProtectionTower)의 위치/반경을 NS_Magnetic의
 	// User 파라미터(User.ShieldCenter/User.ShieldRadius)에 주입한다. Niagara 측 Particle Update 스크래치가

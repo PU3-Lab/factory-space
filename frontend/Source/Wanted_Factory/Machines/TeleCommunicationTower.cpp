@@ -9,6 +9,7 @@ ATeleCommunicationTower::ATeleCommunicationTower()
 	MachineType = TEXT("TeleCommunicationTower");
 	bNeedPower = true;
 	bDisableWhenBroken = true;
+	bInfiniteDurability = true;
 	bShowDebugBufferText = false;
 }
 

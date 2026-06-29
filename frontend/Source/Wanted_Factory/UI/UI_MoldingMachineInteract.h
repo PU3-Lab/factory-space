@@ -66,4 +66,7 @@ private:
     // 드롭다운 메뉴 값이 바뀌었을 때 실행될 델리게이트 함수
     UFUNCTION()
     void HandleOnShapeChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+
+    UFUNCTION()
+    void OnRepairClicked();
 };
