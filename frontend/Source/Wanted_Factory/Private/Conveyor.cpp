@@ -171,6 +171,20 @@ AConveyor::AConveyor()
 	FlowArrowInstances->SetCastShadow(false);
 	FlowArrowInstances->SetVisibleInRayTracing(false);
 
+	OutputOccluder = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("OutputOccluder"));
+	OutputOccluder->SetupAttachment(Root);
+	OutputOccluder->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	OutputOccluder->SetCastShadow(false);
+	OutputOccluder->SetVisibleInRayTracing(false);
+	OutputOccluder->SetCanEverAffectNavigation(false);
+
+	InputOccluder = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("InputOccluder"));
+	InputOccluder->SetupAttachment(Root);
+	InputOccluder->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	InputOccluder->SetCastShadow(false);
+	InputOccluder->SetVisibleInRayTracing(false);
+	InputOccluder->SetCanEverAffectNavigation(false);
+
 	DebugStateText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("DebugStateText"));
 	DebugStateText->SetupAttachment(Root);
 	DebugStateText->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -185,6 +199,8 @@ AConveyor::AConveyor()
 		StraightSegmentInstances->SetStaticMesh(CubeMesh.Object);
 		CornerSegmentInstances->SetStaticMesh(CubeMesh.Object);
 		ItemVisualInstances->SetStaticMesh(CubeMesh.Object);
+		OutputOccluder->SetStaticMesh(CubeMesh.Object);
+		InputOccluder->SetStaticMesh(CubeMesh.Object);
 	}
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> ConeMesh(TEXT("/Engine/BasicShapes/Cone.Cone"));
@@ -207,6 +223,15 @@ AConveyor::AConveyor()
 			FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
 		}
 		PowderVisualMaterialBase = MaterialAsset.Object;
+		OutputOccluderMaterialInstance = UMaterialInstanceDynamic::Create(MaterialAsset.Object, this);
+		if (OutputOccluderMaterialInstance)
+		{
+			OutputOccluderMaterialInstance->SetVectorParameterValue(TEXT("Color"), FLinearColor::Black);
+			OutputOccluderMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor::Black);
+			OutputOccluderMaterialInstance->SetVectorParameterValue(TEXT("Tint"), FLinearColor::Black);
+			OutputOccluder->SetMaterial(0, OutputOccluderMaterialInstance);
+			InputOccluder->SetMaterial(0, OutputOccluderMaterialInstance);
+		}
 	}
 
 	UpdateFlowArrowMaterial();
@@ -224,6 +249,8 @@ void AConveyor::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	RefreshItemVisualInstances();
+	UpdateOutputOccluder(DeltaTime);
+	UpdateInputOccluder(DeltaTime);
 	RefreshFlowArrowInstances();
 	UpdateFlowArrowMaterial();
 	if (bShowDebugStateText)
@@ -240,6 +267,8 @@ void AConveyor::OnConstruction(const FTransform& Transform)
 	RebuildVisuals();
 	RefreshFlowArrowInstances();
 	RefreshItemVisualInstances();
+	UpdateOutputOccluder(0.0f, true);
+	UpdateInputOccluder(0.0f, true);
 	UpdateFlowArrowMaterial();
 	UpdateDebugStateText();
 	UpdateDebugTextFacingPlayer();
@@ -261,6 +290,8 @@ void AConveyor::BeginPlay()
 	RestartItemMoveTimer();
 	RefreshFlowArrowInstances();
 	RefreshItemVisualInstances();
+	UpdateOutputOccluder(0.0f, true);
+	UpdateInputOccluder(0.0f, true);
 	UpdateFlowArrowMaterial();
 	UpdateDebugTextFacingPlayer();
 }
@@ -369,6 +400,8 @@ void AConveyor::ConfigureTransport(
 	ResetItemSlots();
 	RestartItemMoveTimer();
 	RefreshItemVisualInstances();
+	UpdateOutputOccluder(0.0f, true);
+	UpdateInputOccluder(0.0f, true);
 	UpdateFlowArrowMaterial();
 	UpdateDebugStateText();
 	if (UGameInstance* GameInstance = GetGameInstance())
@@ -403,6 +436,10 @@ void AConveyor::ClearPath()
 	PreviousItemVisualIds.Reset();
 	NextItemVisualId = 1;
 	DepartingVisuals.Reset();
+	OutputOccluderAlpha = 0.0f;
+	OutputOccluderWindows.Reset();
+	InputOccluderAlpha = 0.0f;
+	InputOccluderWindows.Reset();
 	if (ItemVisualInstances)
 	{
 		ItemVisualInstances->ClearInstances();
@@ -418,6 +455,8 @@ void AConveyor::ClearPath()
 	StopItemMoveTimer();
 	RebuildVisuals();
 	RefreshItemVisualInstances();
+	UpdateOutputOccluder(0.0f, true);
+	UpdateInputOccluder(0.0f, true);
 	UpdateFlowArrowMaterial();
 	UpdateDebugStateText();
 	if (UGameInstance* GameInstance = GetGameInstance())
@@ -681,6 +720,8 @@ void AConveyor::ResetItemSlots()
 	LastItemMoveWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
 	NextItemVisualId = 1;
 	DepartingVisuals.Reset();
+	OutputOccluderWindows.Reset();
+	InputOccluderWindows.Reset();
 }
 
 void AConveyor::ApplyItemSlotsForSave(const TArray<FName>& SavedItemSlots)
@@ -697,6 +738,8 @@ void AConveyor::ApplyItemSlotsForSave(const TArray<FName>& SavedItemSlots)
 	}
 
 	DepartingVisuals.Reset();
+	OutputOccluderWindows.Reset();
+	InputOccluderWindows.Reset();
 	LastItemMoveWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastItemMoveWorldTime;
 	RefreshItemVisualInstances();
 	UpdateDebugStateText();
@@ -740,6 +783,8 @@ bool AConveyor::RefundItemsToWarehouse()
 	ItemVisualIds.Init(INDEX_NONE, ItemSlots.Num());
 	PreviousItemVisualIds = ItemVisualIds;
 	DepartingVisuals.Reset();
+	OutputOccluderWindows.Reset();
+	InputOccluderWindows.Reset();
 	RefreshItemVisualInstances();
 	UpdateDebugStateText();
 	return true;
@@ -828,6 +873,7 @@ void AConveyor::MoveItemsOneGrid()
 		{
 			ItemSlots[0] = NewItem;
 			ItemVisualIds[0] = NextItemVisualId++;
+			StartInputOccluderCycle();
 		}
 	}
 
@@ -889,14 +935,35 @@ void AConveyor::RefreshItemVisualInstances()
 	const float CurrentTime = World ? World->GetTimeSeconds() : 0.0f;
 	for (const FConveyorDepartingVisual& DepartingVisual : DepartingVisuals)
 	{
-		const float RawAlpha = DepartingVisual.Duration <= KINDA_SMALL_NUMBER
+		const float Elapsed = FMath::Max(0.0f, CurrentTime - DepartingVisual.StartWorldTime);
+		const float RawAlpha = DepartingVisual.TravelDuration <= KINDA_SMALL_NUMBER
 			? 1.0f
-			: FMath::Clamp((CurrentTime - DepartingVisual.StartWorldTime) / DepartingVisual.Duration, 0.0f, 1.0f);
+			: FMath::Clamp(Elapsed / DepartingVisual.TravelDuration, 0.0f, 1.0f);
 		const float VisualAlpha = ItemVisualLerpExponent <= KINDA_SMALL_NUMBER
 			? RawAlpha
 			: FMath::Pow(RawAlpha, ItemVisualLerpExponent);
-		const FVector ItemLocation = FMath::Lerp(DepartingVisual.StartLocation, DepartingVisual.EndLocation, VisualAlpha);
-		const FVector TravelDirection = DepartingVisual.EndLocation - DepartingVisual.StartLocation;
+		const FVector TravelLocation =
+			FMath::Lerp(DepartingVisual.StartLocation, DepartingVisual.EndLocation, VisualAlpha);
+		const FVector TravelDirection =
+			DepartingVisual.AbsorbEndLocation - DepartingVisual.StartLocation;
+		const float PostTravelElapsed = FMath::Max(0.0f, Elapsed - DepartingVisual.TravelDuration);
+		const float PostTravelDuration =
+			DepartingVisual.AbsorbDelayDuration + DepartingVisual.AbsorbDuration;
+		const float PostTravelAlpha = PostTravelDuration <= KINDA_SMALL_NUMBER
+			? 1.0f
+			: FMath::Clamp(PostTravelElapsed / PostTravelDuration, 0.0f, 1.0f);
+		const float AbsorbElapsed =
+			FMath::Max(0.0f, PostTravelElapsed - DepartingVisual.AbsorbDelayDuration);
+		const float AbsorbAlpha = DepartingVisual.AbsorbDuration <= KINDA_SMALL_NUMBER
+			? 0.0f
+			: FMath::Clamp(AbsorbElapsed / DepartingVisual.AbsorbDuration, 0.0f, 1.0f);
+		const float AbsorbScale = 1.0f - FMath::InterpEaseIn(0.0f, 1.0f, AbsorbAlpha, 2.0f);
+		const FVector ItemLocation = PostTravelElapsed > 0.0f
+			? FMath::Lerp(
+				DepartingVisual.EndLocation,
+				DepartingVisual.AbsorbEndLocation,
+				PostTravelAlpha)
+			: TravelLocation;
 		FConveyorDesiredVisual& DesiredVisual = DesiredVisuals.AddDefaulted_GetRef();
 		DesiredVisual.VisualId = DepartingVisual.VisualId;
 		DesiredVisual.ItemId = DepartingVisual.ItemId;
@@ -905,6 +972,7 @@ void AConveyor::RefreshItemVisualInstances()
 			ItemLocation,
 			TravelDirection.IsNearlyZero() ? FRotator::ZeroRotator : TravelDirection.Rotation(),
 			BaseItemScale);
+		DesiredVisual.Transform.SetScale3D(DesiredVisual.Transform.GetScale3D() * AbsorbScale);
 	}
 
 	TSet<int32> DesiredVisualIds;
@@ -1002,7 +1070,11 @@ void AConveyor::PruneDepartingVisuals()
 	const float CurrentTime = World->GetTimeSeconds();
 	DepartingVisuals.RemoveAll([CurrentTime](const FConveyorDepartingVisual& DepartingVisual)
 	{
-		return CurrentTime - DepartingVisual.StartWorldTime >= FMath::Max(0.01f, DepartingVisual.Duration);
+		const float TotalDuration =
+			DepartingVisual.TravelDuration
+			+ DepartingVisual.AbsorbDelayDuration
+			+ DepartingVisual.AbsorbDuration;
+		return CurrentTime - DepartingVisual.StartWorldTime >= FMath::Max(0.01f, TotalDuration);
 	});
 }
 
@@ -1018,11 +1090,204 @@ void AConveyor::StartDepartingVisual(int32 VisualId, FName ItemId, int32 SlotInd
 	DepartingVisual.ItemId = ItemId;
 	DepartingVisual.StartLocation = GetSlotLocalCenter(SlotIndex);
 	DepartingVisual.EndLocation = GetOutgoingItemLocalCenter();
+	FVector ExitDirection = DepartingVisual.EndLocation - DepartingVisual.StartLocation;
+	ExitDirection.Z = 0.0f;
+	DepartingVisual.AbsorbEndLocation =
+		DepartingVisual.EndLocation + (ExitDirection.GetSafeNormal() * CellSize);
 	DepartingVisual.StartWorldTime = GetWorld()->GetTimeSeconds();
 	const float TravelDistance = FVector::Distance(DepartingVisual.StartLocation, DepartingVisual.EndLocation);
 	const float CellsToTravel = CellSize <= KINDA_SMALL_NUMBER ? 1.0f : TravelDistance / CellSize;
-	DepartingVisual.Duration = FMath::Max(0.01f, SecondsPerGrid * CellsToTravel);
+	DepartingVisual.TravelDuration = FMath::Max(0.01f, SecondsPerGrid * CellsToTravel);
+	DepartingVisual.AbsorbDelayDuration = FMath::Max(0.0f, ItemAbsorbStartDelay);
+	DepartingVisual.AbsorbDuration = FMath::Max(0.0f, ItemAbsorbDuration);
 	DepartingVisuals.Add(DepartingVisual);
+
+	FConveyorOccluderWindow& Window = OutputOccluderWindows.AddDefaulted_GetRef();
+	Window.RaiseAtWorldTime =
+		DepartingVisual.StartWorldTime + FMath::Max(0.0f, OutputOccluderOpenDelay);
+	Window.RaisedUntilWorldTime =
+		Window.RaiseAtWorldTime
+		+ FMath::Max(0.01f, OutputOccluderRaiseDuration)
+		+ FMath::Max(0.0f, OutputOccluderHoldDuration);
+}
+
+bool AConveyor::ShouldRaiseOutputOccluder() const
+{
+	if (!bEnableOutputOccluder)
+	{
+		return false;
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	const float CurrentTime = World->GetTimeSeconds();
+	for (const FConveyorOccluderWindow& Window : OutputOccluderWindows)
+	{
+		if (CurrentTime >= Window.RaiseAtWorldTime && CurrentTime < Window.RaisedUntilWorldTime)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void AConveyor::UpdateOutputOccluder(float DeltaTime, bool bSnapToHidden)
+{
+	if (!OutputOccluder)
+	{
+		return;
+	}
+
+	const bool bHasOutputCell = OccupiedGridCells.Num() > 0;
+	OutputOccluder->SetVisibility(bEnableOutputOccluder && bHasOutputCell);
+	if (!bEnableOutputOccluder || !bHasOutputCell)
+	{
+		OutputOccluderAlpha = 0.0f;
+		OutputOccluderWindows.Reset();
+		return;
+	}
+
+	if (const UWorld* World = GetWorld())
+	{
+		const float CurrentTime = World->GetTimeSeconds();
+		OutputOccluderWindows.RemoveAll([CurrentTime](const FConveyorOccluderWindow& Window)
+		{
+			return CurrentTime >= Window.RaisedUntilWorldTime;
+		});
+	}
+
+	const bool bShouldRaise = !bSnapToHidden && ShouldRaiseOutputOccluder();
+	const float TargetAlpha = bShouldRaise ? 1.0f : 0.0f;
+	const float MoveDuration = bShouldRaise ? OutputOccluderRaiseDuration : OutputOccluderLowerDuration;
+	const float InterpSpeed = 1.0f / FMath::Max(0.01f, MoveDuration);
+	OutputOccluderAlpha = bSnapToHidden
+		? 0.0f
+		: FMath::FInterpConstantTo(OutputOccluderAlpha, TargetAlpha, DeltaTime, InterpSpeed);
+
+	const int32 LastSlotIndex = OccupiedGridCells.Num() - 1;
+	FVector TravelDirection = ResolveItemVisualTravelDirection(LastSlotIndex, false);
+	TravelDirection.Z = 0.0f;
+	TravelDirection = TravelDirection.GetSafeNormal();
+	const float OccluderYaw = TravelDirection.IsNearlyZero() ? 0.0f : TravelDirection.Rotation().Yaw;
+	const FRotator OccluderRotation(0.0f, OccluderYaw, 0.0f);
+	const FVector LastSlotCenter = GetSlotLocalCenter(LastSlotIndex);
+	const FVector FinalConveyorEdge = LastSlotCenter + (TravelDirection * CellSize * 0.5f);
+	const FVector VisibleLocation =
+		FinalConveyorEdge + OccluderRotation.RotateVector(OutputOccluderLocationOffset);
+	const float HiddenDistance = OutputOccluderHeight + OutputOccluderHiddenDepth;
+	const FVector HiddenLocation = VisibleLocation - FVector(0.0f, 0.0f, HiddenDistance);
+	const FVector OccluderLocation = FMath::Lerp(HiddenLocation, VisibleLocation, OutputOccluderAlpha);
+
+	const FVector OccluderScale(
+		FMath::Max(1.0f, OutputOccluderDepth) / 100.0f,
+		FMath::Max(1.0f, OutputOccluderWidth) / 100.0f,
+		FMath::Max(1.0f, OutputOccluderHeight) / 100.0f);
+	OutputOccluder->SetRelativeTransform(FTransform(
+		OccluderRotation,
+		OccluderLocation,
+		OccluderScale));
+}
+
+void AConveyor::StartInputOccluderCycle()
+{
+	if (!bEnableInputOccluder || OccupiedGridCells.Num() < 2 || !GetWorld())
+	{
+		return;
+	}
+
+	const float StartWorldTime = GetWorld()->GetTimeSeconds();
+	FConveyorOccluderWindow& Window = InputOccluderWindows.AddDefaulted_GetRef();
+	Window.RaiseAtWorldTime = StartWorldTime + FMath::Max(0.0f, InputOccluderOpenDelay);
+	Window.RaisedUntilWorldTime =
+		Window.RaiseAtWorldTime
+		+ FMath::Max(0.01f, InputOccluderRaiseDuration)
+		+ FMath::Max(0.0f, InputOccluderHoldDuration);
+}
+
+bool AConveyor::ShouldRaiseInputOccluder() const
+{
+	if (!bEnableInputOccluder)
+	{
+		return false;
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	const float CurrentTime = World->GetTimeSeconds();
+	for (const FConveyorOccluderWindow& Window : InputOccluderWindows)
+	{
+		if (CurrentTime >= Window.RaiseAtWorldTime && CurrentTime < Window.RaisedUntilWorldTime)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void AConveyor::UpdateInputOccluder(float DeltaTime, bool bSnapToHidden)
+{
+	if (!InputOccluder)
+	{
+		return;
+	}
+
+	const bool bHasInputBoundary = OccupiedGridCells.Num() >= 2;
+	InputOccluder->SetVisibility(bEnableInputOccluder && bHasInputBoundary);
+	if (!bEnableInputOccluder || !bHasInputBoundary)
+	{
+		InputOccluderAlpha = 0.0f;
+		InputOccluderWindows.Reset();
+		return;
+	}
+
+	if (const UWorld* World = GetWorld())
+	{
+		const float CurrentTime = World->GetTimeSeconds();
+		InputOccluderWindows.RemoveAll([CurrentTime](const FConveyorOccluderWindow& Window)
+		{
+			return CurrentTime >= Window.RaisedUntilWorldTime;
+		});
+	}
+
+	const bool bShouldRaise = !bSnapToHidden && ShouldRaiseInputOccluder();
+	const float TargetAlpha = bShouldRaise ? 1.0f : 0.0f;
+	const float MoveDuration = bShouldRaise ? InputOccluderRaiseDuration : InputOccluderLowerDuration;
+	const float InterpSpeed = 1.0f / FMath::Max(0.01f, MoveDuration);
+	InputOccluderAlpha = bSnapToHidden
+		? 0.0f
+		: FMath::FInterpConstantTo(InputOccluderAlpha, TargetAlpha, DeltaTime, InterpSpeed);
+
+	const FVector FirstCenter = GetSlotLocalCenter(0);
+	const FVector SecondCenter = GetSlotLocalCenter(1);
+	FVector TravelDirection = SecondCenter - FirstCenter;
+	TravelDirection.Z = 0.0f;
+	TravelDirection = TravelDirection.GetSafeNormal();
+	const float OccluderYaw = TravelDirection.IsNearlyZero() ? 0.0f : TravelDirection.Rotation().Yaw;
+	const FRotator OccluderRotation(0.0f, OccluderYaw, 0.0f);
+	const FVector BoundaryLocation = FMath::Lerp(FirstCenter, SecondCenter, 0.5f);
+	const FVector VisibleLocation =
+		BoundaryLocation + OccluderRotation.RotateVector(InputOccluderLocationOffset);
+	const float HiddenDistance = InputOccluderHeight + InputOccluderHiddenDepth;
+	const FVector HiddenLocation = VisibleLocation - FVector(0.0f, 0.0f, HiddenDistance);
+	const FVector OccluderLocation = FMath::Lerp(HiddenLocation, VisibleLocation, InputOccluderAlpha);
+	const FVector OccluderScale(
+		FMath::Max(1.0f, InputOccluderDepth) / 100.0f,
+		FMath::Max(1.0f, InputOccluderWidth) / 100.0f,
+		FMath::Max(1.0f, InputOccluderHeight) / 100.0f);
+	InputOccluder->SetRelativeTransform(FTransform(
+		OccluderRotation,
+		OccluderLocation,
+		OccluderScale));
 }
 
 UStaticMeshComponent* AConveyor::CreateVisualComponentForItem(int32 VisualId, FName ItemId)
@@ -1363,22 +1628,35 @@ FVector AConveyor::GetOutgoingItemLocalCenter() const
 		return FVector(0.0f, 0.0f, ZOffset + ItemVisualZOffset);
 	}
 
-	if (TargetMachine.IsValid())
+	const int32 LastSlotIndex = OccupiedGridCells.Num() - 1;
+	const FVector LastCenter = GetSlotLocalCenter(LastSlotIndex);
+	FVector ExitDirection = FVector::ZeroVector;
+
+	if (OJJ_EndPortFlowDir != FIntPoint::ZeroValue)
 	{
-		const FVector TargetWorldLocation = TargetMachine->GetActorLocation();
-		FVector TargetLocalLocation = GetActorTransform().InverseTransformPosition(TargetWorldLocation);
-		TargetLocalLocation.Z = GetSlotLocalCenter(OccupiedGridCells.Num() - 1).Z;
-		return TargetLocalLocation;
+		ExitDirection = FVector(
+			static_cast<float>(OJJ_EndPortFlowDir.X),
+			static_cast<float>(OJJ_EndPortFlowDir.Y),
+			0.0f);
+	}
+	else if (OccupiedGridCells.Num() > 1)
+	{
+		ExitDirection = LastCenter - GetSlotLocalCenter(LastSlotIndex - 1);
+	}
+	else if (TargetMachine.IsValid())
+	{
+		const FVector TargetLocalLocation =
+			GetActorTransform().InverseTransformPosition(TargetMachine->GetActorLocation());
+		ExitDirection = TargetLocalLocation - LastCenter;
 	}
 
-	if (OccupiedGridCells.Num() == 1)
+	ExitDirection.Z = 0.0f;
+	if (ExitDirection.IsNearlyZero())
 	{
-		return GetSlotLocalCenter(0);
+		ExitDirection = FVector::ForwardVector;
 	}
 
-	const FVector LastCenter = GetSlotLocalCenter(OccupiedGridCells.Num() - 1);
-	const FVector PreviousCenter = GetSlotLocalCenter(OccupiedGridCells.Num() - 2);
-	return LastCenter + (LastCenter - PreviousCenter);
+	return LastCenter + (ExitDirection.GetSafeNormal() * CellSize * 0.5f);
 }
 
 FVector AConveyor::ResolveItemVisualStartLocation(int32 SlotIndex) const
