@@ -17,6 +17,7 @@ class UStaticMeshComponent;
 class UInstancedStaticMeshComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
+class UWaterBodyComponent;
 
 /**
  * 그리드 셀 베이크 분류 (사전베이크 캐시 2bit 패킹용). 상호배타 4상태.
@@ -346,8 +347,9 @@ protected:
 	// 옛 맵은 필드 부재로 0 로드 → 불일치 → 재베이크 유도. 산식 변경 시 OJJ_CurrentBakeVersion 상향.
 	UPROPERTY()
 	int32 CacheBakeVersion = 0;
-	// 현재 산식 버전: 2 = GroundZ 대표값 최고점(F2-1). 0/1(필드 도입 전 — 최악점 시절)은 자동 무효.
-	static constexpr int32 OJJ_CurrentBakeVersion = 2;
+	// 현재 산식 버전: 2 = GroundZ 대표값 최고점(F2-1). 3 = ① WaterBody 침수 기반 water 분류(높이 임계는 폴백).
+	// 0/1(필드 도입 전)·2(옛 높이식 water)는 자동 무효 → 강제 재베이크.
+	static constexpr int32 OJJ_CurrentBakeVersion = 3;
 
 	// 건설 가능(초록) 셀 per-cell 비주얼 ISM — 빌드모드 진입 시 표시. void 셀 제외 → 바닥 모양 자동 추종.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Terrain")
@@ -786,6 +788,16 @@ public:
 	// "교집합" 정책: 분류 water 셀(IsCellWater)이라도 WaterArea가 안 덮으면 false → 호출자가 거부(펌프=교집합만 허용).
 	UFUNCTION(BlueprintPure, Category = "Grid|Water")
 	bool GetWaterSurfaceZAtCell(FIntPoint Cell, float& OutSurfaceZ) const;
+
+	// ① UE Water 플러그인 WaterBody(강/호수) 직접 질의: 월드 점이 수중인지 + per-location 수면 Z.
+	// 레벨의 AWaterBody를 순회해 TryQueryWaterInfoClosestToWorldLocation(ComputeImmersionDepth)로 침수 판정.
+	// 베이크 water 분류·GetWaterSurfaceZAtCell의 1차 소스(WaterArea는 폴백). 매 호출 TActorIterator라 hot-loop엔
+	// 부적합 — 베이크는 사전수집 리스트로 별도 처리(성능). 수중(immersion>0)이면 true + OutSurfaceZ=수면 월드 Z.
+	bool OJJ_QueryWaterBodyAt(const FVector& WorldLoc, float& OutSurfaceZ) const;
+
+	// 사전수집 WaterBody comps로 셀 수면 Z(강 우선, WaterArea 폴백). hot-path(snaplift/프리뷰)서 comps를 1회 수집해
+	// 재사용하면 per-cell TActorIterator 스캔을 피한다. GetWaterSurfaceZAtCell이 단발 호출용 래퍼(comps 매번 수집).
+	bool OJJ_WaterSurfaceForCell(FIntPoint Cell, const TArray<UWaterBodyComponent*>& WaterComps, float& OutSurfaceZ) const;
 
 	// 셀을 덮는 액체 자원(form=liquid)을 자원 전용 레이어(OJJ_ResourceCellToActor)에서 조회. 없으면 null.
 	// #182 펌프 발밑 수원 연결·수면 Z 공용 단일원 — OccupiedCells(머신 점유에 덮어쓰임)와 분리돼

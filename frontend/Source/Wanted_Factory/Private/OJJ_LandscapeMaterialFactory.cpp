@@ -39,14 +39,16 @@ namespace
 	const TCHAR* kGravelN   = TEXT("/Game/Fab/Megascans/Surfaces/Military_Trenches_Ground_Dirt_Rough_02_yd0lacrs/Medium/yd0lacrs_tier_2/Textures/T_yd0lacrs_2k_N.T_yd0lacrs_2k_N");
 	const TCHAR* kGravelORM = TEXT("/Game/Fab/Megascans/Surfaces/Military_Trenches_Ground_Dirt_Rough_02_yd0lacrs/Medium/yd0lacrs_tier_2/Textures/T_yd0lacrs_2k_ORM.T_yd0lacrs_2k_ORM");
 
-	void Conn(FExpressionInput& In, UMaterialExpression* Expr, int32 OutIndex = 0)
+	// ⚠️ 유니티(jumbo) 빌드 충돌 회피 — OJJ_HologramMaterialFactory.cpp의 동명 익명 헬퍼(Conn/MakeExpr)와
+	// 같은 TU로 묶이면 재정의 에러(C2084/C2995). LS 접두사로 고유화.
+	void LSConn(FExpressionInput& In, UMaterialExpression* Expr, int32 OutIndex = 0)
 	{
 		In.Expression = Expr;
 		In.OutputIndex = OutIndex;
 	}
 
 	template <typename T>
-	T* MakeExpr(UMaterial* Mat, int32 X, int32 Y)
+	T* LSMakeExpr(UMaterial* Mat, int32 X, int32 Y)
 	{
 		return Cast<T>(UMaterialEditingLibrary::CreateMaterialExpression(Mat, T::StaticClass(), X, Y));
 	}
@@ -64,10 +66,10 @@ namespace
 	UMaterialExpressionTextureSample* Sample(UMaterial* Mat, UTexture* Tex, EMaterialSamplerType SType,
 		UMaterialExpression* UV, int32 X, int32 Y)
 	{
-		UMaterialExpressionTextureSample* S = MakeExpr<UMaterialExpressionTextureSample>(Mat, X, Y);
+		UMaterialExpressionTextureSample* S = LSMakeExpr<UMaterialExpressionTextureSample>(Mat, X, Y);
 		S->Texture = Tex;
 		S->SamplerType = SType;
-		if (UV) { Conn(S->Coordinates, UV); }
+		if (UV) { LSConn(S->Coordinates, UV); }
 		return S;
 	}
 
@@ -78,17 +80,17 @@ namespace
 	{
 		UMaterialExpressionTextureSample* S1 = Sample(Mat, Tex, SType, UV1, X, Y);
 		UMaterialExpressionTextureSample* S2 = Sample(Mat, Tex, SType, UV2, X, Y + 130);
-		UMaterialExpressionLinearInterpolate* L = MakeExpr<UMaterialExpressionLinearInterpolate>(Mat, X + 220, Y + 60);
-		Conn(L->A, S1); Conn(L->B, S2); L->ConstAlpha = 0.5f;
+		UMaterialExpressionLinearInterpolate* L = LSMakeExpr<UMaterialExpressionLinearInterpolate>(Mat, X + 220, Y + 60);
+		LSConn(L->A, S1); LSConn(L->B, S2); L->ConstAlpha = 0.5f;
 		return L;
 	}
 
 	UMaterialExpressionComponentMask* Mask(UMaterial* Mat, UMaterialExpression* In,
 		bool bR, bool bG, bool bB, int32 X, int32 Y)
 	{
-		UMaterialExpressionComponentMask* M = MakeExpr<UMaterialExpressionComponentMask>(Mat, X, Y);
+		UMaterialExpressionComponentMask* M = LSMakeExpr<UMaterialExpressionComponentMask>(Mat, X, Y);
 		M->R = bR; M->G = bG; M->B = bB; M->A = false;
-		Conn(M->Input, In);
+		LSConn(M->Input, In);
 		return M;
 	}
 
@@ -100,7 +102,7 @@ namespace
 		L.LayerName = LayerName;
 		L.BlendType = LB_WeightBlend;
 		L.PreviewWeight = PreviewWeight;
-		Conn(L.LayerInput, Input);
+		LSConn(L.LayerInput, Input);
 		Blend->Layers.Add(L);
 	}
 }
@@ -199,27 +201,27 @@ UMaterial* UOJJ_LandscapeMaterialFactory::GenerateFactoryGroundMaterial(bool bOv
 	Mat->SetShadingModel(MSM_DefaultLit);
 
 	// --- 타일링: LandscapeLayerCoords × per-layer ScalarParameter ---
-	UMaterialExpressionLandscapeLayerCoords* Coords = MakeExpr<UMaterialExpressionLandscapeLayerCoords>(Mat, -2200, 0);
+	UMaterialExpressionLandscapeLayerCoords* Coords = LSMakeExpr<UMaterialExpressionLandscapeLayerCoords>(Mat, -2200, 0);
 	Coords->MappingScale = 1.0f;
 
-	UMaterialExpressionScalarParameter* GroundTiling = MakeExpr<UMaterialExpressionScalarParameter>(Mat, -2200, 160);
+	UMaterialExpressionScalarParameter* GroundTiling = LSMakeExpr<UMaterialExpressionScalarParameter>(Mat, -2200, 160);
 	GroundTiling->ParameterName = TEXT("GroundTiling"); GroundTiling->DefaultValue = 1.0f;
-	UMaterialExpressionScalarParameter* GravelTiling = MakeExpr<UMaterialExpressionScalarParameter>(Mat, -2200, 240);
+	UMaterialExpressionScalarParameter* GravelTiling = LSMakeExpr<UMaterialExpressionScalarParameter>(Mat, -2200, 240);
 	GravelTiling->ParameterName = TEXT("GravelTiling"); GravelTiling->DefaultValue = 1.0f;
 
 	// UV1(기본) = Coords × Tiling.  UV2(디테일) = UV1 × DetailScaleRatio(비정수배).
-	UMaterialExpressionScalarParameter* DetailRatio = MakeExpr<UMaterialExpressionScalarParameter>(Mat, -2200, 320);
+	UMaterialExpressionScalarParameter* DetailRatio = LSMakeExpr<UMaterialExpressionScalarParameter>(Mat, -2200, 320);
 	DetailRatio->ParameterName = TEXT("DetailScaleRatio"); DetailRatio->DefaultValue = 0.37f;
 
-	UMaterialExpressionMultiply* GroundUV1 = MakeExpr<UMaterialExpressionMultiply>(Mat, -2000, 80);
-	Conn(GroundUV1->A, Coords); Conn(GroundUV1->B, GroundTiling);
-	UMaterialExpressionMultiply* GroundUV2 = MakeExpr<UMaterialExpressionMultiply>(Mat, -2000, 160);
-	Conn(GroundUV2->A, GroundUV1); Conn(GroundUV2->B, DetailRatio);
+	UMaterialExpressionMultiply* GroundUV1 = LSMakeExpr<UMaterialExpressionMultiply>(Mat, -2000, 80);
+	LSConn(GroundUV1->A, Coords); LSConn(GroundUV1->B, GroundTiling);
+	UMaterialExpressionMultiply* GroundUV2 = LSMakeExpr<UMaterialExpressionMultiply>(Mat, -2000, 160);
+	LSConn(GroundUV2->A, GroundUV1); LSConn(GroundUV2->B, DetailRatio);
 
-	UMaterialExpressionMultiply* GravelUV1 = MakeExpr<UMaterialExpressionMultiply>(Mat, -2000, 360);
-	Conn(GravelUV1->A, Coords); Conn(GravelUV1->B, GravelTiling);
-	UMaterialExpressionMultiply* GravelUV2 = MakeExpr<UMaterialExpressionMultiply>(Mat, -2000, 440);
-	Conn(GravelUV2->A, GravelUV1); Conn(GravelUV2->B, DetailRatio);
+	UMaterialExpressionMultiply* GravelUV1 = LSMakeExpr<UMaterialExpressionMultiply>(Mat, -2000, 360);
+	LSConn(GravelUV1->A, Coords); LSConn(GravelUV1->B, GravelTiling);
+	UMaterialExpressionMultiply* GravelUV2 = LSMakeExpr<UMaterialExpressionMultiply>(Mat, -2000, 440);
+	LSConn(GravelUV2->A, GravelUV1); LSConn(GravelUV2->B, DetailRatio);
 
 	// --- Ground 레이어 샘플 ---
 	//  BaseColor/ORM = 멀티 스케일(타일 반복 깨기, 평균해도 무해).
@@ -237,50 +239,50 @@ UMaterial* UOJJ_LandscapeMaterialFactory::GenerateFactoryGroundMaterial(bool bOv
 	// --- Gravel 틴트: Gravel BaseColor × GravelTint (LayerBlend 진입 전, Gravel에만 적용).
 	//     기본 무채색(0.6 회색, R=G=B) — 더트 톤 차분하게. 인스턴스서 (1,1,1) 중립이나 다른 회색으로 조정. ---
 	// 채도 제거(선택): GravelDesaturation 0=원본색, 1=완전 회색. 갈색 텍스처를 무채색으로(틴트 곱만으론 hue 유지됨).
-	UMaterialExpressionScalarParameter* GravelDesatAmt = MakeExpr<UMaterialExpressionScalarParameter>(Mat, -1700, 360);
+	UMaterialExpressionScalarParameter* GravelDesatAmt = LSMakeExpr<UMaterialExpressionScalarParameter>(Mat, -1700, 360);
 	GravelDesatAmt->ParameterName = TEXT("GravelDesaturation"); GravelDesatAmt->DefaultValue = 0.0f;
-	UMaterialExpressionDesaturation* GravelDesat = MakeExpr<UMaterialExpressionDesaturation>(Mat, -1550, 440);
-	Conn(GravelDesat->Input, GravelBaseTex); Conn(GravelDesat->Fraction, GravelDesatAmt);
+	UMaterialExpressionDesaturation* GravelDesat = LSMakeExpr<UMaterialExpressionDesaturation>(Mat, -1550, 440);
+	LSConn(GravelDesat->Input, GravelBaseTex); LSConn(GravelDesat->Fraction, GravelDesatAmt);
 
-	UMaterialExpressionVectorParameter* GravelTint = MakeExpr<UMaterialExpressionVectorParameter>(Mat, -1550, 600);
+	UMaterialExpressionVectorParameter* GravelTint = LSMakeExpr<UMaterialExpressionVectorParameter>(Mat, -1550, 600);
 	GravelTint->ParameterName = TEXT("GravelTint");
 	GravelTint->DefaultValue = FLinearColor(0.6f, 0.6f, 0.6f, 1.0f);
-	UMaterialExpressionMultiply* GravelBaseTinted = MakeExpr<UMaterialExpressionMultiply>(Mat, -1380, 480);
-	Conn(GravelBaseTinted->A, GravelDesat); Conn(GravelBaseTinted->B, GravelTint);
+	UMaterialExpressionMultiply* GravelBaseTinted = LSMakeExpr<UMaterialExpressionMultiply>(Mat, -1380, 480);
+	LSConn(GravelBaseTinted->A, GravelDesat); LSConn(GravelBaseTinted->B, GravelTint);
 
 	// --- 3개 LandscapeLayerBlend (BaseColor / Normal / ORM) ---
-	UMaterialExpressionLandscapeLayerBlend* BlendBase = MakeExpr<UMaterialExpressionLandscapeLayerBlend>(Mat, -1300, -200);
+	UMaterialExpressionLandscapeLayerBlend* BlendBase = LSMakeExpr<UMaterialExpressionLandscapeLayerBlend>(Mat, -1300, -200);
 	AddBlendLayer(BlendBase, TEXT("Ground"), GroundBaseTex, 1.0f);
 	AddBlendLayer(BlendBase, TEXT("Gravel"), GravelBaseTinted, 0.0f);
 
-	UMaterialExpressionLandscapeLayerBlend* BlendNorm = MakeExpr<UMaterialExpressionLandscapeLayerBlend>(Mat, -1300, 100);
+	UMaterialExpressionLandscapeLayerBlend* BlendNorm = LSMakeExpr<UMaterialExpressionLandscapeLayerBlend>(Mat, -1300, 100);
 	AddBlendLayer(BlendNorm, TEXT("Ground"), GroundNormTex, 1.0f);
 	AddBlendLayer(BlendNorm, TEXT("Gravel"), GravelNormTex, 0.0f);
 
-	UMaterialExpressionLandscapeLayerBlend* BlendOrm = MakeExpr<UMaterialExpressionLandscapeLayerBlend>(Mat, -1300, 400);
+	UMaterialExpressionLandscapeLayerBlend* BlendOrm = LSMakeExpr<UMaterialExpressionLandscapeLayerBlend>(Mat, -1300, 400);
 	AddBlendLayer(BlendOrm, TEXT("Ground"), GroundOrmTex, 1.0f);
 	AddBlendLayer(BlendOrm, TEXT("Gravel"), GravelOrmTex, 0.0f);
 
 	// --- 매크로 베리에이션: 큰 스케일 Noise를 [1-Amt, 1+Amt]로 리맵 → BaseColor에 곱 ---
-	UMaterialExpressionNoise* MacroNoise = MakeExpr<UMaterialExpressionNoise>(Mat, -1300, -480);
+	UMaterialExpressionNoise* MacroNoise = LSMakeExpr<UMaterialExpressionNoise>(Mat, -1300, -480);
 	MacroNoise->Scale = 0.003f;     // 작은 Scale = 큰 패치(저주파). 월드 위치 기반(타일과 무관) → 반복 깨기.
 	MacroNoise->OutputMin = 0.0f;
 	MacroNoise->OutputMax = 1.0f;
 	MacroNoise->Levels = 2;
 
-	UMaterialExpressionScalarParameter* MacroAmt = MakeExpr<UMaterialExpressionScalarParameter>(Mat, -1300, -360);
+	UMaterialExpressionScalarParameter* MacroAmt = LSMakeExpr<UMaterialExpressionScalarParameter>(Mat, -1300, -360);
 	MacroAmt->ParameterName = TEXT("MacroVariationAmount"); MacroAmt->DefaultValue = 0.4f;
 
-	UMaterialExpressionOneMinus* MacroLow = MakeExpr<UMaterialExpressionOneMinus>(Mat, -1100, -360);  // 1 - Amt
-	Conn(MacroLow->Input, MacroAmt);
-	UMaterialExpressionAdd* MacroHigh = MakeExpr<UMaterialExpressionAdd>(Mat, -1100, -280);           // 1 + Amt
-	MacroHigh->ConstA = 1.0f; Conn(MacroHigh->B, MacroAmt);
+	UMaterialExpressionOneMinus* MacroLow = LSMakeExpr<UMaterialExpressionOneMinus>(Mat, -1100, -360);  // 1 - Amt
+	LSConn(MacroLow->Input, MacroAmt);
+	UMaterialExpressionAdd* MacroHigh = LSMakeExpr<UMaterialExpressionAdd>(Mat, -1100, -280);           // 1 + Amt
+	MacroHigh->ConstA = 1.0f; LSConn(MacroHigh->B, MacroAmt);
 
-	UMaterialExpressionLinearInterpolate* MacroFactor = MakeExpr<UMaterialExpressionLinearInterpolate>(Mat, -900, -360);
-	Conn(MacroFactor->A, MacroLow); Conn(MacroFactor->B, MacroHigh); Conn(MacroFactor->Alpha, MacroNoise);
+	UMaterialExpressionLinearInterpolate* MacroFactor = LSMakeExpr<UMaterialExpressionLinearInterpolate>(Mat, -900, -360);
+	LSConn(MacroFactor->A, MacroLow); LSConn(MacroFactor->B, MacroHigh); LSConn(MacroFactor->Alpha, MacroNoise);
 
-	UMaterialExpressionMultiply* BaseColorFinal = MakeExpr<UMaterialExpressionMultiply>(Mat, -700, -200);
-	Conn(BaseColorFinal->A, BlendBase); Conn(BaseColorFinal->B, MacroFactor);
+	UMaterialExpressionMultiply* BaseColorFinal = LSMakeExpr<UMaterialExpressionMultiply>(Mat, -700, -200);
+	LSConn(BaseColorFinal->A, BlendBase); LSConn(BaseColorFinal->B, MacroFactor);
 
 	// --- ORM 분리 (R:AO, G:Roughness, B:Metallic) ---
 	UMaterialExpressionComponentMask* AO = Mask(Mat, BlendOrm, true, false, false, -1000, 360);
@@ -289,13 +291,13 @@ UMaterial* UOJJ_LandscapeMaterialFactory::GenerateFactoryGroundMaterial(bool bOv
 
 	// --- Normal 강도: 블렌드된 노멀의 xy를 NormalIntensity로 증폭 → DeriveNormalZ로 Z 재계산(정규화).
 	//     타일링을 크게 해도 요철이 살아있게. 기본 2.0(강조). 인스턴스서 1.0=원본~더 크게 조정. ---
-	UMaterialExpressionScalarParameter* NormalIntensity = MakeExpr<UMaterialExpressionScalarParameter>(Mat, -1000, 120);
+	UMaterialExpressionScalarParameter* NormalIntensity = LSMakeExpr<UMaterialExpressionScalarParameter>(Mat, -1000, 120);
 	NormalIntensity->ParameterName = TEXT("NormalIntensity"); NormalIntensity->DefaultValue = 2.0f;
 	UMaterialExpressionComponentMask* NormXY = Mask(Mat, BlendNorm, true, true, false, -820, 120);
-	UMaterialExpressionMultiply* NormXYAmp = MakeExpr<UMaterialExpressionMultiply>(Mat, -640, 120);
-	Conn(NormXYAmp->A, NormXY); Conn(NormXYAmp->B, NormalIntensity);
-	UMaterialExpressionDeriveNormalZ* NormFinal = MakeExpr<UMaterialExpressionDeriveNormalZ>(Mat, -460, 120);
-	Conn(NormFinal->InXY, NormXYAmp);
+	UMaterialExpressionMultiply* NormXYAmp = LSMakeExpr<UMaterialExpressionMultiply>(Mat, -640, 120);
+	LSConn(NormXYAmp->A, NormXY); LSConn(NormXYAmp->B, NormalIntensity);
+	UMaterialExpressionDeriveNormalZ* NormFinal = LSMakeExpr<UMaterialExpressionDeriveNormalZ>(Mat, -460, 120);
+	LSConn(NormFinal->InXY, NormXYAmp);
 
 	// --- 머티리얼 출력 연결 ---
 	UMaterialEditingLibrary::ConnectMaterialProperty(BaseColorFinal, TEXT(""), MP_BaseColor);

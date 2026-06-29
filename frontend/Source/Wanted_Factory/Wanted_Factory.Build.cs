@@ -32,7 +32,10 @@ public class Wanted_Factory : ModuleRules
 			// 호버 표면 게이트의 ALandscapeProxy 판별(F2-1' — 지형 위 호버 사각지대 해소)
 			"Landscape",
 			// 램프 쐐기 비주얼 코드 생성(F3.8 — AOJJ_RampFoundation::OJJ_BuildWedgeVisual)
-			"ProceduralMeshComponent"
+			"ProceduralMeshComponent",
+			// ① 물 셀 인식 — AWaterBody/UWaterBodyComponent 질의(TryQueryWaterInfoClosestToWorldLocation).
+			// 베이크 분류·수면Z가 WaterBodyRiver를 직접 인식(런타임 의존 — 베이크가 BeginPlay서도 돈다).
+			"Water"
 		});
 
 		if (Target.bBuildEditor)

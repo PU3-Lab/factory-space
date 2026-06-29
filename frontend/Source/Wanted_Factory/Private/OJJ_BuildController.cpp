@@ -680,9 +680,14 @@ void AOJJ_BuildController::UpdateGridColorForCurrentMode()
 	case EOJJ_BuildPlacementMode::Pipe:
 	case EOJJ_BuildPlacementMode::PowerLine:
 	case EOJJ_BuildPlacementMode::Demolish:
-	case EOJJ_BuildPlacementMode::None:
-		// 별도 액터/중립 — constructible(buildable OR Foundation) 위에 동작 → raw 평지·Foundation 초록.
+		// 별도 액터 — constructible(buildable OR Foundation) 위에 동작 → raw 평지·Foundation 초록.
 		bRaw = true;
+		break;
+	case EOJJ_BuildPlacementMode::None:
+		// ⚠️ None = 빌드모드 아님/모드 전환 과도기 — raw 허용 금지(맨땅 파랑 오표시 방지).
+		// 빌드모드 진입 경로가 PlacementMode=None인 채 UpdateGridColorForCurrentMode→SetVisualizationVisible로 1회
+		// paint하면, raw=true 시 맨땅이 파랑으로 칠해져 일반 머신 들었을 때까지 잔존(버그). 일반 머신 기본과 동일 raw=false.
+		bRaw = false;
 		break;
 	default:
 		// 일반 머신 모드 — CDO 지형규칙(CanPlaceOnRawGround/CanStandOnWater). 일반 머신은 둘 다 false = Foundation 위만.
