@@ -22,8 +22,11 @@ struct FConveyorDepartingVisual
 	FName ItemId = NAME_None;
 	FVector StartLocation = FVector::ZeroVector;
 	FVector EndLocation = FVector::ZeroVector;
+	FVector AbsorbEndLocation = FVector::ZeroVector;
 	float StartWorldTime = 0.0f;
-	float Duration = 0.0f;
+	float TravelDuration = 0.0f;
+	float AbsorbDelayDuration = 0.0f;
+	float AbsorbDuration = 0.0f;
 };
 
 struct FConveyorVisualInstanceState
@@ -37,6 +40,12 @@ struct FConveyorDesiredVisual
 	int32 VisualId = INDEX_NONE;
 	FName ItemId = NAME_None;
 	FTransform Transform = FTransform::Identity;
+};
+
+struct FConveyorOccluderWindow
+{
+	float RaiseAtWorldTime = 0.0f;
+	float RaisedUntilWorldTime = 0.0f;
 };
 
 UCLASS()
@@ -67,6 +76,12 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Components")
 	TObjectPtr<UInstancedStaticMeshComponent> FlowArrowInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Components")
+	TObjectPtr<UStaticMeshComponent> OutputOccluder;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Components")
+	TObjectPtr<UStaticMeshComponent> InputOccluder;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Components")
 	TObjectPtr<UTextRenderComponent> DebugStateText;
@@ -127,6 +142,76 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual", meta = (ClampMin = "0.0"))
 	float ItemVisualLerpExponent = 1.0f;
+
+	/** Delay after passing the final conveyor edge before shrinking begins. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual", meta = (ClampMin = "0.0", Units = "s"))
+	float ItemAbsorbStartDelay = 0.25f;
+
+	/** Time spent shrinking an item after it passes the final conveyor edge. Zero removes it immediately. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual", meta = (ClampMin = "0.0", Units = "s"))
+	float ItemAbsorbDuration = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Output Occluder")
+	bool bEnableOutputOccluder = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Output Occluder", meta = (ClampMin = "1.0", Units = "cm"))
+	float OutputOccluderWidth = 80.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Output Occluder", meta = (ClampMin = "1.0", Units = "cm"))
+	float OutputOccluderDepth = 200.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Output Occluder", meta = (ClampMin = "1.0", Units = "cm"))
+	float OutputOccluderHeight = 70.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Output Occluder", meta = (ClampMin = "0.0", Units = "cm"))
+	float OutputOccluderHiddenDepth = 10.0f;
+
+	/** Local offset from the final conveyor edge. X is forward, Y is sideways, and Z is up. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Output Occluder", meta = (MakeEditWidget = "true", Units = "cm"))
+	FVector OutputOccluderLocationOffset = FVector(100.0f, 0.0f, 0.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Output Occluder", meta = (ClampMin = "0.0", Units = "s"))
+	float OutputOccluderOpenDelay = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Output Occluder", meta = (ClampMin = "0.01", Units = "s"))
+	float OutputOccluderRaiseDuration = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Output Occluder", meta = (ClampMin = "0.0", Units = "s"))
+	float OutputOccluderHoldDuration = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Output Occluder", meta = (ClampMin = "0.01", Units = "s"))
+	float OutputOccluderLowerDuration = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Input Occluder")
+	bool bEnableInputOccluder = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Input Occluder", meta = (ClampMin = "1.0", Units = "cm"))
+	float InputOccluderWidth = 80.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Input Occluder", meta = (ClampMin = "1.0", Units = "cm"))
+	float InputOccluderDepth = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Input Occluder", meta = (ClampMin = "1.0", Units = "cm"))
+	float InputOccluderHeight = 70.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Input Occluder", meta = (ClampMin = "0.0", Units = "cm"))
+	float InputOccluderHiddenDepth = 10.0f;
+
+	/** Local offset from the boundary between the first and second conveyor cells. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Input Occluder", meta = (MakeEditWidget = "true", Units = "cm"))
+	FVector InputOccluderLocationOffset = FVector(-100.0f, 0.0f, 0.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Input Occluder", meta = (ClampMin = "0.0", Units = "s"))
+	float InputOccluderOpenDelay = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Input Occluder", meta = (ClampMin = "0.01", Units = "s"))
+	float InputOccluderRaiseDuration = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Input Occluder", meta = (ClampMin = "0.0", Units = "s"))
+	float InputOccluderHoldDuration = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Input Occluder", meta = (ClampMin = "0.01", Units = "s"))
+	float InputOccluderLowerDuration = 0.1f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual", meta = (ClampMin = "0.01"))
 	float PowderVisualWidthMultiplier = 1.2f;
@@ -223,6 +308,9 @@ protected:
 	TObjectPtr<UMaterialInstanceDynamic> FlowArrowMaterialInstance;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> OutputOccluderMaterialInstance;
+
+	UPROPERTY(Transient)
 	int32 LastFlowArrowPhase = INDEX_NONE;
 
 	UPROPERTY(Transient)
@@ -233,6 +321,10 @@ protected:
 
 	FTimerHandle ItemMoveTimerHandle;
 	float LastItemMoveWorldTime = 0.0f;
+	float OutputOccluderAlpha = 0.0f;
+	TArray<FConveyorOccluderWindow> OutputOccluderWindows;
+	float InputOccluderAlpha = 0.0f;
+	TArray<FConveyorOccluderWindow> InputOccluderWindows;
 	int32 NextItemVisualId = 1;
 	TArray<FConveyorDepartingVisual> DepartingVisuals;
 	TMap<int32, FConveyorVisualInstanceState> VisualInstanceStates;
@@ -311,6 +403,11 @@ private:
 	void RemoveVisualInstance(int32 VisualId);
 	void PruneDepartingVisuals();
 	void StartDepartingVisual(int32 VisualId, FName ItemId, int32 SlotIndex);
+	void UpdateOutputOccluder(float DeltaTime, bool bSnapToHidden = false);
+	bool ShouldRaiseOutputOccluder() const;
+	void StartInputOccluderCycle();
+	void UpdateInputOccluder(float DeltaTime, bool bSnapToHidden = false);
+	bool ShouldRaiseInputOccluder() const;
 	UStaticMeshComponent* CreateVisualComponentForItem(int32 VisualId, FName ItemId);
 	const FResourceData* FindResourceData(FName ItemId) const;
 	bool IsPowderItem(FName ItemId) const;
