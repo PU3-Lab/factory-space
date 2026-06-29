@@ -12,6 +12,9 @@
 #include "Animation/AnimationAsset.h"
 #include "UObject/ConstructorHelpers.h"
 #include "TimerManager.h"
+#if WITH_EDITOR
+#include "ShaderCompiler.h"   // GShaderCompilingManager — 에디터 첫 로드 셰이더 컴파일 완료 대기용(패키징 무관)
+#endif
 
 AOJJ_PortraitCapture::AOJJ_PortraitCapture()
 {
@@ -195,21 +198,57 @@ void AOJJ_PortraitCapture::BeginPlay()
 			TEXT("[OJJ_PortraitCapture] IdleAnimation 없음 — 정지 포즈로 표시됨. 애니 경로/할당을 확인하세요."));
 	}
 
-	// --- 캡처 워밍업 지연 ---
-	// BeginPlay 직후 몇 프레임은 M_Robot 셰이더 첫 컴파일/텍스처 스트림인으로 깨진 채 렌더된다(에디터 첫 PIE).
-	// 매 프레임 캡처가 그 깨진 프레임을 RT에 찍지 않도록, CaptureWarmupDelay 뒤에 연속 캡처를 켠다(0이면 즉시).
+	// --- 캡처 워밍업: 셰이더 컴파일 완료 대기 ---
+	// 에디터 첫 PIE는 M_Robot 베이스패스 셰이더가 DDC 미스로 컴파일 중일 수 있고(수 초), 그동안 로봇이
+	// 디폴트 머티리얼로 깨진 채 렌더된다. CaptureWarmupDelay 뒤부터 셰이더 컴파일이 끝났는지 폴링해(TryBeginCapture)
+	// 끝나면 캡처를 켠다 — 고정 지연이 아니라 실제 컴파일 완료를 기다리므로 머신/DDC 상태에 강건하다.
+	// 패키징은 셰이더가 쿡되어 컴파일 대기 분기가 통째로 빠지고 즉시 캡처 시작.
 	if (Capture)
 	{
+		CaptureWarmupElapsed = 0.f;
 		if (CaptureWarmupDelay > 0.f)
 		{
 			GetWorldTimerManager().SetTimer(
-				CaptureWarmupTimer, this, &AOJJ_PortraitCapture::BeginContinuousCapture, CaptureWarmupDelay, /*bLoop=*/false);
+				CaptureWarmupTimer, this, &AOJJ_PortraitCapture::TryBeginCapture, CaptureWarmupDelay, /*bLoop=*/false);
 		}
 		else
 		{
-			BeginContinuousCapture();
+			TryBeginCapture();
 		}
 	}
+}
+
+void AOJJ_PortraitCapture::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// 워밍업 폴링 중 파괴되면 보류 중인 타이머를 정리(콜백이 파괴된 액터에 도달하는 것 방지).
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(CaptureWarmupTimer);
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void AOJJ_PortraitCapture::TryBeginCapture()
+{
+#if WITH_EDITOR
+	// 에디터 첫 로드: 셰이더 컴파일이 끝날 때까지 캡처를 미룬다(깨진 디폴트 머티리얼 프레임이 RT에 안 찍히게).
+	// 컴파일 중이면 폴링 간격으로 재확인하고, 최대 CaptureMaxWarmupWait까지만 기다린다(안전망 — 무한 대기 방지).
+	if (GShaderCompilingManager && GShaderCompilingManager->IsCompiling()
+		&& CaptureWarmupElapsed < CaptureMaxWarmupWait)
+	{
+		CaptureWarmupElapsed += CaptureWarmupPollInterval;
+		GetWorldTimerManager().SetTimer(
+			CaptureWarmupTimer, this, &AOJJ_PortraitCapture::TryBeginCapture, CaptureWarmupPollInterval, /*bLoop=*/false);
+		return;
+	}
+	if (CaptureWarmupElapsed >= CaptureMaxWarmupWait)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_PortraitCapture] 셰이더 컴파일 대기 %.1fs 초과 — 미완 상태로 캡처 시작."), CaptureMaxWarmupWait);
+	}
+#endif
+	BeginContinuousCapture();
 }
 
 void AOJJ_PortraitCapture::BeginContinuousCapture()
