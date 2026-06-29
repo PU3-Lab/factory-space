@@ -19,6 +19,74 @@
 #include "PlanetEventManagerSubsystem.h"
 #include "Wanted_Factory.h"
 
+namespace
+{
+UNiagaraComponent* SpawnConfiguredNiagara(
+	UWorld* World,
+	UNiagaraSystem* SystemToSpawn,
+	bool bSpawnInWorld,
+	const FVector& WorldLocation,
+	const FVector& WorldScale,
+	USceneComponent* AttachParent,
+	const FVector& AttachOffset)
+{
+	if (!World || !SystemToSpawn)
+	{
+		return nullptr;
+	}
+
+	if (bSpawnInWorld)
+	{
+		return UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			World,
+			SystemToSpawn,
+			WorldLocation,
+			FRotator::ZeroRotator,
+			WorldScale,
+			true,
+			true,
+			ENCPoolMethod::None,
+			false);
+	}
+
+	if (!AttachParent)
+	{
+		return nullptr;
+	}
+
+	return UNiagaraFunctionLibrary::SpawnSystemAttached(
+		SystemToSpawn,
+		AttachParent,
+		NAME_None,
+		AttachOffset,
+		FRotator::ZeroRotator,
+		EAttachLocation::KeepRelativeOffset,
+		false);
+}
+
+void ApplySortPriority(UNiagaraComponent* NiagaraComponent, int32 SortPriority)
+{
+	if (!NiagaraComponent)
+	{
+		return;
+	}
+
+	NiagaraComponent->SetTranslucentSortPriority(SortPriority);
+}
+
+void ApplyWorldAnchoredTransform(UNiagaraComponent* NiagaraComponent, const FVector& WorldLocation)
+{
+	if (!NiagaraComponent)
+	{
+		return;
+	}
+
+	NiagaraComponent->SetAbsolute(true, true, false);
+	NiagaraComponent->SetWorldLocation(WorldLocation);
+	NiagaraComponent->SetWorldRotation(FRotator::ZeroRotator);
+}
+}
+
 AOJJ_DayNightController::AOJJ_DayNightController()
 {
 	// 시각에 맞춰 매 프레임 태양 Pitch를 폴링/적용한다(연속 회전).
@@ -123,6 +191,8 @@ void AOJJ_DayNightController::Tick(float DeltaSeconds)
 		ShieldParamUpdateAccumulator -= ShieldParamUpdateInterval;
 		UpdateStormShieldParams();
 	}
+
+	UpdateAttachedEventNiagaraTransforms();
 
 	if (!bEnabled)
 	{
@@ -351,6 +421,8 @@ void AOJJ_DayNightController::ApplyPlanetEventVisuals(float DeltaSeconds)
 		EventFog->GetComponent()->SetFogDensity(TargetFogDensity);
 	}
 
+	UpdateEventNiagaraParams(SmoothedVisualAlpha);
+
 	UWorld* World = GetWorld();
 	if (!World)
 	{
@@ -374,9 +446,13 @@ void AOJJ_DayNightController::SpawnEventNiagara(EPlanetEventType EventType)
 	ClearEventNiagara();
 
 	UNiagaraSystem* SystemToSpawn = nullptr;
+	UNiagaraSystem* SecondarySystemToSpawn = nullptr;
 	FVector SpawnOffset = FVector::ZeroVector;
+	FVector SecondarySpawnOffset = FVector::ZeroVector;
 	FVector WorldOffset = FVector::ZeroVector;
+	FVector SecondaryWorldOffset = FVector::ZeroVector;
 	FVector WorldScale = FVector(1.0f, 1.0f, 1.0f);
+	FVector SecondaryWorldScale = FVector(1.0f, 1.0f, 1.0f);
 	if (EventType == EPlanetEventType::MagneticStorm)
 	{
 		SystemToSpawn = MagneticStormNiagara;
@@ -387,12 +463,16 @@ void AOJJ_DayNightController::SpawnEventNiagara(EPlanetEventType EventType)
 	else if (EventType == EPlanetEventType::SandStorm)
 	{
 		SystemToSpawn = SandStormNiagara;
+		SecondarySystemToSpawn = SandStormParticleNiagara;
 		SpawnOffset = SandStormNiagaraOffset;
+		SecondarySpawnOffset = SandStormParticleNiagaraOffset;
 		WorldOffset = SandStormNiagaraWorldOffset;
+		SecondaryWorldOffset = SandStormParticleNiagaraWorldOffset;
 		WorldScale = SandStormNiagaraWorldScale;
+		SecondaryWorldScale = SandStormParticleNiagaraWorldScale;
 	}
 
-	if (!SystemToSpawn)
+	if (!SystemToSpawn && !SecondarySystemToSpawn)
 	{
 		return;
 	}
@@ -405,16 +485,27 @@ void AOJJ_DayNightController::SpawnEventNiagara(EPlanetEventType EventType)
 
 	if (bSpawnPlanetEventNiagaraInWorld)
 	{
-		ActiveEventNiagaraComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+		ActiveEventNiagaraComponent = SpawnConfiguredNiagara(
 			World,
 			SystemToSpawn,
+			true,
 			GetActorLocation() + WorldOffset,
-			FRotator::ZeroRotator,
 			WorldScale,
+			nullptr,
+			SpawnOffset);
+		ActiveEventSecondaryNiagaraComponent = SpawnConfiguredNiagara(
+			World,
+			SecondarySystemToSpawn,
 			true,
-			true,
-			ENCPoolMethod::None,
-			false);
+			GetActorLocation() + SecondaryWorldOffset,
+			SecondaryWorldScale,
+			nullptr,
+			SecondarySpawnOffset);
+		if (EventType == EPlanetEventType::SandStorm)
+		{
+			ApplySortPriority(ActiveEventNiagaraComponent, SandStormCloudSortPriority);
+			ApplySortPriority(ActiveEventSecondaryNiagaraComponent, SandStormParticleSortPriority);
+		}
 		return;
 	}
 
@@ -425,14 +516,29 @@ void AOJJ_DayNightController::SpawnEventNiagara(EPlanetEventType EventType)
 		return;
 	}
 
-	ActiveEventNiagaraComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+	ActiveEventNiagaraComponent = SpawnConfiguredNiagara(
+		World,
 		SystemToSpawn,
+		false,
+		FVector::ZeroVector,
+		WorldScale,
 		PlayerPawn->GetRootComponent(),
-		NAME_None,
-		SpawnOffset,
-		FRotator::ZeroRotator,
-		EAttachLocation::KeepRelativeOffset,
-		false);
+		SpawnOffset);
+	ActiveEventSecondaryNiagaraComponent = SpawnConfiguredNiagara(
+		World,
+		SecondarySystemToSpawn,
+		false,
+		FVector::ZeroVector,
+		SecondaryWorldScale,
+		PlayerPawn->GetRootComponent(),
+		SecondarySpawnOffset);
+	if (EventType == EPlanetEventType::SandStorm)
+	{
+		ApplySortPriority(ActiveEventNiagaraComponent, SandStormCloudSortPriority);
+		ApplySortPriority(ActiveEventSecondaryNiagaraComponent, SandStormParticleSortPriority);
+	}
+
+	UpdateAttachedEventNiagaraTransforms();
 }
 
 void AOJJ_DayNightController::ClearEventNiagara()
@@ -442,6 +548,94 @@ void AOJJ_DayNightController::ClearEventNiagara()
 		ActiveEventNiagaraComponent->DestroyComponent();
 		ActiveEventNiagaraComponent = nullptr;
 	}
+
+	if (ActiveEventSecondaryNiagaraComponent)
+	{
+		ActiveEventSecondaryNiagaraComponent->DestroyComponent();
+		ActiveEventSecondaryNiagaraComponent = nullptr;
+	}
+}
+
+void AOJJ_DayNightController::UpdateAttachedEventNiagaraTransforms()
+{
+	if (bSpawnPlanetEventNiagaraInWorld || VisualEventType == EPlanetEventType::None)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const APlayerController* PlayerController = World->GetFirstPlayerController();
+	const APawn* PlayerPawn = PlayerController ? PlayerController->GetPawn() : nullptr;
+	if (!PlayerPawn)
+	{
+		return;
+	}
+
+	FVector PrimaryOffset = FVector::ZeroVector;
+	FVector SecondaryOffset = FVector::ZeroVector;
+	if (VisualEventType == EPlanetEventType::MagneticStorm)
+	{
+		PrimaryOffset = MagneticStormNiagaraOffset;
+	}
+	else if (VisualEventType == EPlanetEventType::SandStorm)
+	{
+		PrimaryOffset = SandStormNiagaraOffset;
+		SecondaryOffset = SandStormParticleNiagaraOffset;
+
+		// 모래구름은 플레이어-카메라 거리(l)에 비례해 더 멀리 배치한다.
+		// 방향은 기존 월드 기준 오프셋 방향을 유지하고, 길이만 1.5l로 동적으로 조정한다.
+		if (PlayerController && PlayerController->PlayerCameraManager)
+		{
+			const FVector CameraLocation = PlayerController->PlayerCameraManager->GetCameraLocation();
+			const FVector PlayerLocation = PlayerPawn->GetActorLocation();
+			const FVector HorizontalCameraDelta = FVector(
+				CameraLocation.X - PlayerLocation.X,
+				CameraLocation.Y - PlayerLocation.Y,
+				0.0f);
+			const float CameraDistance = HorizontalCameraDelta.Length();
+			const FVector CloudDirection = FVector(SandStormNiagaraOffset.X, SandStormNiagaraOffset.Y, 0.0f).GetSafeNormal();
+			if (!CloudDirection.IsNearlyZero())
+			{
+				const FVector AnchorLocation = FMath::Lerp(PlayerLocation, CameraLocation, 0.6f);
+				const FVector CloudWorldLocation = FVector(
+					AnchorLocation.X,
+					AnchorLocation.Y,
+					PlayerLocation.Z + SandStormNiagaraOffset.Z) - (CloudDirection * (CameraDistance * 1.5f));
+				PrimaryOffset = PlayerLocation - CloudWorldLocation;
+			}
+		}
+	}
+
+	const FVector PlayerLocation = PlayerPawn->GetActorLocation();
+	ApplyWorldAnchoredTransform(ActiveEventNiagaraComponent, PlayerLocation - PrimaryOffset);
+	ApplyWorldAnchoredTransform(ActiveEventSecondaryNiagaraComponent, PlayerLocation + SecondaryOffset);
+}
+
+void AOJJ_DayNightController::UpdateEventNiagaraParams(float SmoothedVisualAlpha) const
+{
+	static const FName StormSeverityParam(TEXT("User.StormSeverity"));
+	static const FName StormVisualAlphaParam(TEXT("User.StormVisualAlpha"));
+
+	const float NiagaraSeverity = VisualEventType == EPlanetEventType::None ? 0.0f : VisualEventSeverity;
+
+	auto ApplyParams = [&](UNiagaraComponent* NiagaraComponent)
+	{
+		if (!IsValid(NiagaraComponent))
+		{
+			return;
+		}
+
+		NiagaraComponent->SetVariableFloat(StormSeverityParam, NiagaraSeverity);
+		NiagaraComponent->SetVariableFloat(StormVisualAlphaParam, SmoothedVisualAlpha);
+	};
+
+	ApplyParams(ActiveEventNiagaraComponent);
+	ApplyParams(ActiveEventSecondaryNiagaraComponent);
 }
 
 void AOJJ_DayNightController::UpdateStormShieldParams()
