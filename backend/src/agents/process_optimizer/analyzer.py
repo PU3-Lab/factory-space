@@ -1,4 +1,8 @@
-"""Analyzer tool for calculating factory performance metrics and identifying bottlenecks."""
+"""Unreal이 전달한 공장 상태를 결정론적으로 분석하는 모듈입니다.
+
+장비 가동률, 입출력 병목, 컨베이어 정체, 전력 상태를 계산하여
+최적화 제안 단계에서 사용할 분석 리포트로 변환합니다.
+"""
 
 from __future__ import annotations
 
