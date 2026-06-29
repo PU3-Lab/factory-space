@@ -34,6 +34,12 @@ void UUI_MoldingMachineInteract::NativeConstruct()
 {
 	Super::NativeConstruct();
 
+	if (BTN_Repair)
+	{
+		BTN_Repair->OnClicked.RemoveDynamic(this, &UUI_MoldingMachineInteract::OnRepairClicked);
+		BTN_Repair->OnClicked.AddDynamic(this, &UUI_MoldingMachineInteract::OnRepairClicked);
+	}
+
 	if (!CBS_MoldingShape)
 	{
 		return;
@@ -62,6 +68,14 @@ void UUI_MoldingMachineInteract::HandleOnShapeChanged(FString SelectedItem, ESel
 		TargetMoldingMachine->TryStartProcess();
 
 		UE_LOG(LogTemp, Log, TEXT("[성형기 UI] 가공 모드가 다음으로 변경됨: %s"), *SelectedItem);
+	}
+}
+
+void UUI_MoldingMachineInteract::OnRepairClicked()
+{
+	if (TargetMoldingMachine)
+	{
+		TargetMoldingMachine->RepairUsingWarehouse();
 	}
 }
 
