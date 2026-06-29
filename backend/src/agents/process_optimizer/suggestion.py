@@ -1,4 +1,8 @@
-"""Tools for generating and validating optimization suggestions based on analyzed factory state."""
+"""공장 분석 결과로부터 최적화 제안을 생성하고 검증합니다.
+
+결정론적 분석 리포트를 목표별 우선순위가 적용된 미리보기 항목으로 바꾸고,
+실행 명령 문자열이 섞인 안전하지 않은 제안을 차단합니다.
+"""
 
 from __future__ import annotations
 
@@ -133,6 +137,15 @@ class OptimizationSuggestionTool:
         goal_priority = priority_map.get(goal, priority_map["balance"])
 
         def get_priority_weight(candidate: dict[str, Any]) -> int:
+            """최적화 목표에 따른 제안 후보의 정렬 가중치를 반환합니다.
+
+            Args:
+                candidate: ``priority_key``를 포함한 제안 후보 딕셔너리입니다.
+
+            Returns:
+                설정된 우선순위 가중치이며, 알 수 없는 키는 ``99``입니다.
+            """
+
             return goal_priority.get(candidate["priority_key"], 99)
 
         # 우선순위 가중치 순서(오름차순)로 정렬

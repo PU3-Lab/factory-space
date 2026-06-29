@@ -38,8 +38,13 @@ class UAnimationAsset;
  * ⚠️ 전제/후속:
  *  - 단일 인스턴스 전제: 하나의 PortraitRenderTarget을 공유하므로 본 액터는 레벨에 1개만 둔다.
  *    여러 개가 같은 RT에 매 프레임 캡처하면 서로 덮어써 포트레이트가 깜빡인다(복수 필요 시 인스턴스별 RT 주입으로 분리).
- *  - bCaptureEveryFrame=true로 상시 캡처한다(MVP). 대화 패널이 항상 떠있지 않다면 패널 open/close에 맞춰
- *    bCaptureEveryFrame을 토글하거나 CaptureScene() 단발 호출로 비용을 줄이는 것이 후속 과제다.
+ *  - 상시 캡처(bCaptureEveryFrame=true)한다. 단 에디터 첫 PIE는 M_Robot 베이스패스 셰이더가 DDC 미스로
+ *    컴파일 중일 수 있고(수 초), 그동안 로봇이 디폴트 머티리얼로 깨진 채 렌더된다. 따라서 BeginPlay 후
+ *    GShaderCompilingManager 컴파일 큐가 빌 때까지 폴링(TryBeginCapture)한 뒤 캡처를 켠다 — 고정 지연이 아니라
+ *    실제 컴파일 완료를 기다려 머신/DDC 상태에 강건하다. WITH_EDITOR 전용이라 패키징은 셰이더가 쿡되어
+ *    이 대기가 통째로 빠지고 즉시 캡처(글리치 자체가 패키징엔 없음).
+ *    대화창이 거의 상시 떠있어 open/close 토글은 두지 않는다(상시 캡처 유지). 비용이 문제가 되면 간헐 캡처
+ *    (타이머 CaptureScene)나 RT 해상도 축소를 검토한다.
  */
 UCLASS()
 class WANTED_FACTORY_API AOJJ_PortraitCapture : public AActor
@@ -51,6 +56,8 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	/** 워밍업 폴링 도중 액터 파괴(Subsystem Deinitialize 등) 시 타이머를 정리한다. */
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// --- 컴포넌트 ---
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Portrait")
@@ -91,4 +98,32 @@ protected:
 	/** 프레임 여백 배수(1.0=꽉참, 1.35=35% 여백). 크면 줌아웃 — 머리 양옆(귀/안테나) 잘림 방지에 사용. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait|Framing", meta = (ClampMin = "1.0", ClampMax = "2.0"))
 	float FramePadding = 1.35f;
+
+	// --- 캡처 워밍업 (첫 프레임 글리치 회피: 셰이더 컴파일 완료까지 대기) ---
+
+	/** 셰이더 컴파일 폴링 시작 전 초기 지연(초). 레벨 로드 직후 로봇 머티리얼 셰이더 컴파일 잡이 큐에 등록될
+	 *  시간을 준 뒤 폴링을 시작한다(0이면 즉시 폴링). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait|Capture", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float CaptureWarmupDelay = 0.3f;
+
+	/** 셰이더 컴파일 완료 폴링 간격(초). 컴파일 중인 동안 이 간격으로 재확인. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait|Capture", meta = (ClampMin = "0.02", ClampMax = "1.0"))
+	float CaptureWarmupPollInterval = 0.15f;
+
+	/** 셰이더 컴파일 대기 최대 시간(초). 초과하면 미완 상태로라도 캡처 시작(안전망 — 무한 대기 방지). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Portrait|Capture", meta = (ClampMin = "1.0", ClampMax = "60.0"))
+	float CaptureMaxWarmupWait = 15.f;
+
+private:
+	/** 캡처 워밍업 폴링 타이머. */
+	FTimerHandle CaptureWarmupTimer;
+
+	/** 누적 폴링 대기 시간(초). CaptureMaxWarmupWait 안전망 비교용. */
+	float CaptureWarmupElapsed = 0.f;
+
+	/** 셰이더 컴파일이 끝났는지 폴링 → 끝났으면(또는 최대대기 초과) BeginContinuousCapture 호출. */
+	void TryBeginCapture();
+
+	/** 연속 캡처(bCaptureEveryFrame)를 켜고 즉시 한 장 갱신. */
+	void BeginContinuousCapture();
 };

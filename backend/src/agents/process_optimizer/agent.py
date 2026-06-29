@@ -1,4 +1,8 @@
-"""Process optimizer agent class implementation with prompt guard and structured fallback."""
+"""기존 Process Optimizer leaf agent와 fallback 동작을 정의합니다.
+
+공개 요청은 전용 v2 그래프를 사용하며, 이 모듈은 직접 호출 테스트와
+LLM을 사용할 수 없을 때의 구조화된 응답을 유지합니다.
+"""
 
 from __future__ import annotations
 
