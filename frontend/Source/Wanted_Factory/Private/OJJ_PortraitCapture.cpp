@@ -15,6 +15,8 @@
 #if WITH_EDITOR
 #include "ShaderCompiler.h"   // GShaderCompilingManager — 에디터 첫 로드 셰이더 컴파일 완료 대기용(패키징 무관)
 #endif
+#include "Engine/Texture2D.h"            // 로봇 텍스처 mip resident 폴링 + 강제 resident
+#include "Materials/MaterialInterface.h" // GetUsedTextures
 
 AOJJ_PortraitCapture::AOJJ_PortraitCapture()
 {
@@ -198,11 +200,14 @@ void AOJJ_PortraitCapture::BeginPlay()
 			TEXT("[OJJ_PortraitCapture] IdleAnimation 없음 — 정지 포즈로 표시됨. 애니 경로/할당을 확인하세요."));
 	}
 
-	// --- 캡처 워밍업: 셰이더 컴파일 완료 대기 ---
-	// 에디터 첫 PIE는 M_Robot 베이스패스 셰이더가 DDC 미스로 컴파일 중일 수 있고(수 초), 그동안 로봇이
-	// 디폴트 머티리얼로 깨진 채 렌더된다. CaptureWarmupDelay 뒤부터 셰이더 컴파일이 끝났는지 폴링해(TryBeginCapture)
-	// 끝나면 캡처를 켠다 — 고정 지연이 아니라 실제 컴파일 완료를 기다리므로 머신/DDC 상태에 강건하다.
-	// 패키징은 셰이더가 쿡되어 컴파일 대기 분기가 통째로 빠지고 즉시 캡처 시작.
+	// 로봇 텍스처를 수집하고 전체 밉을 강제 resident로 요청(스트리밍 우선순위). 격리 배치(Z=-5000)라
+	// 화면 커버리지 기반 스트리밍이 저밉에서 멈출 수 있어, 강제 force가 필요하다.
+	CacheAndForceRobotTextures();
+
+	// --- 캡처 워밍업: 셰이더 컴파일 + 텍스처 스트림인 완료 대기 ---
+	// 첫 PIE는 ① 셰이더 컴파일 미완(에디터, 디폴트 머티리얼로 깨짐) ② 텍스처 mip 스트림인 미완(공통, 저해상도)
+	// 으로 깨진 첫 프레임이 캡처될 수 있다. CaptureWarmupDelay 뒤부터 둘 다 끝났는지 폴링해(TryBeginCapture)
+	// 완료 시 캡처를 켠다 — 고정 지연이 아니라 실제 완료를 기다려 머신/DDC/스트리밍 상태에 강건.
 	if (Capture)
 	{
 		CaptureWarmupElapsed = 0.f;
@@ -226,29 +231,116 @@ void AOJJ_PortraitCapture::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		World->GetTimerManager().ClearTimer(CaptureWarmupTimer);
 	}
 
+	// 강제 force한 텍스처의 bForceMiplevelsToBeResident를 원래 값으로 복원 — 액터(Subsystem이 Destroy)가
+	// 사라진 뒤 공유 텍스처에 강제 풀밉이 영구히 남지 않게 한다. blind false가 아니라 원본 복원(타 시스템 force 보존).
+	for (int32 i = 0; i < RobotTextures.Num(); ++i)
+	{
+		if (UTexture2D* Tex2D = RobotTextures[i])
+		{
+			Tex2D->bForceMiplevelsToBeResident =
+				RobotTexturesPrevForceResident.IsValidIndex(i) ? RobotTexturesPrevForceResident[i] : false;
+		}
+	}
+	RobotTextures.Reset();
+	RobotTexturesPrevForceResident.Reset();
+
 	Super::EndPlay(EndPlayReason);
 }
 
 void AOJJ_PortraitCapture::TryBeginCapture()
 {
+	// 캡처 시작 전 두 가지를 기다린다(둘 중 하나라도 미완이면 폴링 계속):
+	//  ① (에디터) 셰이더 컴파일 완료 — 미완이면 로봇이 디폴트 머티리얼로 깨져 캡처됨. 패키징은 쿡되어 무관.
+	//  ② (에디터+패키징) 로봇 텍스처 mip full-resident — 미완이면 저해상도로 캡처됨. 스트리밍은 런타임 공통.
+	bool bWaiting = false;
+
 #if WITH_EDITOR
-	// 에디터 첫 로드: 셰이더 컴파일이 끝날 때까지 캡처를 미룬다(깨진 디폴트 머티리얼 프레임이 RT에 안 찍히게).
-	// 컴파일 중이면 폴링 간격으로 재확인하고, 최대 CaptureMaxWarmupWait까지만 기다린다(안전망 — 무한 대기 방지).
-	if (GShaderCompilingManager && GShaderCompilingManager->IsCompiling()
-		&& CaptureWarmupElapsed < CaptureMaxWarmupWait)
+	if (GShaderCompilingManager && GShaderCompilingManager->IsCompiling())
+	{
+		bWaiting = true;
+	}
+#endif
+
+	if (!AreRobotTexturesFullyResident())
+	{
+		bWaiting = true;
+	}
+
+	// 미완이고 최대 대기 안 넘었으면 폴링 간격으로 재확인.
+	if (bWaiting && CaptureWarmupElapsed < CaptureMaxWarmupWait)
 	{
 		CaptureWarmupElapsed += CaptureWarmupPollInterval;
 		GetWorldTimerManager().SetTimer(
 			CaptureWarmupTimer, this, &AOJJ_PortraitCapture::TryBeginCapture, CaptureWarmupPollInterval, /*bLoop=*/false);
 		return;
 	}
-	if (CaptureWarmupElapsed >= CaptureMaxWarmupWait)
+
+	if (bWaiting)   // 최대대기 초과로 빠져나온 경우(안전망 — 무한 대기 방지)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[OJJ_PortraitCapture] 셰이더 컴파일 대기 %.1fs 초과 — 미완 상태로 캡처 시작."), CaptureMaxWarmupWait);
+			TEXT("[OJJ_PortraitCapture] 워밍업 대기 %.1fs 초과 — 미완 상태로 캡처 시작(셰이더/텍스처 미완 가능)."),
+			CaptureMaxWarmupWait);
 	}
-#endif
+
 	BeginContinuousCapture();
+}
+
+void AOJJ_PortraitCapture::CacheAndForceRobotTextures()
+{
+	RobotTextures.Reset();
+	RobotTexturesPrevForceResident.Reset();
+	if (!RobotMesh)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_PortraitCapture] RobotMesh 없음 — 텍스처 force/대기 스킵(저해상도 첫 캡처 가능)."));
+		return;
+	}
+
+	// 로봇 머티리얼이 쓰는 모든 텍스처를 모아 캐시하고, 전체 밉을 강제 resident로 표시한다.
+	// 포트레이트는 격리 배치(Z=-5000)라 화면 커버리지 기반 스트리밍이 저밉에서 멈출 수 있어, 강제 force가 필요.
+	// 원래 플래그 값을 함께 저장해 EndPlay에서 원복한다(공유 텍스처에 강제 풀밉이 영구히 남지 않게).
+	const TArray<UMaterialInterface*> Mats = RobotMesh->GetMaterials();
+	for (UMaterialInterface* Mat : Mats)
+	{
+		if (!Mat)
+		{
+			continue;
+		}
+		TArray<UTexture*> UsedTextures;
+		Mat->GetUsedTextures(UsedTextures);
+		for (UTexture* Tex : UsedTextures)
+		{
+			if (UTexture2D* Tex2D = Cast<UTexture2D>(Tex))
+			{
+				if (RobotTextures.Contains(Tex2D))   // 중복 제외(원본값 배열과 인덱스 정렬 유지)
+				{
+					continue;
+				}
+				RobotTextures.Add(Tex2D);
+				RobotTexturesPrevForceResident.Add(Tex2D->bForceMiplevelsToBeResident);  // 원래 값 저장
+				Tex2D->bForceMiplevelsToBeResident = true;  // 렌더 여부와 무관하게 전체 밉 스트림인
+			}
+		}
+	}
+
+	if (RobotTextures.Num() == 0)
+	{
+		// "텍스처 없음(의도)"과 "수집 실패"를 구분하기 위한 경고 — 비면 대기를 건너뛰어 저해상도 첫 캡처 재발 가능.
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_PortraitCapture] 로봇 머티리얼 텍스처 0개 수집 — 텍스처 대기 스킵. 머티리얼/텍스처 할당을 확인하세요."));
+	}
+}
+
+bool AOJJ_PortraitCapture::AreRobotTexturesFullyResident() const
+{
+	// 캐시가 비어 있으면(텍스처 없음/수집 실패) 대기하지 않는다.
+	for (const UTexture2D* Tex2D : RobotTextures)
+	{
+		if (Tex2D && Tex2D->GetNumResidentMips() < Tex2D->GetNumMips())
+		{
+			return false;
+		}
+	}
+	return true;
 }
 
 void AOJJ_PortraitCapture::BeginContinuousCapture()
@@ -258,7 +350,7 @@ void AOJJ_PortraitCapture::BeginContinuousCapture()
 		return;
 	}
 
-	// 워밍업 끝 — 이제 깨지지 않은 프레임이 나오므로 연속 캡처를 켜고 즉시 한 장 갱신한다.
+	// 워밍업 끝(셰이더 컴파일 + 텍스처 스트림인 완료) — 연속 캡처를 켜고 즉시 한 장 갱신한다.
 	Capture->bCaptureEveryFrame = true;
 	Capture->CaptureScene();
 }
