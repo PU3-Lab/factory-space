@@ -23,6 +23,77 @@
 #include "Resource/ResourceBase.h"
 #include "Resource/ResourceData.h"
 #include "UObject/ConstructorHelpers.h"
+// ① UE Water 플러그인 — WaterBody(강) 침수 질의 + 스플라인 폭 포함 판정.
+#include "WaterBodyActor.h"
+#include "WaterBodyComponent.h"
+#include "WaterBodyTypes.h"
+#include "WaterBodyRiverComponent.h"
+#include "WaterSplineComponent.h"
+#include "Components/SplineComponent.h"
+
+// === ① WaterBody 질의 헬퍼 (파일 스코프 — 베이크 hot-loop서 사전수집 리스트 재사용) ===
+namespace
+{
+	// 레벨의 모든 AWaterBody 컴포넌트를 수집(베이크는 1회만 호출 → per-cell TActorIterator 회피).
+	void OJJ_GatherWaterBodies(UWorld* World, TArray<UWaterBodyComponent*>& Out)
+	{
+		if (!World) { return; }
+		for (TActorIterator<AWaterBody> It(World); It; ++It)
+		{
+			if (UWaterBodyComponent* Comp = It->GetWaterBodyComponent())
+			{
+				Out.Add(Comp);
+			}
+		}
+	}
+
+	// WorldLoc이 수집된 WaterBody(강) 중 하나의 "안 + 수중"인지 + 수면 월드 Z.
+	// ⚠️ 엔진 TryQueryWaterInfoClosestToWorldLocation은 immersion만(수면높이−입력Z) 주고 XY 폭 클램프가 없다
+	//    (WaterBodyComponent.cpp: WaterPlaneLocation.XY = 입력 XY 그대로). 그래서 immersion>0만으로 분류하면
+	//    강 수면보다 낮은 평지 전체가 물로 오판된다. → 강 스플라인 중심선 거리 vs RiverWidth/2로 실제 포함 판정.
+	//    InMargin = 폭에 더하는 여유(셀 반 칸 등 — 경계 falloff 흡수).
+	bool OJJ_QueryWaterAtImpl(const TArray<UWaterBodyComponent*>& Comps, const FVector& WorldLoc,
+		float InMargin, float& OutSurfaceZ)
+	{
+		for (UWaterBodyComponent* Comp : Comps)
+		{
+			if (!Comp) { continue; }
+			// XY 사전필터: 컴포넌트 바운즈 밖이면 스킵(571k 셀 대비 비용 절감).
+			const FBox CompBox = Comp->Bounds.GetBox();
+			if (WorldLoc.X < CompBox.Min.X || WorldLoc.X > CompBox.Max.X ||
+				WorldLoc.Y < CompBox.Min.Y || WorldLoc.Y > CompBox.Max.Y)
+			{
+				continue;
+			}
+			// 수면 Z(immersion) 질의 — 지형이 수면보다 아래여야 물 후보.
+			const EWaterBodyQueryFlags Flags =
+				EWaterBodyQueryFlags::ComputeImmersionDepth | EWaterBodyQueryFlags::ComputeLocation;
+			const TValueOrError<FWaterBodyQueryResult, EWaterBodyQueryError> Result =
+				Comp->TryQueryWaterInfoClosestToWorldLocation(WorldLoc, Flags);
+			if (!Result.HasValue()) { continue; }
+			const FWaterBodyQueryResult& Q = Result.GetValue();
+			if (Q.GetImmersionDepth() <= 0.0f) { continue; }  // 지형이 수면 위 → 물 아님
+
+			// ⭐ 실제 포함: 강 스플라인 중심선까지 수평 거리 ≤ 강폭/2 + 여유. 강(WaterBodyRiver)만 — 호수/바다는 immersion만.
+			if (const UWaterBodyRiverComponent* River = Cast<UWaterBodyRiverComponent>(Comp))
+			{
+				if (const UWaterSplineComponent* Spline = River->GetWaterSpline())
+				{
+					const float Key = Spline->FindInputKeyClosestToWorldLocation(WorldLoc);
+					const FVector Center = Spline->GetLocationAtSplineInputKey(Key, ESplineCoordinateSpace::World);
+					const float HalfWidth = River->GetRiverWidthAtSplineInputKey(Key) * 0.5f;  // UE5.7 정석 API
+					const float HorizDistSq =
+						FMath::Square(Center.X - WorldLoc.X) + FMath::Square(Center.Y - WorldLoc.Y);
+					const float MaxDist = HalfWidth + InMargin;
+					if (HorizDistSq > MaxDist * MaxDist) { continue; }  // 강 폭 밖 → 물 아님
+				}
+			}
+			OutSurfaceZ = Q.GetWaterSurfaceLocation().Z;
+			return true;
+		}
+		return false;
+	}
+}
 
 // === Conveyor 포트 판정 헬퍼 (Step 3-b-1) ===
 // Dummy_GridConveyor.cpp의 검증된 anonymous-namespace 헬퍼를 OJJ_로 이식(parity — 로직 동일, 명칭/타입만 치환).
@@ -1280,16 +1351,50 @@ AResourceBase* AOJJ_Grid::GetLiquidResourceAtCell(FIntPoint Cell) const
 	return nullptr;
 }
 
-bool AOJJ_Grid::GetWaterSurfaceZAtCell(FIntPoint Cell, float& OutSurfaceZ) const
+bool AOJJ_Grid::OJJ_QueryWaterBodyAt(const FVector& WorldLoc, float& OutSurfaceZ) const
 {
-	// 셀을 덮는 액체 자원(WaterArea, form=liquid)의 액터 Z를 수면으로 반환. 자원 전용 레이어 조회(위 함수)에
-	// 위임 — per-puddle 수면(WA1/WA2 다른 Z)이 셀별로 자동 해소. 없으면 false → 호출자가 거부/폴백.
+	// 단발 호출용 — 매번 수집. 베이크/snaplift hot-loop은 사전수집 리스트 경로(OJJ_WaterSurfaceForCell/Impl) 사용.
+	TArray<UWaterBodyComponent*> Comps;
+	OJJ_GatherWaterBodies(GetWorld(), Comps);
+	if (Comps.Num() == 0) { return false; }
+	// 포함 임계 = 반 칸(셀 중심이 강 안일 때만 채택). CellSize 0 방어.
+	return OJJ_QueryWaterAtImpl(Comps, WorldLoc, FMath::Max(1.0f, CellSize * 0.5f), OutSurfaceZ);
+}
+
+bool AOJJ_Grid::OJJ_WaterSurfaceForCell(FIntPoint Cell, const TArray<UWaterBodyComponent*>& WaterComps, float& OutSurfaceZ) const
+{
+	// ① 1차: WaterBody(강) 수면 — 셀 지형점(강바닥)에서 침수 질의. WaterArea 없는 강도 펌프/파이프/Foundation이 인식.
+	// ⚠️ 평면 Z가 아니라 지형 Z에서 질의 — 평면이 수면 아래여도 지형이 수면 위면(마른 땅) 오판 안 하게(immersion=수면−지형).
+	//    GroundZ 캐시 무효 시 평면 Z 폴백(이땐 수평 포함 검사가 강 밖 오판을 차단). 반환=수면 Z(펌프 안착·데크 상판 기준).
+	if (WaterComps.Num() > 0)
+	{
+		const FVector CellCenter = GridToWorld(Cell);
+		float GroundDelta = 0.0f;
+		const float TerrainZ = GetCellGroundZ(Cell, GroundDelta)
+			? (GetActorLocation().Z + GroundDelta) : CellCenter.Z;
+		float WaterZ = 0.0f;
+		if (OJJ_QueryWaterAtImpl(WaterComps, FVector(CellCenter.X, CellCenter.Y, TerrainZ),
+			FMath::Max(1.0f, CellSize * 0.5f), WaterZ))
+		{
+			OutSurfaceZ = WaterZ;
+			return true;
+		}
+	}
+	// 폴백: 셀을 덮는 액체 자원(WaterArea, form=liquid)의 액터 Z. per-puddle 수면(WA1/WA2 다른 Z) 자동. 없으면 false.
 	if (AResourceBase* Resource = GetLiquidResourceAtCell(Cell))
 	{
 		OutSurfaceZ = Resource->GetActorLocation().Z;
 		return true;
 	}
 	return false;
+}
+
+bool AOJJ_Grid::GetWaterSurfaceZAtCell(FIntPoint Cell, float& OutSurfaceZ) const
+{
+	// 단발 래퍼 — comps 1회 수집 후 위임. 다수 셀 호출(snaplift)은 OJJ_WaterSurfaceForCell에 사전수집 리스트 전달.
+	TArray<UWaterBodyComponent*> Comps;
+	OJJ_GatherWaterBodies(GetWorld(), Comps);
+	return OJJ_WaterSurfaceForCell(Cell, Comps, OutSurfaceZ);
 }
 
 float AOJJ_Grid::OJJ_GetPipeCellSurfaceZ(FIntPoint Cell) const
@@ -1734,6 +1839,10 @@ void AOJJ_Grid::BakeBuildableCells(bool bVerbose, bool bWriteCache)
 	// 지형 분류가 슬래브 상면을 지형으로 오인하지 않게(향후 레벨 사전배치 대비 — WaterArea 이중 안전 패턴).
 	for (TActorIterator<AOJJ_Foundation> It(World); It; ++It) { Params.AddIgnoredActor(*It); }
 
+	// ① WaterBody(강) 사전수집 — 셀 루프 진입 전 1회(per-cell TActorIterator 회피). 없으면 빈 배열 = 옛 높이식 폴백.
+	TArray<UWaterBodyComponent*> WaterComps;
+	OJJ_GatherWaterBodies(World, WaterComps);
+
 	const double StartTime = FPlatformTime::Seconds();
 	for (int32 X = 0; X < GridSize.X; ++X)
 	{
@@ -1774,10 +1883,28 @@ void AOJJ_Grid::BakeBuildableCells(bool bVerbose, bool bWriteCache)
 				}
 			}
 
-			// 4단 분류 (우선순위: void > water > blocked > buildable). water는 셀 최저점이 WaterSurfaceZ보다 깊을 때 —
-			// blocked보다 먼저 태그(둘 다 건설 불가지만 파랑 표시/수원 후보 우선). WouldBlock은 필터 환원용으로 별도 보존.
+			// 4단 분류 (우선순위: void > water > blocked > buildable). blocked보다 water 먼저(둘 다 건설 불가지만
+			// 파랑 표시/수원 후보 우선). WouldBlock은 필터 환원용으로 별도 보존.
 			const bool bWouldBlock = bAnyHit && (WorstAbsDelta > BuildableHeightTolerance);
-			const bool bWater = bAnyHit && (LowestSignedDelta < WaterSurfaceZ);
+			// ① water 판정: WaterBody(강)가 있으면 침수 질의로 정확 분류 — 옛 높이식(오판원) 미사용.
+			//    셀 대표점 = 중심 XY + 최저 히트 Z(레거시 LowestSignedDelta<WaterSurfaceZ 의미 정합: 최저점이 수면 아래면 물).
+			//    HighestSignedDelta는 마른 둑 코너가 끼면 강셀을 놓칠 수 있어 부적합. 중심XY 단일점 근사(수평 포함 검사로 보강).
+			//    WaterBody 없는 맵(레거시/WaterArea)은 높이식 폴백.
+			bool bWater = false;
+			if (WaterComps.Num() > 0)
+			{
+				if (bAnyHit)
+				{
+					const FVector GroundPt(Center.X, Center.Y, PlaneZ + LowestSignedDelta);
+					float UnusedWaterZ = 0.0f;
+					bWater = OJJ_QueryWaterAtImpl(WaterComps, GroundPt,
+						FMath::Max(1.0f, CellSize * 0.5f), UnusedWaterZ);
+				}
+			}
+			else
+			{
+				bWater = bAnyHit && (LowestSignedDelta < WaterSurfaceZ);
+			}
 			EOJJCellClass CellClass;
 			if (!bAnyHit)         { CellClass = EOJJCellClass::Void; }
 			else if (bWater)      { CellClass = EOJJCellClass::Water; }
@@ -2218,9 +2345,8 @@ EOJJCellClass AOJJ_Grid::OJJ_ClassifyCellColor(FIntPoint Cell) const
 	// --- Foundation/Ramp 모드: CanPlaceFoundation 기준 — 경사(blocked) 포함 전부 placeable, 물·이미foundation 제외. ---
 	if (bGridColorRuleSet && GridColorMode == EOJJGridColorMode::Foundation)
 	{
-		if (OJJ_IsUncoveredWaterCell(Cell)) { return EOJJCellClass::Water; }      // 안 가려진 물 = 파랑(못놓음)
 		if (IsCellOnFoundation(Cell)) { return EOJJCellClass::Blocked; }         // 이미 Foundation = 빨강(겹침)
-		return EOJJCellClass::Buildable;                                          // 평지·경사 모두 초록(평지화 가능)
+		return EOJJCellClass::Buildable;                                          // ② 평지·경사·물(강) 모두 초록 — Foundation은 강 위도 설치 가능(데크=수면위/다리=강바닥)
 	}
 
 	// --- Miner 모드: 광맥 4방향 인접 셀만 placeable(평지·경사 무관). ---
@@ -2401,8 +2527,10 @@ bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& Ou
 					++Buried;
 				}
 			}
-			// [WaterArea 재정의] 물 거부를 "안 가려진 WaterArea"(드러난 웅덩이)로 한정 — 묻힌 땅·깊은 구덩이(−20 오판정)는
-			// Foundation 허용. 색상(OJJ_ClassifyCellColor)과 같은 헬퍼라 색=배치 정합. 전역 IsCellWater(펌프/파이프)는 −20 유지.
+			// ② [Foundation 강 설치] 물 셀은 Foundation 거부 안 함 — 데크 상판은 SnapLift(수면 위)로 뜨고
+			// 다리는 라이브 트레이스로 강바닥까지 닿는다(물 위 데크 = 정상 케이스). 일반 머신은 water 셀 차단 유지
+			// (CanPlaceMachine 경로 — 여기와 별개). 묻힘 게이트(위)가 데크가 지형/수면을 침범 안 함을 별도 보장.
+			// (WaterCount는 정보/로그용으로만 집계 — 거부 합산엔 미반영.)
 			if (OJJ_IsUncoveredWaterCell(Cell)) { ++WaterCount; }
 			// WaterArea(액체 자원) 점유는 Foundation 차단 면제 — 큰 WaterArea 박스가 묻힌 땅까지 OccupiedCells로 점유하므로,
 			// 안 하면 박스 아래 땅에 Foundation 못 놓음. 실제 물(드러난 웅덩이) 제외는 위 uncoveredWater 게이트가 담당.
@@ -2412,7 +2540,8 @@ bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& Ou
 		}
 	}
 
-	if (OffGrid + Overlap + VoidCount + WaterCount + Occupied + Buried == 0)
+	// ② WaterCount는 거부 합산에서 제외 — Foundation은 강/물 위 설치 허용(데크=수면 위, 다리=강바닥).
+	if (OffGrid + Overlap + VoidCount + Occupied + Buried == 0)
 	{
 		return true;
 	}
@@ -2422,7 +2551,8 @@ bool AOJJ_Grid::CanPlaceFoundation(FIntPoint Origin, FIntPoint Size, FString& Ou
 	if (OffGrid > 0)    { Parts.Add(FString::Printf(TEXT("off-grid %lld"), OffGrid)); }
 	if (Overlap > 0)    { Parts.Add(FString::Printf(TEXT("foundation-overlap %d"), Overlap)); }
 	if (VoidCount > 0)  { Parts.Add(FString::Printf(TEXT("void %d"), VoidCount)); }
-	if (WaterCount > 0) { Parts.Add(FString::Printf(TEXT("water %d"), WaterCount)); }
+	// ② water는 Foundation 거부 사유 아님(강 위 설치 허용) — 정보로만, 다른 사유로 실패 시 오해 없게 "(ok)" 라벨.
+	if (WaterCount > 0) { Parts.Add(FString::Printf(TEXT("water(ok) %d"), WaterCount)); }
 	if (Occupied > 0)   { Parts.Add(FString::Printf(TEXT("occupied %d"), Occupied)); }
 	if (Buried > 0)     { Parts.Add(FString::Printf(TEXT("buried %d"), Buried)); }
 	OutReason = FString::Printf(TEXT("Foundation blocked (%dx%d=%lld cells): %s."),
@@ -2969,12 +3099,27 @@ float AOJJ_Grid::OJJ_ComputeFoundationSnapLift(FIntPoint Origin, FIntPoint Size,
 	}
 
 	float MaxGroundZ = -TNumericLimits<float>::Max();
+	const float PlaneZ = GetActorLocation().Z;
+	// ② 강 위 Foundation 데크-수면 처리에 쓸 WaterBody를 1회 수집(per-cell TActorIterator 스캔 회피 — 호버 매 틱 대비).
+	TArray<UWaterBodyComponent*> WaterComps;
+	OJJ_GatherWaterBodies(GetWorld(), WaterComps);
 	for (int32 X = IterMinX; X < IterEndX; ++X)
 	{
 		for (int32 Y = IterMinY; Y < IterEndY; ++Y)
 		{
+			const FIntPoint Cell(X, Y);
 			float Delta = 0.0f;
-			if (GetCellGroundZ(FIntPoint(X, Y), Delta))
+			bool bHas = GetCellGroundZ(Cell, Delta);
+			// ② 강 위 Foundation: 데크 상판이 수면 위로 뜨게 — 셀이 강이면 강바닥(GroundZ) 대신 수면 델타를 후보로.
+			//    다리는 별도(라이브 트레이스)로 강바닥까지 닿으므로 무관. 땅 셀은 수면 질의 false → 불변(회귀 0).
+			float WaterZ = 0.0f;
+			if (OJJ_WaterSurfaceForCell(Cell, WaterComps, WaterZ))
+			{
+				const float WaterDelta = WaterZ - PlaneZ;
+				Delta = bHas ? FMath::Max(Delta, WaterDelta) : WaterDelta;
+				bHas = true;
+			}
+			if (bHas)
 			{
 				MaxGroundZ = FMath::Max(MaxGroundZ, Delta);
 			}
