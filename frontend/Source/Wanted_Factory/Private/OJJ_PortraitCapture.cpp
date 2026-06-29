@@ -11,6 +11,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "Animation/AnimationAsset.h"
 #include "UObject/ConstructorHelpers.h"
+#include "TimerManager.h"
 
 AOJJ_PortraitCapture::AOJJ_PortraitCapture()
 {
@@ -90,7 +91,8 @@ AOJJ_PortraitCapture::AOJJ_PortraitCapture()
 	// --- 씬 캡처 ---
 	Capture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("Capture"));
 	Capture->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
-	Capture->bCaptureEveryFrame = true;          // idle 애니 실시간 반영
+	// 캡처는 BeginPlay 워밍업 지연 후 켠다(BeginContinuousCapture) — 첫 프레임 셰이더 컴파일/스트림인 글리치 회피.
+	Capture->bCaptureEveryFrame = false;
 	Capture->bCaptureOnMovement = false;
 	// 투명 배경: SCS_SceneColorHDR은 알파에 "역불투명도"(빈 배경=1, 로봇=0)를 담는다 → 아래 AlphaInvert로
 	// 뒤집어 로봇=불투명/배경=투명으로 만든다. 전역 r.PostProcessing.PropagateAlpha 없이 동작(전역 영향 없음).
@@ -192,4 +194,32 @@ void AOJJ_PortraitCapture::BeginPlay()
 		UE_LOG(LogTemp, Warning,
 			TEXT("[OJJ_PortraitCapture] IdleAnimation 없음 — 정지 포즈로 표시됨. 애니 경로/할당을 확인하세요."));
 	}
+
+	// --- 캡처 워밍업 지연 ---
+	// BeginPlay 직후 몇 프레임은 M_Robot 셰이더 첫 컴파일/텍스처 스트림인으로 깨진 채 렌더된다(에디터 첫 PIE).
+	// 매 프레임 캡처가 그 깨진 프레임을 RT에 찍지 않도록, CaptureWarmupDelay 뒤에 연속 캡처를 켠다(0이면 즉시).
+	if (Capture)
+	{
+		if (CaptureWarmupDelay > 0.f)
+		{
+			GetWorldTimerManager().SetTimer(
+				CaptureWarmupTimer, this, &AOJJ_PortraitCapture::BeginContinuousCapture, CaptureWarmupDelay, /*bLoop=*/false);
+		}
+		else
+		{
+			BeginContinuousCapture();
+		}
+	}
+}
+
+void AOJJ_PortraitCapture::BeginContinuousCapture()
+{
+	if (!Capture)
+	{
+		return;
+	}
+
+	// 워밍업 끝 — 이제 깨지지 않은 프레임이 나오므로 연속 캡처를 켜고 즉시 한 장 갱신한다.
+	Capture->bCaptureEveryFrame = true;
+	Capture->CaptureScene();
 }
