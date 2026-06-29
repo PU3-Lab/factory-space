@@ -51,6 +51,8 @@ private:
     void UpdateQuestZoneVisibility();
     void UpdateSubQuestZoneVisibility();
     void UpdateSubQuestTexts(const TArray<FQuestState>& Quests);
+    void CacheSubQuestStatuses(const TArray<FQuestState>& Quests);
+    void ShowSubQuestCompletedNotify(const FQuestState& Quest);
 
     UFUNCTION()
     void HandleOnTutorialStepChanged(const FTutorialQuestStep& NewStep);
@@ -62,4 +64,6 @@ private:
     UFUNCTION() void HandleOnSubQuestsGenerated(const FString& RequestId, const TArray<FQuestState>& Quests);
     UFUNCTION() void HandleOnSubQuestsUpdated(const TArray<FQuestState>& Quests);
     UFUNCTION() void HandleOnSubQuestRequestFailed(const FString& RequestId, const FString& ErrorMessage);
+
+    TMap<FString, EQuestStatus> CachedSubQuestStatuses;
 };

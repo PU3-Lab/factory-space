@@ -48,6 +48,7 @@
 #include "UI/UI_QuestWindow.h"
 #include "UI/UI_DialogueBalloon.h"
 #include "UI/UI_SynthesizerInteract.h"
+#include "UI/UI_BaseCampInteract.h"
 #include "Resource/ResourceBase.h"
 #include "Resource/ResourceData.h"
 #include "UI/UI_MoldingMachineInteract.h"
@@ -511,6 +512,9 @@ void AOJJ_Player::OJJ_DebugSetCharacter(int32 CharacterIndex)
 
 void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	// [#405] 1인칭 빌드 중 폰 파괴/언포제스 시 메시 숨김(OwnerNoSee) 잔류 방지(동일 폰 재사용 대비).
+	ResetFirstPersonBuild();
+
 	// 폰 파괴/언포제스 시 열려 있던 머신 상호작용 위젯·입력모드 정리.
 	// ⚠️ EndPlay 시점엔 PlayerController가 이미 무효일 수 있다 — Cast가 null을 반환하면
 	//    CloseMachineInteractWidget의 PC null-가드가 입력모드 복원을 스킵하고 위젯 제거만 수행한다
@@ -680,6 +684,7 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AOJJ_Player::SetRampFoundationModeShortcut); // 경사면
 	PlayerInputComponent->BindKey(EKeys::H, IE_Pressed, this, &AOJJ_Player::SetLadderModeShortcut);         // 사다리(기존 C에서 이동)
 	PlayerInputComponent->BindKey(EKeys::Z, IE_Pressed, this, &AOJJ_Player::CancelPlacementShortcut);       // 마우스 초기화(취소)
+	PlayerInputComponent->BindKey(EKeys::C, IE_Pressed, this, &AOJJ_Player::ToggleBuildFPVShortcut);        // [#405] TPS 빌드 1인칭 토글(TPS 가드)
 
 	// [카테고리 숫자키] 1~9,0 → 현재 카테고리(LDJ UI_BuildModeMain)의 N번 슬롯 실행. 0키=10번 슬롯.
 	// 참고: 옛 직행 IA BindAction(IA_SetMachineMode 등)은 C++에서 폐기됨 → 에디터에 남은 IMC_Build 매핑은
@@ -1254,6 +1259,13 @@ void AOJJ_Player::Zoom(const FInputActionValue& Value)
 		return;
 	}
 
+	// [#405] 1인칭 빌드(ArmLength 0) 중에는 줌이 SpringArm을 3인칭 범위로 밀어 카메라만 빠져나가고
+	// 메시 숨김(OwnerNoSee)이 남는 잔류가 생긴다 — 1인칭 동안 줌 입력 무시.
+	if (bFirstPersonBuild)
+	{
+		return;
+	}
+
 	// TPS: 스크롤 업(+) → 줌인(팔 길이 감소)
 	const float NewLength = SpringArm->TargetArmLength - Scroll * ZoomStep;
 	SpringArm->TargetArmLength = FMath::Clamp(NewLength, MinArmLength, MaxArmLength);
@@ -1385,12 +1397,17 @@ void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
 {
     // 카메라 뷰타겟 블렌드 + 플레이어 가시성 + 입력 컨텍스트를 모드별로 전환.
     // None=해제, TopDown=빌드캠+숨김+IMC_Build, TPS=플레이어캠+보임+IMC_BuildTPS.
+    // [#405] 모드가 바뀌면 1인칭 빌드 상태를 먼저 해제(3인칭 복귀 + 메시 복원) — 1인칭 잔류 방지.
+    //   TPS로 재진입해도 3인칭으로 시작하고, 1인칭은 C키로 다시 켠다(잔류 위험 0).
+    ResetFirstPersonBuild();
+
     APlayerController* PC = Cast<APlayerController>(GetController());
 
     if (NewMode != EBuildViewMode::None)
     {
        // ── 진입 또는 모드 전환 공통: 열려 있던 기계창/창고/가방 UI 정리 ──
-    	if (MachineInteractWidgetInstance.IsValid() || WarehouseInteractWidgetInstance || SynthesizerInteractWidgetInstance || MoldingMachineInteractWidgetInstance)
+    	if (MachineInteractWidgetInstance.IsValid() || WarehouseInteractWidgetInstance || 
+		   SynthesizerInteractWidgetInstance || MoldingMachineInteractWidgetInstance || BaseCampInteractWidgetInstance)
     	{
     		CloseMachineInteractWidget(PC);
     	}
@@ -1723,6 +1740,65 @@ void AOJJ_Player::CancelPlacementShortcut()
 	BuildController->SetPlacementMode(EOJJ_BuildPlacementMode::None);
 }
 
+// [#405 일부, 공용키 C] TPS 빌드모드에서만 1인칭↔3인칭 토글. 레거시 BindKey라 IMC 게이팅 없음 →
+// IsInBuildMode + TPS 가드 필수(탑다운/비빌드/None에서 C는 무동작).
+void AOJJ_Player::ToggleBuildFPVShortcut()
+{
+	if (!BuildController || !BuildController->IsInBuildMode())
+	{
+		return;
+	}
+	// TPS 빌드 카메라(= 플레이어 SpringArm)에서만 의미가 있다. 탑다운은 별도 BuildCamera라 무관.
+	if (BuildController->GetBuildViewMode() != EBuildViewMode::TPS)
+	{
+		return;
+	}
+	if (!SpringArm)
+	{
+		return;
+	}
+
+	bFirstPersonBuild = !bFirstPersonBuild;
+	if (bFirstPersonBuild)
+	{
+		// 진입 직전 거리 저장(줌으로 바뀐 값도 그대로 복원하기 위해 270 하드코딩 대신 현재값).
+		SavedBuildArmLength = SpringArm->TargetArmLength;
+		SpringArm->TargetArmLength = 0.0f;
+		if (USkeletalMeshComponent* MeshComp = GetMesh())
+		{
+			MeshComp->SetOwnerNoSee(true); // 내 뷰에서만 몸/머리 숨김(타 클라엔 보임 — 멀티 안전).
+		}
+	}
+	else
+	{
+		SpringArm->TargetArmLength = SavedBuildArmLength;
+		if (USkeletalMeshComponent* MeshComp = GetMesh())
+		{
+			MeshComp->SetOwnerNoSee(false);
+		}
+	}
+}
+
+// 1인칭 상태 강제 해제(3인칭 복귀 + 메시 복원). ApplyBuildModeView가 모드 전환마다 호출 — 1인칭인 채
+// 탑다운/빌드해제로 빠져나갈 때 메시가 계속 숨거나 카메라가 1인칭에 고착되는 잔류를 막는다.
+void AOJJ_Player::ResetFirstPersonBuild()
+{
+	if (!bFirstPersonBuild)
+	{
+		return;
+	}
+	bFirstPersonBuild = false;
+	// 3인칭 거리 복원 + 메시 숨김 해제 — 1인칭인 채 모드를 빠져나가도 카메라/메시 잔류가 없게.
+	if (SpringArm)
+	{
+		SpringArm->TargetArmLength = SavedBuildArmLength;
+	}
+	if (USkeletalMeshComponent* MeshComp = GetMesh())
+	{
+		MeshComp->SetOwnerNoSee(false);
+	}
+}
+
 // [카테고리 숫자키] 현재 카테고리의 SlotIndex(1~10)번 슬롯 실행 — LDJ UI_BuildModeMain에 위임(슬롯 클릭과 동일 경로).
 // 카테고리 상태(CurrentSubMode)는 위젯이 보유 → 슬롯 번호만 넘기면 위젯이 현재 카테고리 기준 해석.
 void AOJJ_Player::ExecuteHotbarSlot(int32 SlotIndex)
@@ -1940,52 +2016,60 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
     QuickFixMode.SetWidgetToFocus(nullptr); 
     PC->SetInputMode(QuickFixMode);
 
-    // 이미 켜져 있을 때 끄고 탈출하는 가드 조건에 합성기 위젯 인스턴스도 병합합니다.
-	if (bIsInventoryOpen || 
-		(MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()) ||
-		(WarehouseInteractWidgetInstance && WarehouseInteractWidgetInstance->IsInViewport()) ||
-		(SynthesizerInteractWidgetInstance && SynthesizerInteractWidgetInstance->IsInViewport()) ||
-		(MoldingMachineInteractWidgetInstance && MoldingMachineInteractWidgetInstance->IsInViewport()))
-	{
-		if (MachineInteractWidgetInstance.IsValid())
-		{
-			MachineInteractWidgetInstance->RemoveFromParent();
-			MachineInteractWidgetInstance = nullptr;
-		}
+    // 1. 이미 UI 창이 켜져 있을 때 F키를 한 번 더 누르면 리셋하고 탈출하는 가드 구역
+    if (bIsInventoryOpen || 
+       (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()) ||
+       (WarehouseInteractWidgetInstance && WarehouseInteractWidgetInstance->IsInViewport()) ||
+       (SynthesizerInteractWidgetInstance && SynthesizerInteractWidgetInstance->IsInViewport()) ||
+       (MoldingMachineInteractWidgetInstance && MoldingMachineInteractWidgetInstance->IsInViewport()) ||
+       (BaseCampInteractWidgetInstance && BaseCampInteractWidgetInstance->IsInViewport()))
+    {
+       if (MachineInteractWidgetInstance.IsValid())
+       {
+          MachineInteractWidgetInstance->RemoveFromParent();
+          MachineInteractWidgetInstance = nullptr;
+       }
 
-		if (WarehouseInteractWidgetInstance)
-		{
-			WarehouseInteractWidgetInstance->RemoveFromParent();
-			WarehouseInteractWidgetInstance = nullptr;
-		}
+       if (WarehouseInteractWidgetInstance)
+       {
+          WarehouseInteractWidgetInstance->RemoveFromParent();
+          WarehouseInteractWidgetInstance = nullptr;
+       }
 
-		if (SynthesizerInteractWidgetInstance)
-		{
-			SynthesizerInteractWidgetInstance->RemoveFromParent();
-			SynthesizerInteractWidgetInstance = nullptr;
-		}
+       if (SynthesizerInteractWidgetInstance)
+       {
+          SynthesizerInteractWidgetInstance->RemoveFromParent();
+          SynthesizerInteractWidgetInstance = nullptr;
+       }
 
-		if (MoldingMachineInteractWidgetInstance)
-		{
-			MoldingMachineInteractWidgetInstance->RemoveFromParent();
-			MoldingMachineInteractWidgetInstance = nullptr;
-		}
+       if (MoldingMachineInteractWidgetInstance)
+       {
+          MoldingMachineInteractWidgetInstance->RemoveFromParent();
+          MoldingMachineInteractWidgetInstance = nullptr;
+       }
+       
+       if (BaseCampInteractWidgetInstance)
+       {
+          BaseCampInteractWidgetInstance->RemoveFromParent();
+          BaseCampInteractWidgetInstance = nullptr;
+       }
 
-		if (InventoryWidgetInstance)
-		{
-			InventoryWidgetInstance->RemoveFromParent();
-		}
-		bIsInventoryOpen = false;
-		GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
+       if (InventoryWidgetInstance)
+       {
+          InventoryWidgetInstance->RemoveFromParent();
+       }
+       bIsInventoryOpen = false;
+       GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
 
-		PC->SetInputMode(FInputModeGameOnly());
-		PC->SetShowMouseCursor(false);
-		return;
-	}
+       PC->SetInputMode(FInputModeGameOnly());
+       PC->SetShowMouseCursor(false);
+       return;
+    }
 
     UWorld* World = GetWorld();
     if (!Camera || !World) return;
 
+    // 시선 방향 레이캐스트 연산
     const FVector TraceStart = Camera->GetComponentLocation();
     const FVector TraceEnd = TraceStart + Camera->GetForwardVector() * MaxInteractDistance;
     FHitResult Hit;
@@ -1997,7 +2081,9 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
     if (!Machine) return;
     if (!Machine->CanPlayerInteract()) return;
 
-    // 1. 창고 포트 및 액체 탱크 레이아웃 개방 분기
+    // ── [인터랙트 생성 라우팅 분기점] ──
+    
+    // 분기 ① : 창고 포트 및 액체 탱크 레이아웃 개방
     if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
     {
        if (!WarehouseInteractWidgetClass)
@@ -2020,43 +2106,61 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
           WHWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
        }
     }
-    // 합성기 전용
+    // 분기 ② : 합성기 전용 개방
     else if (Machine->GetMachineType() == TEXT("Synthesizer"))
     {
-    	if (!SynthesizerInteractWidgetClass)
-    	{
-    		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] SynthesizerInteractWidgetClass 미할당! BP에서 할당하세요."));
-    		return;
-    	}
+        if (!SynthesizerInteractWidgetClass)
+        {
+           UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] SynthesizerInteractWidgetClass 미할당! BP에서 할당하세요."));
+           return;
+        }
 
-    	UUI_SynthesizerInteract* SynWidget = CreateWidget<UUI_SynthesizerInteract>(PC, SynthesizerInteractWidgetClass);
-    	if (SynWidget)
-    	{
-    		SynWidget->SetTargetMachine(Machine);
-    		SynthesizerInteractWidgetInstance = SynWidget;
-    		SynWidget->AddToViewport();
-    		SynWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
-    	}
+        UUI_SynthesizerInteract* SynWidget = CreateWidget<UUI_SynthesizerInteract>(PC, SynthesizerInteractWidgetClass);
+        if (SynWidget)
+        {
+           SynWidget->SetTargetMachine(Machine);
+           SynthesizerInteractWidgetInstance = SynWidget;
+           SynWidget->AddToViewport();
+           SynWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
+        }
     }
-	// 🌟 [성형기 스폰 분기 추가] 바라본 기계 타입이 MoldingMachine 일 때
+    // 바라본 기계 타입이 중앙거점(BaseCamp) 일 때의 전용 분기 설정
+    else if (Machine->GetMachineType() == TEXT("BaseCamp")) 
+    {
+        if (!BaseCampInteractWidgetClass)
+        {
+           UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] BaseCampInteractWidgetClass 미할당! BP에서 할당하세요."));
+           return;
+        }
+
+        UUI_BaseCampInteract* BCWidget = CreateWidget<UUI_BaseCampInteract>(PC, BaseCampInteractWidgetClass);
+        if (BCWidget)
+        {
+           BCWidget->SetTargetMachine(Machine);
+           BaseCampInteractWidgetInstance = BCWidget;
+           BCWidget->AddToViewport();
+           BCWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode); // 델리게이트 마감
+        }
+    }
+    // 분기 ④ : 성형기 전용 개방
     else if (Machine->GetMachineType() == TEXT("MoldingMachine"))
     {
-    	if (!MoldingMachineInteractWidgetClass)
-    	{
-    		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] MoldingMachineInteractWidgetClass 미할당! BP에서 할당하세요."));
-    		return;
-    	}
+        if (!MoldingMachineInteractWidgetClass)
+        {
+           UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] MoldingMachineInteractWidgetClass 미할당! BP에서 할당하세요."));
+           return;
+        }
 
-    	UUI_MoldingMachineInteract* MoldWidget = CreateWidget<UUI_MoldingMachineInteract>(PC, MoldingMachineInteractWidgetClass);
-    	if (MoldWidget)
-    	{
-    		MoldWidget->SetTargetMachine(Machine);
-    		MoldingMachineInteractWidgetInstance = MoldWidget;
-    		MoldWidget->AddToViewport();
-    		MoldWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode); // 델리게이트 마감
-    	}
+        UUI_MoldingMachineInteract* MoldWidget = CreateWidget<UUI_MoldingMachineInteract>(PC, MoldingMachineInteractWidgetClass);
+        if (MoldWidget)
+        {
+           MoldWidget->SetTargetMachine(Machine);
+           MoldingMachineInteractWidgetInstance = MoldWidget;
+           MoldWidget->AddToViewport();
+           MoldWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode); // 델리게이트 마감
+        }
     }
-    // 3. 일반 기계 분기 (제련기, 분쇄기 등)
+    // 분기 ⑤ : 일반 기계 분기 (제련기, 분쇄기 등)
     else
     {
        if (!MachineInteractWidgetClass) return;
@@ -2071,7 +2175,7 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
        }
     }
 
-    // 창고 포트뿐만 아니라 '액체 탱크' 계열 상호작용 시에도 우측에 인벤토리 생성
+    // ── 후속 가방 인벤토리 동시 처리 및 마우스 활성화 활성 (기존 로직 유지) ──
     if (Machine->IsA(AWarehousePort::StaticClass()) || Machine->IsA(ALiquidTank::StaticClass()) || Machine->GetName().Contains(TEXT("Warehouse")))
     {
        if (!InventoryWidgetInstance && InventoryWidgetClass)
@@ -2133,6 +2237,12 @@ void AOJJ_Player::CloseMachineInteractWidget(APlayerController* PC)
 		MoldingMachineInteractWidgetInstance = nullptr;
 	}
 	
+	if (BaseCampInteractWidgetInstance)
+	{
+		BaseCampInteractWidgetInstance->RemoveFromParent();
+		BaseCampInteractWidgetInstance = nullptr;
+	}
+	
 	if (PC)
 	{
 		PC->SetInputMode(FInputModeGameOnly());
@@ -2144,20 +2254,16 @@ void AOJJ_Player::RestoreGameInputMode()
 {
 	if ((MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport()) ||
 	   (SynthesizerInteractWidgetInstance && SynthesizerInteractWidgetInstance->IsInViewport()) ||
-	   (MoldingMachineInteractWidgetInstance && MoldingMachineInteractWidgetInstance->IsInViewport()))
+	   (MoldingMachineInteractWidgetInstance && MoldingMachineInteractWidgetInstance->IsInViewport()) ||
+	   (BaseCampInteractWidgetInstance && BaseCampInteractWidgetInstance->IsInViewport()))
 	{
 		return;
 	}
-    
-	if (MachineInteractWidgetInstance.IsValid() && MachineInteractWidgetInstance->IsInViewport())
-	{
-		return;
-	}
-
-	// 멱등 약포인터 캐시 일제 소독
+	
 	MachineInteractWidgetInstance = nullptr;
 	SynthesizerInteractWidgetInstance = nullptr;
 	MoldingMachineInteractWidgetInstance = nullptr;
+	BaseCampInteractWidgetInstance = nullptr;
 
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
