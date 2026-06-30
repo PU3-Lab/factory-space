@@ -66,6 +66,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Climb")
 	bool IsClimbing() const { return bClimbing; }
 
+	// [수영] ABP_Man/Woman 스테이트머신 swim 진입/탈출 조건용(읽기 전용). 이동/idle 구분은 ABP가 Velocity로 판별
+	// (수평속도>임계 → Swim_Forward, 아니면 Swim_Idle). ⚠️ public 필수 — ABP는 AOJJ_Player 서브클래스 아님(IsClimbing 전례).
+	UFUNCTION(BlueprintPure, Category = "OJJ|Swim")
+	bool IsSwimming() const { return bSwimming; }
+
+	// [수영] 이동 수영 여부(속도 히스테리시스 적용). ABP가 Swim_Idle↔Swim_Forward 전환에 이 값을 쓰면
+	// 코드의 오프셋(잠김 깊이) 판정과 항상 일치(자체 속도임계 사용 시 어긋남 방지).
+	UFUNCTION(BlueprintPure, Category = "OJJ|Swim")
+	bool IsSwimMoving() const { return bSwimMoving; }
+
 	// [#368] ABP_Man 점프/falling 상태 진입 게이트 — ABP 전이를 raw IsFalling 대신 이 getter로 교체한다.
 	// true = 실제 낙하(하강 중 + 하강속도 FallAnimVelocityThreshold 초과). 낮은 턱 짧은 낙하는 false.
 	// ⚠️ public 필수(IsClimbing과 동일) — ABP_Man은 AOJJ_Player 서브클래스가 아니라 protected면 BP 호출 불가(codex P1).
@@ -434,6 +444,63 @@ protected:
 	// 등반 활성 플래그(#184). CurrentLadder와 함께 set/clear. 사다리가 GC/파괴로 사라지면 포인터는
 	// null이 되지만 이 플래그로 '비정상 소멸'을 감지해 비행/중력0 고착을 Tick에서 복구.
 	bool bClimbing = false;
+
+	// 기본 yaw 회전 속도(°/s) 단일 출처 — 생성자 RotationRate와 수영 이탈 원복이 같은 값을 보게(매직넘버 방지).
+	static constexpr float DefaultRotationRateYaw = 540.0f;
+	// 기본 MaxFlySpeed(uu/s) — 수영 이탈 시 원복 단일 출처(엔진 기본). 등반은 자체 ClimbSpeed로 덮음(상호배타).
+	static constexpr float DefaultMaxFlySpeed = 600.0f;
+
+	// [수영] 현재 수영 중 플래그. Tick의 OJJ_UpdateSwimming이 set/clear. ABP가 IsSwimming()으로 읽음.
+	bool bSwimming = false;
+
+	// [수영] idle/이동 상태(속도 히스테리시스 적용된 이력값). TargetZ 오프셋 선택 + ABP Swim_Idle↔Swim_Forward 기준.
+	// ABP가 자체 속도임계 대신 IsSwimMoving()을 쓰면 코드/애님 판정이 항상 일치한다(IsSwimming 패턴).
+	bool bSwimMoving = false;
+
+	// [수영] 수면 기준 캡슐 중심 Z 오프셋(부유 높이). idle = 머리 물 밖(수면 위로 더 떠야 하니 큰 음수),
+	// 이동 = 더 잠김(0에 가깝게). 캐릭터 캡슐 크기에 맞춰 디자이너 튜닝.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Swim")
+	float SwimIdleOffsetZ = -40.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Swim")
+	float SwimMoveOffsetZ = 0.0f;
+
+	// [수영] 진입/이탈 수심(공간 히스테리시스) — 수심 = SurfaceZ − 강바닥Z(라인트레이스). ⭐ 클램프된 캐릭터 위치가
+	// 아니라 실제 지형 수심 기준이라 순환 없음(이전 CenterDepth 버그 해소). 진입은 깊어야, 이탈은 진입보다 얕을 때.
+	// SwimExitWaterDepth < SwimEnterWaterDepth 라 진입/이탈 지점이 달라 진동 방지.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Swim")
+	float SwimEnterWaterDepth = 90.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Swim")
+	float SwimExitWaterDepth = 70.0f;
+
+	// [수영] idle↔이동 속도 히스테리시스(uu/s) — 단일 임계 깜빡임(Z 튕김) 방지. SwimMoveExitSpeed < SwimMoveEnterSpeed.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Swim")
+	float SwimMoveEnterSpeed = 60.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Swim")
+	float SwimMoveExitSpeed = 30.0f;
+
+	// [수영] 수영 중 yaw 회전 속도(°/s) — 생성자 기본(540)이 수영 고속서 홱 돌게 보여 진입 시 낮춤, 이탈 시 원복.
+	// bOrientRotationToMovement는 true 유지(이동 방향 회전은 그대로), RotationRate만 조정.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Swim")
+	float SwimRotationRateYaw = 140.0f;
+
+	// [수영] 수영 중 최대 속도(uu/s) — MOVE_Flying 기본(600)보다 낮춰 헤엄 체감 조정. 진입 시 적용, 이탈 시 600 원복.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Swim")
+	float SwimMaxFlySpeed = 400.0f;
+
+	// [수영] 수면 클램프 보간 속도(uu/s 환산 lerp). 급격한 Z 점프 방지.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Swim")
+	float SwimSurfaceLerpSpeed = 6.0f;
+	// [수영] 물 영역 완전 이탈(bInWater=false) 시 디바운스(초) — 가장자리 진동 방지. 깊이 이탈과 별개 경로.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Swim")
+	float SwimExitDebounce = 0.2f;
+	// [수영] 연속 물 밖 경과 시간 누적기(SwimExitDebounce 비교용).
+	float SwimOutOfWaterTime = 0.0f;
+
+	// [수영] WaterBody 질의용 그리드 캐시(OJJ_QueryWaterBodyAt). 최초 1회 GetActorOfClass.
+	TWeakObjectPtr<class AOJJ_Grid> OJJ_CachedGridForSwim;
+
+	// [수영] 매 틱 물 진입/이탈 감지 → MOVE_Swimming 토글 + 수면 클램프. 등반/빌드(MOVE_Flying) 중엔 건너뜀.
+	void OJJ_UpdateSwimming(float DeltaSeconds);
 
 	// step-off 보간 상태(#184). 보간 중엔 이동 입력 잠금 + 비행(중력0) 유지, 완료 시 Walking+쿨다운.
 	bool bSteppingOff = false;
