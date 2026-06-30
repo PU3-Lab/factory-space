@@ -1079,6 +1079,8 @@ void AOJJ_Player::UpdateResourceNameplate()
 			? PlayerController->PlayerCameraManager->GetCameraLocation()
 			: GetActorLocation();
 
+	const EBuildViewMode ViewMode = BuildController ? BuildController->GetBuildViewMode() : EBuildViewMode::None;
+	const bool bUseCameraXYDistance = ViewMode != EBuildViewMode::None;
 	const FVector CharacterLocation = GetActorLocation();
 	const float MaxDisplayDistanceSq = FMath::Square(ResourceNameplateTraceDistance);
 
@@ -1086,14 +1088,22 @@ void AOJJ_Player::UpdateResourceNameplate()
 	for (TActorIterator<AResourceBase> It(World); It; ++It)
 	{
 		AResourceBase* Resource = *It;
-		if (!IsValid(Resource) || !Resource->IsOreResource() ||
-			FVector::DistSquared(CharacterLocation, Resource->GetActorLocation()) > MaxDisplayDistanceSq)
+		if (!IsValid(Resource) || !Resource->IsOreResource())
+		{
+			continue;
+		}
+
+		const FVector ResourceLocation = Resource->GetActorLocation();
+		const float DistanceToResourceSq = bUseCameraXYDistance
+			? FVector::DistSquared2D(ViewerLocation, ResourceLocation)
+			: FVector::DistSquared(CharacterLocation, ResourceLocation);
+		if (DistanceToResourceSq > MaxDisplayDistanceSq)
 		{
 			continue;
 		}
 
 		const FVector DebugTextLocation =
-			Resource->GetActorLocation() + FVector(0.0f, 0.0f, 300.0f);
+			ResourceLocation + FVector(0.0f, 0.0f, 300.0f);
 
 		FString ResourceDisplayName = Resource->GetResourceRowName().ToString();
 		FResourceData ResourceData;
