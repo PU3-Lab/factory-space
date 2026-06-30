@@ -44,6 +44,18 @@ struct FOJJ_CharacterAppearance
 	// 캐릭터마다 달라 단일 BP 값으론 발이 뜬다(Woman). X/Y는 BP 기본 유지, Z만 이 값으로 덮는다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Character", meta = (EditCondition = "bOverrideMeshRelativeZ"))
 	float MeshRelativeZ = 0.f;
+
+	// [수영] 이 캐릭터가 수영 부유 오프셋을 오버라이드할지. 캡슐은 남/여 동일하나 메시 키(머리 위치)가 달라
+	// 같은 오프셋이면 작은 캐릭터(Woman)는 머리가 덜 나온다 → 캐릭터별 값 필요. false면 AOJJ_Player 기본값(Man) 유지.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character")
+	bool bOverrideSwimOffsets = false;
+
+	// [수영] bOverrideSwimOffsets=true인 캐릭터의 수면 기준 캡슐중심 Z 오프셋. idle=머리 물 밖(클수록 더 뜸),
+	// move=이동 시 잠김. AOJJ_Player.SwimIdleOffsetZ/SwimMoveOffsetZ를 ApplySelectedCharacterAppearance가 이 값으로 덮는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character", meta = (EditCondition = "bOverrideSwimOffsets"))
+	float SwimIdleOffsetZ = -40.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character", meta = (EditCondition = "bOverrideSwimOffsets"))
+	float SwimMoveOffsetZ = 0.f;
 };
 
 /**
