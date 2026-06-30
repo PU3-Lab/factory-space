@@ -2288,12 +2288,23 @@ void AOJJ_Grid::RefreshGridVisual()
 			GridColorOreAdjacentCells.Reset();
 		}
 
+		// [진입 hitch] 전체 GridSize(예 756²) 대신 카메라/플레이어 중심 윈도우만 그린다(렌더 한정, 분류 로직 동일).
+		// VisibleGridRadius<=0 또는 중심 미설정(센티넬)이면 전체(폴백). 화면 밖 셀은 안 보이므로 생성 불필요.
+		int32 MinX = 0, MaxX = GridSize.X - 1, MinY = 0, MaxY = GridSize.Y - 1;
+		if (VisibleGridRadius > 0 && VisualWindowCenter.X != INT_MIN)
+		{
+			MinX = FMath::Max(0, VisualWindowCenter.X - VisibleGridRadius);
+			MaxX = FMath::Min(GridSize.X - 1, VisualWindowCenter.X + VisibleGridRadius);
+			MinY = FMath::Max(0, VisualWindowCenter.Y - VisibleGridRadius);
+			MaxY = FMath::Min(GridSize.Y - 1, VisualWindowCenter.Y + VisibleGridRadius);
+		}
+
 		TArray<FTransform> GreenXforms;
 		TArray<FTransform> RedXforms;
 		TArray<FTransform> BlueXforms;
-		for (int32 X = 0; X < GridSize.X; ++X)
+		for (int32 X = MinX; X <= MaxX; ++X)
 		{
-			for (int32 Y = 0; Y < GridSize.Y; ++Y)
+			for (int32 Y = MinY; Y <= MaxY; ++Y)
 			{
 				const FIntPoint Cell(X, Y);
 				switch (OJJ_ClassifyCellColor(Cell))
@@ -2324,6 +2335,31 @@ void AOJJ_Grid::RefreshGridVisual()
 			for (const FIntPoint& Cell : WaterCells) { BlueXforms.Add(MakeCellXform(Cell)); }
 			if (WaterCellISM && BlueXforms.Num() > 0) { WaterCellISM->AddInstances(BlueXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
 		}
+	}
+}
+
+void AOJJ_Grid::UpdateVisualWindow(const FVector& WorldCenter)
+{
+	// [진입 hitch] 빌드모드 중 시각화 윈도우 중심을 추종. 중심 셀이 충분히 이동했을 때만 재페인트(매 프레임 재구성 방지).
+	if (VisibleGridRadius <= 0)
+	{
+		return; // 윈도잉 끔(전체 모드) — 추종 불필요.
+	}
+
+	const FIntPoint NewCenter = WorldToGrid(WorldCenter);
+	const bool bUnset = (VisualWindowCenter.X == INT_MIN);
+	const bool bMoved = bUnset
+		|| FMath::Abs(NewCenter.X - VisualWindowCenter.X) >= VisualWindowRepaintStep
+		|| FMath::Abs(NewCenter.Y - VisualWindowCenter.Y) >= VisualWindowRepaintStep;
+	if (!bMoved)
+	{
+		return;
+	}
+
+	VisualWindowCenter = NewCenter;
+	if (bVisualizationActive)
+	{
+		RefreshGridVisual();
 	}
 }
 

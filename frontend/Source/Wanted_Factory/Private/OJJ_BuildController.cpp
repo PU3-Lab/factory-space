@@ -236,6 +236,19 @@ void AOJJ_BuildController::Tick(float DeltaSeconds)
 	{
 		UpdateMouseHover();
 		UpdateCharacterCellOverlay();
+
+		// [진입 hitch] 시각화 윈도우가 카메라(뷰타겟) 중심을 따라가도록 갱신. 중심 셀이 충분히 이동했을 때만
+		// 재페인트(UpdateVisualWindow 내부 임계). 탑다운=빌드캠, TPS=플레이어가 뷰타겟.
+		if (TargetGrid)
+		{
+			if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+			{
+				if (AActor* ViewTarget = PC->GetViewTarget())
+				{
+					TargetGrid->UpdateVisualWindow(ViewTarget->GetActorLocation());
+				}
+			}
+		}
 	}
 }
 
@@ -342,6 +355,13 @@ void AOJJ_BuildController::EnterBuildMode()
 
 	// [그리드 색상 2단계] 현재 모드 색상 규칙을 먼저 주입(bVisualizationActive 아직 false → paint 없이 멤버만 저장),
 	// 직후 SetVisualizationVisible(true)가 그 규칙으로 1회 paint(중복 repaint 회피).
+	// [진입 hitch] 시각화 윈도우 중심을 플레이어 위치로 시드 — SetVisualizationVisible의 첫 paint가
+	// 전체(756²) 대신 윈도우만 그리도록(빌드캠 진입 XY = 플레이어 XY와 일치). Tick이 이후 카메라를 추종.
+	if (APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0))
+	{
+		TargetGrid->SetVisualWindowCenterCell(TargetGrid->WorldToGrid(PlayerPawn->GetActorLocation()));
+	}
+
 	UpdateGridColorForCurrentMode();
 
 	TargetGrid->SetVisualizationVisible(true);
