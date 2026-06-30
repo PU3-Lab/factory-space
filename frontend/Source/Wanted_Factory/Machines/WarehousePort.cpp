@@ -27,7 +27,7 @@ void AWarehousePort::SetSelectedOutputItem(FName ItemID)
 {
 	if (!ItemID.IsNone() && !IsSolidItem(ItemID))
 	{
-		LOG_SSR_W(TEXT("Warehouse output rejected non-solid item: %s"), *ItemID.ToString());
+		// LOG_SSR_W(TEXT("Warehouse output rejected non-solid item: %s"), *ItemID.ToString());
 		return;
 	}
 
@@ -66,18 +66,18 @@ bool AWarehousePort::ReceiveConveyorItem(FName ItemID, int32 Count)
 {
 	if (!CanReceiveConveyorItem(ItemID, Count))
 	{
-		LOG_SSR_W(TEXT("Warehouse rejected conveyor item: %s x%d"),
-			*ItemID.ToString(),
-			Count);
+		// LOG_SSR_W(TEXT("Warehouse rejected conveyor item: %s x%d"),
+		// 	*ItemID.ToString(),
+		// 	Count);
 		return false;
 	}
 
 	const bool bStored = StoreInputItem(ItemID, Count);
 	if (bStored)
 	{
-		LOG_SSR_W(TEXT("Warehouse received from conveyor: %s x%d"),
-			*ItemID.ToString(),
-			Count);
+		// LOG_SSR_W(TEXT("Warehouse received from conveyor: %s x%d"),
+		// 	*ItemID.ToString(),
+		// 	Count);
 	}
 
 	return bStored;
@@ -96,10 +96,10 @@ bool AWarehousePort::StoreInputItem(FName ItemID, int32 Count)
 		return false;
 	}
 
-	LOG_SSR_W(TEXT("Warehouse stored: %s x%d, total %d"),
-		*ItemID.ToString(),
-		Count,
-		Warehouse->GetItemCount(ItemID));
+	// LOG_SSR_W(TEXT("Warehouse stored: %s x%d, total %d"),
+	// 	*ItemID.ToString(),
+	// 	Count,
+	// 	Warehouse->GetItemCount(ItemID));
 
 	UpdateDebugBufferText();
 	return true;
@@ -138,9 +138,9 @@ bool AWarehousePort::TryTakeFirstOutputItem(FName& OutItemID)
 		return false;
 	}
 
-	LOG_SSR_W(TEXT("Warehouse released: %s x1, remaining %d"),
-		*OutItemID.ToString(),
-		Warehouse->GetItemCount(OutItemID));
+	// LOG_SSR_W(TEXT("Warehouse released: %s x1, remaining %d"),
+	// 	*OutItemID.ToString(),
+	// 	Warehouse->GetItemCount(OutItemID));
 
 	UpdateDebugBufferText();
 	return true;

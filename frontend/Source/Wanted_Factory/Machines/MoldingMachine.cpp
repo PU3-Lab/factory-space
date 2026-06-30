@@ -56,7 +56,7 @@ bool AMoldingMachine::AddItem(FName ItemID, int32 Count)
 {
 	if (!CanReceiveConveyorItem(ItemID, Count))
 	{
-		LOG_SSR_W(TEXT("MoldingMachine rejected input item: %s"), *ItemID.ToString());
+		// LOG_SSR_W(TEXT("MoldingMachine rejected input item: %s"), *ItemID.ToString());
 		return false;
 	}
 
@@ -89,7 +89,7 @@ void AMoldingMachine::TryStartProcess()
 
 	if (!RecipeManager)
 	{
-		LOG_SSR_W(TEXT("RecipeManagerSubSystem is NULL"));
+		// LOG_SSR_W(TEXT("RecipeManagerSubSystem is NULL"));
 		return;
 	}
 
@@ -132,11 +132,11 @@ void AMoldingMachine::TryStartProcess()
 	if (bHasBlockedCraftableRecipe)
 	{
 		MachineState = EMachineState::Blocked;
-		LOG_SSR_W(TEXT("Cannot start process. Output Buffer Blocked."));
+		// LOG_SSR_W(TEXT("Cannot start process. Output Buffer Blocked."));
 		return;
 	}
 
-	LOG_SSR_W(TEXT("No craftable molding recipe found for shape: %s"), *CurrentShape);
+	// LOG_SSR_W(TEXT("No craftable molding recipe found for shape: %s"), *CurrentShape);
 }
 
 void AMoldingMachine::AddOutputItem(FName ItemID, int32 Count)
@@ -147,10 +147,10 @@ void AMoldingMachine::AddOutputItem(FName ItemID, int32 Count)
 		{
 			MachineState = EMachineState::Blocked;
 
-			LOG_SSR_W(
-				TEXT("MoldingMachine output buffer already contains another item: %s"),
-				*Output.Key.ToString()
-			);
+			// LOG_SSR_W(
+			// 	TEXT("MoldingMachine output buffer already contains another item: %s"),
+			// 	*Output.Key.ToString()
+			// );
 			return;
 		}
 	}

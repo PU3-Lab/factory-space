@@ -31,6 +31,7 @@ void UUI_DialogueBalloon::NativeConstruct()
         {
             AgentClient->OnAgentResponseReceived.AddDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideResponse);
             AgentClient->OnAgentErrorReceived.AddDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideError);
+            AgentClient->OnAgentProgressReceived.AddDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideProgress);
         }
     }
 
@@ -53,6 +54,7 @@ void UUI_DialogueBalloon::NativeDestruct()
         {
             AgentClient->OnAgentResponseReceived.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideResponse);
             AgentClient->OnAgentErrorReceived.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideError);
+            AgentClient->OnAgentProgressReceived.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideProgress);
         }
     }
 
@@ -125,6 +127,16 @@ void UUI_DialogueBalloon::HandleOnOperatorGuideError(const FString& RequestId, c
 }
 
 // --- 이하 기존 UI_DialogueBalloon 함수들 동일 유지 ---
+
+void UUI_DialogueBalloon::HandleOnOperatorGuideProgress(const FString& RequestId, const FString& Agent, const FString& Stage, const FString& Message, const FString& RawMessage)
+{
+    if (Agent != TEXT("operator_guide")) return;
+
+    const FString ProgressMessage = Message.TrimStartAndEnd();
+    if (ProgressMessage.IsEmpty()) return;
+
+    ShowExternalDialogue(ProgressMessage);
+}
 
 void UUI_DialogueBalloon::RefreshDialogueUI()
 {

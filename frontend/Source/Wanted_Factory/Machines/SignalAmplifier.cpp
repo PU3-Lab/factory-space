@@ -14,7 +14,7 @@ ASignalAmplifier::ASignalAmplifier()
 
 bool ASignalAmplifier::AddItem(FName ItemID, int32 Count)
 {
-	LOG_SSR_W(TEXT("Signal_Amplifier has no input port and cannot receive item: %s"), *ItemID.ToString());
+	// LOG_SSR_W(TEXT("Signal_Amplifier has no input port and cannot receive item: %s"), *ItemID.ToString());
 	return false;
 }
 

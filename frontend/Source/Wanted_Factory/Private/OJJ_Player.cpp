@@ -2512,6 +2512,42 @@ void AOJJ_Player::TriggerInventoryToggle()
 	}
 }
 
+void AOJJ_Player::GenerateFactoryState()
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>())
+		{
+			FString SavedFilePath;
+			if (AgentClient->SaveProcessOptimizerStateUpdateJsonToDesktop(0, TEXT(""), TEXT(""), SavedFilePath))
+			{
+				UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] Factory state preview saved to: %s"), *SavedFilePath);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] GenerateFactoryState failed: Could not save preview file."));
+			}
+			return;
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] GenerateFactoryState failed: FactoryAgentClientSubsystem not found."));
+}
+
+void AOJJ_Player::GenerateFactoryStateLog()
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>())
+		{
+			AgentClient->LogProcessOptimizerStateUpdateJson(0, TEXT(""), TEXT(""));
+			return;
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] GenerateFactoryStateLog failed: FactoryAgentClientSubsystem not found."));
+}
+
 void AOJJ_Player::TutorialAdvance()
 {
 	if (UGameInstance* GameInstance = GetGameInstance())
