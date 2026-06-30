@@ -38,7 +38,7 @@ void UUI_BaseCampInteract::NativeConstruct()
 
 void UUI_BaseCampInteract::NativeDestruct()
 {
-    // 🌟 [신호 방송 복구] 거점 UI 창이 완전히 닫히거나 부서질 때, 수신 대기 중인 플레이어에게 신호를 뿜어 마우스 포커스를 게임 전용으로 리셋시킵니다.
+    // 거점 UI 창이 완전히 닫히거나 부서질 때, 수신 대기 중인 플레이어에게 신호를 뿜어 마우스 포커스를 게임 전용으로 리셋시킵니다.
     OnClosed.Broadcast();
     
     Super::NativeDestruct();
