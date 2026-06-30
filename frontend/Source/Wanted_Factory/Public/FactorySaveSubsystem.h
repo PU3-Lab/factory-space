@@ -55,6 +55,7 @@ private:
 	TWeakObjectPtr<AOJJ_Player> CachedPlayer;
 	FTimerHandle AutoSaveTimerHandle;
 	FTimerHandle AutoSaveWarningTimerHandle;
+	int32 NextProcessOptimizerFactoryRevision = 1;
 	bool bHasLoadedInitialState = false;
 	bool bIsRestoring = false;
 	bool bIsResettingToNewGame = false;
@@ -65,6 +66,8 @@ private:
 	void AutoSaveTick();
 	void AutoSaveWarningTick();
 	void ShowAutoSaveWarning() const;
+	void EnsureAgentConnection();
+	void NotifyProcessOptimizerAutoSave();
 	void HandlePreExitSave();
 	void HandleWorldBeginTearDown(UWorld* World);
 };
