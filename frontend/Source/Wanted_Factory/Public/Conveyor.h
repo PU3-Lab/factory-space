@@ -141,6 +141,9 @@ protected:
 	float ItemVisualZOffset = 28.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual", meta = (ClampMin = "0.0"))
+	float ItemVisualSurfaceClearance = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Items|Visual", meta = (ClampMin = "0.0"))
 	float ItemVisualLerpExponent = 1.0f;
 
 	/** Delay after passing the final conveyor edge before shrinking begins. */
@@ -413,6 +416,7 @@ private:
 	bool IsPowderItem(FName ItemId) const;
 	UStaticMesh* ResolveItemStaticMesh(FName ItemId) const;
 	FTransform BuildItemVisualTransform(FName ItemId, const FVector& ItemLocation, const FRotator& ItemRotation, float BaseItemScale) const;
+	float GetItemVisualVerticalAdjustment(FName ItemId, const FVector& ItemScale) const;
 	FRotator ResolveItemVisualRotation(int32 SlotIndex, const FVector& StartLocation, const FVector& EndLocation, float MoveAlpha) const;
 	FVector ResolveItemVisualTravelDirection(int32 SlotIndex, bool bUseIncomingSide) const;
 	float GetCurrentMoveAlpha() const;
