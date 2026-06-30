@@ -4,6 +4,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "FactoryManagerSubsystem.h"
+#include "FactoryAgentClientSubsystem.h"
 #include "FactorySaveGame.h"
 #include "Engine/Engine.h"
 #include "GameFramework/Character.h"
@@ -159,6 +160,7 @@ namespace
 void UFactorySaveSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+	Collection.InitializeDependency(UFactoryAgentClientSubsystem::StaticClass());
 	FCoreDelegates::OnPreExit.AddUObject(this, &UFactorySaveSubsystem::HandlePreExitSave);
 	FWorldDelegates::OnWorldBeginTearDown.AddUObject(this, &UFactorySaveSubsystem::HandleWorldBeginTearDown);
 }
@@ -189,6 +191,7 @@ void UFactorySaveSubsystem::HandlePlayerReady(AOJJ_Player* Player)
 		bHasLoadedInitialState = true;
 	}
 
+	EnsureAgentConnection();
 	StartAutoSaveTimer();
 }
 
@@ -828,7 +831,10 @@ void UFactorySaveSubsystem::StopAutoSaveTimer()
 
 void UFactorySaveSubsystem::AutoSaveTick()
 {
-	SaveCurrentGame();
+	if (SaveCurrentGame())
+	{
+		NotifyProcessOptimizerAutoSave();
+	}
 }
 
 void UFactorySaveSubsystem::AutoSaveWarningTick()
@@ -846,6 +852,37 @@ void UFactorySaveSubsystem::ShowAutoSaveWarning() const
 			FColor::Yellow,
 			TEXT("1분마다 자동 저장됩니다. 곧 저장합니다..."));
 	}
+}
+
+void UFactorySaveSubsystem::EnsureAgentConnection()
+{
+	if (UFactoryAgentClientSubsystem* AgentClient = GetGameInstance()->GetSubsystem<UFactoryAgentClientSubsystem>())
+	{
+		if (AgentClient->GetConnectionState() == EFactoryAgentConnectionState::Disconnected)
+		{
+			AgentClient->ConnectToDefaultServer();
+		}
+	}
+}
+
+void UFactorySaveSubsystem::NotifyProcessOptimizerAutoSave()
+{
+	UFactoryAgentClientSubsystem* AgentClient = GetGameInstance()->GetSubsystem<UFactoryAgentClientSubsystem>();
+	if (!AgentClient)
+	{
+		return;
+	}
+
+	if (!AgentClient->SendProcessOptimizerStateUpdate(NextProcessOptimizerFactoryRevision, TEXT(""), TEXT("")))
+	{
+		if (AgentClient->GetConnectionState() == EFactoryAgentConnectionState::Disconnected)
+		{
+			AgentClient->ConnectToDefaultServer();
+		}
+		return;
+	}
+
+	++NextProcessOptimizerFactoryRevision;
 }
 
 void UFactorySaveSubsystem::HandlePreExitSave()

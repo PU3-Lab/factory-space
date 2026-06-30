@@ -699,6 +699,12 @@ public:
 	UFUNCTION(Exec)
 	void TimeSet(int32 TotalMinutes);
 
+	UFUNCTION(Exec)
+	void GenerateFactoryState();
+
+	UFUNCTION(Exec)
+	void GenerateFactoryStateLog();
+
 	UFUNCTION(Exec, Category = "Cheats")
     void Cheat_ResetMachines();
 protected:

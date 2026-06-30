@@ -114,7 +114,7 @@ void AOJJ_ProtectionTower::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 bool AOJJ_ProtectionTower::AddItem(FName ItemID, int32 Count)
 {
-	LOG_SSR_W(TEXT("ProtectionTower has no input port and cannot receive item: %s"), *ItemID.ToString());
+	// LOG_SSR_W(TEXT("ProtectionTower has no input port and cannot receive item: %s"), *ItemID.ToString());
 	return false;
 }
 

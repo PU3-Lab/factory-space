@@ -1333,7 +1333,7 @@ UStaticMeshComponent* AConveyor::CreateVisualComponentForItem(int32 VisualId, FN
 
 	NewComponent->SetupAttachment(Root);
 	NewComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	NewComponent->SetCastShadow(false);
+	NewComponent->SetCastShadow(true);
 	NewComponent->SetMobility(EComponentMobility::Movable);
 	NewComponent->SetVisibleInRayTracing(false);
 	NewComponent->SetStaticMesh(MeshToUse);
@@ -1435,10 +1435,28 @@ FTransform AConveyor::BuildItemVisualTransform(
 		ItemScale.X *= PowderVisualWidthMultiplier;
 		ItemScale.Y *= PowderVisualWidthMultiplier;
 		ItemScale.Z *= PowderVisualHeightMultiplier;
-		AdjustedLocation.Z += PowderVisualZOffsetAdjustment;
 	}
 
+	AdjustedLocation.Z += GetItemVisualVerticalAdjustment(ItemId, ItemScale);
+
 	return FTransform(ItemRotation, AdjustedLocation, ItemScale);
+}
+
+float AConveyor::GetItemVisualVerticalAdjustment(FName ItemId, const FVector& ItemScale) const
+{
+	UStaticMesh* ItemMesh = IsPowderItem(ItemId) ? PowderVisualMesh.Get() : ResolveItemStaticMesh(ItemId);
+	UStaticMesh* FallbackMesh = ItemVisualInstances ? ItemVisualInstances->GetStaticMesh() : nullptr;
+	UStaticMesh* MeshToUse = ItemMesh ? ItemMesh : FallbackMesh;
+	if (!MeshToUse)
+	{
+		return 0.0f;
+	}
+
+	const FVector MeshExtent = MeshToUse->GetBounds().BoxExtent;
+	const float ScaledHalfHeight = MeshExtent.Z * ItemScale.Z;
+	const float ConveyorSurfaceZ = (-ItemVisualZOffset) + (SegmentHeight * 0.5f);
+	const float ShapeAdjustment = IsPowderItem(ItemId) ? PowderVisualZOffsetAdjustment : 0.0f;
+	return ConveyorSurfaceZ + ScaledHalfHeight + ItemVisualSurfaceClearance + ShapeAdjustment;
 }
 
 FRotator AConveyor::ResolveItemVisualRotation(

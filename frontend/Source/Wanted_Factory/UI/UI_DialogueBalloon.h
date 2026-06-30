@@ -51,6 +51,9 @@ private:
 
 	UFUNCTION()
 	void HandleOnOperatorGuideError(const FString& RequestId, const FString& Agent, const FString& ErrorCode, const FString& ErrorMessage, const FString& RawMessage);
+
+	UFUNCTION()
+	void HandleOnOperatorGuideProgress(const FString& RequestId, const FString& Agent, const FString& Stage, const FString& Message, const FString& RawMessage);
 	
 	UPROPERTY()
 	class UQuestManagerSubsystem* QuestSubsystem;

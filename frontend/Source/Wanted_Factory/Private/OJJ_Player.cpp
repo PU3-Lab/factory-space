@@ -97,13 +97,12 @@ AOJJ_Player::AOJJ_Player()
 	NightSpotLight->SetupAttachment(RootComponent);
 	NightSpotLight->SetRelativeLocation(FVector(30.0f, 0.0f, 30.0f));
 	NightSpotLight->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
-	NightSpotLight->Intensity = 50.f;
-	NightSpotLight->AttenuationRadius = 1500.f;
+	NightSpotLight->Intensity = 50.0f;
+	NightSpotLight->AttenuationRadius = 1500.0f;
 	NightSpotLight->InnerConeAngle = 30.0f;
 	NightSpotLight->OuterConeAngle = 45.0f;
 	NightSpotLight->bUseInverseSquaredFalloff = false;
 	NightSpotLight->LightFalloffExponent = 2.5f;
-	NightSpotLight->SetIntensity(0.0f);
 	NightSpotLight->SetVisibility(false);
 }
 
@@ -1081,6 +1080,8 @@ void AOJJ_Player::UpdateResourceNameplate()
 			? PlayerController->PlayerCameraManager->GetCameraLocation()
 			: GetActorLocation();
 
+	const EBuildViewMode ViewMode = BuildController ? BuildController->GetBuildViewMode() : EBuildViewMode::None;
+	const bool bUseCameraXYDistance = ViewMode != EBuildViewMode::None;
 	const FVector CharacterLocation = GetActorLocation();
 	const float MaxDisplayDistanceSq = FMath::Square(ResourceNameplateTraceDistance);
 
@@ -1088,14 +1089,22 @@ void AOJJ_Player::UpdateResourceNameplate()
 	for (TActorIterator<AResourceBase> It(World); It; ++It)
 	{
 		AResourceBase* Resource = *It;
-		if (!IsValid(Resource) || !Resource->IsOreResource() ||
-			FVector::DistSquared(CharacterLocation, Resource->GetActorLocation()) > MaxDisplayDistanceSq)
+		if (!IsValid(Resource) || !Resource->IsOreResource())
+		{
+			continue;
+		}
+
+		const FVector ResourceLocation = Resource->GetActorLocation();
+		const float DistanceToResourceSq = bUseCameraXYDistance
+			? FVector::DistSquared2D(ViewerLocation, ResourceLocation)
+			: FVector::DistSquared(CharacterLocation, ResourceLocation);
+		if (DistanceToResourceSq > MaxDisplayDistanceSq)
 		{
 			continue;
 		}
 
 		const FVector DebugTextLocation =
-			Resource->GetActorLocation() + FVector(0.0f, 0.0f, 300.0f);
+			ResourceLocation + FVector(0.0f, 0.0f, 300.0f);
 
 		FString ResourceDisplayName = Resource->GetResourceRowName().ToString();
 		FResourceData ResourceData;
@@ -2501,6 +2510,42 @@ void AOJJ_Player::TriggerInventoryToggle()
 		   true
 		);
 	}
+}
+
+void AOJJ_Player::GenerateFactoryState()
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>())
+		{
+			FString SavedFilePath;
+			if (AgentClient->SaveProcessOptimizerStateUpdateJsonToDesktop(0, TEXT(""), TEXT(""), SavedFilePath))
+			{
+				UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] Factory state preview saved to: %s"), *SavedFilePath);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] GenerateFactoryState failed: Could not save preview file."));
+			}
+			return;
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] GenerateFactoryState failed: FactoryAgentClientSubsystem not found."));
+}
+
+void AOJJ_Player::GenerateFactoryStateLog()
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>())
+		{
+			AgentClient->LogProcessOptimizerStateUpdateJson(0, TEXT(""), TEXT(""));
+			return;
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] GenerateFactoryStateLog failed: FactoryAgentClientSubsystem not found."));
 }
 
 void AOJJ_Player::TutorialAdvance()

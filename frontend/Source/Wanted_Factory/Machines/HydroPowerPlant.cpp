@@ -29,7 +29,7 @@ void AHydroPowerPlant::OnPlacedOnGrid(AOJJ_Grid* Grid, FIntPoint Origin, int32 R
 	LinkedResource = FindAdjacentWater(Grid, Origin, RotationSteps);
 	if (!LinkedResource)
 	{
-		LOG_SSR_W(TEXT("OnPlacedOnGrid: no adjacent liquid water. HydroPowerPlant=%s"), *GetName());
+		// LOG_SSR_W(TEXT("OnPlacedOnGrid: no adjacent liquid water. HydroPowerPlant=%s"), *GetName());
 	}
 }
 

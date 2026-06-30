@@ -34,7 +34,7 @@ bool ASmelter::AddItem(FName ItemID, int32 Count)
 {
 	if (!CanReceiveConveyorItem(ItemID, Count))
 	{
-		LOG_SSR_W(TEXT("Smelter rejected input item: %s"), *ItemID.ToString());
+		// LOG_SSR_W(TEXT("Smelter rejected input item: %s"), *ItemID.ToString());
 		return false;
 	}
 
@@ -49,10 +49,10 @@ void ASmelter::AddOutputItem(FName ItemID, int32 Count)
 		{
 			MachineState = EMachineState::Blocked;
 
-			LOG_SSR_W(
-				TEXT("Smelter output buffer already contains another item: %s"),
-				*Output.Key.ToString()
-			);
+			// LOG_SSR_W(
+			// 	TEXT("Smelter output buffer already contains another item: %s"),
+			// 	*Output.Key.ToString()
+			// );
 			return;
 		}
 	}

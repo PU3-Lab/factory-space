@@ -99,7 +99,7 @@ void AMinerMachine::OnPlacedOnGrid(AOJJ_Grid* Grid, FIntPoint Origin, int32 Rota
 	if (!Ore)
 	{
 		// CanPlaceAdditional 통과 후 여기서 못 찾으면 경합/타이밍 이상(동기 경로라 보통 발생 안 함).
-		LOG_SSR_W(TEXT("OnPlacedOnGrid: no adjacent unclaimed Ore (race?). Miner=%s"), *GetName());
+		// LOG_SSR_W(TEXT("OnPlacedOnGrid: no adjacent unclaimed Ore (race?). Miner=%s"), *GetName());
 		return;
 	}
 
@@ -110,7 +110,7 @@ void AMinerMachine::OnPlacedOnGrid(AOJJ_Grid* Grid, FIntPoint Origin, int32 Rota
 	}
 	else
 	{
-		LOG_SSR_W(TEXT("OnPlacedOnGrid: Claim failed. Miner=%s Ore=%s"), *GetName(), *Ore->GetName());
+		// LOG_SSR_W(TEXT("OnPlacedOnGrid: Claim failed. Miner=%s Ore=%s"), *GetName(), *Ore->GetName());
 	}
 }
 
@@ -178,11 +178,11 @@ void AMinerMachine::SetLinkedResource(AResourceBase* NewResource)
 
 	if (LinkedResource)
 	{
-		LOG_SSR_W(TEXT("Miner linked to resource: %s"), *LinkedResource->GetName());
+		// LOG_SSR_W(TEXT("Miner linked to resource: %s"), *LinkedResource->GetName());
 	}
 	else
 	{
-		LOG_SSR_W(TEXT("Miner linked resource is null."));
+		// LOG_SSR_W(TEXT("Miner linked resource is null."));
 	}
 }
 
@@ -202,48 +202,48 @@ bool AMinerMachine::CanMine() const
 {
 	if (isBroken() && bDisableWhenBroken)
 	{
-		LOG_SSR_W(TEXT("CanMine failed: machine is broken."));
+		// LOG_SSR_W(TEXT("CanMine failed: machine is broken."));
 		return false;
 	}
 
 	if (!HasEnoughPower())
 	{
-		LOG_SSR_W(TEXT("CanMine failed: not enough power."));
+		// LOG_SSR_W(TEXT("CanMine failed: not enough power."));
 		return false;
 	}
 
 	if (!LinkedResource)
 	{
-		LOG_SSR_W(TEXT("CanMine failed: LinkedResource is null."));
+		// LOG_SSR_W(TEXT("CanMine failed: LinkedResource is null."));
 		return false;
 	}
 	
 	if (!IsMineableOreResource(LinkedResource))
 	{
-		LOG_SSR_W(
-			TEXT("CanMine failed: Resource is not mineable Ore. Resource=%s RowName=%s"),
-			*LinkedResource->GetName(),
-			*LinkedResource->GetResourceRowName().ToString()
-		);
+		// LOG_SSR_W(
+		// 	TEXT("CanMine failed: Resource is not mineable Ore. Resource=%s RowName=%s"),
+		// 	*LinkedResource->GetName(),
+		// 	*LinkedResource->GetResourceRowName().ToString()
+		// );
 		return false;
 	}
 
 	const FName ResourceID = GetMinedResourceID(LinkedResource);
 	if (ResourceID.IsNone())
 	{
-		LOG_SSR_W(TEXT("CanMine failed: resource row name is None."));
+		// LOG_SSR_W(TEXT("CanMine failed: resource row name is None."));
 		return false;
 	}
 
 	const int32 CurrentOutputCount = OutputBuffer.FindRef(ResourceID);
 	if (CurrentOutputCount + MineAmount > MaxBufferPerItem)
 	{
-		LOG_SSR_W(
-			TEXT("CanMine failed: output buffer full. Item=%s Count=%d Max=%d"),
-			*ResourceID.ToString(),
-			CurrentOutputCount,
-			MaxBufferPerItem
-		);
+		// LOG_SSR_W(
+		// 	TEXT("CanMine failed: output buffer full. Item=%s Count=%d Max=%d"),
+		// 	*ResourceID.ToString(),
+		// 	CurrentOutputCount,
+		// 	MaxBufferPerItem
+		// );
 		return false;
 	}
 
@@ -259,17 +259,17 @@ void AMinerMachine::StartMining()
 
 	if (MineAmount <= 0 || MineInterval <= 0.f)
 	{
-		LOG_SSR_W(
-			TEXT("Cannot start mining. Invalid mining settings. MineAmount=%d MineInterval=%.2f"),
-			MineAmount,
-			MineInterval
-		);
+		// LOG_SSR_W(
+		// 	TEXT("Cannot start mining. Invalid mining settings. MineAmount=%d MineInterval=%.2f"),
+		// 	MineAmount,
+		// 	MineInterval
+		// );
 		return;
 	}
 
 	if (!CanMine())
 	{
-		LOG_SSR_W(TEXT("Cannot start mining."));
+		// LOG_SSR_W(TEXT("Cannot start mining."));
 		return;
 	}
 
@@ -284,8 +284,8 @@ void AMinerMachine::StartMining()
 	MachineState = EMachineState::Working;
 	UpdateStateIndicator();
 
-	LOG_SSR_W(TEXT("Mining started."));
-	UE_LOG(LogTemp, Warning, TEXT("Mining started."));
+	// LOG_SSR_W(TEXT("Mining started."));
+	// UE_LOG(LogTemp, Warning, TEXT("Mining started."));
 }
 
 void AMinerMachine::StopMining()
@@ -298,7 +298,7 @@ void AMinerMachine::StopMining()
 	}
 	UpdateStateIndicator();
 	
-	LOG_SSR_W(TEXT("Mining stopped."));
+	// LOG_SSR_W(TEXT("Mining stopped."));
 }
 
 void AMinerMachine::MineResource()
@@ -314,7 +314,7 @@ void AMinerMachine::MineResource()
 
 	if (ResourceID.IsNone())
 	{
-		LOG_SSR_W(TEXT("MineResource failed: Resource row name is None."));
+		// LOG_SSR_W(TEXT("MineResource failed: Resource row name is None."));
 		StopMining();
 		return;
 	}
@@ -325,12 +325,12 @@ void AMinerMachine::MineResource()
 	{
 		MachineState = EMachineState::Blocked;
 		UpdateStateIndicator();
-		LOG_SSR_W(
-			TEXT("MineResource failed: Output buffer full. Item=%s Count=%d Max=%d"),
-			*ResourceID.ToString(),
-			CurrentOutputCount,
-			MaxBufferPerItem
-		);
+		// LOG_SSR_W(
+		// 	TEXT("MineResource failed: Output buffer full. Item=%s Count=%d Max=%d"),
+		// 	*ResourceID.ToString(),
+		// 	CurrentOutputCount,
+		// 	MaxBufferPerItem
+		// );
 		StopMining();
 		return;
 	}
@@ -339,7 +339,7 @@ void AMinerMachine::MineResource()
 	{
 		MachineState = EMachineState::Idle;
 		UpdateStateIndicator();
-		LOG_SSR_W(TEXT("Resource depleted"));
+		// LOG_SSR_W(TEXT("Resource depleted"));
 		StopMining();
 		return;
 	}
@@ -348,9 +348,9 @@ void AMinerMachine::MineResource()
 	MachineState = EMachineState::Working;
 	UpdateStateIndicator();
 
-	LOG_SSR_W(TEXT("Mined Resource: %s x %d"),
-		*ResourceID.ToString(),
-		MineAmount);
+	// LOG_SSR_W(TEXT("Mined Resource: %s x %d"),
+	// 	*ResourceID.ToString(),
+	// 	MineAmount);
 }
 
 
