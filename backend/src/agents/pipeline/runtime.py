@@ -53,6 +53,7 @@ from agents.process_optimizer.graph import compile_process_optimizer_graph
 from agents.process_optimizer.middleware import (
     build_graph_payload_with_memory,
     build_state_update_response,
+    build_subquest_check_response,
     validate_process_optimizer_payload,
 )
 from agents.process_optimizer.prompts import apply_process_optimizer_llm_explanation
@@ -282,13 +283,23 @@ class AgentPipeline:
             }
 
         def validate_process_payload(state: AgentGraphState) -> AgentGraphState:
-            error = validate_process_optimizer_payload(state["typedPayload"])
+            error = validate_process_optimizer_payload(
+                state["typedPayload"],
+                state["context"],
+            )
             if error:
                 return {"error": error}
             return {"selectedLeafAgent": "process_optimizer"}
 
         def process_optimizer_state_update(state: AgentGraphState) -> AgentGraphState:
             return build_state_update_response(state["context"], state["typedPayload"])
+
+        def process_optimizer_subquest_check(
+            state: AgentGraphState,
+        ) -> AgentGraphState:
+            return build_subquest_check_response(
+                state["context"], state["typedPayload"]
+            )
 
         def process_optimizer_v2_graph(state: AgentGraphState) -> AgentGraphState:
             context = state["context"]
@@ -797,6 +808,10 @@ class AgentPipeline:
         graph.add_node("route_top_agent", route_top_agent)
         graph.add_node("validate_process_payload", validate_process_payload)
         graph.add_node("process_optimizer_state_update", process_optimizer_state_update)
+        graph.add_node(
+            "process_optimizer_subquest_check",
+            process_optimizer_subquest_check,
+        )
         graph.add_node("process_optimizer_v2_graph", process_optimizer_v2_graph)
         graph.add_node("operator_guide.route_sub_agent", route_operator_guide_sub_agent)
         graph.add_node("quest_generator.route_sub_agent", route_quest_sub_agent)

@@ -154,13 +154,19 @@ class ProcessOptimizerPayload(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    operation: Literal["state_update", "analyze", "apply", "undo", "measure"] = (
-        "analyze"
-    )
+    operation: Literal[
+        "state_update",
+        "subquest_check",
+        "analyze",
+        "apply",
+        "undo",
+        "measure",
+    ] = "analyze"
     goal: Literal["balance", "throughput", "power_saving", "congestion_relief"] = (
         "balance"
     )
     request_source: str | None = None
+    snapshot_request_id: str | None = None
     target: TargetDescriptor | None = None
     subquest_mode: bool | None = None
 

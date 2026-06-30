@@ -37,8 +37,241 @@ def _input_shortage_factory_state() -> dict[str, Any]:
             }
         ],
         "conveyors": [],
+        "storages": [
+            {
+                "id": "warehouse_1",
+                "inventory": [
+                    {
+                        "item_id": "iron_ore",
+                        "amount": 100.0,
+                        "max_amount": 500.0,
+                    }
+                ],
+            }
+        ],
         "power_grid": {"produced": 120.0, "consumed": 90.0},
     }
+
+
+def test_subquest_check_requests_a_factory_snapshot() -> None:
+    """subquest_check asks Unreal for the state needed to judge a subquest."""
+    pipeline = AgentPipeline(llm=StubLLM([None, None]))
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "req-subquest-check",
+            "session_id": "session-subquest-check",
+            "client_id": "unreal",
+            "agent": "process_optimizer",
+            "payload": {
+                "operation": "subquest_check",
+                "goal": "balance",
+            },
+        }
+    )
+
+    assert response["type"] == "agent.response"
+    payload = response["payload"]
+    assert payload["status"] == "need_more_state"
+    assert payload["snapshot_request_id"]
+    assert payload["required_state_scopes"] == [
+        "machines",
+        "machine_condition",
+        "storages",
+        "conveyors",
+        "power_grid",
+        "resource_nodes",
+    ]
+    assert payload["next_request_hint"] == {
+        "agent": "process_optimizer",
+        "operation": "state_update",
+        "request_source": "subquest_check",
+        "snapshot_request_id": payload["snapshot_request_id"],
+    }
+
+
+def test_subquest_snapshot_returns_a_subquest_candidate() -> None:
+    """A correlated state_update returns the candidate requested by Unreal."""
+    pipeline = AgentPipeline(llm=StubLLM([None, None]))
+    session_id = "session-subquest-snapshot"
+
+    check_response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "req-subquest-check-2",
+            "session_id": session_id,
+            "client_id": "unreal",
+            "agent": "process_optimizer",
+            "payload": {
+                "operation": "subquest_check",
+                "goal": "balance",
+            },
+        }
+    )
+    snapshot_request_id = check_response["payload"]["snapshot_request_id"]
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "req-subquest-snapshot",
+            "session_id": session_id,
+            "client_id": "unreal",
+            "agent": "process_optimizer",
+            "payload": {
+                "operation": "state_update",
+                "request_source": "subquest_check",
+                "snapshot_request_id": snapshot_request_id,
+                "goal": "balance",
+                "factoryRevision": 42,
+                "factory_state": _input_shortage_factory_state(),
+            },
+        }
+    )
+
+    assert response["type"] == "agent.response"
+    payload = response["payload"]
+    assert payload["status"] == "success"
+    assert payload["snapshot_request_id"] == snapshot_request_id
+    assert payload["optimization_alert"]["needed"] is True
+    assert payload["optimization_alert"]["target"] == {
+        "type": "machine",
+        "id": "smelter_1",
+    }
+
+
+def test_plain_state_update_stores_state_without_creating_a_subquest() -> None:
+    """A periodic state update does not create a candidate unless requested."""
+    pipeline = AgentPipeline(llm=StubLLM([None, None]))
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "req-plain-state-update",
+            "session_id": "session-plain-state-update",
+            "client_id": "unreal",
+            "agent": "process_optimizer",
+            "payload": {
+                "operation": "state_update",
+                "goal": "balance",
+                "factoryRevision": 42,
+                "factory_state": _input_shortage_factory_state(),
+            },
+        }
+    )
+
+    assert response["type"] == "agent.response"
+    assert response["payload"]["status"] == "success"
+    assert response["payload"]["optimization_alert"]["needed"] is False
+
+
+def test_subquest_snapshot_requires_snapshot_request_id() -> None:
+    """A subquest snapshot without its correlation ID is rejected."""
+    pipeline = AgentPipeline(llm=StubLLM([None, None]))
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "req-subquest-snapshot-without-id",
+            "session_id": "session-subquest-snapshot-without-id",
+            "client_id": "unreal",
+            "agent": "process_optimizer",
+            "payload": {
+                "operation": "state_update",
+                "request_source": "subquest_check",
+                "factoryRevision": 42,
+                "factory_state": _input_shortage_factory_state(),
+            },
+        }
+    )
+
+    assert response["type"] == "agent.error"
+    assert response["error"]["code"] == "INVALID_REQUEST_PAYLOAD"
+    assert "snapshot_request_id" in response["error"]["message"]
+
+
+def test_subquest_snapshot_rejects_unknown_snapshot_request_id() -> None:
+    """A snapshot ID that the backend did not issue is rejected."""
+    pipeline = AgentPipeline(llm=StubLLM([None, None]))
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "req-subquest-snapshot-unknown-id",
+            "session_id": "session-subquest-snapshot-unknown-id",
+            "client_id": "unreal",
+            "agent": "process_optimizer",
+            "payload": {
+                "operation": "state_update",
+                "request_source": "subquest_check",
+                "snapshot_request_id": "snapshot-not-issued",
+                "factoryRevision": 42,
+                "factory_state": _input_shortage_factory_state(),
+            },
+        }
+    )
+
+    assert response["type"] == "agent.error"
+    assert response["error"]["code"] == "INVALID_SNAPSHOT_REQUEST"
+
+
+def test_subquest_snapshot_preserves_request_id_when_more_state_is_needed() -> None:
+    """A partial snapshot keeps the same request ID in the next state hint."""
+    pipeline = AgentPipeline(llm=StubLLM([None, None]))
+    session_id = "session-subquest-more-state"
+
+    check_response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "req-subquest-more-state-check",
+            "session_id": session_id,
+            "client_id": "unreal",
+            "agent": "process_optimizer",
+            "payload": {
+                "operation": "subquest_check",
+                "goal": "balance",
+            },
+        }
+    )
+    snapshot_request_id = check_response["payload"]["snapshot_request_id"]
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "req-subquest-more-state-snapshot",
+            "session_id": session_id,
+            "client_id": "unreal",
+            "agent": "process_optimizer",
+            "payload": {
+                "operation": "state_update",
+                "request_source": "subquest_check",
+                "snapshot_request_id": snapshot_request_id,
+                "factoryRevision": 42,
+                "factory_state": {
+                    "machines": [{"id": "smelter_1", "status": "idle"}],
+                    "conveyors": [],
+                    "storages": [],
+                    "resource_nodes": [],
+                    "power_grid": {
+                        "produced": 100.0,
+                        "consumed": 10.0,
+                        "nodes": [],
+                        "generators": [],
+                    },
+                },
+            },
+        }
+    )
+
+    assert response["type"] == "agent.response"
+    payload = response["payload"]
+    assert payload["status"] == "need_more_state"
+    assert "machine_condition" in payload["required_state_scopes"]
+    assert payload["next_request_hint"]["request_source"] == "subquest_check"
+    assert (
+        payload["next_request_hint"]["snapshot_request_id"]
+        == snapshot_request_id
+    )
 
 
 def test_state_update_returns_unreal_subquest_contract() -> None:
