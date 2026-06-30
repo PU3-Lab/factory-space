@@ -82,6 +82,9 @@ class ProcessOptimizerGraphState(TypedDict):
     previewPayload: dict[str, Any] | None
     """WebSocket 응답 payload."""
 
+    need_more_state_payload: dict[str, Any] | None
+    """Unreal에 추가 상태 snapshot을 재요청하기 위한 응답 payload."""
+
     error: str | None
     """처리 중 발생한 오류 메시지."""
 
