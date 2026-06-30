@@ -80,15 +80,17 @@ protected:
 	float ArmLength = 1500.f;
 
 	// 휠 한 틱당 팔 길이 변화량. 빌드캠은 스케일이 커서 TPS(50)보다 크게.
+	// 줌아웃 범위(600~15000)가 넓어 스텝도 비례 상향 — 안 그러면 끝까지 줌아웃이 너무 잘게 쪼개져 느림.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildCamera|Zoom", meta = (ClampMin = "0.0"))
-	float ZoomStep = 150.f;
+	float ZoomStep = 600.f;
 
 	// 줌 최소/최대 팔 길이. 너무 가까우면 그리드 일부만, 너무 멀면 전경 상실 — PIE 튜닝.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildCamera|Zoom", meta = (ClampMin = "0.0"))
 	float MinArmLength = 600.f;
 
+	// 맵(지형) 전체가 들어오도록 줌아웃 상한을 크게(정탑다운 FOV90 기준 ~300m 폭). 멀면 EditAnywhere로 줄여 튜닝.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildCamera|Zoom", meta = (ClampMin = "0.0"))
-	float MaxArmLength = 4000.f;
+	float MaxArmLength = 15000.f;
 
 	// [빌드 작업등] 하향 SpotLight 튜닝. 밤 분위기를 유지하도록 과하지 않게(은은하게) 기본값을 잡는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildCamera|WorkLight", meta = (ClampMin = "0.0"))
