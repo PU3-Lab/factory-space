@@ -9,7 +9,6 @@
 class USpringArmComponent;
 class UCameraComponent;
 class USpotLightComponent;
-class APlayerController;
 
 /**
  * 빌드모드 전용 탑다운 카메라 액터 (3단계).
@@ -48,20 +47,6 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
-
-	// [높은 메시 위 자동 상승] 매 틱 Root Z를 TargetRootZ로 보간(올라갈 땐 빠르게/내려올 땐 천천히).
-	// 오버랩 재계산은 throttle하지만 보간은 매 틱 돌려 출렁임 없이 부드럽게 한다.
-	virtual void Tick(float DeltaSeconds) override;
-
-	// 빌드모드 진입 시 플레이어가 SetActorLocation(그리드 평면 Z)을 세팅한 직후 호출된다.
-	// 그 Z를 기준 지면 높이(BaselineGroundZ)로 캡처한다. 진입/이탈 전환 로직은 건드리지 않고 수동적으로 읽기만 한다.
-	virtual void BecomeViewTarget(APlayerController* PC) override;
-
-	// 빌드모드 이탈/TPS 전환 시 호출 — Z 자동 조정을 비활성화(불필요한 오버랩/보간 차단).
-	virtual void EndViewTarget(APlayerController* PC) override;
-
-	// [높은 메시 위 자동 상승] 카메라가 보는 XY 영역을 박스 오버랩해 영역 내 스태틱메시 최고점 위로 TargetRootZ를 산출.
-	void RecomputeTargetRootZ();
 
 	// --- Components ---
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
@@ -119,59 +104,4 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BuildCamera|WorkLight", meta = (ClampMin = "0.0", ClampMax = "80.0"))
 	float WorkLightOuterCone = 55.f;
-
-	// ───────────────────────────────────────────────────────────────────────────
-	// [높은 메시 위 자동 상승] 카메라가 보는 영역 내 키 큰 메시 위로 Root Z를 부드럽게 올려 메시 뚫림(클리핑) 방지.
-	// 정탑다운이라 보는 영역 = 카메라 XY 중심 ± HalfExtentXY(= ArmLength * ViewExtentFactor).
-	// ───────────────────────────────────────────────────────────────────────────
-
-	// 보는 영역 반경 / ArmLength 비율. 클수록 화면 가장자리 메시까지 커버하지만 거대 배경에 과반응할 수 있음.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|BuildCamera", meta = (ClampMin = "0.0"))
-	float ViewExtentFactor = 0.7f;
-
-	// 최고 메시 위로 띄울 여유 높이(uu). 카메라가 메시 상단에 이 거리만큼 떠야 클리핑이 사라짐.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|BuildCamera", meta = (ClampMin = "0.0"))
-	float MeshClearance = 300.f;
-
-	// Root Z가 올라갈 때 보간 속도(빠르게 — 메시에 닿기 전 신속히 회피).
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|BuildCamera", meta = (ClampMin = "0.0"))
-	float RiseInterpSpeed = 8.f;
-
-	// Root Z가 내려올 때 보간 속도(천천히 — 메시 경계서 들락날락할 때 출렁임 감소).
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|BuildCamera", meta = (ClampMin = "0.0"))
-	float FallInterpSpeed = 3.f;
-
-	// 박스 오버랩 재계산 간격(프레임). 입력(Pan/Zoom)이 있을 때 이 간격마다만 재계산해 부하를 낮춘다.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|BuildCamera", meta = (ClampMin = "1"))
-	int32 OverlapThrottleFrames = 4;
-
-	// 오버랩 박스의 Z 반높이(uu). XY로만 영역을 한정하고 Z는 넉넉히 잡아 어떤 높이의 메시도 포함.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|BuildCamera", meta = (ClampMin = "0.0"))
-	float OverlapBoxHalfHeightZ = 100000.f;
-
-	// [배경 과반응 차단] 액터 바운드 높이(2*Extent.Z)가 이 값을 넘으면 거대 배경(산/벽 등)으로 간주해 최고점 계산에서 제외.
-	// 빌드 구조물 최대 높이 + 여유로 잡는다. 배경 메시(48m+)는 잘리고 일반 구조물(수 m)만 카메라 상승 대상이 됨.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|BuildCamera", meta = (ClampMin = "0.0"))
-	float MaxConsiderMeshHeight = 2000.f;
-
-	// --- Runtime (Z 자동 조정 상태) ---
-	// 진입 시 캡처한 기준 지면 높이(그리드 평면 Z). 영역에 키 큰 메시가 없으면 이 높이로 복귀.
-	UPROPERTY(Transient)
-	float BaselineGroundZ = 0.f;
-
-	// 보간 목표 Root Z. 오버랩 재계산이 갱신, Tick 보간이 추종.
-	UPROPERTY(Transient)
-	float TargetRootZ = 0.f;
-
-	// 현재 이 카메라가 빌드 뷰타겟인지. true일 때만 Z 자동 조정 동작.
-	UPROPERTY(Transient)
-	bool bIsActiveBuildView = false;
-
-	// Pan/Zoom 등으로 보는 영역이 바뀌었는지 — true일 때만 throttle 간격마다 오버랩 재계산.
-	UPROPERTY(Transient)
-	bool bViewChanged = false;
-
-	// 마지막 오버랩 재계산 이후 경과 프레임 수(throttle 카운터).
-	UPROPERTY(Transient)
-	int32 FramesSinceOverlap = 0;
 };
