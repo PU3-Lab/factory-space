@@ -85,7 +85,7 @@ AOJJ_Player::AOJJ_Player()
 
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
 	Movement->bOrientRotationToMovement = true;          // 이동 방향으로 본체 회전
-	Movement->RotationRate = FRotator(0.f, 540.f, 0.f);
+	Movement->RotationRate = FRotator(0.f, DefaultRotationRateYaw, 0.f);  // 기본 yaw 회전(수영 이탈 원복과 단일 출처)
 	Movement->MaxWalkSpeed = WalkSpeed;                  // 기존 하드코딩 600 → 걷기 속도(단일 출처). BeginPlay에서 재확정.
 	// [#357] 점프 높이 = JumpZVelocity. BP_OJJ_Player override 대신 C++ 단일 출처(메모리 원칙: BP override는
 	// 멀티플레이 silent fail 위험 — 서버/클라 생성자값 보장). BP의 JumpZVelocity override는 제거해 이 값 상속.
@@ -264,6 +264,14 @@ void AOJJ_Player::ApplySelectedCharacterAppearance()
 		FVector MeshLoc = MeshComp->GetRelativeLocation();
 		MeshLoc.Z = Appearance->MeshRelativeZ;
 		MeshComp->SetRelativeLocation(MeshLoc);
+	}
+
+	// [수영] 캐릭터별 수영 부유 오프셋. 캡슐 동일·메시 키 차이 → bOverrideSwimOffsets면 런타임 멤버를 DA값으로 덮는다.
+	// false면 AOJJ_Player 기본값(Man, -40/0) 유지. OJJ_UpdateSwimming 클램프가 이 멤버를 그대로 읽음(절대값 대입, 누적 없음).
+	if (Appearance->bOverrideSwimOffsets)
+	{
+		SwimIdleOffsetZ = Appearance->SwimIdleOffsetZ;
+		SwimMoveOffsetZ = Appearance->SwimMoveOffsetZ;
 	}
 	// [게임진입] 캐릭터별 인트로 getup 몽타주 / 점프 시퀀스 교체. Man 전용 애님을 Woman_Skeleton에서 재생하면
 	// 누우므로(스켈레톤 mismatch) DA 매핑값으로 덮는다. ApplySelectedCharacterAppearance가 BeginPlay에서
@@ -936,6 +944,9 @@ void AOJJ_Player::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	UpdateNightSpotLightVisibility(DeltaSeconds);
 	UpdateResourceNameplate();
+
+	// [수영] 매 틱 물 진입/이탈 감지 → MOVE_Swimming 토글 + 수면 클램프(내부 가드: 등반/step-off/빌드모드 제외).
+	OJJ_UpdateSwimming(DeltaSeconds);
 
 	// [L_Planet 인트로] getup 몽타주 종료 후 카메라를 1인칭(ArmLength 0)→3인칭(IntroArmLength)으로 부드럽게 블렌드.
 	// 아래 step-off early-return보다 먼저 처리해야 평상시에도 보간이 돈다(등반/step-off와 독립).
@@ -2888,5 +2899,160 @@ void AOJJ_Player::UpdateInventoryRealtime()
 	else
 	{
 		GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
+	}
+}
+
+void AOJJ_Player::OJJ_UpdateSwimming(float DeltaSeconds)
+{
+	UCharacterMovementComponent* Move = GetCharacterMovement();
+	if (!Move)
+	{
+		return;
+	}
+
+	// (codex#5) 권위/로컬 컨트롤 가드 — 시뮬레이트 프록시는 복제된 무브먼트를 받으므로 직접 토글 금지(분기 방지).
+	if (!IsLocallyControlled() && !HasAuthority())
+	{
+		return;
+	}
+
+	// 수영 청산 람다 — 이탈/가드/그리드부재 공용(codex#1·#2·#8). MOVE_Falling으로 복귀(CMC가 착지서 Walking 정착).
+	auto ExitSwim = [this, Move]()
+	{
+		if (bSwimming)
+		{
+			Move->SetMovementMode(MOVE_Falling);
+			Move->RotationRate = FRotator(0.f, DefaultRotationRateYaw, 0.f);  // 진입 시 낮춘 회전속도 원복(걷기 정상화)
+			Move->MaxFlySpeed = DefaultMaxFlySpeed;                            // 수영 속도 원복(엔진 기본 600)
+			bSwimming = false;
+		}
+		bSwimMoving = false;
+		SwimOutOfWaterTime = 0.0f;
+	};
+
+	// [수영] 등반/step-off/빌드모드 중엔 미개입 — 그 모드들이 자체 MOVE 모드(MOVE_Flying 등)를 관리(충돌 방지).
+	// ⚠️ MOVE_Flying은 등반 고착-청산점(OJJ_Player ~1196/1380)이 걷기로 되돌리므로 수영에 쓰지 않고 MOVE_Swimming 유지.
+	// (codex#1) 이 상태 진입 시 수영 중이면 먼저 청산해 stuck 방지.
+	const EBuildViewMode ViewMode = BuildController ? BuildController->GetBuildViewMode() : EBuildViewMode::None;
+	if (bClimbing || bSteppingOff || ViewMode != EBuildViewMode::None)
+	{
+		ExitSwim();
+		return;
+	}
+
+	const EMovementMode MM = Move->MovementMode;
+	// 비수영 상태면 보행/낙하서만 진입 후보. 수영 중(MOVE_Flying)이면 항상 진행(클램프/이탈 처리).
+	// ⚠️ 수영은 MOVE_Flying 사용 — MOVE_Swimming은 bWaterVolume PhysicsVolume 없으면 CMC가 즉시 되돌림(로그로 실증).
+	//    MOVE_Flying은 volume 불필요·무중력이라 정착 안정. 청산점(AbortClimb)은 climb 플래그 가드라 수영 무영향.
+	if (!bSwimming && MM != MOVE_Walking && MM != MOVE_Falling)
+	{
+		return;
+	}
+
+	// WaterBody 질의용 그리드(최초 1회 캐시 — const 이슈 회피 위해 GetActorOfClass 사용).
+	AOJJ_Grid* Grid = OJJ_CachedGridForSwim.Get();
+	if (!Grid)
+	{
+		Grid = Cast<AOJJ_Grid>(UGameplayStatics::GetActorOfClass(GetWorld(), AOJJ_Grid::StaticClass()));
+		OJJ_CachedGridForSwim = Grid;
+	}
+	if (!Grid)
+	{
+		ExitSwim();  // (codex#8) 그리드 소멸(PIE 재시작/레벨 전환) → fail-closed(수영 고착 방지).
+		return;
+	}
+
+	// ① 정밀 감지 — #1의 스플라인 폭 containment 재사용(강만 정확, 마른 곳 X). 캐릭터 위치(캡슐 중심)에서 질의.
+	float SurfaceZ = 0.0f;
+	const bool bInWater = Grid->OJJ_QueryWaterBodyAt(GetActorLocation(), SurfaceZ);
+
+
+	// ② 진입/이탈 — ⭐ 실제 수심(강바닥~수면) 기반 공간 히스테리시스. 클램프된 캐릭터 위치가 아니라 지형 기준이라
+	//    순환 없음(이전 CenterDepth 버그 해소). 물 영역 완전 이탈(!bInWater)은 기존 시간 디바운스 경로 유지.
+	if (bInWater)
+	{
+		SwimOutOfWaterTime = 0.0f;
+
+		// 강바닥Z = 캐릭터 XY에서 ↓라인트레이스(ECC_Visibility — WaterBody는 이 채널 미차단(DefaultEngine WaterBodyCollision
+		// Visibility=Ignore)이라 물 투과해 지형/강바닥에 맞음). 자기 자신 무시. 시작은 수면 위, 끝은 충분히 아래.
+		const FVector CharLoc = GetActorLocation();
+		float WaterDepth = TNumericLimits<float>::Max();  // 트레이스 실패 폴백 = 큰 값(이탈 안 함)
+		if (UWorld* World = GetWorld())
+		{
+			FCollisionQueryParams Params(SCENE_QUERY_STAT(OJJ_SwimBedTrace), /*bTraceComplex=*/false, this);
+			const FVector TraceStart(CharLoc.X, CharLoc.Y, SurfaceZ + 100.0f);
+			const FVector TraceEnd(CharLoc.X, CharLoc.Y, SurfaceZ - 5000.0f);
+			FHitResult Hit;
+			if (World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, Params))
+			{
+				WaterDepth = SurfaceZ - Hit.ImpactPoint.Z;  // 수심(>0 정상)
+			}
+		}
+
+		if (!bSwimming)
+		{
+			// #1 진입: 수심이 충분히 깊을 때만(얕은 곳 즉시 진입 방지). 보행/낙하서만.
+			if ((MM == MOVE_Walking || MM == MOVE_Falling) && WaterDepth >= SwimEnterWaterDepth)
+			{
+				Move->SetMovementMode(MOVE_Flying);  // volume 불필요·무중력 → 정착 안정 + 클램프와 안 싸움
+				// 수영 중 회전 부드럽게 + 속도 낮춤. RotationRate/MaxFlySpeed만 조정(orient는 true 유지). 이탈 시 ExitSwim이 원복.
+				Move->RotationRate = FRotator(0.f, SwimRotationRateYaw, 0.f);
+				Move->MaxFlySpeed = SwimMaxFlySpeed;
+				bSwimming = true;
+			}
+		}
+		else
+		{
+			// #2 공간 히스테리시스 이탈: 진입보다 얕은 수심으로 들어가면 이탈(SwimExitWaterDepth < SwimEnterWaterDepth).
+			// 트레이스 실패(WaterDepth=Max) 시엔 이탈 안 함(폴백 — 물 영역 디바운스가 별도 안전망).
+			if (WaterDepth <= SwimExitWaterDepth)
+			{
+				ExitSwim();  // MOVE_Falling — CMC가 착지 시 Walking 정착.
+				return;
+			}
+		}
+	}
+	else
+	{
+		// 물 영역 완전 이탈(bInWater=false, SurfaceZ 무효) → 기존 시간 디바운스 경로 유지.
+		if (bSwimming)
+		{
+			SwimOutOfWaterTime += DeltaSeconds;
+			if (SwimOutOfWaterTime >= SwimExitDebounce)
+			{
+				ExitSwim();
+			}
+			return;
+		}
+		return;  // 물 밖 + 비수영 = 평상 보행, 미개입(회귀 0).
+	}
+
+	// ③④ 수면 클램프 — MOVE_Flying은 무중력이라 sink는 없고, 캡슐 중심 Z를 수면 기준 목표로 lerp(부유/머리노출 제어).
+	// idle(저속) = 머리 물 밖(SwimIdleOffsetZ) / 이동(고속) = 더 잠김(SwimMoveOffsetZ).
+	// Velocity.Z=0 매틱 = MOVE_Flying의 수직 입력(상하 비행) 무력화 → 수면 고정. 수평 입력은 그대로 헤엄 이동.
+	if (bSwimming)
+	{
+		const FVector Vel = GetVelocity();
+		const float HorizSpeed = FVector(Vel.X, Vel.Y, 0.0f).Size();
+
+		// #3 속도 히스테리시스 — 단일 임계 깜빡임 제거(idle↔이동 Z 튕김 방지). bSwimMoving 이력값으로 오프셋 선택.
+		if (!bSwimMoving && HorizSpeed > SwimMoveEnterSpeed)
+		{
+			bSwimMoving = true;
+		}
+		else if (bSwimMoving && HorizSpeed < SwimMoveExitSpeed)
+		{
+			bSwimMoving = false;
+		}
+		const float TargetZ = SurfaceZ + (bSwimMoving ? SwimMoveOffsetZ : SwimIdleOffsetZ);
+
+		FVector Loc = GetActorLocation();
+		const float Alpha = FMath::Clamp(SwimSurfaceLerpSpeed * DeltaSeconds, 0.0f, 1.0f);
+		Loc.Z = FMath::Lerp(Loc.Z, TargetZ, Alpha);
+		SetActorLocation(Loc, /*bSweep=*/true);
+
+		FVector V = Move->Velocity;
+		V.Z = 0.0f;
+		Move->Velocity = V;
 	}
 }
