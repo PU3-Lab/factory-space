@@ -38,6 +38,7 @@
 #include "Machines/BaseCamp.h"
 #include "Machines/SignalAmplifier.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "OJJ_DemolishEffectActor.h"
 #include "OJJ_Foundation.h"
 #include "OJJ_HologramBuildUpComponent.h"
 #include "OJJ_HologramPathBuildUpComponent.h"
@@ -1073,6 +1074,8 @@ void AOJJ_BuildController::DemolishUnderCursor()
 		//    FactoryManager Unregister + ?붿궡???ъ쟻?? 洹????≫꽣 Destroy.
 		if (TargetGrid->RemoveMachineAt(CursorCell))
 		{
+			// [철거 빌드다운] Destroy '직전'에 메시(단일 SMC)를 독립 프록시로 복제해 역방향 디졸브(부기/Destroy 무수정).
+			StartBuildDownEffect(Machine->GetMeshComponent());
 			Machine->Destroy();
 			bRemoved = true;
 		}
@@ -1110,6 +1113,8 @@ void AOJJ_BuildController::DemolishUnderCursor()
 			// [#184 철거 cascade] Foundation 위/인접 사다리 종속 삭제 — Foundation->Destroy() '이전'에 호출해야
 			// OwningFoundation 링크가 아직 유효(머신 cascade 패턴 미러). 안 하면 사다리가 공중에 고아로 남음.
 			TargetGrid->OJJ_DestroyLaddersOnFoundation(Foundation);
+			// [철거 빌드다운] Destroy '직전'에 슬래브 메시(단일 SMC)를 독립 프록시로 복제해 역방향 디졸브(부기/Destroy 무수정).
+			StartBuildDownEffect(Foundation->GetSlabMesh());
 			Foundation->Destroy();
 			bRemoved = true;
 		}
@@ -1502,6 +1507,30 @@ void AOJJ_BuildController::StartBuildUpEffect(AActor* Building, UStaticMeshCompo
 	Effect->Duration = HologramBuildUpDuration;
 	Effect->RegisterComponent();
 	Effect->StartBuildUp(Mesh);
+}
+
+void AOJJ_BuildController::StartBuildDownEffect(UStaticMeshComponent* Mesh)
+{
+	// [철거 빌드다운] 철거 대상 메시를 역방향(위→아래) 빨강 홀로그램으로 디졸브 — 대상 액터는 즉시 Destroy되므로
+	// 연출은 독립 프록시 액터(AOJJ_DemolishEffectActor)로 분리해 자체 소멸시킨다. 머티리얼 미지정/메시 null이면 무동작(철거 정상).
+	if (!Mesh || !HologramBuildUpMaterial)
+	{
+		return;
+	}
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	// 대상 트랜스폼 자리에 스폰(프록시 액터의 위치 — 실제 디졸브 프록시는 컴포넌트가 Source 트랜스폼으로 자체 정렬).
+	const FTransform SpawnXf = Mesh->GetComponentTransform();
+	AOJJ_DemolishEffectActor* Fx = World->SpawnActor<AOJJ_DemolishEffectActor>(
+		AOJJ_DemolishEffectActor::StaticClass(), SpawnXf);
+	if (Fx)
+	{
+		// Mesh를 동기 복제(대상 Destroy 직전 호출이라 메시/인스턴스 유효). 시작 못 하면 프록시가 자체 소멸.
+		Fx->StartBuildDown(Mesh, HologramBuildUpMaterial, BuildDownColor, BuildDownDuration);
+	}
 }
 
 void AOJJ_BuildController::StartPathBuildUpEffect(AActor* Building, const TArray<FIntPoint>& Cells)

@@ -343,6 +343,11 @@ public:
 	// [#3 확장] 컨베이어/파이프(ISM 세그먼트) 시작→끝 길이 방향 빌드업. Cells로 경로 시작/끝 월드좌표 산출.
 	void StartPathBuildUpEffect(class AActor* Building, const TArray<FIntPoint>& Cells);
 
+	// [철거 빌드다운] 철거 대상 메시(단일 SMC/ISM)로 역방향(위→아래) 빨강 홀로그램 디졸브를 독립 프록시 액터
+	// (AOJJ_DemolishEffectActor)로 스폰. 대상 Destroy '직전'에 호출 — 부기/Destroy 본체 무수정(연출만 분리).
+	// HologramBuildUpMaterial 미지정/메시 null이면 무동작(철거 정상). 머신·Foundation 분기 공용 헬퍼.
+	void StartBuildDownEffect(class UStaticMeshComponent* Mesh);
+
 	// 빌드업 머티리얼(M_Hologram_BuildUp). 미지정이면 효과 비활성 — 에디터 제작 후 이 슬롯에 지정.
 	UPROPERTY(EditAnywhere, Category = "BuildController|Hologram")
 	TObjectPtr<class UMaterialInterface> HologramBuildUpMaterial;
@@ -353,6 +358,14 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "BuildController|Hologram", meta = (ClampMin = "0.01"))
 	float HologramBuildUpDuration = 1.0f;
+
+	// [철거 빌드다운] 철거 디졸브 색(HologramColor/ScanlineColor 오버라이드). 기본 빨강.
+	UPROPERTY(EditAnywhere, Category = "BuildController|Hologram")
+	FLinearColor BuildDownColor = FLinearColor(1.0f, 0.0f, 0.0f);
+
+	// [철거 빌드다운] 철거 디졸브 지속(초). 기본 = 설치 빌드업 Duration과 동일(1.0).
+	UPROPERTY(EditAnywhere, Category = "BuildController|Hologram", meta = (ClampMin = "0.01"))
+	float BuildDownDuration = 1.0f;
 
 	// 빌드 모드 상태 토글. Enter/Exit의 자체 가드(이미 같은 상태면 no-op) 덕분에 안전.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")

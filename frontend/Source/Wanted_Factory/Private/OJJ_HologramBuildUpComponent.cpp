@@ -128,9 +128,28 @@ void UOJJ_HologramBuildUpComponent::StartBuildUp(UStaticMeshComponent* Source)
 		{
 			Proxy->SetMaterial(i, MID);
 		}
-		// Z 마스크 범위(머티리얼은 WorldPosition.Z를 MinZ~MaxZ로 정규화) — 단일메시/ISM 공용.
-		MID->SetScalarParameterValue(TEXT("MinZ"), HologramMinZ);
-		MID->SetScalarParameterValue(TEXT("MaxZ"), HologramMaxZ);
+		// Z 마스크 범위(머티리얼은 WorldPosition.Z를 MinZ~MaxZ로 정규화). 디졸브아웃이면 Min↔Max를 스왑해 정규화를
+		// 뒤집는다(normZ → 1-normZ) → 경계 위/아래(불투명/투명) 영역이 반전 → Progress 0→1에 상단부터 투명(위→아래 소멸).
+		// 빌드업(false)은 정상 범위 — 아래→위 차오름(기존 동작 글자 그대로 불변).
+		if (bDissolveOut)
+		{
+			MID->SetScalarParameterValue(TEXT("MinZ"), HologramMaxZ);
+			MID->SetScalarParameterValue(TEXT("MaxZ"), HologramMinZ);
+		}
+		else
+		{
+			MID->SetScalarParameterValue(TEXT("MinZ"), HologramMinZ);
+			MID->SetScalarParameterValue(TEXT("MaxZ"), HologramMaxZ);
+		}
+		// [철거] 색 매핑 확정(PIE 진단): 면=LineColor, 선(스캔라인)=ScanlineColor (이름/역할이 반대라 HologramColor는 면이 아님).
+		// 철거 디졸브 = 빨강 면 + 흰 선. HologramColor/BackColor는 면/선에 안 나타나 set 생략(시각 무영향). 머티리얼 무수정.
+		// 기본(설치 빌드업)은 bOverrideColor=false라 미설정 → 머티리얼 기본색(시안) 유지(회귀 0).
+		if (bOverrideColor)
+		{
+			MID->SetVectorParameterValue(TEXT("LineColor"), OverrideColor);                   // 면 = 빨강(OverrideColor)
+			MID->SetVectorParameterValue(TEXT("ScanlineColor"), FLinearColor(1.0f, 1.0f, 1.0f)); // 선(스캔라인) = 흰색
+		}
+		// 초기 Progress=0 — 빌드업/디졸브아웃 모두 0→1 전진(방향은 Z 스왑으로 결정, Progress 방향은 공용).
 		MID->SetScalarParameterValue(TEXT("Progress"), 0.0f);
 	}
 
@@ -148,6 +167,7 @@ void UOJJ_HologramBuildUpComponent::TickComponent(float DeltaTime, ELevelTick Ti
 	}
 
 	Elapsed += DeltaTime;
+	// Progress 0→1 전진(빌드업/디졸브아웃 공용 — 방향 차이는 StartBuildUp의 Z 스왑으로 처리).
 	const float P = FMath::Clamp(Duration > 0.0f ? Elapsed / Duration : 1.0f, 0.0f, 1.0f);
 	if (MID)
 	{
@@ -155,7 +175,16 @@ void UOJJ_HologramBuildUpComponent::TickComponent(float DeltaTime, ELevelTick Ti
 	}
 	if (P >= 1.0f)
 	{
-		Finish(); // 완료 — 프록시 제거(실제 메시만 100% 표시 상태로 귀결).
+		// 완료 — 프록시 제거. 빌드업은 실제 메시만 100% 표시로 귀결, 빌드다운(독립 프록시)은 소유 액터까지 자체 소멸.
+		const bool bDestroyOwner = bDestroyOwnerOnFinish;
+		Finish();
+		if (bDestroyOwner)
+		{
+			if (AActor* OwnerActor = GetOwner())
+			{
+				OwnerActor->Destroy();
+			}
+		}
 	}
 }
 
