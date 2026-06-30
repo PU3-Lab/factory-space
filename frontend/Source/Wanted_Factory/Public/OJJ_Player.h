@@ -616,8 +616,8 @@ protected:
 	bool bWorkLightOn = false;
 
 	// NightSpotLight의 생성자 기본 Intensity/AttenuationRadius. BeginPlay에서 캡처해 작업등 상향 후 원복에 사용.
-	float BaseNightLightIntensity = 15000.f;
-	float BaseNightLightRadius = 2200.f;
+	float BaseNightLightIntensity = 50.f;
+	float BaseNightLightRadius = 1500.f;
 
 	// --- Input handlers ---
 	void UpdateNightSpotLightVisibility(float DeltaSeconds);
