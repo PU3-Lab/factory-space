@@ -55,27 +55,15 @@ void AOJJ_Ladder::ApplyDimensions()
 	// (피벗이 바닥이든 가운데든 자동 보정). 마지막 타일은 ClimbHeight를 다소 초과 가능(틈보다 초과가 안전).
 	if (LadderMesh && LadderMesh->GetStaticMesh())
 	{
-		const float Scale = FMath::Max(MeshScaleMultiplier, 0.01f);
-		const FTransform MeshXf(MeshLocalRotation, FVector::ZeroVector, FVector(Scale));
-
-		const FBox LocalBox = LadderMesh->GetStaticMesh()->GetBoundingBox();
-		const FBox EffBox = LocalBox.TransformBy(MeshXf); // 회전·스케일 반영 AABB
-		const float SegZ = EffBox.GetSize().Z;
-		SegmentHeight = (SegZ > KINDA_SMALL_NUMBER) ? SegZ : 100.f; // 무효 시 폴백(100uu).
-		const FVector EffCenter = EffBox.GetCenter(); // 회전·스케일 후 박스 중심(피벗/회전 보정용).
-
-		const float SafeHeight = FMath::Max(ClimbHeight, 1.f);
-		const int32 N = FMath::Max(1, FMath::CeilToInt(SafeHeight / SegmentHeight));
-		// [#184] 위 딱 맞춤: 올림(N)이라 총높이(N*Seg)가 ClimbHeight를 초과 → 전체 적층을 초과분만큼 아래로 내려
-		// 꼭대기 칸 윗면 = ClimbHeight(Foundation 윗면)에 맞춘다. 남는 초과분은 맨 아래 칸이 지면 아래로 박힘(OK).
-		const float Overshoot = N * SegmentHeight - SafeHeight; // ≥ 0
+		// 타일 적층은 OJJ_ComputeLadderTiling 단일 진실원에서 산출(고스트 프리뷰와 공유 → 프리뷰=배치).
+		// SegmentHeight 멤버는 out-param으로 갱신(기존 동작 보존).
+		TArray<FTransform> Instances;
+		OJJ_ComputeLadderTiling(ClimbHeight, SegmentHeight, Instances);
 
 		LadderMesh->ClearInstances();
-		for (int32 i = 0; i < N; ++i)
+		for (const FTransform& InstXf : Instances)
 		{
-			// XY: 타일을 액터 중심(=벽면 라인)에 정렬. Z: 바닥 i*SegmentHeight - 초과분(전체 아래로) → 위가 ClimbHeight에 딱.
-			const FVector InstPos(-EffCenter.X, -EffCenter.Y, i * SegmentHeight - EffBox.Min.Z - Overshoot);
-			LadderMesh->AddInstance(FTransform(MeshLocalRotation, InstPos, FVector(Scale)));
+			LadderMesh->AddInstance(InstXf);
 		}
 	}
 
@@ -94,6 +82,71 @@ void AOJJ_Ladder::OJJ_SetClimbHeight(float NewClimbHeight)
 	// ClampMin=1.0과 동일 하한. 값 반영 후 즉시 ApplyDimensions로 메시/트리거 재사이징(스폰·런타임 공용).
 	ClimbHeight = FMath::Max(NewClimbHeight, 1.f);
 	ApplyDimensions();
+}
+
+void AOJJ_Ladder::OJJ_ComputeLadderTiling(float InClimbHeight, float& OutSegmentHeight, TArray<FTransform>& OutInstances) const
+{
+	// [#184] ApplyDimensions의 적층 계산을 그대로 분리(부작용 없음) — 자기 메시(ApplyDimensions)와 고스트 ISM
+	// (OJJ_BuildGhostInstances)이 동일 식을 공유해 프리뷰=배치를 보장. 베이스 메시는 LadderMesh의 소스 메시.
+	OutInstances.Reset();
+	OutSegmentHeight = 100.f;
+
+	UStaticMesh* Base = LadderMesh ? LadderMesh->GetStaticMesh() : nullptr;
+	if (!Base)
+	{
+		return;
+	}
+
+	const float Scale = FMath::Max(MeshScaleMultiplier, 0.01f);
+	const FTransform MeshXf(MeshLocalRotation, FVector::ZeroVector, FVector(Scale));
+
+	const FBox LocalBox = Base->GetBoundingBox();
+	const FBox EffBox = LocalBox.TransformBy(MeshXf); // 회전·스케일 반영 AABB
+	const float SegZ = EffBox.GetSize().Z;
+	OutSegmentHeight = (SegZ > KINDA_SMALL_NUMBER) ? SegZ : 100.f; // 무효 시 폴백(100uu).
+	const FVector EffCenter = EffBox.GetCenter(); // 회전·스케일 후 박스 중심(피벗/회전 보정용).
+
+	const float SafeHeight = FMath::Max(InClimbHeight, 1.f);
+	const int32 N = FMath::Max(1, FMath::CeilToInt(SafeHeight / OutSegmentHeight));
+	// [#184] 위 딱 맞춤: 올림(N)이라 총높이(N*Seg)가 ClimbHeight를 초과 → 전체 적층을 초과분만큼 아래로 내려
+	// 꼭대기 칸 윗면 = ClimbHeight(Foundation 윗면)에 맞춘다. 남는 초과분은 맨 아래 칸이 지면 아래로 박힘(OK).
+	const float Overshoot = N * OutSegmentHeight - SafeHeight; // ≥ 0
+
+	OutInstances.Reserve(N);
+	for (int32 i = 0; i < N; ++i)
+	{
+		// XY: 타일을 액터 중심(=벽면 라인)에 정렬. Z: 바닥 i*Seg - 초과분(전체 아래로) → 위가 ClimbHeight에 딱.
+		const FVector InstPos(-EffCenter.X, -EffCenter.Y, i * OutSegmentHeight - EffBox.Min.Z - Overshoot);
+		OutInstances.Add(FTransform(MeshLocalRotation, InstPos, FVector(Scale)));
+	}
+}
+
+void AOJJ_Ladder::OJJ_BuildGhostInstances(UInstancedStaticMeshComponent* TargetISM, float InClimbHeight) const
+{
+	// [#184 고스트] 외부 ISM에 실제 사다리 타일을 재현. SetStaticMesh가 인스턴스를 비우므로 적층 채우기 전에 메시 주입.
+	if (!TargetISM || !LadderMesh)
+	{
+		return;
+	}
+	UStaticMesh* Base = LadderMesh->GetStaticMesh();
+	if (!Base)
+	{
+		return;
+	}
+	if (TargetISM->GetStaticMesh() != Base)
+	{
+		TargetISM->SetStaticMesh(Base);
+	}
+
+	float SegH = 0.f;
+	TArray<FTransform> Instances;
+	OJJ_ComputeLadderTiling(InClimbHeight, SegH, Instances);
+
+	TargetISM->ClearInstances();
+	for (const FTransform& InstXf : Instances)
+	{
+		TargetISM->AddInstance(InstXf);
+	}
 }
 
 void AOJJ_Ladder::BeginPlay()
