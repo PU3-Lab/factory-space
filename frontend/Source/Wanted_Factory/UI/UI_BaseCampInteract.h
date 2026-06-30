@@ -35,7 +35,7 @@ public:
 
 protected:
 	virtual void NativeConstruct() override;
-	virtual void NativeDestruct() override; // 🌟 창이 소멸될 때 플레이어에게 신호를 쏠 구역
+	virtual void NativeDestruct() override;
 
 	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Tab_FactoryStatus;
 	UPROPERTY(meta = (BindWidget)) class UButton* BTN_Tab_LevelUpgrade;

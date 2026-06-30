@@ -50,6 +50,8 @@ public:
 	const TMap<FName, int32>& GetMachineLevels() const { return MachineTypeToCurrentLevel; }
 	void RestoreMachineLevels(const TMap<FName, int32>& Levels);
 
+	// 머신 레벨 초기화
+    void ResetAllMachineLevels();
 private:
 	TMap<FName, FName> MachineNameToRowMap;
 	TMap<FName, TMap<int32, FName>> MachineTypeLevelToRowMap;

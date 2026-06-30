@@ -49,6 +49,7 @@
 #include "UI/UI_DialogueBalloon.h"
 #include "UI/UI_SynthesizerInteract.h"
 #include "UI/UI_BaseCampInteract.h"
+#include "UObject/UObjectIterator.h"
 #include "Resource/ResourceBase.h"
 #include "Resource/ResourceData.h"
 #include "UI/UI_MoldingMachineInteract.h"
@@ -3055,5 +3056,29 @@ void AOJJ_Player::OJJ_UpdateSwimming(float DeltaSeconds)
 		FVector V = Move->Velocity;
 		V.Z = 0.0f;
 		Move->Velocity = V;
+	}
+}
+void AOJJ_Player::Cheat_ResetMachines()
+{
+	UGameInstance* GI = GetGameInstance();
+	UMachineSubsystem* MachineSubsystem = GI ? GI->GetSubsystem<UMachineSubsystem>() : nullptr;
+    
+	if (!MachineSubsystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("MachineSubsystem을 찾을 수 없습니다."));
+		return;
+	}
+	// 기계 데이터 전체 초기화
+	MachineSubsystem->ResetAllMachineLevels();
+	UE_LOG(LogTemp, Log, TEXT("모든 기계 레벨이 초기화되었습니다."));
+	// 콘솔 명령어를 쳤을 때, 만약 유저 화면에 공장 거점 UI가 열려있는 상태라면 바로 1레벨 비주얼로 동기화해 줍니다.
+	for (TObjectIterator<UUI_BaseCampInteract> It; It; ++It)
+	{
+		// 현재 활성화된 월드의 유효한 UI인지 체크
+		if (It->GetWorld() == GetWorld() && It->IsInViewport())
+		{
+			It->RefreshAllUpgradeNodes();
+			break; 
+		}
 	}
 }

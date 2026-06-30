@@ -325,3 +325,22 @@ void UMachineSubsystem::ApplyMachineDataToExistingMachines(FName MachineType, co
 		}
 	}
 }
+
+void UMachineSubsystem::ResetAllMachineLevels()
+{
+    // MachineTypeToCurrentLevel을 초기화
+    MachineTypeToCurrentLevel.Empty();
+    BuildMachineIndex();
+    // 월드에 이미 배치되어 작동 중인 기계 액터들도 초기 레벨 데이터로 실시간 동기화
+    TArray<FName> MachineTypes;
+    MachineTypeToCurrentLevel.GetKeys(MachineTypes);
+    for (const FName& Type : MachineTypes)
+    {
+        FMachineTableRow BaselineData;
+        if (FindMachineDataForLevel(Type, GetMachineLevel(Type), BaselineData))
+        {
+            ApplyMachineDataToExistingMachines(Type, BaselineData);
+        }
+    }
+    LOG_SSR_W(TEXT("MachineSubsystem: 모든 기계 레벨이 기본값으로 리셋되었습니다."));
+}
