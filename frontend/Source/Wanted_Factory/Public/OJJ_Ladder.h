@@ -48,9 +48,19 @@ public:
 	// 상단 도달 시 Foundation 위로 내딛는 수평 방향(정규화). 액터 전방(+X).
 	FVector GetStepOffDirection() const { return GetActorForwardVector().GetSafeNormal2D(); }
 
+	// [#3 빌드업] 타일 적층 ISM 반환(읽기 전용) — 설치 빌드업 프록시가 ISM 분기로 적층을 복제할 때 소스로 사용.
+	// 배치 계산/프리뷰와 무관한 순수 접근자.
+	UInstancedStaticMeshComponent* GetLadderMeshComponent() const { return LadderMesh; }
+
 	// [#184 배치] 스폰 시 ClimbHeight 주입 — SpawnActorDeferred → FinishSpawning 전에 호출하면 OnConstruction이
 	// 이 값으로 ApplyDimensions(메시/트리거 사이징). 런타임 변경도 즉시 반영되도록 여기서도 ApplyDimensions 호출.
 	void OJJ_SetClimbHeight(float NewClimbHeight);
+
+	// [#184 고스트] 외부 ISM(그리드 사다리 고스트)에 이 사다리의 타일 적층을 그대로 채운다 — ApplyDimensions와
+	// 동일한 타일링 소스(OJJ_ComputeLadderTiling)라 "프리뷰=배치" 보장. 인스턴스는 TargetISM 로컬 공간에 생성되므로
+	// 호출자가 TargetISM 월드 트랜스폼을 스폰 transform(BottomLocation, Rotation)과 동일하게 두면 실제 사다리와 일치.
+	// TargetISM/베이스 메시 무효면 무동작(안전). CDO에서 호출 가능(생성자에서 베이스 메시·기본 회전/스케일 보유).
+	void OJJ_BuildGhostInstances(class UInstancedStaticMeshComponent* TargetISM, float InClimbHeight) const;
 
 	// [#184 철거] 이 사다리가 기댄(등반 목적지) Foundation. 배치/로드 시 Grid가 사다리 transform에서 산출해 주입
 	// (약참조 — Foundation 파괴 안전). Foundation 철거 cascade(OJJ_DestroyLaddersOnFoundation) 매칭 키.
@@ -119,6 +129,10 @@ protected:
 private:
 	// 메시/트리거를 ClimbHeight에 맞춰 배치(에디터/스폰 공통). 큐브(100uu) 기준 스케일/오프셋 계산.
 	void ApplyDimensions();
+
+	// [#184] 타일 적층 산출(순수 계산, 부작용 없음) — 회전·스케일 반영 1칸 높이(OutSegmentHeight)와 N개 타일의
+	// 로컬 트랜스폼(OutInstances). ApplyDimensions(자기 메시)와 OJJ_BuildGhostInstances(고스트 ISM)의 단일 진실원.
+	void OJJ_ComputeLadderTiling(float InClimbHeight, float& OutSegmentHeight, TArray<FTransform>& OutInstances) const;
 
 	// [#184 철거] 기댄 Foundation(약참조) — cascade 매칭. [철거] 등록 Grid(약참조) — EndPlay 자동 해제.
 	TWeakObjectPtr<AActor> OwningFoundation;

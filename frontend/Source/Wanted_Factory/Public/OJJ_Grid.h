@@ -463,6 +463,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Ghost")
 	TObjectPtr<UStaticMeshComponent> GhostMeshComp;
 
+	// [#184] 사다리 고스트 전용 ISM — 사다리는 1칸 메시를 N개 수직 타일링한 ISM 구조라 단일 GhostMeshComp(단일 메시)로는
+	// 실제 모양 표현 불가. 머신/Foundation 고스트(GhostMeshComp)와 독립된 별도 ISM에 AOJJ_Ladder와 동일 적층을 재현
+	// (프리뷰=배치). 틴트는 동일 GhostValidMID/InvalidMID 오버레이 패스 재사용. OJJ_HideGhost가 함께 숨김.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Ghost")
+	TObjectPtr<UInstancedStaticMeshComponent> LadderGhostISM;
+
 	// 고스트용 반투명 베이스 머티리얼(사용자가 에디터에서 지정 — 벡터 파라미터 TintColor, 스칼라 Opacity 가정).
 	// 미지정이면 고스트 비활성(안전한 no-op) — OJJ_EnsureGhostMIDs가 1회 경고.
 	UPROPERTY(EditAnywhere, Category = "Grid|Ghost")
@@ -1303,9 +1309,10 @@ bool OJJ_BuildConveyorPlacementPath(
 	void OJJ_ShowGhostForRamp(AOJJ_Foundation* RampCDO, FIntPoint Origin, FIntPoint EffSize,
 		int32 EffRotSteps, int32 RiseSteps, bool bValid);
 
-	// [#184] 사다리 고스트 — 자유 배치(그리드 셀 스냅 아님). 바닥 월드위치 + ClimbHeight로 엔진 Cube 얇은 세로
-	// 박스 고스트를 그린다(실제 사다리 ISM 타일과 독립 — 깔끔한 위치/높이 인디케이터). bValid → 초록/빨강 오버레이.
-	void OJJ_ShowGhostForLadder(const FVector& BottomLocation, float ClimbHeight, const FRotator& Rotation, bool bValid);
+	// [#184] 사다리 고스트 — 자유 배치(그리드 셀 스냅 아님). LadderCDO의 실제 타일 적층(OJJ_BuildGhostInstances)을
+	// 전용 LadderGhostISM에 재현해 실제 사다리 모양으로 표시(막대 Cube 대체). ISM을 (BottomLocation, Rotation) =
+	// 스폰 transform에 정렬하므로 실제 배치와 일치. bValid → 초록/빨강 오버레이. CDO/메시/MID 미비 시 안전 숨김.
+	void OJJ_ShowGhostForLadder(AOJJ_Ladder* LadderCDO, const FVector& BottomLocation, float ClimbHeight, const FRotator& Rotation, bool bValid);
 
 	// 고스트 숨김(ClearHoverPreview / 램프 선택 / 미지정 머티리얼 등).
 	void OJJ_HideGhost();

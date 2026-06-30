@@ -2006,12 +2006,16 @@ void AOJJ_BuildController::UpdateLadderHover(FIntPoint CursorCell, const FHitRes
 	TargetGrid->ClearHoverPreview();
 
 	// 怨좎뒪?몃뒗 ?붿쭊 Cube 諛뺤뒪(洹몃━???대??먯꽌 濡쒕뱶) ???ㅼ젣 ?щ떎由?ISM 硫붿떆? ?낅┰. ?꾩튂/?믪씠留??꾨떖.
+	// 고스트는 실제 사다리(LadderClass CDO)의 타일 적층을 그대로 그린다(막대 Cube 대체). CDO는 베이스 메시·기본
+	// 회전/스케일을 보유 — 스폰될 인스턴스와 동일 외형. LadderClass 미지정이면 null → 그리드가 안전 숨김.
+	AOJJ_Ladder* LadderCDO = LadderClass ? LadderClass.GetDefaultObject() : nullptr;
+
 	FVector BottomLoc;
 	float ClimbHeight = 0.0f;
 	FRotator Rot = FRotator::ZeroRotator;
 	if (ComputeLadderPlacement(CursorCell, BottomLoc, ClimbHeight, Rot))
 	{
-		TargetGrid->OJJ_ShowGhostForLadder(BottomLoc, ClimbHeight, Rot, /*bValid=*/true);
+		TargetGrid->OJJ_ShowGhostForLadder(LadderCDO, BottomLoc, ClimbHeight, Rot, /*bValid=*/true);
 	}
 	else
 	{
@@ -2023,7 +2027,7 @@ void AOJJ_BuildController::UpdateLadderHover(FIntPoint CursorCell, const FHitRes
 			GroundZ = CursorWorld.Z;
 		}
 		TargetGrid->OJJ_ShowGhostForLadder(
-			FVector(CursorWorld.X, CursorWorld.Y, GroundZ), /*ClimbHeight=*/100.0f, FRotator::ZeroRotator, /*bValid=*/false);
+			LadderCDO, FVector(CursorWorld.X, CursorWorld.Y, GroundZ), /*ClimbHeight=*/100.0f, FRotator::ZeroRotator, /*bValid=*/false);
 	}
 }
 
@@ -2073,6 +2077,12 @@ void AOJJ_BuildController::PlaceLadderAtCursor()
 	// [#184 철거] 사다리 레이어 등록 — 지면 셀 → 사다리 맵 + 기댄 Foundation 링크 주입(transform에서 산출).
 	// 개별 철거(GetLadderAtCell) + Foundation 철거 cascade(OwningFoundation 매칭)의 단일 등록점.
 	TargetGrid->OJJ_RegisterLadder(NewLadder);
+
+	// [#3 점진 건설] 사다리도 머신/Foundation처럼 설치 빌드업(아래→위 시안 홀로그램). 이 시점 ApplyDimensions 완료라
+	// LadderMesh ISM에 타일이 채워진 상태 → 빌드업 컴포넌트가 ISM 분기로 적층을 프록시에 복제. 동일 머티리얼/Duration
+	// 슬롯 재사용. HologramBuildUpMaterial 미지정이면 컴포넌트가 안전하게 무동작(배치 정상).
+	StartBuildUpEffect(NewLadder, NewLadder->GetLadderMeshComponent());
+
 	NotifyTutorialQuestEvent(this, TEXT("PlaceLadder"));
 	UE_LOG(LogTemp, Log, TEXT("[BuildController] ?щ떎由?諛곗튂 ??height=%.1f loc=%s"), ClimbHeight, *BottomLoc.ToString());
 }
