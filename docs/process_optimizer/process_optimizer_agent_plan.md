@@ -734,3 +734,178 @@ Unreal은 플레이어가 전체 또는 선택 항목 적용을 승인한 경우
 - 협동 플레이 권한 관리
 - 자동 승인 모드
 ```
+## 22. 전력망 제안형 최적화 확장 기준
+
+전력망 최적화는 자동 실행 기능이 아니라 제안형 최적화로 확장한다. 백엔드는 Unreal이 보내는 전력망 snapshot을 계산해 고립 송전탑, 미연결 발전기, 전력 미공급 설비를 찾고, LLM은 그 결과를 플레이어가 이해하기 쉬운 말로 설명한다. 실제 전선 연결이나 발전기 연결은 플레이어가 직접 수행한다.
+
+자세한 snapshot 계약과 Sprint 계획은 `docs/process_optimizer/process_optimizer_power_snapshot_guide.md`를 기준으로 한다.
+
+### 22.1 Snapshot 계약 원칙
+
+```text
+- 설비와 발전기의 전력 노드 연결은 connected_power_node_ids 리스트로 전달한다.
+- 단일 connected_power_node_id는 사용하지 않는다.
+- connected_power_node_ids가 빈 배열이면 전력 노드에 연결되지 않은 것으로 판단한다.
+- connected 값은 보조 정보이며, connected_power_node_ids와 충돌하면 connected_power_node_ids를 우선한다.
+- 발전기 전력망 분석 기준은 power_grid.generators로 둔다.
+- machines 안의 type="generator" 정보는 일반 설비 상태나 UI 참고용으로만 사용한다.
+```
+
+### 22.2 Target 확장 기준
+
+전력망 문제는 설비와 컨베이어만으로 표현할 수 없으므로 target type을 확장한다.
+
+```text
+추가 target type:
+- power_pole
+- generator
+```
+
+전력망 preview, alert, subquest는 문제 대상 송전탑이나 발전기를 직접 가리킨다.
+
+```json
+{
+  "target": {
+    "type": "power_pole",
+    "id": "pole_30"
+  }
+}
+```
+
+```json
+{
+  "target": {
+    "type": "generator",
+    "id": "generator_5"
+  }
+}
+```
+
+### 22.3 전력망 Sprint 확장 범위
+
+전력망 확장은 아래 4개 Sprint로 나눈다.
+
+```text
+Sprint 1: 전력망 snapshot 계약과 schema 확장
+Sprint 2: analyzer.py 전력망 그래프 분석
+Sprint 3: 전력망 개선안과 UI highlight
+Sprint 4: 전력망 제안형 최적화의 서브퀘스트 연결
+```
+
+Sprint 4까지 완료하면 전력망 최적화는 1차 완성으로 본다.
+
+```text
+완성 기준:
+- 주기 state_update에서 전력망 문제를 감지한다.
+- 고립 송전탑과 미연결 발전기를 계산한다.
+- 영향받는 설비를 함께 알려준다.
+- Unreal UI가 문제 대상을 하이라이트할 수 있다.
+- suggested_subquest로 플레이어에게 직접 해결 목표를 제안한다.
+- 백엔드는 connect_power_line 같은 자동 전선 연결 명령을 만들지 않는다.
+```
+
+## 23. 상태 기억, 창고 재고, 내구도, 추가 상태 요청 확장
+
+Sprint 1~4가 전력망 제안형 최적화의 1차 완성이라면, 다음 확장은 Unreal이 주기적으로 보내는 공장 snapshot을 백엔드가 기억하고 더 넓은 공장 상태를 판단하는 방향으로 진행한다.
+
+이 확장은 자동 실행이 아니라 더 정확한 제안과 서브퀘스트 생성을 위한 기반이다.
+
+```text
+Unreal 주기 state_update
+-> 백엔드 snapshot store에 최신 공장 상태 저장
+-> 입력/출력/전력/창고/내구도 상태 분석
+-> 정보가 충분하면 preview 또는 subquest 제안
+-> 정보가 부족하면 need_more_state로 추가 snapshot 요청
+```
+
+### 23.1 Sprint 5~8 구성
+
+```text
+Sprint 5: Snapshot Store
+- session_id 기준 최신 factory_state 저장
+- factoryRevision과 updated_at 저장
+- analyze 요청에서 저장된 최신 snapshot 참조
+
+Sprint 6: Storage Inventory 분석
+- storage/container inventory schema 추가
+- 기계 입력 부족과 창고 재고를 함께 비교
+- 창고에 재료가 있으면 공급 라인 문제로 판단
+- 창고에도 재료가 없으면 생산/채굴 부족 문제로 판단
+
+Sprint 7: Machine Condition / Durability 분석
+- machine durability, condition, maintenance_required schema 추가
+- 내구도 낮은 기계와 정비 필요 설비 탐지
+- 정비 서브퀘스트 후보 생성
+
+Sprint 8: Missing State Request
+- 분석에 필요한 상태가 없으면 원인을 추측하지 않음
+- required_state_scopes와 next_request_hint 반환
+- Unreal이 추가 snapshot을 보내도록 안내
+```
+
+상세 기획 문서는 아래를 기준으로 한다.
+
+```text
+docs/process_optimizer/process_optimizer_power_sprint_5_snapshot_store_plan.md
+docs/process_optimizer/process_optimizer_power_sprint_6_inventory_analysis_plan.md
+docs/process_optimizer/process_optimizer_power_sprint_7_machine_condition_plan.md
+docs/process_optimizer/process_optimizer_power_sprint_8_missing_state_request_plan.md
+```
+
+### 23.2 추가 snapshot 예시
+
+창고 재고 예시:
+
+```json
+{
+  "storages": [
+    {
+      "id": "storage_iron_ore_1",
+      "type": "storage",
+      "inventory": [
+        {
+          "item_id": "iron_ore",
+          "amount": 0,
+          "max_amount": 500
+        }
+      ]
+    }
+  ]
+}
+```
+
+기계 내구도 예시:
+
+```json
+{
+  "id": "smelter_1",
+  "type": "smelter",
+  "status": "idle",
+  "durability": {
+    "current": 42,
+    "max": 100,
+    "ratio": 0.42
+  },
+  "condition": "damaged",
+  "maintenance_required": true
+}
+```
+
+추가 상태 요청 예시:
+
+```json
+{
+  "status": "need_more_state",
+  "reason": "철광석 부족 원인을 판단하려면 창고 재고 상태가 필요합니다.",
+  "required_state_scopes": [
+    "storage_inventory"
+  ],
+  "next_request_hint": {
+    "agent": "process_optimizer",
+    "operation": "state_update",
+    "include": [
+      "storages"
+    ]
+  }
+}
+```

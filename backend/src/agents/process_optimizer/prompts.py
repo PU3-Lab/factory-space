@@ -50,6 +50,7 @@ def build_process_optimizer_explanation_prompt(
         "You are the explanation layer for a factory process optimizer agent.\n"
         "Deterministic code already calculated bottlenecks, safety, risks, and expected effects.\n"
         "Do not invent new machines, new commands, new numeric metrics, or execution results.\n"
+        "If isolated power nodes or disconnected generators are detected, explain the need for manual cable connection.\n"
         "Only rewrite the provided preview into clear Korean text for a player who must review and approve it.\n"
         "Return JSON only with this schema:\n"
         "{\n"

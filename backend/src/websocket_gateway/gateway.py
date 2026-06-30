@@ -137,7 +137,9 @@ async def agent_websocket(websocket: WebSocket) -> None:
                     on_progress=handle_progress,
                 )
             except Exception:
-                LOGGER.exception("Factory agent pipeline failed during WebSocket request.")
+                LOGGER.exception(
+                    "Factory agent pipeline failed during WebSocket request."
+                )
                 response = {
                     "type": "agent.error",
                     "request_id": message.get("request_id"),

@@ -25,6 +25,16 @@ class InventoryItem(BaseModel):
     max_amount: float = 100.0
 
 
+class DurabilityState(BaseModel):
+    """장비의 내구도 수치와 비율을 표현합니다."""
+
+    model_config = ConfigDict(extra="allow")
+
+    current: float
+    max: float
+    ratio: float
+
+
 class MachineState(BaseModel):
     """공장 snapshot에 포함되는 장비 한 대의 현재 상태를 표현합니다.
 
@@ -40,6 +50,11 @@ class MachineState(BaseModel):
     inputs: list[InventoryItem] = Field(default_factory=list)
     outputs: list[InventoryItem] = Field(default_factory=list)
     power_consumption: float = 0.0
+    connected_power_node_ids: list[str] = Field(default_factory=list)
+    durability: DurabilityState | None = None
+    condition: str | None = None
+    maintenance_required: bool | None = None
+
 
 
 class ConveyorState(BaseModel):
@@ -54,6 +69,54 @@ class ConveyorState(BaseModel):
     congestion_rate: float = 0.0  # 0.0 to 1.0
 
 
+class PowerNodeState(BaseModel):
+    """전력망을 구성하는 송전탑 등의 노드 정보를 표현합니다."""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    type: str = "power_pole"
+    connected_node_ids: list[str] = Field(default_factory=list)
+    connected_machine_ids: list[str] = Field(default_factory=list)
+
+
+class GeneratorPowerState(BaseModel):
+    """발전기의 전력망 연결 및 생산 상태를 표현합니다.
+
+    발전기 전력망 분석 기준은 power_grid.generators로 둡니다.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    produced: float = 0.0
+    connected: bool = False
+    connected_power_node_ids: list[str] = Field(default_factory=list)
+
+
+class StorageInventoryItem(BaseModel):
+    """창고(Storage)에 보관된 아이템 종류별 재고 수량 정보를 표현합니다."""
+
+    model_config = ConfigDict(extra="allow")
+
+    item_id: str
+    amount: float
+    max_amount: float = 500.0
+
+
+class StorageState(BaseModel):
+    """공장 snapshot에 포함되는 자원 저장 창고(Storage)의 현재 상태를 표현합니다."""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    type: str = "storage"
+    inventory: list[StorageInventoryItem] = Field(default_factory=list)
+    connected_machine_ids: list[str] = Field(default_factory=list)
+    connected_conveyor_ids: list[str] = Field(default_factory=list)
+
+
+
 class PowerGridState(BaseModel):
     """공장 전체 전력망의 생산량과 소비량을 표현합니다.
 
@@ -64,6 +127,8 @@ class PowerGridState(BaseModel):
 
     produced: float = 0.0
     consumed: float = 0.0
+    nodes: list[PowerNodeState] = Field(default_factory=list)
+    generators: list[GeneratorPowerState] = Field(default_factory=list)
 
 
 class FactoryState(BaseModel):
@@ -77,6 +142,8 @@ class FactoryState(BaseModel):
     machines: list[MachineState] = Field(default_factory=list)
     conveyors: list[ConveyorState] = Field(default_factory=list)
     power_grid: PowerGridState = Field(default_factory=PowerGridState)
+    storages: list[StorageState] = Field(default_factory=list)
+    resource_nodes: list[Any] = Field(default_factory=list)
 
 
 class ProcessOptimizerPayload(BaseModel):
@@ -104,7 +171,7 @@ class TargetDescriptor(BaseModel):
     대상 종류와 Unreal에서 사용하는 고유 ID를 함께 보관합니다.
     """
 
-    type: Literal["machine", "conveyor", "other"]
+    type: Literal["machine", "conveyor", "power_pole", "generator", "storage", "other"]
     id: str
 
 
@@ -161,6 +228,15 @@ class FactoryAnalysisReport(BaseModel):
     congested_conveyors: list[str] = Field(default_factory=list)  # Conveyor IDs
     average_conveyor_congestion: float = 0.0
     power_summary: PowerSummary
+    isolated_power_nodes: list[str] = Field(default_factory=list)
+    disconnected_generators: list[str] = Field(default_factory=list)
+    unpowered_machines: list[str] = Field(default_factory=list)
+    storages: list[StorageState] = Field(default_factory=list)
+    input_shortages_items: dict[str, str] = Field(default_factory=dict)
+    maintenance_required_machines: list[str] = Field(default_factory=list)
+    broken_machines: list[str] = Field(default_factory=list)
+    need_more_state: dict[str, Any] | None = None
+
 
 
 class PreviewPlan(BaseModel):
@@ -268,6 +344,7 @@ class ProcessOptimizerResponse(BaseModel):
         "record_not_found",
         "invalid_factory_state",
         "undo_conflict",
+        "need_more_state",
         "error",
     ] = "suggestion"
     factoryRevision: int  # noqa: N815 - Unreal WebSocket contract uses camelCase.
@@ -283,3 +360,5 @@ class ProcessOptimizerResponse(BaseModel):
     commands: list[dict[str, Any]] = Field(default_factory=list)
     measurement_result: EffectMeasurementReport | None = None
     optimization_alert: OptimizationAlert | None = None
+    required_state_scopes: list[str] | None = None
+    next_request_hint: dict[str, Any] | None = None
