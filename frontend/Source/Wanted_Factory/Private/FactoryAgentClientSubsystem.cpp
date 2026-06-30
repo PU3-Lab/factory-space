@@ -56,19 +56,64 @@ FString MachineStateToStatusString(const EMachineState MachineState)
 
 FString SanitizeObjectName(FString ObjectName)
 {
-	ObjectName.RemoveFromStart(TEXT("BP_"));
-
-	constexpr TCHAR GeneratedClassSeparator[] = TEXT("_C_");
-	const FString SeparatorString = GeneratedClassSeparator;
-	const int32 ClassSeparatorIndex = ObjectName.Find(SeparatorString, ESearchCase::CaseSensitive, ESearchDir::FromEnd);
-	if (ClassSeparatorIndex != INDEX_NONE)
+	if (ObjectName.IsEmpty())
 	{
-		const FString InstanceSuffix = ObjectName.Mid(ClassSeparatorIndex + SeparatorString.Len());
-		if (!InstanceSuffix.IsEmpty() && InstanceSuffix.IsNumeric())
+		return ObjectName;
+	}
+
+	int32 ArrowIndex = INDEX_NONE;
+	if (ObjectName.FindLastChar(TEXT('>'), ArrowIndex))
+	{
+		ObjectName = ObjectName.Mid(ArrowIndex + 1);
+	}
+
+	int32 LastSeparatorIndex = INDEX_NONE;
+	for (const TCHAR Separator : { TEXT('/'), TEXT('\\'), TEXT(':'), TEXT('.') })
+	{
+		int32 SeparatorIndex = INDEX_NONE;
+		if (ObjectName.FindLastChar(Separator, SeparatorIndex))
 		{
-			ObjectName = ObjectName.Left(ClassSeparatorIndex) + TEXT("_") + InstanceSuffix;
+			LastSeparatorIndex = FMath::Max(LastSeparatorIndex, SeparatorIndex);
 		}
 	}
+
+	if (LastSeparatorIndex != INDEX_NONE)
+	{
+		ObjectName = ObjectName.Mid(LastSeparatorIndex + 1);
+	}
+
+	while (ObjectName.RemoveFromStart(TEXT("BP_")))
+	{
+	}
+
+	int32 NumericSuffixSeparatorIndex = INDEX_NONE;
+	if (ObjectName.FindLastChar(TEXT('_'), NumericSuffixSeparatorIndex))
+	{
+		const FString InstanceSuffix = ObjectName.Mid(NumericSuffixSeparatorIndex + 1);
+		if (!InstanceSuffix.IsEmpty() && InstanceSuffix.IsNumeric())
+		{
+			FString BaseName = ObjectName.Left(NumericSuffixSeparatorIndex);
+			if (BaseName.EndsWith(TEXT("_C"), ESearchCase::CaseSensitive))
+			{
+				BaseName.LeftChopInline(2, EAllowShrinking::No);
+			}
+
+			ObjectName = BaseName + TEXT("_") + InstanceSuffix;
+		}
+	}
+
+	ObjectName.ReplaceInline(TEXT("_C_"), TEXT("_"), ESearchCase::CaseSensitive);
+	if (ObjectName.EndsWith(TEXT("_C"), ESearchCase::CaseSensitive))
+	{
+		ObjectName.LeftChopInline(2, EAllowShrinking::No);
+	}
+
+	while (ObjectName.Contains(TEXT("__")))
+	{
+		ObjectName.ReplaceInline(TEXT("__"), TEXT("_"), ESearchCase::CaseSensitive);
+	}
+
+	ObjectName.TrimStartAndEndInline();
 
 	return ObjectName;
 }
@@ -163,6 +208,96 @@ void SetStringMapField(
 	}
 
 	TargetObject->SetObjectField(FieldName, MapObject.ToSharedRef());
+}
+
+bool ShouldSanitizeIdentifierField(const FString& FieldName)
+{
+	return FieldName.Equals(TEXT("id"), ESearchCase::IgnoreCase) ||
+		FieldName.EndsWith(TEXT("_id"), ESearchCase::IgnoreCase) ||
+		FieldName.EndsWith(TEXT("_ids"), ESearchCase::IgnoreCase);
+}
+
+void SanitizeJsonIdentifierArray(const FString& FieldName, const TArray<TSharedPtr<FJsonValue>>& SourceValues, TArray<TSharedPtr<FJsonValue>>& OutValues);
+
+void SanitizeJsonIdentifierObject(const TSharedPtr<FJsonObject>& JsonObject)
+{
+	if (!JsonObject.IsValid())
+	{
+		return;
+	}
+
+	for (TPair<FString, TSharedPtr<FJsonValue>>& Pair : JsonObject->Values)
+	{
+		if (!Pair.Value.IsValid())
+		{
+			continue;
+		}
+
+		if (ShouldSanitizeIdentifierField(Pair.Key))
+		{
+			if (Pair.Value->Type == EJson::String)
+			{
+				Pair.Value = MakeShared<FJsonValueString>(SanitizeObjectName(Pair.Value->AsString()));
+			}
+			else if (Pair.Value->Type == EJson::Array)
+			{
+				TArray<TSharedPtr<FJsonValue>> SanitizedValues;
+				SanitizeJsonIdentifierArray(Pair.Key, Pair.Value->AsArray(), SanitizedValues);
+				Pair.Value = MakeShared<FJsonValueArray>(SanitizedValues);
+			}
+			else if (Pair.Value->Type == EJson::Object)
+			{
+				SanitizeJsonIdentifierObject(Pair.Value->AsObject());
+			}
+			continue;
+		}
+
+		if (Pair.Value->Type == EJson::Object)
+		{
+			SanitizeJsonIdentifierObject(Pair.Value->AsObject());
+		}
+		else if (Pair.Value->Type == EJson::Array)
+		{
+			TArray<TSharedPtr<FJsonValue>> SanitizedValues;
+			SanitizeJsonIdentifierArray(Pair.Key, Pair.Value->AsArray(), SanitizedValues);
+			Pair.Value = MakeShared<FJsonValueArray>(SanitizedValues);
+		}
+	}
+}
+
+void SanitizeJsonIdentifierArray(const FString& FieldName, const TArray<TSharedPtr<FJsonValue>>& SourceValues, TArray<TSharedPtr<FJsonValue>>& OutValues)
+{
+	OutValues.Reset();
+	OutValues.Reserve(SourceValues.Num());
+
+	for (const TSharedPtr<FJsonValue>& Value : SourceValues)
+	{
+		if (!Value.IsValid())
+		{
+			continue;
+		}
+
+		if (ShouldSanitizeIdentifierField(FieldName) && Value->Type == EJson::String)
+		{
+			OutValues.Add(MakeShared<FJsonValueString>(SanitizeObjectName(Value->AsString())));
+		}
+		else if (Value->Type == EJson::Object)
+		{
+			TSharedPtr<FJsonObject> ObjectValue = Value->AsObject();
+			SanitizeJsonIdentifierObject(ObjectValue);
+			OutValues.Add(MakeShared<FJsonValueObject>(ObjectValue));
+		}
+		else if (Value->Type == EJson::Array)
+		{
+			TArray<TSharedPtr<FJsonValue>> NestedValues;
+			SanitizeJsonIdentifierArray(FieldName, Value->AsArray(), NestedValues);
+			OutValues.Add(MakeShared<FJsonValueArray>(NestedValues));
+		}
+		else
+		{
+			OutValues.Add(Value);
+		}
+	}
 }
 }
 
@@ -427,6 +562,10 @@ FString UFactoryAgentClientSubsystem::BuildProcessOptimizerStateUpdateJson(
 
 		const bool bSourceIsNode = PowerNodesById.Contains(SourceId);
 		const bool bTargetIsNode = PowerNodesById.Contains(TargetId);
+		if (SourceId == TargetId)
+		{
+			continue;
+		}
 
 		if (bSourceIsNode && bTargetIsNode)
 		{
@@ -459,6 +598,7 @@ FString UFactoryAgentClientSubsystem::BuildProcessOptimizerStateUpdateJson(
 		}
 
 		TArray<FString> NearbyNodeIds;
+		const bool bCanReceivePowerFromNodeRadius = Machine->NeedsPower();
 		for (const TPair<FString, APowerGridNode*>& NodePair : PowerNodesById)
 		{
 			const APowerGridNode* PowerNode = NodePair.Value;
@@ -473,11 +613,19 @@ FString UFactoryAgentClientSubsystem::BuildProcessOptimizerStateUpdateJson(
 				continue;
 			}
 
+			if (Machine == PowerNode)
+			{
+				continue;
+			}
+
 			if (FVector::DistSquared(Machine->GetActorLocation(), PowerNode->GetActorLocation()) <=
 				FMath::Square(SupplyRadius))
 			{
-				NearbyNodeIds.Add(NodePair.Key);
-				NodeToConnectedMachineIds.FindOrAdd(NodePair.Key).AddUnique(MakeMachineIdString(MachineNode));
+				if (bCanReceivePowerFromNodeRadius)
+				{
+					NearbyNodeIds.Add(NodePair.Key);
+					NodeToConnectedMachineIds.FindOrAdd(NodePair.Key).AddUnique(MakeMachineIdString(MachineNode));
+				}
 			}
 		}
 
@@ -628,6 +776,7 @@ FString UFactoryAgentClientSubsystem::BuildProcessOptimizerStateUpdateJson(
 	FactoryStateObject->SetArrayField(TEXT("machines"), MachineArray);
 	FactoryStateObject->SetArrayField(TEXT("conveyors"), ConveyorArray);
 	FactoryStateObject->SetObjectField(TEXT("power_grid"), PowerGridObject.ToSharedRef());
+	SanitizeJsonIdentifierObject(FactoryStateObject);
 
 	const TSharedPtr<FJsonObject> PayloadObject = MakeShared<FJsonObject>();
 	PayloadObject->SetStringField(TEXT("operation"), TEXT("state_update"));
