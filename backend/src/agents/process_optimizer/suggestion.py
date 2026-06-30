@@ -34,23 +34,68 @@ class OptimizationSuggestionTool:
         Returns:
             tuple[list[OptimizationSuggestion], UiHints]: 제안 목록 및 하이라이트 대상 힌트.
         """
+        # Sprint 8: need_more_state 가 있으면 제안 생성을 우회하고 빈 목록 리턴
+        if getattr(report, "need_more_state", None) is not None:
+            return [], UiHints()
+
         raw_candidates: list[dict[str, Any]] = []
 
         # 1. 입력 부족 이슈 후보 수집
         for machine_id in report.input_shortages:
-            raw_candidates.append(
-                {
-                    "type": "input_shortage",
-                    "id": f"suggest_input_{machine_id}",
-                    "target": TargetDescriptor(type="machine", id=machine_id),
-                    "problem": f"{machine_id} 설비의 원자재 입력 재고가 고갈되었습니다.",
-                    "recommended_action": "공급 라인의 컨베이어 벨트 연결과 상류 설비의 생산 상태를 점검하십시오.",
-                    "expected_effect": "설비 가동율이 복구되어 정상 공정이 가동됩니다.",
-                    "risk": "low",
-                    "confidence": 1.0,
-                    "priority_key": "input_shortage",
-                }
-            )
+            item_id = report.input_shortages_items.get(machine_id, "원자재")
+
+            if not report.storages:
+                # storage 정보 없음 -> 원인을 단정하지 않고 레거시 제안 생성
+                raw_candidates.append(
+                    {
+                        "type": "input_shortage",
+                        "id": f"suggest_input_{machine_id}",
+                        "target": TargetDescriptor(type="machine", id=machine_id),
+                        "problem": f"{machine_id} 설비의 원자재 입력 재고가 고갈되었습니다.",
+                        "recommended_action": "공급 라인의 컨베이어 벨트 연결과 상류 설비의 생산 상태를 점검하십시오.",
+                        "expected_effect": "설비 가동율이 복구되어 정상 공정이 가동됩니다.",
+                        "risk": "low",
+                        "confidence": 1.0,
+                        "priority_key": "input_shortage",
+                    }
+                )
+            else:
+                total_amount = 0.0
+                for storage in report.storages:
+                    for inv in storage.inventory:
+                        if inv.item_id == item_id:
+                            total_amount += inv.amount
+
+                if total_amount > 0.0:
+                    # 1) 창고 재고 충분 -> 공급 라인 문제
+                    raw_candidates.append(
+                        {
+                            "type": "input_shortage",
+                            "id": f"inspect_{item_id}_supply_{machine_id}",
+                            "target": TargetDescriptor(type="machine", id=machine_id),
+                            "problem": f"{machine_id}에 {item_id}가 공급되지 않고 있습니다.",
+                            "recommended_action": f"{item_id} 창고와 {machine_id} 사이의 컨베이어 연결을 확인하십시오.",
+                            "expected_effect": f"창고에 있는 {item_id}가 {machine_id}로 공급될 수 있습니다.",
+                            "risk": "low",
+                            "confidence": 1.0,
+                            "priority_key": "input_shortage",
+                        }
+                    )
+                else:
+                    # 2) 창고 재고 부족 -> 생산/채굴 부족 문제
+                    raw_candidates.append(
+                        {
+                            "type": "input_shortage",
+                            "id": f"expand_{item_id}_production_{machine_id}",
+                            "target": TargetDescriptor(type="machine", id=machine_id),
+                            "problem": f"{machine_id}의 공급 창고에도 {item_id}가 부족합니다.",
+                            "recommended_action": f"{item_id} 채굴기나 생산 시설을 확충하여 원자재 생산량을 늘리십시오.",
+                            "expected_effect": f"공장에 공급되는 {item_id}의 절대량이 증가합니다.",
+                            "risk": "medium",
+                            "confidence": 1.0,
+                            "priority_key": "input_shortage",
+                        }
+                    )
 
         # 2. 출력 적체 이슈 후보 수집
         for machine_id in report.output_blocked:
@@ -102,6 +147,69 @@ class OptimizationSuggestionTool:
                 }
             )
 
+        # 4.1 고립 송전탑 이슈 후보 수집 (Power Sprint 3)
+        for node_id in report.isolated_power_nodes:
+            node_suffix = node_id.removeprefix("pole_")
+            expected_effect = f"{node_id}에 연결된 설비가 전력을 공급받을 수 있습니다."
+            if report.unpowered_machines:
+                expected_effect += f" (전력 미공급 설비: {', '.join(report.unpowered_machines)})"
+
+            raw_candidates.append(
+                {
+                    "type": "isolated_power_pole",
+                    "id": f"inspect_power_pole_{node_suffix}",
+                    "target": TargetDescriptor(type="power_pole", id=node_id),
+                    "problem": f"{node_id}이 주 전력망과 연결되어 있지 않습니다.",
+                    "recommended_action": f"{node_id} 주변의 송전탑 연결을 확인하고, 플레이어가 직접 전선을 연결하십시오.",
+                    "expected_effect": expected_effect,
+                    "risk": "medium",
+                    "confidence": 1.0,
+                    "priority_key": "power_issue",
+                }
+            )
+
+        # 4.2 미연결 발전기 이슈 후보 수집 (Power Sprint 3)
+        for gen_id in report.disconnected_generators:
+            gen_suffix = gen_id.removeprefix("generator_")
+            raw_candidates.append(
+                {
+                    "type": "disconnected_generator",
+                    "id": f"inspect_generator_{gen_suffix}_power_connection",
+                    "target": TargetDescriptor(type="generator", id=gen_id),
+                    "problem": f"{gen_id}가 전력망에 연결되어 있지 않습니다.",
+                    "recommended_action": f"{gen_id}와 가까운 송전탑의 연결 상태를 확인하고, 플레이어가 직접 연결하십시오.",
+                    "expected_effect": f"{gen_id}의 생산 전력이 전력망에 반영될 수 있습니다.",
+                    "risk": "medium",
+                    "confidence": 1.0,
+                    "priority_key": "power_issue",
+                }
+            )
+
+        # 4.3 설비 정비 및 고장 이슈 후보 수집 (Power Sprint 7)
+        for machine_id in report.maintenance_required_machines:
+            is_broken = machine_id in report.broken_machines
+            if is_broken:
+                problem = f"{machine_id} 설비가 고장(broken) 상태입니다."
+                risk = "medium"
+            else:
+                problem = f"{machine_id}의 내구도가 낮아 정비가 필요합니다."
+                risk = "low"
+
+            raw_candidates.append(
+                {
+                    "type": "maintenance",
+                    "id": f"inspect_machine_condition_{machine_id}",
+                    "target": TargetDescriptor(type="machine", id=machine_id),
+                    "problem": problem,
+                    "recommended_action": f"{machine_id}을 점검하고 필요한 수리 자원을 사용하십시오.",
+                    "expected_effect": "정비 후 생산 중단 가능성이 줄어듭니다.",
+                    "risk": risk,
+                    "confidence": 1.0,
+                    "priority_key": "maintenance",
+                }
+            )
+
+
         # 5. 최적화 목표(goal)에 따른 정렬 우선순위 정의
         # 우선순위가 높은 이슈 타입 순서대로 정렬하기 위해, 각 타입별 가중치 매핑
         goal = report.goal
@@ -109,27 +217,31 @@ class OptimizationSuggestionTool:
             "throughput": {
                 "input_shortage": 1,
                 "output_blocked": 2,
-                "congestion": 3,
-                "power_issue": 4,
+                "maintenance": 3,
+                "congestion": 4,
+                "power_issue": 5,
             },
             "power_saving": {
                 "power_issue": 1,
-                "input_shortage": 2,
-                "output_blocked": 3,
-                "congestion": 4,
+                "maintenance": 2,
+                "input_shortage": 3,
+                "output_blocked": 4,
+                "congestion": 5,
             },
             "congestion_relief": {
                 "congestion": 1,
                 "output_blocked": 2,
-                "input_shortage": 3,
-                "power_issue": 4,
+                "maintenance": 3,
+                "input_shortage": 4,
+                "power_issue": 5,
             },
             # balance (기본값)
             "balance": {
                 "input_shortage": 1,
                 "output_blocked": 1,  # 동일 우선순위
-                "power_issue": 2,
-                "congestion": 3,
+                "maintenance": 2,
+                "power_issue": 3,
+                "congestion": 4,
             },
         }
 
@@ -171,6 +283,23 @@ class OptimizationSuggestionTool:
             if item["target"] is not None:
                 highlight_targets.append(item["target"].id)
 
+        # 전력망 분석 결과의 모든 타겟 ID들을 하이라이트 대상에 추가로 병합 (Sprint 3)
+        for node_id in report.isolated_power_nodes:
+            if node_id not in highlight_targets:
+                highlight_targets.append(node_id)
+        for gen_id in report.disconnected_generators:
+            if gen_id not in highlight_targets:
+                highlight_targets.append(gen_id)
+        for machine_id in report.unpowered_machines:
+            if machine_id not in highlight_targets:
+                highlight_targets.append(machine_id)
+        for machine_id in report.maintenance_required_machines:
+            if machine_id not in highlight_targets:
+                highlight_targets.append(machine_id)
+        for machine_id in report.broken_machines:
+            if machine_id not in highlight_targets:
+                highlight_targets.append(machine_id)
+
         ui_hints = UiHints(highlight_targets=highlight_targets)
         return suggestions, ui_hints
 
@@ -190,6 +319,7 @@ class SuggestionValidationTool:
         "move_machine",
         "place_machine",
         "remove_machine",
+        "connect_power_line",
     }
 
     def validate_suggestions(self, suggestions: list[OptimizationSuggestion]) -> bool:

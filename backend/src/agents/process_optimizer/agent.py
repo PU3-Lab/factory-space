@@ -55,7 +55,17 @@ class ProcessOptimizerAgent:
         if not factory_state and payload and "machines" in payload:
             factory_state = payload
         if not factory_state:
-            factory_state = process_optimizer_memory.get_state(context.session_id)
+            # Sprint 5: snapshot_store 조회 fallback
+            from agents.process_optimizer.snapshot_store import process_optimizer_snapshot_store
+            session_id = context.session_id or "default-session"
+            client_id = context.client_id or "unreal"
+            snapshot = process_optimizer_snapshot_store.get_latest(session_id, client_id)
+            if snapshot and snapshot.factory_state:
+                factory_state = snapshot.factory_state
+                if payload.get("factoryRevision") is None:
+                    payload["factoryRevision"] = snapshot.factoryRevision
+            else:
+                factory_state = process_optimizer_memory.get_state(context.session_id)
         if not factory_state and payload:
             factory_state = payload
 
@@ -143,7 +153,17 @@ class ProcessOptimizerAgent:
         if not factory_state and payload and "machines" in payload:
             factory_state = payload
         if not factory_state:
-            factory_state = process_optimizer_memory.get_state(context.session_id)
+            # Sprint 5: snapshot_store 조회 fallback
+            from agents.process_optimizer.snapshot_store import process_optimizer_snapshot_store
+            session_id = context.session_id or "default-session"
+            client_id = context.client_id or "unreal"
+            snapshot = process_optimizer_snapshot_store.get_latest(session_id, client_id)
+            if snapshot and snapshot.factory_state:
+                factory_state = snapshot.factory_state
+                if payload.get("factoryRevision") is None:
+                    payload["factoryRevision"] = snapshot.factoryRevision
+            else:
+                factory_state = process_optimizer_memory.get_state(context.session_id)
         if not factory_state and payload:
             factory_state = payload
 

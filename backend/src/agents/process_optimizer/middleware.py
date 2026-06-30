@@ -12,6 +12,7 @@ from agents.base import AgentContext
 from agents.process_optimizer.analyzer import FactoryStateAnalyzerTool
 from agents.process_optimizer.schemas import FactoryState, ProcessOptimizerPayload
 from agents.process_optimizer.session_memory import process_optimizer_memory
+from agents.process_optimizer.snapshot_store import process_optimizer_snapshot_store
 from agents.process_optimizer.subquest_alert import SubquestAlertBuilder
 from protocol.errors import build_error_payload
 
@@ -80,6 +81,19 @@ def build_state_update_response(
 
     process_optimizer_memory.update(context.session_id, factory_state, revision)
 
+    # Sprint 5: Snapshot Store에도 저장. 빈 상태 업데이트는 기존 스냅샷을 덮지 않는다.
+    session_id = context.session_id or "default-session"
+    client_id = context.client_id or "unreal"
+    if factory_state:
+        process_optimizer_snapshot_store.save(
+            session_id=session_id,
+            client_id=client_id,
+            factory_state=factory_state,
+            revision=revision,
+            source="state_update"
+        )
+
+
     subquest_mode = payload.get("subquest_mode")
     if subquest_mode is None:
         subquest_mode = True
@@ -94,11 +108,24 @@ def build_state_update_response(
         report, factory_state, subquest_mode=subquest_mode
     )
 
+    highlight_targets: list[str] = []
+    for target_id in (
+        [node_id for node_id in report.isolated_power_nodes]
+        + [gen_id for gen_id in report.disconnected_generators]
+        + [machine_id for machine_id in report.unpowered_machines]
+    ):
+        if target_id not in highlight_targets:
+            highlight_targets.append(target_id)
+
+    if alert.target is not None and alert.target.id not in highlight_targets:
+        highlight_targets.append(alert.target.id)
+
     response_payload = {
         "status": "success",
         "factoryRevision": revision,
         "goal": goal,
         "optimization_alert": alert.model_dump(),
+        "ui_hints": {"highlight_targets": highlight_targets},
     }
     return {
         "responsePayload": response_payload,
@@ -122,9 +149,19 @@ def build_graph_payload_with_memory(
     graph_payload = dict(payload)
 
     if "factory_state" not in graph_payload:
-        remembered_state = process_optimizer_memory.get_state(context.session_id)
-        if remembered_state:
-            graph_payload["factory_state"] = remembered_state
+        # Sprint 5: snapshot_store에서 최신 스냅샷을 우선적으로 시도
+        session_id = context.session_id or "default-session"
+        client_id = context.client_id or "unreal"
+        snapshot = process_optimizer_snapshot_store.get_latest(session_id, client_id)
+        if snapshot and snapshot.factory_state:
+            graph_payload["factory_state"] = snapshot.factory_state
+            if graph_payload.get("factoryRevision") is None:
+                graph_payload["factoryRevision"] = snapshot.factoryRevision
+        else:
+            # fallback to legacy session_memory
+            remembered_state = process_optimizer_memory.get_state(context.session_id)
+            if remembered_state:
+                graph_payload["factory_state"] = remembered_state
 
     if graph_payload.get("factoryRevision") is None:
         remembered_revision = process_optimizer_memory.get_revision(context.session_id)
