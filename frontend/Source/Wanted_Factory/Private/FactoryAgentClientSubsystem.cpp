@@ -576,14 +576,12 @@ FString UFactoryAgentClientSubsystem::BuildProcessOptimizerStateUpdateJson(
 
 		if (bSourceIsNode && !bTargetIsNode)
 		{
-			NodeToConnectedMachineIds.FindOrAdd(SourceId).AddUnique(TargetId);
 			GeneratorToConnectedNodeIds.FindOrAdd(TargetId).AddUnique(SourceId);
 			continue;
 		}
 
 		if (!bSourceIsNode && bTargetIsNode)
 		{
-			NodeToConnectedMachineIds.FindOrAdd(TargetId).AddUnique(SourceId);
 			GeneratorToConnectedNodeIds.FindOrAdd(SourceId).AddUnique(TargetId);
 		}
 	}
