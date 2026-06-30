@@ -57,6 +57,7 @@ def wire_agent_graph(graph: StateGraph) -> None:
         route_process_optimizer,
         {
             "state_update": "process_optimizer_state_update",
+            "subquest_check": "process_optimizer_subquest_check",
             "analyze": "process_optimizer_v2_graph",
             "apply": "process_optimizer_v2_graph",
             "undo": "process_optimizer_v2_graph",
@@ -65,6 +66,7 @@ def wire_agent_graph(graph: StateGraph) -> None:
         },
     )
     graph.add_edge("process_optimizer_state_update", "build_agent_response")
+    graph.add_edge("process_optimizer_subquest_check", "build_agent_response")
     graph.add_edge("process_optimizer_v2_graph", "build_agent_response")
     graph.add_conditional_edges(
         "cache_lookup",
@@ -211,13 +213,23 @@ def route_response_validation(state: AgentGraphState) -> Literal["valid", "error
 
 def route_process_optimizer(
     state: AgentGraphState,
-) -> Literal["state_update", "analyze", "apply", "undo", "measure", "error"]:
+) -> Literal[
+    "state_update",
+    "subquest_check",
+    "analyze",
+    "apply",
+    "undo",
+    "measure",
+    "error",
+]:
     if state.get("error"):
         return "error"
     payload = state.get("typedPayload", {})
     operation = payload.get("operation", "analyze")
     if operation == "state_update":
         return "state_update"
+    elif operation == "subquest_check":
+        return "subquest_check"
     elif operation == "analyze":
         return "analyze"
     elif operation == "apply":
