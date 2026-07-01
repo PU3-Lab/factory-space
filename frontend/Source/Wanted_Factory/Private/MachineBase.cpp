@@ -2,6 +2,7 @@
 #include "MachineBase.h"
 
 #include "Camera/PlayerCameraManager.h"
+#include "Components/AudioComponent.h"
 #include "Components/BillboardComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -13,9 +14,12 @@
 #include "GameFramework/PlayerController.h"
 #include "Machines/MachineSubsystem.h"
 #include "Materials/Material.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 #include "PlanetEventManagerSubsystem.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "RecipeManagerSubsystem.h"
+#include "Sound/SoundBase.h"
 #include "UI/StateIndicatorIconWidget.h"
 #include "Wanted_Factory.h"
 #include "Algo/Count.h"
@@ -184,6 +188,18 @@ AMachineBase::AMachineBase()
 	StateIndicatorLightComponent->SetRelativeLocation(StateIndicatorOffset);
 	StateIndicatorLightComponent->SetIntensity(StateIndicatorLightIntensity);
 	StateIndicatorLightComponent->SetAttenuationRadius(StateIndicatorLightRadius);
+
+	OperatingSmokeComponent = CreateDefaultSubobject<UNiagaraComponent>(TEXT("OperatingSmoke"));
+	OperatingSmokeComponent->SetupAttachment(MeshComponent);
+	OperatingSmokeComponent->SetAutoActivate(false);
+
+	OperatingSmokeComponent2 = CreateDefaultSubobject<UNiagaraComponent>(TEXT("OperatingSmoke2"));
+	OperatingSmokeComponent2->SetupAttachment(MeshComponent);
+	OperatingSmokeComponent2->SetAutoActivate(false);
+
+	OperatingSoundComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("OperatingSound"));
+	OperatingSoundComponent->SetupAttachment(MeshComponent);
+	OperatingSoundComponent->bAutoActivate = false;
 
 	// 메쉬 방향 보정: 머신 메쉬의 시각적 입출력부가 논리 포트 방향(액터 forward 기반)과 -90° Yaw
 	// 어긋나는 문제(전 머신 균일, PIE 관찰 확정)를 +90° 회전으로 상쇄. RelativeRotation은 자식 메쉬만
@@ -383,6 +399,30 @@ void AMachineBase::OnConstruction(const FTransform& Transform)
 	}
 
 	CurrentDurability = FMath::Clamp(CurrentDurability, 0.f, MaxDurability);
+	if (OperatingSmokeComponent)
+	{
+		OperatingSmokeComponent->SetAsset(OperatingSmokeSystem);
+		OperatingSmokeComponent->AttachToComponent(
+			MeshComponent,
+			FAttachmentTransformRules::KeepRelativeTransform,
+			OperatingSmokeSocketName);
+		OperatingSmokeComponent->SetRelativeTransform(OperatingSmokeRelativeTransform);
+	}
+	if (OperatingSmokeComponent2)
+	{
+		OperatingSmokeComponent2->SetAsset(OperatingSmokeSystem2);
+		OperatingSmokeComponent2->AttachToComponent(
+			MeshComponent,
+			FAttachmentTransformRules::KeepRelativeTransform,
+			OperatingSmokeSocketName2);
+		OperatingSmokeComponent2->SetRelativeTransform(OperatingSmokeRelativeTransform2);
+	}
+	if (OperatingSoundComponent)
+	{
+		OperatingSoundComponent->SetSound(OperatingSound);
+		OperatingSoundComponent->SetVolumeMultiplier(OperatingSoundVolumeMultiplier);
+		OperatingSoundComponent->SetPitchMultiplier(OperatingSoundPitchMultiplier);
+	}
 	UpdateDebugBufferText();
 	UpdateStateIndicator();
 	UpdateDebugTextFacingPlayer();
@@ -419,6 +459,8 @@ void AMachineBase::Tick(float DeltaTime)
 
 	UpdateStateIndicator();
 	UpdateStateIndicatorFacingPlayer();
+	RefreshOperatingSmoke();
+	RefreshOperatingSound();
 }
 
 bool AMachineBase::CanPlace()
@@ -1002,6 +1044,102 @@ bool AMachineBase::IsOutputBufferFull() const
 	}
 
 	return false;
+}
+
+bool AMachineBase::CanPlayOperatingSmoke() const
+{
+	const bool bIsNormallyOperating =
+		MachineState == EMachineState::Working &&
+		HasEnoughPower() &&
+		!isBroken() &&
+		CurrentDurability > LowDurabilityWarningThreshold &&
+		!IsOutputBufferFull();
+
+	const bool bHasConfiguredSmoke =
+		(bUseOperatingSmoke && OperatingSmokeSystem != nullptr) ||
+		(bUseOperatingSmoke2 && OperatingSmokeSystem2 != nullptr);
+
+	return bIsNormallyOperating && bHasConfiguredSmoke;
+}
+
+void AMachineBase::RefreshOperatingSmoke()
+{
+	if (!OperatingSmokeComponent && !OperatingSmokeComponent2)
+	{
+		return;
+	}
+
+	const bool bIsNormallyOperating =
+		MachineState == EMachineState::Working &&
+		HasEnoughPower() &&
+		!isBroken() &&
+		CurrentDurability > LowDurabilityWarningThreshold &&
+		!IsOutputBufferFull();
+
+	auto UpdateSmokeComponent = [](
+		UNiagaraComponent* SmokeComponent,
+		bool bShouldBeActive,
+		bool& bWasActive)
+	{
+		if (!SmokeComponent || bShouldBeActive == bWasActive)
+		{
+			return;
+		}
+
+		bWasActive = bShouldBeActive;
+		if (bWasActive)
+		{
+			SmokeComponent->Activate(true);
+		}
+		else
+		{
+			SmokeComponent->Deactivate();
+		}
+	};
+
+	UpdateSmokeComponent(
+		OperatingSmokeComponent,
+		bIsNormallyOperating && bUseOperatingSmoke && OperatingSmokeSystem != nullptr,
+		bOperatingSmokeActive);
+	UpdateSmokeComponent(
+		OperatingSmokeComponent2,
+		bIsNormallyOperating && bUseOperatingSmoke2 && OperatingSmokeSystem2 != nullptr,
+		bOperatingSmokeActive2);
+}
+
+bool AMachineBase::CanPlayOperatingSound() const
+{
+	return bUseOperatingSound &&
+		OperatingSound != nullptr &&
+		MachineState == EMachineState::Working &&
+		HasEnoughPower() &&
+		!isBroken() &&
+		CurrentDurability > LowDurabilityWarningThreshold &&
+		!IsOutputBufferFull();
+}
+
+void AMachineBase::RefreshOperatingSound()
+{
+	if (!OperatingSoundComponent)
+	{
+		return;
+	}
+
+	const bool bShouldBeActive = CanPlayOperatingSound();
+	if (bShouldBeActive == bOperatingSoundActive)
+	{
+		return;
+	}
+
+	bOperatingSoundActive = bShouldBeActive;
+	if (bOperatingSoundActive)
+	{
+		OperatingSoundComponent->Play();
+	}
+	else
+	{
+		OperatingSoundComponent->Stop();
+	}
 }
 
 void AMachineBase::UpdateDebugTextFacingPlayer()
