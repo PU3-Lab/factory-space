@@ -70,6 +70,27 @@ def test_agent_test_progress_messages_do_not_update_quality_metrics() -> None:
     assert "PROGRESS" in response.text
 
 
+def test_agent_test_page_documents_unreal_material_fields() -> None:
+    with TestClient(create_app()) as client:
+        response = client.get("/agent-test")
+
+    assert response.status_code == 200
+    assert "신물질 DataTable 필드" in response.text
+    assert "rowname: CSV/DataTable 행 식별자" in response.text
+    assert "form: 물질의 물리 상태" in response.text
+    assert "substance: 기본 성분 또는 재료 계열" in response.text
+    assert "type: 물질 분류" in response.text
+    assert "shape: 물질 형태" in response.text
+    assert "DIsplayName: UI에 표시할 한국어 이름" in response.text
+    assert "VisualColor: 언리얼 RGBA 색상 문자열" in response.text
+    assert '<option value="new_material_generator">신소재 후보 생성</option>' in response.text
+    assert '"agent": "new_material_generator"' in response.text
+    assert '"goal": "heat-resistant alloy"' in response.text
+    assert "mrRow('RowName', p.rowname)" in response.text
+    assert "mrRow('DisplayName', p.DIsplayName)" in response.text
+    assert "mrRow('VisualColor', p.VisualColor)" in response.text
+
+
 def test_docs_router_does_not_change_health_endpoint() -> None:
     with TestClient(create_app()) as client:
         response = client.get("/health")

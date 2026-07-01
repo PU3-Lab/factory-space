@@ -8,6 +8,10 @@ from typing import Any
 
 from sqlalchemy import select
 
+from agents.material_columns import (
+    get_resource_material_column_values,
+    get_unreal_material_column_values,
+)
 from agents.material_generation.classifier import ExperimentClassifier
 from agents.material_generation.derivation import (
     DerivedAttributes,
@@ -41,6 +45,17 @@ from db.models import GeneratedExperimentModel, GeneratedMaterialModel
 logger = logging.getLogger(__name__)
 
 _proposal_generator = None
+
+
+def _material_column_values_for_outputs(outputs: list[dict[str, Any]]) -> dict[str, str]:
+    for output in outputs:
+        item_id = output.get("item_id")
+        if not item_id:
+            continue
+        values = get_resource_material_column_values(str(item_id))
+        if values:
+            return values
+    return {}
 
 
 def get_proposal_generator() -> MaterialProposalGenerator:
@@ -98,6 +113,7 @@ def lookup_cache_node(state: MaterialGraphState) -> dict[str, Any]:
             visual_asset_key = mat_model.visual_asset_key if mat_model else None
             texture_asset_key = mat_model.texture_asset_key if mat_model else None
             thumbnail_asset_key = mat_model.thumbnail_asset_key if mat_model else None
+            visual_color = mat_model.visual_color if mat_model else None
 
             response = MaterialCreationResponse(
                 result_type="cached_experiment",
@@ -115,6 +131,7 @@ def lookup_cache_node(state: MaterialGraphState) -> dict[str, Any]:
                 texture_asset_key=texture_asset_key,
                 thumbnail_asset_key=thumbnail_asset_key,
                 message="이미 발견된 물질입니다.",
+                **get_unreal_material_column_values(visual_color),
             )
         elif existing_exp.result_type == "existing_recipe":
             outputs = []
@@ -128,6 +145,9 @@ def lookup_cache_node(state: MaterialGraphState) -> dict[str, Any]:
                 experiment_hash=exp_hash,
                 recipe_name=existing_exp.recipe_name,
                 outputs=outputs,
+                **_material_column_values_for_outputs(
+                    existing_exp.output_items_json or []
+                ),
             )
         else:
             response = MaterialCreationResponse(
@@ -190,6 +210,7 @@ def recipe_match_node(state: MaterialGraphState) -> dict[str, Any]:
             outputs=[
                 OutputItemSchema(item_id=o["item_id"], qty=o["qty"]) for o in outputs
             ],
+            **_material_column_values_for_outputs(outputs),
         )
         return {"response": response}
     return {}
@@ -454,6 +475,7 @@ def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
         visual_asset_key = existing_mat.visual_asset_key
         texture_asset_key = existing_mat.texture_asset_key
         thumbnail_asset_key = existing_mat.thumbnail_asset_key
+        visual_color = existing_mat.visual_color
         is_new = False
     else:
         material_id = f"mat_{proposal.result.id_hint}_{uuid.uuid4().hex[:6]}"
@@ -465,6 +487,7 @@ def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
         visual_asset_key = None
         texture_asset_key = None
         thumbnail_asset_key = None
+        visual_color = None
         is_new = True
 
     response = MaterialCreationResponse(
@@ -486,6 +509,7 @@ def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
         else "새로운 물질이 발견되었습니다."
         if (is_new and not generate_visual)
         else "이미 발견된 물질입니다.",
+        **get_unreal_material_column_values(visual_color),
     )
     return {"response": response, "is_new": is_new}
 
@@ -567,6 +591,8 @@ def register_material_node(state: MaterialGraphState) -> dict[str, Any]:
             response.visual_asset_key = material.visual_asset_key
             response.texture_asset_key = material.texture_asset_key
             response.thumbnail_asset_key = material.thumbnail_asset_key
+            if material.visual_color:
+                response.VisualColor = material.visual_color
             if material.visual_status == "visual_ready":
                 response.message = (
                     "새로운 물질이 발견되었고 비주얼 자산 생성이 완료되었습니다."

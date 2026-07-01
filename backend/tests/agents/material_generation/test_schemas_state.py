@@ -43,3 +43,28 @@ def test_response_visual_asset_key_fields_optional() -> None:
     assert resp.visual_asset_key is None
     assert resp.texture_asset_key is None
     assert resp.thumbnail_asset_key is None
+
+
+def test_response_accepts_unreal_material_column_values() -> None:
+    """신물질 생성 결과는 언리얼 CSV 연동용 컬럼값을 담을 수 있어야 합니다."""
+    resp = MaterialCreationResponse(
+        result_type="new_material",
+        experiment_hash="h",
+        rowname="wood",
+        form="solid",
+        substance="wood",
+        type="organism",
+        shape="",
+        DIsplayName="목재",
+        VisualColor="(R=0.49,G=0.31,B=0.16,A=1.0)",
+    )
+
+    dumped = resp.model_dump()
+
+    assert dumped["rowname"] == "wood"
+    assert dumped["form"] == "solid"
+    assert dumped["substance"] == "wood"
+    assert dumped["type"] == "organism"
+    assert dumped["shape"] == ""
+    assert dumped["DIsplayName"] == "목재"
+    assert dumped["VisualColor"] == "(R=0.49,G=0.31,B=0.16,A=1.0)"

@@ -1022,6 +1022,9 @@ _TEST_PAGE_TEMPLATE = """<!doctype html>
           <optgroup label="quest_generator">
             <option value="quest_generator">퀘스트 생성</option>
           </optgroup>
+          <optgroup label="new_material_generator">
+            <option value="new_material_generator">신소재 후보 생성</option>
+          </optgroup>
           <optgroup label="material_generation">
             <option value="material_generation.recipe_match">레시피 매칭 (기존 레시피)</option>
             <option value="material_generation.new_material">신물질 합성 (새 물질)</option>
@@ -1033,6 +1036,39 @@ _TEST_PAGE_TEMPLATE = """<!doctype html>
         <button class="btn btn-ghost btn-sm" onclick="newId()">ID 갱신</button>
         <button class="btn btn-ghost btn-sm" onclick="randomInputs()">랜덤 조합</button>
       </div>
+      <details class="req-settings">
+        <summary>신물질 DataTable 필드</summary>
+        <div class="settings-body">
+          <div class="field full">
+            <label>rowname: CSV/DataTable 행 식별자</label>
+            <input type="text" value="wood" readonly>
+          </div>
+          <div class="field full">
+            <label>form: 물질의 물리 상태</label>
+            <input type="text" value="solid" readonly>
+          </div>
+          <div class="field full">
+            <label>substance: 기본 성분 또는 재료 계열</label>
+            <input type="text" value="wood" readonly>
+          </div>
+          <div class="field full">
+            <label>type: 물질 분류</label>
+            <input type="text" value="organism" readonly>
+          </div>
+          <div class="field full">
+            <label>shape: 물질 형태</label>
+            <input type="text" value="" readonly>
+          </div>
+          <div class="field full">
+            <label>DIsplayName: UI에 표시할 한국어 이름</label>
+            <input type="text" value="목재" readonly>
+          </div>
+          <div class="field full">
+            <label>VisualColor: 언리얼 RGBA 색상 문자열</label>
+            <input type="text" value="(R=0.49,G=0.31,B=0.16,A=1.0)" readonly>
+          </div>
+        </div>
+      </details>
       <textarea id="editor" spellcheck="false" oninput="onInput()"></textarea>
       <div class="send-row">
         <button id="btn-send" class="btn btn-primary" onclick="doSend()" disabled>전송</button>
@@ -1341,6 +1377,13 @@ function renderMaterialResult(rawJson) {
   } else {
     rows += '<div class="mr-fail">' + esc(p.failure_reason || p.message || '결과를 생성하지 못했습니다.') + '</div>';
   }
+  if (p.rowname) rows += mrRow('RowName', p.rowname);
+  if (p.form) rows += mrRow('Form', p.form);
+  if (p.substance) rows += mrRow('Substance', p.substance);
+  if (p.type) rows += mrRow('Type', p.type);
+  if (p.shape != null) rows += mrRow('Shape', p.shape);
+  if (p.DIsplayName) rows += mrRow('DisplayName', p.DIsplayName);
+  if (p.VisualColor) rows += mrRow('VisualColor', p.VisualColor);
 
   var box = document.getElementById('mat-result');
   box.innerHTML =
@@ -1656,6 +1699,13 @@ def _render_test_page() -> str:
             "agent": "quest_generator",
             "payload": {
                 "game_state": {},
+            },
+        },
+        "new_material_generator": {
+            "type": "agent.request",
+            "agent": "new_material_generator",
+            "payload": {
+                "goal": "heat-resistant alloy",
             },
         },
         "material_generation.recipe_match": {
