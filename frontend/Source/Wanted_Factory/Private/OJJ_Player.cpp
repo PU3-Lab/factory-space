@@ -603,6 +603,14 @@ void AOJJ_Player::ConnectFactoryAgentClient()
 	}
 }
 
+void AOJJ_Player::ShowMainHUDSaveIndicator(float DisplaySeconds)
+{
+	if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
+	{
+		MainHUD->ShowSaveIndicator(DisplaySeconds);
+	}
+}
+
 void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
