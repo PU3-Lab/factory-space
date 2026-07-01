@@ -66,6 +66,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Climb")
 	bool IsClimbing() const { return bClimbing; }
 
+	// [끊김① PlayRate 연동] ABP Climb Loop 노드의 PlayRate에 배선 — 실제 수직 등반 속도를 ClimbSpeed로 정규화한
+	// 0~1 값. 속도 0(호버)=PlayRate 0(정지 포즈), 최대=1(정상 루프). 애니가 실제 이동에 동기화돼 발/손이 사다리단과
+	// 안 미끄러지고 되감기 튐 제거. 등반 아니면 0. (매그니튜드만 — 방향은 GetClimbDirection.)
+	UFUNCTION(BlueprintPure, Category = "Climb")
+	float GetClimbSpeedNormalized() const;
+
+	// [끊김① 방향 래치] ABP Loop↔Down 상태 전이용 — Velocity.Z 부호(0 근처 토글 떨림) 대신 마지막 비영 입력
+	// 방향을 유지. +1=위(Loop), -1=아래(Down), 0=등반 아님. 호버(속도 0)에도 방향이 안 뒤집혀 상태 깜빡임 차단.
+	UFUNCTION(BlueprintPure, Category = "Climb")
+	float GetClimbDirection() const;
+
 	// [수영] ABP_Man/Woman 스테이트머신 swim 진입/탈출 조건용(읽기 전용). 이동/idle 구분은 ABP가 Velocity로 판별
 	// (수평속도>임계 → Swim_Forward, 아니면 Swim_Idle). ⚠️ public 필수 — ABP는 AOJJ_Player 서브클래스 아님(IsClimbing 전례).
 	UFUNCTION(BlueprintPure, Category = "OJJ|Swim")
@@ -375,6 +386,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
 	float ClimbSpeed = 175.f;
 
+	// [끊김① 준등속] 등반 진입 시 CMC MaxAcceleration을 이 값으로 덮어 Velocity.Z가 ClimbSpeed로 빠르게 수렴
+	// (가변 가속 램프 최소화 → PlayRate가 실제 속도를 바로 반영). 종료 시 진입 전 값으로 복원. 크게=거의 즉시 도달.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
+	float ClimbMaxAcceleration = 8192.f;
+
 	// [#184] 등반 시작 시 캐릭터를 사다리 안쪽(GetStepOffDirection, +X) 바라보게 회전 + 이 오프셋을 더한다.
 	// 메시 기본 yaw 오프셋(보통 -90°)·애니 제작 방향 때문에 그대로면 옆을 볼 수 있어 PIE에서 ±90 조정용
 	// (재컴파일 없이 디테일 패널). 기본 0 — 캐릭터가 옆 보면 이 값으로 맞춤.
@@ -432,6 +448,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
 	float FinishTriggerDistance = 150.f;
 
+	// [루트모션 올라서기] 루트모션 Finish 몽타주 핸드오프 시작 거리(uu). 발이 top까지 이만큼 남으면 비행 수직
+	// 이동을 끊고 루트모션 몽타주가 캐릭터를 슬래브 위로 안착시킨다(애니=위치 일치). ⚠️ 몽타주의 실제 상승 루트모션
+	// 변위와 같게 튜닝해야 자연스럽다(작으면 몽타주가 덜 올라가 종료 스냅 크게, 크면 붕 뜬 뒤 몽타주 재생). 몽타주
+	// 미할당/재생 실패(Woman 등)면 무시 — 기존 step-off 폴백. FinishTriggerDistance(짧은 사다리 스킵 기준)와 별개.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
+	float ClimbFinishHandoffDistance = 100.f;
+
+	// [루트모션 올라서기] 몽타주 종료 후 발 Z를 슬래브 표면(top)+캡슐 반높이에 맞추는 스냅 보정 허용 오차(uu).
+	// 루트모션 종료 위치가 이 오차를 넘게 어긋나면 Z만 스냅(XY는 루트모션 결과 유지). 0이면 항상 스냅.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
+	float ClimbFinishZSnapTolerance = 3.f;
+
 	// 현재 오르는 사다리(없으면 null). 등반 상태의 단일 진실원.
 	UPROPERTY(Transient)
 	TObjectPtr<AOJJ_Ladder> CurrentLadder;
@@ -446,6 +474,14 @@ protected:
 	// 등반 활성 플래그(#184). CurrentLadder와 함께 set/clear. 사다리가 GC/파괴로 사라지면 포인터는
 	// null이 되지만 이 플래그로 '비정상 소멸'을 감지해 비행/중력0 고착을 Tick에서 복구.
 	bool bClimbing = false;
+
+	// [끊김① 방향 래치] 마지막 비영 등반 입력 방향(+1 위/-1 아래). BeginClimb서 +1, Move서 Axis.Y 비영 시 갱신.
+	// GetClimbDirection이 노출 — Velocity.Z 부호 대신 이 값으로 ABP 상태 전이(0 근처 토글 방지).
+	float ClimbVerticalDir = 1.f;
+
+	// [끊김① 준등속] 등반 진입 전 CMC MaxAcceleration 캐시 — 종료(ResumeWalkingWithCooldown)서 원복. BeginClimb서
+	// ClimbMaxAcceleration로 덮기 직전 저장. 걷기 가속에 영향 주지 않게 정확 복원(단일 출처).
+	float PreClimbMaxAcceleration = 2048.f;
 
 	// 기본 yaw 회전 속도(°/s) 단일 출처 — 생성자 RotationRate와 수영 이탈 원복이 같은 값을 보게(매직넘버 방지).
 	static constexpr float DefaultRotationRateYaw = 540.0f;
@@ -510,6 +546,11 @@ protected:
 	// [#184] Finish 마무리 몽타주 한 등반당 1회 재생 가드. FinishTriggerDistance 도달 시 set,
 	// BeginClimb/AbortClimb에서 clear. 미설정 시 매 프레임 재트리거되어 몽타주가 처음부터 반복("계속 나옴").
 	bool bFinishPlaying = false;
+
+	// [루트모션 올라서기] 루트모션 Finish 몽타주로 슬래브에 안착하는 중(비행 종료→몽타주가 위치 전담). 이 동안
+	// Move()의 등반/걷기 입력과 Tick의 X/Y 당김을 모두 차단해 '이중이동'을 막는다. 몽타주 종료 델리게이트에서 clear.
+	bool bClimbFinishing = false;
+
 	FVector StepOffStart = FVector::ZeroVector;
 	FVector StepOffTarget = FVector::ZeroVector;
 	float StepOffElapsed = 0.f;
@@ -517,6 +558,15 @@ protected:
 	// [#184] 등반 면 위치: 사다리에서 바깥(Foundation 반대)으로 (캡슐반경 + ClimbFaceGap) 떨어진 X/Y + 주어진 Z.
 	// 등반 시작 스냅·등반 중 X/Y 고정 공용(진입 위치가 멀어도 사다리에 붙여 오르게).
 	FVector OJJ_GetClimbFaceLocation(const AOJJ_Ladder* Ladder, float WorldZ) const;
+
+	// [루트모션 올라서기] top 근처(ClimbFinishHandoffDistance) 도달 시 호출 — 잔여 비행 속도를 죽이고 루트모션
+	// Finish 몽타주를 재생, 종료 델리게이트를 건다. 성공 시 true(이후 위치는 루트모션 전담). 몽타주/AnimInstance
+	// 없거나 재생 실패(스켈레톤 불일치 등, Woman)면 false → 호출측이 기존 step-off EndClimb로 폴백.
+	bool BeginClimbFinish();
+
+	// [루트모션 올라서기] Finish 몽타주 종료 콜백(Montage_SetEndDelegate, 비다이나믹). 슬래브 표면에 발 Z 스냅
+	// 보정(ClimbFinishZSnapTolerance) 후 걷기 복귀. 중단(bInterrupted)이면 스냅 생략.
+	void OnLadderFinishMontageEnded(class UAnimMontage* Montage, bool bInterrupted);
 
 	// 등반/step-off 종료 후 걷기 복귀 + 재진입 쿨다운 개시(공통 단일원).
 	void ResumeWalkingWithCooldown();
