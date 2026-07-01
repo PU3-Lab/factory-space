@@ -10,11 +10,15 @@
 
 class UTextRenderComponent;
 class UBillboardComponent;
+class UAudioComponent;
 class UPointLightComponent;
 class UWidgetComponent;
 class AOJJ_Grid;
 class UStaticMesh;
 class UTexture2D;
+class UNiagaraComponent;
+class UNiagaraSystem;
+class USoundBase;
 
 // 효율 modifier 키 모음 (요인별). 새 효율 요인은 여기에 한 줄 추가 — 머신/이벤트 매니저 등
 // 양쪽 파일의 문자열 중복을 방지하는 단일 정의 지점. 정의는 MachineBase.cpp.
@@ -180,6 +184,15 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Components")
 	UPointLightComponent* StateIndicatorLightComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Components")
+	UNiagaraComponent* OperatingSmokeComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Components")
+	UNiagaraComponent* OperatingSmokeComponent2;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Components")
+	UAudioComponent* OperatingSoundComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Debug")
 	UTextRenderComponent* DebugBufferText;
 
@@ -257,6 +270,54 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator")
 	bool bEnableStateIndicatorIconGlow = true;
+
+	// Derived machine Blueprints opt in to operating smoke independently.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | Operating Smoke",
+		meta = (DisplayName = "Use Operating Smoke 1"))
+	bool bUseOperatingSmoke = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | Operating Smoke",
+		meta = (DisplayName = "Operating Smoke System 1", EditCondition = "bUseOperatingSmoke"))
+	TObjectPtr<UNiagaraSystem> OperatingSmokeSystem;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | Operating Smoke",
+		meta = (DisplayName = "Operating Smoke Socket Name 1", EditCondition = "bUseOperatingSmoke"))
+	FName OperatingSmokeSocketName = NAME_None;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | Operating Smoke",
+		meta = (DisplayName = "Operating Smoke Relative Transform 1", EditCondition = "bUseOperatingSmoke"))
+	FTransform OperatingSmokeRelativeTransform = FTransform::Identity;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | Operating Smoke",
+		meta = (DisplayName = "Use Operating Smoke 2"))
+	bool bUseOperatingSmoke2 = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | Operating Smoke",
+		meta = (DisplayName = "Operating Smoke System 2", EditCondition = "bUseOperatingSmoke2"))
+	TObjectPtr<UNiagaraSystem> OperatingSmokeSystem2;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | Operating Smoke",
+		meta = (EditCondition = "bUseOperatingSmoke2"))
+	FName OperatingSmokeSocketName2 = NAME_None;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | Operating Smoke",
+		meta = (EditCondition = "bUseOperatingSmoke2"))
+	FTransform OperatingSmokeRelativeTransform2 = FTransform::Identity;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | Operating Sound")
+	bool bUseOperatingSound = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | Operating Sound",
+		meta = (EditCondition = "bUseOperatingSound"))
+	TObjectPtr<USoundBase> OperatingSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | Operating Sound",
+		meta = (ClampMin = "0.0", EditCondition = "bUseOperatingSound"))
+	float OperatingSoundVolumeMultiplier = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | Operating Sound",
+		meta = (ClampMin = "0.01", EditCondition = "bUseOperatingSound"))
+	float OperatingSoundPitchMultiplier = 1.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "1.0"))
 	float StateIndicatorIconDrawSize = 256.0f;
@@ -478,6 +539,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Machine | State Indicator")
 	void UpdateStateIndicator();
 
+	UFUNCTION(BlueprintPure, Category = "Machine | Operating Smoke")
+	virtual bool CanPlayOperatingSmoke() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Machine | Operating Smoke")
+	void RefreshOperatingSmoke();
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Operating Sound")
+	bool CanPlayOperatingSound() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Machine | Operating Sound")
+	void RefreshOperatingSound();
+
 	void UpdateDebugTextFacingPlayer();
 
 	void UpdateStateIndicatorFacingPlayer();
@@ -590,4 +663,9 @@ public:
 
 protected:
 	virtual bool ShouldRefundBuffersToWarehouseOnRemoval() const { return true; }
+
+private:
+	bool bOperatingSmokeActive = false;
+	bool bOperatingSmokeActive2 = false;
+	bool bOperatingSoundActive = false;
 };
