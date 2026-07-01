@@ -1,9 +1,12 @@
 #include "UI/UI_DialogueBalloon.h"
+#include "Blueprint/WidgetTree.h"
 #include "Components/TextBlock.h"
 #include "Components/Widget.h"
 #include "Components/EditableText.h"
+#include "Components/Image.h"
 #include "Components/SizeBox.h"
 #include "Engine/GameInstance.h"
+#include "Engine/Texture2D.h"
 #include "Input/Reply.h"
 #include "FactoryAgentClientSubsystem.h" 
 #include "FactoryAgentJsonUtils.h"       
@@ -41,7 +44,19 @@ void UUI_DialogueBalloon::NativeConstruct()
         QuestSubsystem->OnTutorialDialogueLogged.AddDynamic(this, &UUI_DialogueBalloon::HandleTutorialDialogueLogged);
     }
 
+    if (!IMG_RightClickPrompt && WidgetTree)
+    {
+        IMG_RightClickPrompt = Cast<UImage>(WidgetTree->FindWidget(TEXT("IMG_RightClickPrompt")));
+    }
+
+    ApplyContinuePromptBrush();
     RefreshDialogueUI();
+}
+
+void UUI_DialogueBalloon::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+    Super::NativeTick(MyGeometry, InDeltaTime);
+    UpdateContinuePromptBlink(InDeltaTime);
 }
 
 void UUI_DialogueBalloon::NativeDestruct()
@@ -146,6 +161,7 @@ void UUI_DialogueBalloon::RefreshDialogueUI()
         return;
     }
     CachedLines.Empty();
+    CachedTriggerType.Empty();
     if (!QuestSubsystem)
     {
         DisplayCurrentLine();
@@ -156,6 +172,7 @@ void UUI_DialogueBalloon::RefreshDialogueUI()
         FString LoggedQuestId;
         FString LoggedTriggerType;
         QuestSubsystem->GetLastTutorialDialogueLog(LoggedQuestId, LoggedTriggerType, CachedLines);
+        CachedTriggerType = LoggedTriggerType;
         DisplayCurrentLine();
         return;
     }
@@ -166,6 +183,7 @@ void UUI_DialogueBalloon::RefreshDialogueUI()
         return;
     }
     QuestSubsystem->GetTutorialDialogueLines(CurrentStep.QuestId, TEXT("on_start"), CachedLines);
+    CachedTriggerType = TEXT("on_start");
     DisplayCurrentLine();
 }
 
@@ -182,17 +200,20 @@ void UUI_DialogueBalloon::HandleTutorialDialogueLogged(const FString& QuestId, c
     if (Lines.IsEmpty())
     {
         CachedLines.Empty();
+        CachedTriggerType = TriggerType;
         DisplayCurrentLine();
         return;
     }
     if (TriggerType == TEXT("on_complete"))
     {
         CachedLines = Lines;
+        CachedTriggerType = TriggerType;
         DisplayCurrentLine();
         return;
     }
     if (TriggerType != TEXT("on_start")) return;
     CachedLines = Lines;
+    CachedTriggerType = TriggerType;
     DisplayCurrentLine();
 }
 
@@ -222,6 +243,7 @@ void UUI_DialogueBalloon::DisplayCurrentLine()
         if (SB_DialogueData)   SB_DialogueData->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         if (DialogueContainer) DialogueContainer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         if (TXT_Dialogue)      TXT_Dialogue->SetText(FText::FromString(ExternalDialogueText));
+        UpdateContinuePromptVisibility();
         return;
     }
 
@@ -232,6 +254,7 @@ void UUI_DialogueBalloon::DisplayCurrentLine()
         if (SB_DialogueData)   SB_DialogueData->SetVisibility(ESlateVisibility::Collapsed);
         if (DialogueContainer) DialogueContainer->SetVisibility(ESlateVisibility::Collapsed);
         if (TXT_Dialogue)      TXT_Dialogue->SetText(FText::GetEmpty());
+        UpdateContinuePromptVisibility();
         return;
     }
 
@@ -247,6 +270,60 @@ void UUI_DialogueBalloon::DisplayCurrentLine()
     }
 
     if (TXT_Dialogue) TXT_Dialogue->SetText(FText::FromString(CombinedDialogue));
+    UpdateContinuePromptVisibility();
+}
+
+void UUI_DialogueBalloon::UpdateContinuePromptVisibility()
+{
+    const bool bShouldShowPrompt = !bHasExternalDialogue
+        && !CachedLines.IsEmpty()
+        && CachedTriggerType == TEXT("on_complete")
+        && (!CachedLines.Last().Dialogue.Contains(TEXT(". 을 눌러서 창 닫기")));
+
+    bShowRightClickPrompt = bShouldShowPrompt;
+    if (!IMG_RightClickPrompt)
+    {
+        return;
+    }
+
+    if (!bShowRightClickPrompt)
+    {
+        IMG_RightClickPrompt->SetVisibility(ESlateVisibility::Collapsed);
+        IMG_RightClickPrompt->SetRenderOpacity(0.0f);
+        RightClickPromptBlinkTime = 0.0f;
+        return;
+    }
+
+    IMG_RightClickPrompt->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+}
+
+void UUI_DialogueBalloon::UpdateContinuePromptBlink(float InDeltaTime)
+{
+    if (!IMG_RightClickPrompt || !bShowRightClickPrompt)
+    {
+        return;
+    }
+
+    RightClickPromptBlinkTime += FMath::Max(0.0f, InDeltaTime);
+    const float Alpha = 0.35f + (0.65f * (0.5f + 0.5f * FMath::Sin(RightClickPromptBlinkTime * 6.0f)));
+    IMG_RightClickPrompt->SetRenderOpacity(Alpha);
+}
+
+void UUI_DialogueBalloon::ApplyContinuePromptBrush()
+{
+    if (!IMG_RightClickPrompt)
+    {
+        return;
+    }
+
+    static const TCHAR* RightClickTexturePath = TEXT("/Game/LDJ/UI/UI_Image/RightClick.RightClick");
+    if (UTexture2D* RightClickTexture = LoadObject<UTexture2D>(nullptr, RightClickTexturePath))
+    {
+        IMG_RightClickPrompt->SetBrushFromTexture(RightClickTexture, true);
+    }
+
+    IMG_RightClickPrompt->SetVisibility(ESlateVisibility::Collapsed);
+    IMG_RightClickPrompt->SetRenderOpacity(0.0f);
 }
 
 FReply UUI_DialogueBalloon::NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
