@@ -2765,6 +2765,21 @@ void AOJJ_Player::SetMachineLevel(const FString& MachineTypeName, int32 NewLevel
 		TEXT("[SetMachineLevel] %s level set to %d."),
 		*MachineTypeName,
 		NewLevel);
+
+	// [#3 레벨업 빌드업] 메시 교체(서브시스템 SetMachineLevel) 직후 — 해당 타입 머신을 순회하며
+	// 홀로그램 빌드업(아래→위 차오름) 재생. StartBuildUpEffect가 교체된 현재 메시로 프록시 생성.
+	// 이 함수는 독립 Exec 명령(UpgradeMachineLevel과 호출관계 없음) → 여기 트리거해도 중복 없음.
+	if (BuildController)
+	{
+		for (TActorIterator<AMachineBase> It(GetWorld()); It; ++It)
+		{
+			AMachineBase* Machine = *It;
+			if (Machine && Machine->GetMachineType() == MachineType)
+			{
+				BuildController->StartBuildUpEffect(Machine, Machine->GetMeshComponent());
+			}
+		}
+	}
 }
 
 void AOJJ_Player::UpgradeMachineLevel(const FString& MachineTypeName, int32 UpgradeCount)
@@ -2817,6 +2832,20 @@ void AOJJ_Player::UpgradeMachineLevel(const FString& MachineTypeName, int32 Upgr
 		*MachineTypeName,
 		SuccessCount,
 		MachineSubsystem->GetMachineLevel(MachineType));
+
+	// [#3 레벨업 빌드업] UpgradeCount 루프로 메시가 이미 최종 레벨로 교체된 뒤 — 루프 종료 후 1회만
+	// 순회 트리거(중복 재생 방지). StartBuildUpEffect가 교체된 현재 메시로 프록시(아래→위) 생성.
+	if (BuildController)
+	{
+		for (TActorIterator<AMachineBase> It(GetWorld()); It; ++It)
+		{
+			AMachineBase* Machine = *It;
+			if (Machine && Machine->GetMachineType() == MachineType)
+			{
+				BuildController->StartBuildUpEffect(Machine, Machine->GetMeshComponent());
+			}
+		}
+	}
 }
 
 void AOJJ_Player::ResetGame()
