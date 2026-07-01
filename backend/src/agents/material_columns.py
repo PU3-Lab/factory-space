@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 
 
-def get_unreal_material_column_values() -> dict[str, str]:
+def get_unreal_material_column_values(visual_color: str | None = None) -> dict[str, str]:
     """언리얼 CSV 연동용 기본 신물질 컬럼값을 새 dict로 반환합니다."""
     return {
         "rowname": "wood",
@@ -16,7 +16,7 @@ def get_unreal_material_column_values() -> dict[str, str]:
         "type": "organism",
         "shape": "",
         "DIsplayName": "목재",
-        "VisualColor": "(R=0.49,G=0.31,B=0.16,A=1.0)",
+        "VisualColor": visual_color or "(R=0.49,G=0.31,B=0.16,A=1.0)",
     }
 
 

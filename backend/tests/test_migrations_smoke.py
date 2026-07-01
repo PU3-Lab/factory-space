@@ -86,8 +86,8 @@ def test_alembic_migrations_sqlite_smoke() -> None:
             # Test generated_materials table
             conn.execute(
                 text(
-                    "INSERT INTO generated_materials (id, material_hash, name, category, rarity, properties_json) "
-                    "VALUES (:id, :hash, :name, :category, :rarity, :props)"
+                    "INSERT INTO generated_materials (id, material_hash, name, category, rarity, properties_json, visual_color) "
+                    "VALUES (:id, :hash, :name, :category, :rarity, :props, :visual_color)"
                 ),
                 {
                     "id": "mat_smoke_1",
@@ -96,6 +96,7 @@ def test_alembic_migrations_sqlite_smoke() -> None:
                     "category": "alloy",
                     "rarity": "rare",
                     "props": "{}",
+                    "visual_color": "(R=0.25,G=0.50,B=0.75,A=1.0)",
                 },
             )
 
