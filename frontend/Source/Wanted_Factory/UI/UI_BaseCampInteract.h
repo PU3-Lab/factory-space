@@ -53,6 +53,7 @@ protected:
 
     // --- 공장 상태창 탭 관련 ---
     UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_PowerStatus;
+    UPROPERTY(meta = (BindWidget)) class UProgressBar* PB_PowerStatus;
     UPROPERTY(meta = (BindWidget)) class UScrollBox* SB_ResourceList;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BaseCamp UI|Config")
     TSubclassOf<class UUI_FactoryStatusRow> FactoryStatusRowClass;

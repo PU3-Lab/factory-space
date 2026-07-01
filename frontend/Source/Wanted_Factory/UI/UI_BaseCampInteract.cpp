@@ -235,15 +235,34 @@ void UUI_BaseCampInteract::SwitchSubPaneMode(EBaseCampSubMode NewMode)
 
 void UUI_BaseCampInteract::RefreshFactoryStatus()
 {
-    if (!TXT_PowerStatus || !SB_ResourceList) return;
+    // PB_PowerStatus가 유효한지 검사하는 방어선 구축
+    if (!TXT_PowerStatus || !PB_PowerStatus || !SB_ResourceList) return;
+
     SB_ResourceList->ClearChildren();
+
     UGameInstance* GI = GetGameInstance();
     UFactoryManagerSubsystem* FactoryManager = GI ? GI->GetSubsystem<UFactoryManagerSubsystem>() : nullptr;
     if (!FactoryManager) return;
 
+    // 전력 데이터 반영
     FFactoryPowerOverview PowerOverview = FactoryManager->GetFactoryPowerOverview();
     FString PowerString = FString::Printf(TEXT("%.1fW / %.1fW"), PowerOverview.CurrentDemandPower, PowerOverview.CurrentAvailablePower);
     TXT_PowerStatus->SetText(FText::FromString(PowerString));
+
+    // 프로그레스 바 퍼센트 계산 (0.0f ~ 1.0f)
+    float PowerPercent = 0.0f;
+    
+    // 최대 전력이 0일 때 나누기 오류(Division by Zero)가 나는 것을 방지합니다.
+    if (PowerOverview.CurrentAvailablePower > 0.0f)
+    {
+        PowerPercent = PowerOverview.CurrentDemandPower / PowerOverview.CurrentAvailablePower;
+    }
+
+    // 전력 소모가 공급을 초과했을 때 게이지가 터져 나가지 않도록 0.0 ~ 1.0 사이로 안전하게 락을 겁니다.
+    PowerPercent = FMath::Clamp(PowerPercent, 0.0f, 1.0f);
+
+    // 계산된 비율을 프로그레스 바에 장착!
+    PB_PowerStatus->SetPercent(PowerPercent);
 
     TArray<FFactoryItemProductionStat> ProductionStats = FactoryManager->GetItemProductionStats();
     for (const FFactoryItemProductionStat& Stat : ProductionStats)
