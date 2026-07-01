@@ -47,6 +47,7 @@ public:
 
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	FORCEINLINE class UUI_Inventory* GetInventoryWidgetInstance() const { return InventoryWidgetInstance; }
+	void ShowMainHUDSaveIndicator(float DisplaySeconds);
 
 	// --- 사다리 등반 (#184, AOJJ_Ladder가 트리거에서 호출) ---
 	// 등반 시작: MOVE_Flying+중력0로 전환, 현재 사다리 캐시. 이미 등반 중이면 no-op.

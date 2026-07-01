@@ -23,6 +23,7 @@ constexpr TCHAR AgentErrorType[] = TEXT("agent.error");
 constexpr TCHAR AgentProgressType[] = TEXT("agent.progress");
 constexpr TCHAR QuestGeneratorAgentId[] = TEXT("quest_generator");
 constexpr TCHAR OperatorGuideAgentId[] = TEXT("operator_guide");
+constexpr TCHAR MaterialGenerationAgentId[] = TEXT("material_generation");
 constexpr TCHAR ProcessOptimizerAgentId[] = TEXT("process_optimizer");
 constexpr TCHAR QuestSampleRequestId[] = TEXT("request-quest-sample");
 constexpr TCHAR QuestSampleSessionId[] = TEXT("smoke-session");
@@ -30,6 +31,8 @@ constexpr TCHAR QuestSampleClientId[] = TEXT("smoke-client");
 constexpr TCHAR OperatorGuideRequestId[] = TEXT("operator-guide-demo-multi-001");
 constexpr TCHAR OperatorGuideSessionId[] = TEXT("operator-guide-demo-session");
 constexpr TCHAR OperatorGuideClientId[] = TEXT("unreal-client");
+constexpr TCHAR MaterialGenerationSessionId[] = TEXT("player-session-001");
+constexpr TCHAR MaterialGenerationClientId[] = TEXT("unreal-client");
 constexpr TCHAR ProcessOptimizerSessionId[] = TEXT("player-session-001");
 constexpr TCHAR ProcessOptimizerClientId[] = TEXT("unreal-client");
 constexpr TCHAR DefaultSessionId[] = TEXT("dev-session");
@@ -180,6 +183,17 @@ TArray<TSharedPtr<FJsonValue>> MakeStringArray(const TArray<FString>& Values)
 	}
 
 	return JsonValues;
+}
+
+bool TryGetBoolField(const TSharedPtr<FJsonObject>& JsonObject, const TCHAR* FieldName, bool DefaultValue = false)
+{
+	bool Value = DefaultValue;
+	if (JsonObject.IsValid())
+	{
+		JsonObject->TryGetBoolField(FieldName, Value);
+	}
+
+	return Value;
 }
 
 FString MakeMachineIdString(const FMachineNode& MachineNode)
@@ -434,6 +448,83 @@ bool UFactoryAgentClientSubsystem::SendOperatorGuideQuestion(const FString& Ques
 	RequestObject->SetStringField(TEXT("session_id"), OperatorGuideSessionId);
 	RequestObject->SetStringField(TEXT("client_id"), ClientId.IsEmpty() ? OperatorGuideClientId : ClientId);
 	RequestObject->SetStringField(TEXT("agent"), OperatorGuideAgentId);
+	RequestObject->SetObjectField(TEXT("payload"), PayloadObject.ToSharedRef());
+	RequestObject->SetObjectField(TEXT("context"), ContextObject.ToSharedRef());
+
+	return SendRawMessage(FactoryAgentJsonUtils::WriteJsonObject(RequestObject));
+}
+
+bool UFactoryAgentClientSubsystem::SendMaterialGenerationRequest(
+	const TArray<FFactoryMaterialRequestInput>& Inputs,
+	const FString& PlayerId,
+	bool bGenerateVisualAsset,
+	const FString& ClientId)
+{
+	TArray<FFactoryMaterialRequestInput> NormalizedInputs;
+	NormalizedInputs.Reserve(Inputs.Num());
+	for (const FFactoryMaterialRequestInput& Input : Inputs)
+	{
+		if (Input.ItemId.IsNone() || Input.Quantity <= 0)
+		{
+			continue;
+		}
+
+		NormalizedInputs.Add(Input);
+	}
+
+	NormalizedInputs.Sort([](const FFactoryMaterialRequestInput& Left, const FFactoryMaterialRequestInput& Right)
+	{
+		if (Left.ItemId != Right.ItemId)
+		{
+			return Left.ItemId.LexicalLess(Right.ItemId);
+		}
+
+		return Left.Quantity < Right.Quantity;
+	});
+
+	if (NormalizedInputs.Num() == 0)
+	{
+		LOG_LC_W(TEXT("Material generation request has no valid inputs."));
+		return false;
+	}
+
+	TArray<TSharedPtr<FJsonValue>> InputArray;
+	InputArray.Reserve(NormalizedInputs.Num());
+	for (const FFactoryMaterialRequestInput& Input : NormalizedInputs)
+	{
+		const TSharedPtr<FJsonObject> InputObject = MakeShared<FJsonObject>();
+		InputObject->SetStringField(TEXT("item_id"), Input.ItemId.ToString());
+		InputObject->SetNumberField(TEXT("qty"), Input.Quantity);
+		InputArray.Add(MakeShared<FJsonValueObject>(InputObject));
+	}
+
+	const TSharedPtr<FJsonObject> ProcessConditionsObject = MakeShared<FJsonObject>();
+	ProcessConditionsObject->SetStringField(TEXT("temperature"), TEXT("default"));
+	ProcessConditionsObject->SetStringField(TEXT("pressure"), TEXT("default"));
+	ProcessConditionsObject->SetField(TEXT("catalyst"), MakeShared<FJsonValueNull>());
+
+	const TSharedPtr<FJsonObject> PayloadObject = MakeShared<FJsonObject>();
+	PayloadObject->SetStringField(TEXT("machine_type"), TEXT("Synthesizer"));
+	PayloadObject->SetArrayField(TEXT("inputs"), InputArray);
+	PayloadObject->SetObjectField(TEXT("process_conditions"), ProcessConditionsObject.ToSharedRef());
+	PayloadObject->SetStringField(TEXT("player_id"), PlayerId.TrimStartAndEnd().IsEmpty() ? TEXT("player_001") : PlayerId.TrimStartAndEnd());
+	PayloadObject->SetBoolField(TEXT("generate_visual_asset"), bGenerateVisualAsset);
+
+	const TSharedPtr<FJsonObject> ContextObject = MakeShared<FJsonObject>();
+	ContextObject->SetStringField(TEXT("language"), TEXT("ko"));
+	ContextObject->SetStringField(TEXT("mode"), TEXT("gameplay"));
+	ContextObject->SetStringField(TEXT("source"), TEXT("basecamp"));
+
+	const FString RequestId = FString::Printf(
+		TEXT("material-exp-%s"),
+		*FGuid::NewGuid().ToString(EGuidFormats::Digits).Left(12).ToLower());
+
+	const TSharedPtr<FJsonObject> RequestObject = MakeShared<FJsonObject>();
+	RequestObject->SetStringField(TEXT("type"), AgentRequestType);
+	RequestObject->SetStringField(TEXT("request_id"), RequestId);
+	RequestObject->SetStringField(TEXT("session_id"), MaterialGenerationSessionId);
+	RequestObject->SetStringField(TEXT("client_id"), ClientId.IsEmpty() ? MaterialGenerationClientId : ClientId);
+	RequestObject->SetStringField(TEXT("agent"), MaterialGenerationAgentId);
 	RequestObject->SetObjectField(TEXT("payload"), PayloadObject.ToSharedRef());
 	RequestObject->SetObjectField(TEXT("context"), ContextObject.ToSharedRef());
 
@@ -912,10 +1003,20 @@ void UFactoryAgentClientSubsystem::HandleSocketMessage(const FString& Message)
 
 	if (Type == AgentResponseType)
 	{
+		const TSharedPtr<FJsonObject> PayloadObject = FactoryAgentJsonUtils::GetObjectField(RootObject, TEXT("payload"));
+		if (Agent == MaterialGenerationAgentId)
+		{
+			FFactoryMaterialGenerationResponse MaterialResponse;
+			if (TryBuildMaterialGenerationResponse(RequestId, Agent, PayloadObject, MaterialResponse))
+			{
+				OnMaterialGenerationResponseReceived.Broadcast(MaterialResponse);
+			}
+		}
+
 		OnAgentResponseReceived.Broadcast(
 			RequestId,
 			Agent,
-			FactoryAgentJsonUtils::WriteJsonObject(FactoryAgentJsonUtils::GetObjectField(RootObject, TEXT("payload"))),
+			FactoryAgentJsonUtils::WriteJsonObject(PayloadObject),
 			Message);
 		return;
 	}
@@ -957,4 +1058,58 @@ void UFactoryAgentClientSubsystem::ResetSocket()
 		Socket->OnMessage().RemoveAll(this);
 		Socket.Reset();
 	}
+}
+
+bool UFactoryAgentClientSubsystem::TryBuildMaterialGenerationResponse(
+	const FString& RequestId,
+	const FString& Agent,
+	const TSharedPtr<FJsonObject>& PayloadObject,
+	FFactoryMaterialGenerationResponse& OutResponse) const
+{
+	if (!PayloadObject.IsValid())
+	{
+		return false;
+	}
+
+	OutResponse.RequestId = RequestId;
+	OutResponse.Agent = Agent;
+	OutResponse.ResultType = FactoryAgentJsonUtils::GetStringField(PayloadObject, TEXT("result_type"));
+	OutResponse.ExperimentHash = FactoryAgentJsonUtils::GetStringField(PayloadObject, TEXT("experiment_hash"));
+	OutResponse.RecipeName = FactoryAgentJsonUtils::GetStringField(PayloadObject, TEXT("recipe_name"));
+	OutResponse.MaterialId = FactoryAgentJsonUtils::GetStringField(PayloadObject, TEXT("material_id"));
+	OutResponse.Name = FactoryAgentJsonUtils::GetStringField(PayloadObject, TEXT("name"));
+	OutResponse.GenerationStatus = FactoryAgentJsonUtils::GetStringField(PayloadObject, TEXT("generation_status"));
+	OutResponse.VisualStatus = FactoryAgentJsonUtils::GetStringField(PayloadObject, TEXT("visual_status"));
+	OutResponse.VisualAssetKey = FactoryAgentJsonUtils::GetStringField(PayloadObject, TEXT("visual_asset_key"));
+	OutResponse.TextureAssetKey = FactoryAgentJsonUtils::GetStringField(PayloadObject, TEXT("texture_asset_key"));
+	OutResponse.ThumbnailAssetKey = FactoryAgentJsonUtils::GetStringField(PayloadObject, TEXT("thumbnail_asset_key"));
+	OutResponse.FallbackIcon = FactoryAgentJsonUtils::GetStringField(PayloadObject, TEXT("fallback_icon"));
+	OutResponse.Message = FactoryAgentJsonUtils::GetStringField(PayloadObject, TEXT("message"));
+	OutResponse.bCached = TryGetBoolField(PayloadObject, TEXT("cached"));
+	OutResponse.RawPayloadJson = FactoryAgentJsonUtils::WriteJsonObject(PayloadObject);
+
+	const TArray<TSharedPtr<FJsonValue>>* OutputValues = nullptr;
+	if (PayloadObject->TryGetArrayField(TEXT("outputs"), OutputValues) && OutputValues != nullptr)
+	{
+		for (const TSharedPtr<FJsonValue>& OutputValue : *OutputValues)
+		{
+			if (!OutputValue.IsValid() || OutputValue->Type != EJson::Object)
+			{
+				continue;
+			}
+
+			const TSharedPtr<FJsonObject> OutputObject = OutputValue->AsObject();
+			if (!OutputObject.IsValid())
+			{
+				continue;
+			}
+
+			FFactoryMaterialResponseOutput Output;
+			Output.ItemId = FName(FactoryAgentJsonUtils::GetStringField(OutputObject, TEXT("item_id")));
+			Output.Quantity = FactoryAgentJsonUtils::GetIntegerField(OutputObject, TEXT("qty"), 0);
+			OutResponse.Outputs.Add(Output);
+		}
+	}
+
+	return true;
 }

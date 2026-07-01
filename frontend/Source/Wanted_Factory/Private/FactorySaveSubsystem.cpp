@@ -827,10 +827,22 @@ void UFactorySaveSubsystem::StopAutoSaveTimer()
 
 	World->GetTimerManager().ClearTimer(AutoSaveTimerHandle);
 	World->GetTimerManager().ClearTimer(AutoSaveWarningTimerHandle);
+	World->GetTimerManager().ClearTimer(AutoSaveWarningBlinkTimerHandle);
+	RemainingAutoSaveWarningBlinks = 0;
 }
 
 void UFactorySaveSubsystem::AutoSaveTick()
 {
+	if (AOJJ_Player* Player = CachedPlayer.Get())
+	{
+		if (UWorld* World = Player->GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(AutoSaveWarningBlinkTimerHandle);
+		}
+		RemainingAutoSaveWarningBlinks = 0;
+		Player->ShowMainHUDSaveIndicator(1.0f);
+	}
+
 	if (SaveCurrentGame())
 	{
 		NotifyProcessOptimizerAutoSave();
@@ -839,11 +851,55 @@ void UFactorySaveSubsystem::AutoSaveTick()
 
 void UFactorySaveSubsystem::AutoSaveWarningTick()
 {
+	AOJJ_Player* Player = CachedPlayer.Get();
+	UWorld* World = Player ? Player->GetWorld() : nullptr;
+	if (!World)
+	{
+		return;
+	}
+
+	World->GetTimerManager().ClearTimer(AutoSaveWarningBlinkTimerHandle);
+	RemainingAutoSaveWarningBlinks = FMath::Max(1, FMath::CeilToInt(AutoSaveWarningLeadSeconds));
 	ShowAutoSaveWarning();
+	--RemainingAutoSaveWarningBlinks;
+
+	if (RemainingAutoSaveWarningBlinks > 0)
+	{
+		World->GetTimerManager().SetTimer(
+			AutoSaveWarningBlinkTimerHandle,
+			this,
+			&UFactorySaveSubsystem::AutoSaveWarningBlinkTick,
+			1.0f,
+			true);
+	}
+}
+
+void UFactorySaveSubsystem::AutoSaveWarningBlinkTick()
+{
+	if (RemainingAutoSaveWarningBlinks <= 0)
+	{
+		if (AOJJ_Player* Player = CachedPlayer.Get())
+		{
+			if (UWorld* World = Player->GetWorld())
+			{
+				World->GetTimerManager().ClearTimer(AutoSaveWarningBlinkTimerHandle);
+			}
+		}
+		return;
+	}
+
+	ShowAutoSaveWarning();
+	--RemainingAutoSaveWarningBlinks;
 }
 
 void UFactorySaveSubsystem::ShowAutoSaveWarning() const
 {
+	if (AOJJ_Player* Player = CachedPlayer.Get())
+	{
+		Player->ShowMainHUDSaveIndicator(0.45f);
+		return;
+	}
+
 	if (GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(

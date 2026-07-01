@@ -14,8 +14,10 @@ protected:
 	UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_Dialogue;
 	UPROPERTY(meta = (BindWidget)) class UWidget* DialogueContainer;
 	UPROPERTY(meta = (BindWidget)) class USizeBox* SB_DialogueData;
+	UPROPERTY(meta = (BindWidgetOptional)) class UImage* IMG_RightClickPrompt;
 
 	virtual void NativeConstruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 public:
@@ -42,6 +44,9 @@ private:
 	void HandleTutorialDialogueLogged(const FString& QuestId, const FString& TriggerType, const TArray<FTutorialQuestDialogueLine>& Lines);
 
 	void DisplayCurrentLine();
+	void UpdateContinuePromptVisibility();
+	void UpdateContinuePromptBlink(float InDeltaTime);
+	void ApplyContinuePromptBrush();
 	
 	UFUNCTION()
 	void HandleOnTextCommitted(const FText& Text, ETextCommit::Type CommitType);
@@ -59,6 +64,9 @@ private:
 	class UQuestManagerSubsystem* QuestSubsystem;
 
 	TArray<FTutorialQuestDialogueLine> CachedLines;
+	FString CachedTriggerType;
 	bool bHasExternalDialogue = false;
 	FString ExternalDialogueText;
+	bool bShowRightClickPrompt = false;
+	float RightClickPromptBlinkTime = 0.0f;
 };
