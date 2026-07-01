@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from agents.base import AgentContext, AgentRunResult
+from agents.material_columns import get_unreal_material_column_values
 
 
 class NewMaterialGeneratorAgent:
@@ -31,7 +32,14 @@ class NewMaterialGeneratorAgent:
             '      "name": "신소재 이름",\n'
             '      "role": "역할",\n'
             '      "rarity": "희귀도",\n'
-            '      "production_notes": "생산 메모"\n'
+            '      "production_notes": "생산 메모",\n'
+            '      "rowname": "CSV/DataTable 행 식별자",\n'
+            '      "form": "물질의 물리 상태",\n'
+            '      "substance": "기본 성분 또는 재료 계열",\n'
+            '      "type": "물질 분류",\n'
+            '      "shape": "물질 형태",\n'
+            '      "DIsplayName": "UI에 표시할 한국어 이름",\n'
+            '      "VisualColor": "언리얼 RGBA 색상 문자열"\n'
             "    }\n"
             "  ]\n"
             "}"
@@ -52,6 +60,7 @@ class NewMaterialGeneratorAgent:
                         "role": goal,
                         "rarity": "standard",
                         "production_notes": "초기 fallback 후보입니다.",
+                        **get_unreal_material_column_values(),
                     }
                 ]
             },
