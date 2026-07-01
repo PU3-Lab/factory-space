@@ -19,7 +19,6 @@ namespace
         TArray<FString> ObjectiveTexts;
         for (const FQuestObjective& Objective : Quest.Objectives)
         {
-            // 수치 부분: 각각 독립적으로 태그를 열고 닫아 중첩을 원천 차단합니다.
             ObjectiveTexts.Add(FString::Printf(TEXT("<SkyBlue>%d</><Default>/</><Blue>%d</>"), Objective.CurrentCount, Objective.Quantity));
         }
 
@@ -27,20 +26,19 @@ namespace
             ? TEXT("<SkyBlue>0</><Default>/</><Blue>0</>")
             : FString::Join(ObjectiveTexts, TEXT("<Default>, </>"));
 
+        FString Line1 = FString::Printf(TEXT("<Default>- %s (</>%s<Default>)</>"), *Quest.Title.ToString(), *ProgressText);
+        FString Line2;
+
         if (Quest.Status == EQuestStatus::Completed)
         {
-            // 완료 상태: 본문 및 괄호는 Default(검은색) ➡️ 오직 맨 뒤 [Completed]만 Completed(연두색)
-            return FString::Printf(TEXT("<Default>- %s (</>%s<Default>) </><Completed>[Completed]</>"), 
-                *Quest.Title.ToString(), 
-                *ProgressText);
+            Line2 = TEXT("<Completed>    [Completed]</>");
         }
         else
         {
-            // 진행 중 상태: 본문 및 괄호는 Default(검은색) ➡️ 오직 맨 뒤 [In Progress]만 InProgress(노란색)
-            return FString::Printf(TEXT("<Default>- %s (</>%s<Default>) </><InProgress>[In Progress]</>"), 
-                *Quest.Title.ToString(), 
-                *ProgressText);
+            Line2 = TEXT("<InProgress>    [In Progress]</>");
         }
+
+        return FString::Printf(TEXT("%s\n%s"), *Line1, *Line2);
     }
 
     FString BuildRewardText(const FQuestState& Quest)
@@ -138,7 +136,9 @@ void UUI_QuestWindow::UpdateMainQuestUI(const FQuestState& MainQuest)
         return;
     }
 
-    TXT_MainQuestTitle->SetText(MainQuest.Title);
+    FText BracketedTitle = FText::Format(FText::FromString(TEXT("[ {0} ]")), MainQuest.Title);
+    TXT_MainQuestTitle->SetText(BracketedTitle);
+
     TXT_MainQuestDesc->SetText(MainQuest.Description);
 }
 
@@ -260,6 +260,13 @@ void UUI_QuestWindow::ShowSubQuestCompletedNotify(const FQuestState& Quest)
 
 void UUI_QuestWindow::UpdateSubQuestTexts(const TArray<FQuestState>& Quests)
 {
+    // 서브퀘스트 데이터가 없으면 안내문을 켜고, 있으면 완전히 접어버립니다.
+    if (TXT_NoSubQuestsPlaceholder)
+    {
+        ESlateVisibility NewVisibility = Quests.IsEmpty() ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed;
+        TXT_NoSubQuestsPlaceholder->SetVisibility(NewVisibility);
+    }
+
     TArray<URichTextBlock*> SubBoxes = { TXT_SubQuest_1, TXT_SubQuest_2, TXT_SubQuest_3, TXT_SubQuest_4, TXT_SubQuest_5 };
 
     for (int32 i = 0; i < SubBoxes.Num(); ++i)
@@ -271,7 +278,6 @@ void UUI_QuestWindow::UpdateSubQuestTexts(const TArray<FQuestState>& Quests)
 
         if (i < Quests.Num())
         {
-            // 리치 텍스트 문장을 삽입합니다.
             Box->SetText(FText::FromString(BuildSubQuestProgressText(Quests[i])));
             
             if (RowWrapper)
@@ -307,7 +313,9 @@ void UUI_QuestWindow::DisplayTutorialStep(const FTutorialQuestStep& Step)
     UGameInstance* GI = GetGameInstance();
     UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
 
-    TXT_MainQuestTitle->SetText(FText::FromString(Step.Title));
+    FText BracketedTitle = FText::Format(FText::FromString(TEXT("[ {0} ]")), FText::FromString(Step.Title));
+    TXT_MainQuestTitle->SetText(BracketedTitle);
+    
     TXT_MainQuestDesc->SetText(FText::FromString(
         QuestManager
             ? QuestManager->GetTutorialStepDisplayDescription(Step)

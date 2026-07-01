@@ -290,7 +290,7 @@ void UUI_MachineInteract::UpdateInputUI(FName ItemName, int32 CurrentAmount, int
                 if (LoadedTexture) IMG_InputIcon->SetBrushFromTexture(LoadedTexture);
             }
             
-            if (CurrentAmount <= 0) IMG_InputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.15f));
+            if (CurrentAmount <= 0) IMG_InputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.3f));
             else                    IMG_InputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
         }
     }

@@ -301,7 +301,7 @@ void UUI_MoldingMachineInteract::NativeTick(const FGeometry& MyGeometry, float I
             }
             
             // 수량이 0개일 때는 15% 불투명도로 흐릿한 가이드라인 연출, 쌓이면 선명하게(1.0) 연출
-            if (OutputAmount <= 0) IMG_OutputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.15f));
+            if (OutputAmount <= 0) IMG_OutputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.3f));
             else                   IMG_OutputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
         }
     }

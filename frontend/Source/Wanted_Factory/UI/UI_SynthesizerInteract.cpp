@@ -175,7 +175,7 @@ void UUI_SynthesizerInteract::UpdateInputSlotUI(int32 SlotIndex, FName ItemName,
             {
                 UTexture2D* Tex = RowData->ImgAsset.IsValid() ? RowData->ImgAsset.Get() : RowData->ImgAsset.LoadSynchronous();
                 if (Tex) TargetIMG_Icon->SetBrushFromTexture(Tex);
-                TargetIMG_Icon->SetColorAndOpacity(CurrentAmount <= 0 ? FLinearColor(1.f, 1.f, 1.f, 0.15f) : FLinearColor::White);
+                TargetIMG_Icon->SetColorAndOpacity(CurrentAmount <= 0 ? FLinearColor(1.f, 1.f, 1.f, 0.3f) : FLinearColor::White);
             }
         }
     }
