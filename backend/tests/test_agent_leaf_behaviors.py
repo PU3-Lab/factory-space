@@ -95,6 +95,13 @@ def test_new_material_generator_prompt_includes_constraints(
     assert "신소재" in prompt
     assert "heat-resistant alloy" in prompt
     assert "materials" in prompt
+    assert '"rowname": "CSV/DataTable 행 식별자"' in prompt
+    assert '"form": "물질의 물리 상태"' in prompt
+    assert '"substance": "기본 성분 또는 재료 계열"' in prompt
+    assert '"type": "물질 분류"' in prompt
+    assert '"shape": "물질 형태"' in prompt
+    assert '"DIsplayName": "UI에 표시할 한국어 이름"' in prompt
+    assert '"VisualColor": "언리얼 RGBA 색상 문자열"' in prompt
     assert context.request_id not in prompt
 
 
@@ -110,6 +117,13 @@ def test_new_material_generator_fallback_returns_materials_array(
     materials = result.payload["materials"]
     assert isinstance(materials, list) and len(materials) >= 1
     assert materials[0]["role"] == "heat-resistant alloy"
+    assert materials[0]["rowname"] == "wood"
+    assert materials[0]["form"] == "solid"
+    assert materials[0]["substance"] == "wood"
+    assert materials[0]["type"] == "organism"
+    assert materials[0]["shape"] == ""
+    assert materials[0]["DIsplayName"] == "목재"
+    assert materials[0]["VisualColor"] == "(R=0.49,G=0.31,B=0.16,A=1.0)"
 
 
 @pytest.mark.parametrize(

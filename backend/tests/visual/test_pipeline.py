@@ -61,6 +61,19 @@ class _PartialFailureAdapter:
         return buf.getvalue()
 
 
+class _DifferentIconAndTextureAdapter:
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    def generate(self, prompt: str) -> bytes | None:
+        self.call_count += 1
+        color = (255, 0, 0) if self.call_count == 1 else (64, 128, 192)
+        img = Image.new("RGB", (MASTER.width, MASTER.height), color)
+        buf = io.BytesIO()
+        img.save(buf, format=MASTER.format)
+        return buf.getvalue()
+
+
 @pytest.fixture
 def pipeline_session() -> Iterator[tuple[Session, sessionmaker]]:
     engine = create_engine(
@@ -120,6 +133,32 @@ def test_pipeline_sets_visual_ready_on_success(
     assert result.visual_asset_key == "materials/mat_001/icon.png"
     assert result.texture_asset_key == "materials/mat_001/texture.png"
     assert result.thumbnail_asset_key == "materials/mat_001/thumbnail.png"
+
+
+def test_pipeline_extracts_visual_color_from_texture_image(
+    pipeline_session: tuple[Session, sessionmaker],
+) -> None:
+    session, factory = pipeline_session
+    _make_material(session, "mat_color")
+
+    VisualAssetPipeline.session_factory = factory
+    VisualAssetPipeline._image_adapter = _DifferentIconAndTextureAdapter()
+    VisualAssetPipeline._storage_adapter = NoopStorageAdapter()
+
+    try:
+        VisualAssetPipeline.process_visual_asset(
+            "mat_color", "blue alloy surface", "alloy"
+        )
+    finally:
+        VisualAssetPipeline.session_factory = None
+        VisualAssetPipeline._image_adapter = None
+        VisualAssetPipeline._storage_adapter = None
+
+    session.expire_all()
+    result = session.execute(
+        select(GeneratedMaterialModel).where(GeneratedMaterialModel.id == "mat_color")
+    ).scalar_one()
+    assert result.visual_color == "(R=0.25,G=0.50,B=0.75,A=1.0)"
 
 
 def test_pipeline_sets_failed_when_adapter_returns_none(
