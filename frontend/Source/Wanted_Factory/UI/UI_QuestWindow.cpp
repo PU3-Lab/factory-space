@@ -1,6 +1,6 @@
 #include "UI/UI_QuestWindow.h"
 #include "Components/VerticalBox.h"
-#include "Components/Button.h"
+#include "Components/RichTextBlock.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
 #include "UI_QuestNotify.h"
@@ -8,42 +8,50 @@
 
 namespace
 {
-bool ShouldShowSubQuestZone(const FTutorialQuestStep& Step)
-{
-    return Step.QuestId.StartsWith(TEXT("TUT_COMM_"))
-        || Step.QuestId.StartsWith(TEXT("TUT_SIGNAL_"));
-}
-
-FString BuildSubQuestProgressText(const FQuestState& Quest)
-{
-    TArray<FString> ObjectiveTexts;
-    for (const FQuestObjective& Objective : Quest.Objectives)
+    bool ShouldShowSubQuestZone(const FTutorialQuestStep& Step)
     {
-        ObjectiveTexts.Add(FString::Printf(TEXT("%d/%d"), Objective.CurrentCount, Objective.Quantity));
+        return Step.QuestId.StartsWith(TEXT("TUT_COMM_"))
+            || Step.QuestId.StartsWith(TEXT("TUT_SIGNAL_"));
     }
 
-    const FString ProgressText = ObjectiveTexts.IsEmpty()
-        ? TEXT("0/0")
-        : FString::Join(ObjectiveTexts, TEXT(", "));
-    const FString StatusText = Quest.Status == EQuestStatus::Completed
-        ? TEXT("[Completed]")
-        : TEXT("[In Progress]");
-
-    return FString::Printf(TEXT("- %s (%s) %s"), *Quest.Title.ToString(), *ProgressText, *StatusText);
-}
-
-FString BuildRewardText(const FQuestState& Quest)
-{
-    TArray<FString> RewardTexts;
-    for (const FQuestRewardItem& Reward : Quest.Rewards)
+    FString BuildSubQuestProgressText(const FQuestState& Quest)
     {
-        RewardTexts.Add(FString::Printf(TEXT("%s x%d"), *Reward.ItemId.ToString(), Reward.Quantity));
+        TArray<FString> ObjectiveTexts;
+        for (const FQuestObjective& Objective : Quest.Objectives)
+        {
+            // 수치 부분: 각각 독립적으로 태그를 열고 닫아 중첩을 원천 차단합니다.
+            ObjectiveTexts.Add(FString::Printf(TEXT("<SkyBlue>%d</><Default>/</><Blue>%d</>"), Objective.CurrentCount, Objective.Quantity));
+        }
+
+        const FString ProgressText = ObjectiveTexts.IsEmpty()
+            ? TEXT("<SkyBlue>0</><Default>/</><Blue>0</>")
+            : FString::Join(ObjectiveTexts, TEXT("<Default>, </>"));
+
+        if (Quest.Status == EQuestStatus::Completed)
+        {
+            // 완료 상태: 본문 및 괄호는 Default(검은색) ➡️ 오직 맨 뒤 [Completed]만 Completed(연두색)
+            return FString::Printf(TEXT("<Default>- %s (</>%s<Default>) </><Completed>[Completed]</>"), 
+                *Quest.Title.ToString(), 
+                *ProgressText);
+        }
+        else
+        {
+            // 진행 중 상태: 본문 및 괄호는 Default(검은색) ➡️ 오직 맨 뒤 [In Progress]만 InProgress(노란색)
+            return FString::Printf(TEXT("<Default>- %s (</>%s<Default>) </><InProgress>[In Progress]</>"), 
+                *Quest.Title.ToString(), 
+                *ProgressText);
+        }
     }
 
-    return RewardTexts.IsEmpty()
-        ? TEXT("No reward")
-        : FString::Join(RewardTexts, TEXT(", "));
-}
+    FString BuildRewardText(const FQuestState& Quest)
+    {
+        TArray<FString> RewardTexts;
+        for (const FQuestRewardItem& Reward : Quest.Rewards)
+        {
+            RewardTexts.Add(FString::Printf(TEXT("%s x%d"), *Reward.ItemId.ToString(), Reward.Quantity));
+        }
+        return RewardTexts.IsEmpty() ? TEXT("No reward") : FString::Join(RewardTexts, TEXT(", "));
+    }
 }
 
 void UUI_QuestWindow::NativeConstruct()
@@ -252,23 +260,20 @@ void UUI_QuestWindow::ShowSubQuestCompletedNotify(const FQuestState& Quest)
 
 void UUI_QuestWindow::UpdateSubQuestTexts(const TArray<FQuestState>& Quests)
 {
-    TArray<UTextBlock*> SubBoxes = { TXT_SubQuest_1, TXT_SubQuest_2, TXT_SubQuest_3, TXT_SubQuest_4, TXT_SubQuest_5 };
+    TArray<URichTextBlock*> SubBoxes = { TXT_SubQuest_1, TXT_SubQuest_2, TXT_SubQuest_3, TXT_SubQuest_4, TXT_SubQuest_5 };
 
-    // 기존 텍스트 초기화 루프는 걷어내고, 아래 통합 루프 하나로 마감합니다.
     for (int32 i = 0; i < SubBoxes.Num(); ++i)
     {
-        UTextBlock* Box = SubBoxes[i];
+        URichTextBlock* Box = SubBoxes[i];
         if (!Box) continue;
 
-        // 텍스트 블록을 감싸고 있는 무명 부모 상자(Vertical Box)를 실시간으로 추적합니다.
         UWidget* RowWrapper = Box->GetParent();
 
         if (i < Quests.Num())
         {
-            // 1. 퀘스트 데이터가 존재하면 글자를 채우고
+            // 리치 텍스트 문장을 삽입합니다.
             Box->SetText(FText::FromString(BuildSubQuestProgressText(Quests[i])));
             
-            // 2. 부모 상자를 통째로 화면에 노출합니다 (글자와 선이 세트로 예쁘게 등장)
             if (RowWrapper)
             {
                 RowWrapper->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
@@ -276,8 +281,6 @@ void UUI_QuestWindow::UpdateSubQuestTexts(const TArray<FQuestState>& Quests)
         }
         else
         {
-            // 3. 퀘스트 데이터가 없으면 부모 상자를 완전히 접어버립니다.
-            // Collapsed로 접히면 내부의 선(Border)까지 완벽하게 공간 밀림 없이 증발합니다!
             if (RowWrapper)
             {
                 RowWrapper->SetVisibility(ESlateVisibility::Collapsed);
