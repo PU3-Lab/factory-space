@@ -432,6 +432,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
 	float FinishTriggerDistance = 150.f;
 
+	// [루트모션 올라서기] 루트모션 Finish 몽타주 핸드오프 시작 거리(uu). 발이 top까지 이만큼 남으면 비행 수직
+	// 이동을 끊고 루트모션 몽타주가 캐릭터를 슬래브 위로 안착시킨다(애니=위치 일치). ⚠️ 몽타주의 실제 상승 루트모션
+	// 변위와 같게 튜닝해야 자연스럽다(작으면 몽타주가 덜 올라가 종료 스냅 크게, 크면 붕 뜬 뒤 몽타주 재생). 몽타주
+	// 미할당/재생 실패(Woman 등)면 무시 — 기존 step-off 폴백. FinishTriggerDistance(짧은 사다리 스킵 기준)와 별개.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
+	float ClimbFinishHandoffDistance = 100.f;
+
+	// [루트모션 올라서기] 몽타주 종료 후 발 Z를 슬래브 표면(top)+캡슐 반높이에 맞추는 스냅 보정 허용 오차(uu).
+	// 루트모션 종료 위치가 이 오차를 넘게 어긋나면 Z만 스냅(XY는 루트모션 결과 유지). 0이면 항상 스냅.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
+	float ClimbFinishZSnapTolerance = 3.f;
+
 	// 현재 오르는 사다리(없으면 null). 등반 상태의 단일 진실원.
 	UPROPERTY(Transient)
 	TObjectPtr<AOJJ_Ladder> CurrentLadder;
@@ -510,6 +522,11 @@ protected:
 	// [#184] Finish 마무리 몽타주 한 등반당 1회 재생 가드. FinishTriggerDistance 도달 시 set,
 	// BeginClimb/AbortClimb에서 clear. 미설정 시 매 프레임 재트리거되어 몽타주가 처음부터 반복("계속 나옴").
 	bool bFinishPlaying = false;
+
+	// [루트모션 올라서기] 루트모션 Finish 몽타주로 슬래브에 안착하는 중(비행 종료→몽타주가 위치 전담). 이 동안
+	// Move()의 등반/걷기 입력과 Tick의 X/Y 당김을 모두 차단해 '이중이동'을 막는다. 몽타주 종료 델리게이트에서 clear.
+	bool bClimbFinishing = false;
+
 	FVector StepOffStart = FVector::ZeroVector;
 	FVector StepOffTarget = FVector::ZeroVector;
 	float StepOffElapsed = 0.f;
@@ -517,6 +534,15 @@ protected:
 	// [#184] 등반 면 위치: 사다리에서 바깥(Foundation 반대)으로 (캡슐반경 + ClimbFaceGap) 떨어진 X/Y + 주어진 Z.
 	// 등반 시작 스냅·등반 중 X/Y 고정 공용(진입 위치가 멀어도 사다리에 붙여 오르게).
 	FVector OJJ_GetClimbFaceLocation(const AOJJ_Ladder* Ladder, float WorldZ) const;
+
+	// [루트모션 올라서기] top 근처(ClimbFinishHandoffDistance) 도달 시 호출 — 잔여 비행 속도를 죽이고 루트모션
+	// Finish 몽타주를 재생, 종료 델리게이트를 건다. 성공 시 true(이후 위치는 루트모션 전담). 몽타주/AnimInstance
+	// 없거나 재생 실패(스켈레톤 불일치 등, Woman)면 false → 호출측이 기존 step-off EndClimb로 폴백.
+	bool BeginClimbFinish();
+
+	// [루트모션 올라서기] Finish 몽타주 종료 콜백(Montage_SetEndDelegate, 비다이나믹). 슬래브 표면에 발 Z 스냅
+	// 보정(ClimbFinishZSnapTolerance) 후 걷기 복귀. 중단(bInterrupted)이면 스냅 생략.
+	void OnLadderFinishMontageEnded(class UAnimMontage* Montage, bool bInterrupted);
 
 	// 등반/step-off 종료 후 걷기 복귀 + 재진입 쿨다운 개시(공통 단일원).
 	void ResumeWalkingWithCooldown();

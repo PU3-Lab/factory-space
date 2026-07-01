@@ -34,6 +34,12 @@ struct FOJJ_CharacterAppearance
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Character")
 	TObjectPtr<UAnimSequenceBase> JumpAnim = nullptr;
 
+	// [루트모션 올라서기] 캐릭터별 사다리 마무리(올라서기) 몽타주(DefaultSlot, 루트모션). 비우면 BP_OJJ_Player
+	// 기본(Man, AM_Man_Ladder_Finish) 유지 — Man 몽타주를 Woman_Skeleton에서 재생하면 스켈레톤 mismatch로
+	// 재생 실패→step-off 폴백(Finish 없음). Woman은 AM_Woman_Ladder_Finish를 할당해 캐릭터별 올라서기 루트모션 사용.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Character")
+	TObjectPtr<UAnimMontage> LadderFinishMontage = nullptr;
+
 	// [게임진입] 캐릭터별 메시 RelativeLocation.Z 보정 사용 여부. true일 때만 ApplySelected가 Z를 덮는다.
 	// false(기본)면 BP_OJJ_Player 기본 Z 유지 — Man처럼 BP 보정이 맞는 캐릭터는 미설정으로 두면 됨(회귀 0).
 	// 0이 "미설정"인지 "의도된 0"인지 float만으론 구분 불가하므로 명시적 bool로 게이트(codex 리뷰 2026-06-25).
