@@ -90,6 +90,13 @@ class MaterialCreationResponse(BaseModel):
     generation_status: str | None = None
     visual_status: str | None = None
     fallback_icon: str | None = None
+    rowname: str | None = None
+    form: str | None = None
+    substance: str | None = None
+    type: str | None = None
+    shape: str | None = None
+    DIsplayName: str | None = None
+    VisualColor: str | None = None
     visual_asset_key: str | None = (
         None  # 비주얼 이미지 에셋 키 (materials/{material_id}/icon.png 형식)
     )

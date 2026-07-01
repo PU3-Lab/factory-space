@@ -36,6 +36,23 @@ def test_agent_synthesize_existing_recipe(db_session: Session) -> None:
     assert len(res.outputs) == 1
     assert res.outputs[0].item_id == "iron_ingot"
     assert res.outputs[0].qty == 1
+    assert res.rowname == "iron_ingot"
+    assert res.form == "solid"
+    assert res.substance == "iron"
+    assert res.type == "metal"
+    assert res.shape == "ingot"
+    assert res.DIsplayName == "철괴"
+    assert res.VisualColor == "(R=0.67,G=0.69,B=0.72,A=1.0)"
+
+    cached = agent.synthesize(db_session, req)
+    assert cached.result_type == "existing_recipe"
+    assert cached.rowname == "iron_ingot"
+    assert cached.form == "solid"
+    assert cached.substance == "iron"
+    assert cached.type == "metal"
+    assert cached.shape == "ingot"
+    assert cached.DIsplayName == "철괴"
+    assert cached.VisualColor == "(R=0.67,G=0.69,B=0.72,A=1.0)"
 
 
 def test_agent_synthesize_failed_by_policy(db_session: Session) -> None:
@@ -76,6 +93,13 @@ def test_agent_synthesize_new_material_fallback_path(db_session: Session) -> Non
         assert res.name  # 비어있지 않음
         assert res.rarity in {"common", "uncommon", "rare", "epic"}
         assert res.state in {"solid", "liquid", "gas", "plasma"}
+        assert res.rowname == "wood"
+        assert res.form == "solid"
+        assert res.substance == "wood"
+        assert res.type == "organism"
+        assert res.shape == ""
+        assert res.DIsplayName == "목재"
+        assert res.VisualColor == "(R=0.49,G=0.31,B=0.16,A=1.0)"
         assert res.visual_status == "visual_ready"
         assert res.visual_asset_key == f"materials/{res.material_id}/icon.png"
         assert res.texture_asset_key == f"materials/{res.material_id}/texture.png"
