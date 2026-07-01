@@ -50,12 +50,14 @@ private:
 	float AutoSaveIntervalSeconds = 60.0f;
 
 	UPROPERTY()
-	float AutoSaveWarningLeadSeconds = 3.0f;
+	float AutoSaveWarningLeadSeconds = 5.0f;
 
 	TWeakObjectPtr<AOJJ_Player> CachedPlayer;
 	FTimerHandle AutoSaveTimerHandle;
 	FTimerHandle AutoSaveWarningTimerHandle;
+	FTimerHandle AutoSaveWarningBlinkTimerHandle;
 	int32 NextProcessOptimizerFactoryRevision = 1;
+	int32 RemainingAutoSaveWarningBlinks = 0;
 	bool bHasLoadedInitialState = false;
 	bool bIsRestoring = false;
 	bool bIsResettingToNewGame = false;
@@ -65,6 +67,7 @@ private:
 	void StopAutoSaveTimer();
 	void AutoSaveTick();
 	void AutoSaveWarningTick();
+	void AutoSaveWarningBlinkTick();
 	void ShowAutoSaveWarning() const;
 	void EnsureAgentConnection();
 	void NotifyProcessOptimizerAutoSave();

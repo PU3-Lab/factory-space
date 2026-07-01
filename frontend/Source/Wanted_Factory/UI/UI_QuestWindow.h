@@ -34,11 +34,11 @@ protected:
     UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_MainQuestTitle;
     UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_MainQuestDesc;
 
-    UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_SubQuest_1;
-    UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_SubQuest_2;
-    UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_SubQuest_3;
-    UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_SubQuest_4;
-    UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_SubQuest_5;
+    UPROPERTY(meta = (BindWidget)) class URichTextBlock* TXT_SubQuest_1;
+    UPROPERTY(meta = (BindWidget)) class URichTextBlock* TXT_SubQuest_2;
+    UPROPERTY(meta = (BindWidget)) class URichTextBlock* TXT_SubQuest_3;
+    UPROPERTY(meta = (BindWidget)) class URichTextBlock* TXT_SubQuest_4;
+    UPROPERTY(meta = (BindWidget)) class URichTextBlock* TXT_SubQuest_5;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest")
     bool bIsQuestWindowOpen = true;

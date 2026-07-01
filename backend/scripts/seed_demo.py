@@ -4,9 +4,9 @@ This loads the authored recipes (so item validation and recipe matching work) an
 clears any previously generated experiments/materials so the test-console presets
 return their intended fresh result_type instead of a cached one.
 
-Run from the backend directory:
+Run from anywhere (defaults to backend/factory_space.db unless DATABASE_URL is set):
 
-    DATABASE_URL="sqlite:///./factory_space.db" uv run python scripts/seed_demo.py
+    uv run python scripts/seed_demo.py
 
 Covered result_type cases (exercise via /agent-test presets):
   - existing_recipe : Smelter [iron_ore x2]            -> matches Smelt_Iron
@@ -19,6 +19,7 @@ Covered result_type cases (exercise via /agent-test presets):
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -27,6 +28,9 @@ from sqlalchemy import delete, select
 backend_root = Path(__file__).resolve().parents[1]
 if str(backend_root) not in sys.path:
     sys.path.insert(0, str(backend_root))
+
+os.chdir(backend_root)
+os.environ.setdefault("DATABASE_URL", "sqlite:///./factory_space.db")
 
 from db.engine import get_db_session  # noqa: E402
 from db.models import (  # noqa: E402

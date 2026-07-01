@@ -133,6 +133,7 @@ class GeneratedMaterialModel(Base):
         String(50), default="pending", server_default="pending"
     )
     visual_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    visual_color: Mapped[str | None] = mapped_column(String(50), nullable=True)
     visual_asset_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     texture_asset_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     thumbnail_asset_key: Mapped[str | None] = mapped_column(String(255), nullable=True)

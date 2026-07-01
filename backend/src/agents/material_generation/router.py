@@ -47,10 +47,16 @@ def create_material_experiment(
 def get_material_visual_status(material_id: str) -> dict[str, Any]:
     """생성된 재료의 시각적 자산에 대한 상태 및 자산 키(Asset keys)를 조회합니다."""
     with get_db_session() as db:
-        stmt = select(GeneratedMaterialModel).where(
+        stmt = select(
+            GeneratedMaterialModel.id,
+            GeneratedMaterialModel.visual_status,
+            GeneratedMaterialModel.visual_asset_key,
+            GeneratedMaterialModel.texture_asset_key,
+            GeneratedMaterialModel.thumbnail_asset_key,
+        ).where(
             GeneratedMaterialModel.id == material_id
         )
-        material = db.execute(stmt).scalar_one_or_none()
+        material = db.execute(stmt).one_or_none()
 
         if not material:
             raise HTTPException(

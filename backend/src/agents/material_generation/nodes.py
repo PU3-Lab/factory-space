@@ -8,6 +8,10 @@ from typing import Any
 
 from sqlalchemy import select
 
+from agents.material_columns import (
+    get_new_material_column_values,
+    get_resource_material_column_values,
+)
 from agents.material_generation.classifier import ExperimentClassifier
 from agents.material_generation.derivation import (
     DerivedAttributes,
@@ -41,6 +45,26 @@ from db.models import GeneratedExperimentModel, GeneratedMaterialModel
 logger = logging.getLogger(__name__)
 
 _proposal_generator = None
+
+
+def _material_column_values_for_outputs(
+    outputs: list[dict[str, Any]],
+) -> dict[str, str]:
+    for output in outputs:
+        item_id = output.get("item_id")
+        if not item_id:
+            continue
+        values = get_resource_material_column_values(str(item_id))
+        if values:
+            return values
+    return {}
+
+
+def _extract_id_hint(material_id: str) -> str:
+    """`mat_{id_hint}_{hex6}` 형식의 material_id에서 id_hint를 복원합니다."""
+    body = material_id.removeprefix("mat_")
+    hint, _, _suffix = body.rpartition("_")
+    return hint or body
 
 
 def get_proposal_generator() -> MaterialProposalGenerator:
@@ -92,12 +116,14 @@ def lookup_cache_node(state: MaterialGraphState) -> dict[str, Any]:
             mat_name = mat_model.name if mat_model else "Unknown Alloy"
             mat_hash = mat_model.material_hash if mat_model else None
             mat_rarity = mat_model.rarity if mat_model else None
-            mat_state = mat_model.state if mat_model else None
+            mat_state = mat_model.state if mat_model else "solid"
+            mat_category = mat_model.category if mat_model else "alloy"
             visual_status = mat_model.visual_status if mat_model else None
             fallback_icon = mat_model.fallback_icon if mat_model else None
             visual_asset_key = mat_model.visual_asset_key if mat_model else None
             texture_asset_key = mat_model.texture_asset_key if mat_model else None
             thumbnail_asset_key = mat_model.thumbnail_asset_key if mat_model else None
+            visual_color = mat_model.visual_color if mat_model else None
 
             response = MaterialCreationResponse(
                 result_type="cached_experiment",
@@ -115,6 +141,13 @@ def lookup_cache_node(state: MaterialGraphState) -> dict[str, Any]:
                 texture_asset_key=texture_asset_key,
                 thumbnail_asset_key=thumbnail_asset_key,
                 message="이미 발견된 물질입니다.",
+                **get_new_material_column_values(
+                    id_hint=_extract_id_hint(existing_exp.material_id),
+                    name=mat_name,
+                    category=mat_category,
+                    state=mat_state,
+                    visual_color=visual_color,
+                ),
             )
         elif existing_exp.result_type == "existing_recipe":
             outputs = []
@@ -128,6 +161,9 @@ def lookup_cache_node(state: MaterialGraphState) -> dict[str, Any]:
                 experiment_hash=exp_hash,
                 recipe_name=existing_exp.recipe_name,
                 outputs=outputs,
+                **_material_column_values_for_outputs(
+                    existing_exp.output_items_json or []
+                ),
             )
         else:
             response = MaterialCreationResponse(
@@ -190,6 +226,7 @@ def recipe_match_node(state: MaterialGraphState) -> dict[str, Any]:
             outputs=[
                 OutputItemSchema(item_id=o["item_id"], qty=o["qty"]) for o in outputs
             ],
+            **_material_column_values_for_outputs(outputs),
         )
         return {"response": response}
     return {}
@@ -449,22 +486,26 @@ def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
         mat_name = existing_mat.name
         mat_rarity = existing_mat.rarity
         mat_state = existing_mat.state
+        mat_category = existing_mat.category
         visual_status = existing_mat.visual_status
         fallback_icon = existing_mat.fallback_icon
         visual_asset_key = existing_mat.visual_asset_key
         texture_asset_key = existing_mat.texture_asset_key
         thumbnail_asset_key = existing_mat.thumbnail_asset_key
+        visual_color = existing_mat.visual_color
         is_new = False
     else:
         material_id = f"mat_{proposal.result.id_hint}_{uuid.uuid4().hex[:6]}"
         mat_name = proposal.result.name
         mat_rarity = proposal.result.rarity
         mat_state = proposal.result.state
+        mat_category = proposal.result.category
         visual_status = "pending" if generate_visual else "skipped"
         fallback_icon = f"materials/default/{proposal.result.category}.png"
         visual_asset_key = None
         texture_asset_key = None
         thumbnail_asset_key = None
+        visual_color = None
         is_new = True
 
     response = MaterialCreationResponse(
@@ -486,6 +527,13 @@ def deduplicate_material_node(state: MaterialGraphState) -> dict[str, Any]:
         else "새로운 물질이 발견되었습니다."
         if (is_new and not generate_visual)
         else "이미 발견된 물질입니다.",
+        **get_new_material_column_values(
+            id_hint=_extract_id_hint(material_id),
+            name=mat_name,
+            category=mat_category,
+            state=mat_state,
+            visual_color=visual_color,
+        ),
     )
     return {"response": response, "is_new": is_new}
 
@@ -567,6 +615,8 @@ def register_material_node(state: MaterialGraphState) -> dict[str, Any]:
             response.visual_asset_key = material.visual_asset_key
             response.texture_asset_key = material.texture_asset_key
             response.thumbnail_asset_key = material.thumbnail_asset_key
+            if material.visual_color:
+                response.VisualColor = material.visual_color
             if material.visual_status == "visual_ready":
                 response.message = (
                     "새로운 물질이 발견되었고 비주얼 자산 생성이 완료되었습니다."

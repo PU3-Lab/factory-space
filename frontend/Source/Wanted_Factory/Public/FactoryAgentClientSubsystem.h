@@ -8,6 +8,87 @@
 
 class IWebSocket;
 
+USTRUCT(BlueprintType)
+struct FFactoryMaterialRequestInput
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Factory Agent|Material Generation")
+	FName ItemId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Factory Agent|Material Generation", meta = (ClampMin = "1"))
+	int32 Quantity = 1;
+};
+
+USTRUCT(BlueprintType)
+struct FFactoryMaterialResponseOutput
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FName ItemId = NAME_None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	int32 Quantity = 0;
+};
+
+USTRUCT(BlueprintType)
+struct FFactoryMaterialGenerationResponse
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString RequestId;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString Agent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString ResultType;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString ExperimentHash;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString RecipeName;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString MaterialId;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString Name;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString GenerationStatus;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString VisualStatus;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString VisualAssetKey;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString TextureAssetKey;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString ThumbnailAssetKey;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString FallbackIcon;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString Message;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	bool bCached = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	TArray<FFactoryMaterialResponseOutput> Outputs;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString RawPayloadJson;
+};
+
 UENUM(BlueprintType)
 enum class EFactoryAgentConnectionState : uint8
 {
@@ -23,6 +104,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnFactoryAgentRawMessage, const FSt
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FOnFactoryAgentResponse, const FString&, RequestId, const FString&, Agent, const FString&, PayloadJson, const FString&, RawMessage);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(FOnFactoryAgentError, const FString&, RequestId, const FString&, Agent, const FString&, ErrorCode, const FString&, ErrorMessage, const FString&, RawMessage);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(FOnFactoryAgentProgress, const FString&, RequestId, const FString&, Agent, const FString&, Stage, const FString&, Message, const FString&, RawMessage);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnFactoryMaterialGenerationResponse, const FFactoryMaterialGenerationResponse&, Response);
 
 UCLASS()
 class WANTED_FACTORY_API UFactoryAgentClientSubsystem : public UGameInstanceSubsystem
@@ -53,6 +135,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Factory Agent|Messages")
 	FOnFactoryAgentProgress OnAgentProgressReceived;
+
+	UPROPERTY(BlueprintAssignable, Category = "Factory Agent|Material Generation")
+	FOnFactoryMaterialGenerationResponse OnMaterialGenerationResponseReceived;
 
 	virtual void Deinitialize() override;
 
@@ -92,6 +177,13 @@ public:
 	bool SendOperatorGuideQuestion(const FString& Question, const FString& ClientId);
 
 	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
+	bool SendMaterialGenerationRequest(
+		const TArray<FFactoryMaterialRequestInput>& Inputs,
+		const FString& PlayerId,
+		bool bGenerateVisualAsset,
+		const FString& ClientId);
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
 	bool SendProcessOptimizerStateUpdate(int32 FactoryRevision, const FString& SessionId, const FString& ClientId);
 
 	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
@@ -127,4 +219,9 @@ private:
 	void HandleSocketClosed(int32 StatusCode, const FString& Reason, bool bWasClean);
 	void HandleSocketMessage(const FString& Message);
 	void ResetSocket();
+	bool TryBuildMaterialGenerationResponse(
+		const FString& RequestId,
+		const FString& Agent,
+		const TSharedPtr<FJsonObject>& PayloadObject,
+		FFactoryMaterialGenerationResponse& OutResponse) const;
 };

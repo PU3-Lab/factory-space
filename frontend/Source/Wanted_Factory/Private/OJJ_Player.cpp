@@ -603,6 +603,14 @@ void AOJJ_Player::ConnectFactoryAgentClient()
 	}
 }
 
+void AOJJ_Player::ShowMainHUDSaveIndicator(float DisplaySeconds)
+{
+	if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
+	{
+		MainHUD->ShowSaveIndicator(DisplaySeconds);
+	}
+}
+
 void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
@@ -792,6 +800,12 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 		// 발 밑 Z로 상/하단 도달 및 핸드오프 판정. ClimbReachMargin 여유로 경계 떨림 방지(도달은 살짝 일찍).
 		const float FeetZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 
+		// [끊김① 방향 래치] 마지막 비영 입력 방향 유지(호버 시 0 토글 방지) — ABP Loop↔Down 전이 소스(GetClimbDirection).
+		if (!FMath::IsNearlyZero(Axis.Y))
+		{
+			ClimbVerticalDir = (Axis.Y > 0.f) ? 1.f : -1.f;
+		}
+
 		// [루트모션 올라서기] 긴 사다리(ClimbHeight ≥ FinishTriggerDistance) + Finish 몽타주 할당 시: top까지
 		// ClimbFinishHandoffDistance 남으면 비행 수직 이동을 끊고 루트모션 몽타주에 슬래브 안착을 넘긴다(애니=위치
 		// 일치). bFinishPlaying = 한 등반당 1회 시도 가드(BeginClimb/AbortClimb에서 리셋). BeginClimbFinish 실패
@@ -878,6 +892,7 @@ void AOJJ_Player::BeginClimb(AOJJ_Ladder* Ladder)
 	CurrentLadder = Ladder;
 	bClimbing = true;
 	bFinishPlaying = false; // [#184] 새 등반 시작 — Finish 마무리 몽타주 재트리거 허용
+	ClimbVerticalDir = 1.f; // [끊김①] 등반은 항상 위로 시작 — 방향 래치 초기화
 	UE_LOG(LogTemp, Verbose, TEXT("[Climb] BeginClimb Bottom=%.1f Top=%.1f"),
 		Ladder->GetClimbBottomZ(), Ladder->GetClimbTopZ());
 
@@ -897,6 +912,10 @@ void AOJJ_Player::BeginClimb(AOJJ_Ladder* Ladder)
 		Movement->GravityScale = 0.f;
 		Movement->MaxFlySpeed = ClimbSpeed;
 		Movement->BrakingDecelerationFlying = 2048.f;
+		// [끊김① 준등속] 가속 램프 최소화 — Velocity.Z가 ClimbSpeed로 빠르게 수렴해 PlayRate(GetClimbSpeedNormalized)가
+		// 실제 속도를 즉시 반영. 진입 전 MaxAcceleration을 캐시해 종료 시 원복(걷기 가속 무영향).
+		PreClimbMaxAcceleration = Movement->MaxAcceleration;
+		Movement->MaxAcceleration = ClimbMaxAcceleration;
 		Movement->StopMovementImmediately();
 		// 등반 중엔 수직 이동만이라 OrientRotationToMovement가 yaw를 못 잡는다(XY 0). 위 사다리-facing이
 		// 흔들리지 않게 끄고, EndClimb/AbortClimb에서 걷기용으로 복원한다.
@@ -972,6 +991,7 @@ void AOJJ_Player::ResumeWalkingWithCooldown()
 		Movement->StopMovementImmediately();
 		Movement->SetMovementMode(MOVE_Walking);
 		Movement->bOrientRotationToMovement = true; // 등반 중 끈 것 복원(걷기 방향 회전 정상화)
+		Movement->MaxAcceleration = PreClimbMaxAcceleration; // [끊김①] 등반 준등속용 MaxAcceleration 오버라이드 원복
 	}
 
 	// 재진입 쿨다운 개시 — step-off로 상면에 올라간 직후 같은 트리거에 다시 잡히는 진동 차단.
@@ -979,6 +999,23 @@ void AOJJ_Player::ResumeWalkingWithCooldown()
 	{
 		ClimbCooldownUntil = World->GetTimeSeconds() + ClimbReentryCooldown;
 	}
+}
+
+float AOJJ_Player::GetClimbSpeedNormalized() const
+{
+	// [끊김① PlayRate] 실제 수직 속도 크기 / ClimbSpeed (0~1). 등반 아님·ClimbSpeed 0 방어 시 0.
+	// 루트모션 올라서기(bClimbFinishing, bClimbing=false) 구간도 0 — 그때는 몽타주 슬롯이 포즈 전담(Loop 비활성).
+	if (!bClimbing || ClimbSpeed <= KINDA_SMALL_NUMBER)
+	{
+		return 0.f;
+	}
+	return FMath::Clamp(FMath::Abs(GetVelocity().Z) / ClimbSpeed, 0.f, 1.f);
+}
+
+float AOJJ_Player::GetClimbDirection() const
+{
+	// [끊김① 방향] 래치된 마지막 입력 방향(+1 위/-1 아래). 등반 아니면 0(ABP는 IsClimbing 게이트와 함께 사용).
+	return bClimbing ? ClimbVerticalDir : 0.f;
 }
 
 bool AOJJ_Player::BeginClimbFinish()

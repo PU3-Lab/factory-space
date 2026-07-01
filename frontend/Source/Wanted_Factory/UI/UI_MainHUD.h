@@ -6,6 +6,7 @@
 #include "UI_MainHUD.generated.h"
 
 class UImage;
+class UWidget;
 class UTexture2D;
 class UProgressBar;
 
@@ -21,6 +22,9 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "HUD | Quest")
     void ToggleQuestWindow();
+
+    UFUNCTION(BlueprintCallable, Category = "HUD | Save")
+    void ShowSaveIndicator(float DisplaySeconds = 1.0f);
 
     UFUNCTION()
     void OnRequestQuestsClicked();
@@ -148,4 +152,10 @@ private:
     // [이벤트 캡슐] None 상태 전용 — 모래폭풍 발생 확률(매니저 상수)로 PB_StormRisk percent/색 + TXT 위험 텍스트.
     // 시간 누적 없음(날씨 전환 시만 점프). 호출 측이 EventType==None일 때만 호출.
     void RefreshStormRiskBar(const FPlanetWeatherState& WeatherState);
+
+    UWidget* ResolveSaveIndicatorWidget();
+    void HideSaveIndicator();
+
+    TWeakObjectPtr<UWidget> CachedSaveIndicatorWidget;
+    FTimerHandle SaveIndicatorTimerHandle;
 };

@@ -47,6 +47,7 @@ public:
 
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	FORCEINLINE class UUI_Inventory* GetInventoryWidgetInstance() const { return InventoryWidgetInstance; }
+	void ShowMainHUDSaveIndicator(float DisplaySeconds);
 
 	// --- 사다리 등반 (#184, AOJJ_Ladder가 트리거에서 호출) ---
 	// 등반 시작: MOVE_Flying+중력0로 전환, 현재 사다리 캐시. 이미 등반 중이면 no-op.
@@ -65,6 +66,17 @@ public:
 	// 별도 변수 없이 ABP가 Velocity.Z로 판별(위>0 Loop, 아래<0 Down) — 노출 최소화(#184 사다리 애니 장착).
 	UFUNCTION(BlueprintPure, Category = "Climb")
 	bool IsClimbing() const { return bClimbing; }
+
+	// [끊김① PlayRate 연동] ABP Climb Loop 노드의 PlayRate에 배선 — 실제 수직 등반 속도를 ClimbSpeed로 정규화한
+	// 0~1 값. 속도 0(호버)=PlayRate 0(정지 포즈), 최대=1(정상 루프). 애니가 실제 이동에 동기화돼 발/손이 사다리단과
+	// 안 미끄러지고 되감기 튐 제거. 등반 아니면 0. (매그니튜드만 — 방향은 GetClimbDirection.)
+	UFUNCTION(BlueprintPure, Category = "Climb")
+	float GetClimbSpeedNormalized() const;
+
+	// [끊김① 방향 래치] ABP Loop↔Down 상태 전이용 — Velocity.Z 부호(0 근처 토글 떨림) 대신 마지막 비영 입력
+	// 방향을 유지. +1=위(Loop), -1=아래(Down), 0=등반 아님. 호버(속도 0)에도 방향이 안 뒤집혀 상태 깜빡임 차단.
+	UFUNCTION(BlueprintPure, Category = "Climb")
+	float GetClimbDirection() const;
 
 	// [수영] ABP_Man/Woman 스테이트머신 swim 진입/탈출 조건용(읽기 전용). 이동/idle 구분은 ABP가 Velocity로 판별
 	// (수평속도>임계 → Swim_Forward, 아니면 Swim_Idle). ⚠️ public 필수 — ABP는 AOJJ_Player 서브클래스 아님(IsClimbing 전례).
@@ -375,6 +387,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
 	float ClimbSpeed = 175.f;
 
+	// [끊김① 준등속] 등반 진입 시 CMC MaxAcceleration을 이 값으로 덮어 Velocity.Z가 ClimbSpeed로 빠르게 수렴
+	// (가변 가속 램프 최소화 → PlayRate가 실제 속도를 바로 반영). 종료 시 진입 전 값으로 복원. 크게=거의 즉시 도달.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climb", meta = (ClampMin = "0.0"))
+	float ClimbMaxAcceleration = 8192.f;
+
 	// [#184] 등반 시작 시 캐릭터를 사다리 안쪽(GetStepOffDirection, +X) 바라보게 회전 + 이 오프셋을 더한다.
 	// 메시 기본 yaw 오프셋(보통 -90°)·애니 제작 방향 때문에 그대로면 옆을 볼 수 있어 PIE에서 ±90 조정용
 	// (재컴파일 없이 디테일 패널). 기본 0 — 캐릭터가 옆 보면 이 값으로 맞춤.
@@ -458,6 +475,14 @@ protected:
 	// 등반 활성 플래그(#184). CurrentLadder와 함께 set/clear. 사다리가 GC/파괴로 사라지면 포인터는
 	// null이 되지만 이 플래그로 '비정상 소멸'을 감지해 비행/중력0 고착을 Tick에서 복구.
 	bool bClimbing = false;
+
+	// [끊김① 방향 래치] 마지막 비영 등반 입력 방향(+1 위/-1 아래). BeginClimb서 +1, Move서 Axis.Y 비영 시 갱신.
+	// GetClimbDirection이 노출 — Velocity.Z 부호 대신 이 값으로 ABP 상태 전이(0 근처 토글 방지).
+	float ClimbVerticalDir = 1.f;
+
+	// [끊김① 준등속] 등반 진입 전 CMC MaxAcceleration 캐시 — 종료(ResumeWalkingWithCooldown)서 원복. BeginClimb서
+	// ClimbMaxAcceleration로 덮기 직전 저장. 걷기 가속에 영향 주지 않게 정확 복원(단일 출처).
+	float PreClimbMaxAcceleration = 2048.f;
 
 	// 기본 yaw 회전 속도(°/s) 단일 출처 — 생성자 RotationRate와 수영 이탈 원복이 같은 값을 보게(매직넘버 방지).
 	static constexpr float DefaultRotationRateYaw = 540.0f;

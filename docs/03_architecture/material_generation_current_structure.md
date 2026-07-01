@@ -2,7 +2,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 문서 기준일 | 2026-06-14 |
+| 문서 기준일 | 2026-07-01 |
 | Agent ID | `material_generation` |
 | 구현 위치 | `backend/src/agents/material_generation/` |
 | 정식 호출 경로 | WebSocket `AgentPipeline` |
@@ -22,6 +22,7 @@ backend/src/
 │   │   ├── graph_edges.py              # material_generation 최상위 분기
 │   │   ├── runtime.py                  # 요청 검증, DB 세션, agent 호출
 │   │   └── state.py                    # 최상위 route 타입
+│   ├── material_columns.py             # 언리얼 CSV/DataTable 컬럼값(rowname, VisualColor 등) 매핑
 │   └── material_generation/
 │       ├── agent.py                    # MaterialCreationAgent 진입점
 │       ├── graph.py                    # LangGraph 노드와 엣지 조립
@@ -37,11 +38,13 @@ backend/src/
 │       ├── proposal_generator.py       # LLM 제안과 fallback 생성
 │       ├── result_validator.py         # LLM 결과 보정과 정책 검증
 │       ├── events.py                   # 비주얼 작업 executor 관리
-│       ├── visual_pipeline.py          # 비주얼 상태와 asset key 갱신
+│       ├── visual_pipeline.py          # 비주얼 상태, asset key, visual_color 갱신
 │       ├── router.py                   # 개발 및 조회용 REST API
 │       └── registry/
 │           ├── experiment_registry.py  # 실험 저장과 중복 병합
 │           └── material_registry.py    # 물질 및 발견 이력 저장
+├── visual/
+│   └── color.py                        # 생성 텍스처의 평균 RGB → Unreal RGBA 문자열 변환
 └── db/
     ├── engine.py                       # 동기 SQLAlchemy 세션 경계
     └── models.py                       # 현재 DB 모델
@@ -137,6 +140,13 @@ flowchart LR
 | `generation_status` | `str \| null` | `new_material` | 생성 상태 |
 | `visual_status` | `str \| null` | `new_material` | 비주얼 상태 (`pending` / `skipped` 등) |
 | `fallback_icon` | `str \| null` | `new_material` | 대체 아이콘 |
+| `rowname` | `str \| null` | `existing_recipe`, `new_material`, `cached_experiment` | 언리얼 DataTable 행 식별자 |
+| `form` | `str \| null` | `existing_recipe`, `new_material`, `cached_experiment` | 물리 상태(`solid`/`liquid`/`gas`/`plasma`) |
+| `substance` | `str \| null` | `existing_recipe`, `new_material`, `cached_experiment` | 물질계열 |
+| `type` | `str \| null` | `existing_recipe`, `new_material`, `cached_experiment` | 물질 분류(`metal`, `organism` 등) |
+| `shape` | `str \| null` | `existing_recipe`, `new_material`, `cached_experiment` | 형태(`ore`, `ingot` 등) |
+| `DIsplayName` | `str \| null` | `existing_recipe`, `new_material`, `cached_experiment` | UI 표시용 한국어 이름 |
+| `VisualColor` | `str \| null` | `existing_recipe`, `new_material`, `cached_experiment` | Unreal RGBA 문자열. 신규 생성 물질은 텍스처 평균색상(`visual_color`, §5 참조), 미확인 산출물은 기본값(`(R=0.49,G=0.31,B=0.16,A=1.0)`) |
 | `visual_asset_key` | `str \| null` | 아니오 | `visual_status == "visual_ready"`인 cached material의 아이콘 asset key |
 | `texture_asset_key` | `str \| null` | 아니오 | `visual_status == "visual_ready"`인 cached material의 텍스처 asset key |
 | `thumbnail_asset_key` | `str \| null` | 아니오 | `visual_status == "visual_ready"`인 cached material의 썸네일 asset key |
@@ -281,6 +291,8 @@ sequenceDiagram
 
 `generate_visual_asset=false`이면 초기 `visual_status`는 `skipped`다. 작업 실패는 합성 트랜잭션을 되돌리지 않으며 `visual_status=failed`, `visual_error`, `fallback_icon`으로 격리한다.
 
+비주얼 자산이 `visual_ready`로 확정될 때 `visual_pipeline.py`는 생성된 텍스처의 평균 RGB를 `visual/color.py`의 `unreal_rgba_from_average_rgb`로 변환해 `generated_materials.visual_color`(Unreal RGBA 문자열, 예: `(R=0.62,G=0.40,B=0.21,A=1.0)`)에 저장한다. 이후 동일 물질을 응답할 때 `VisualColor` 필드는 이 저장값을 사용하며, 값이 없으면(`visual_status`가 `pending`/`skipped`/`failed`인 경우) `material_columns.py`의 기본값으로 대체된다.
+
 이미지는 HTTP URL 계약으로 반환하지 않는다. 백엔드는 `materials/{material_id}/icon.png` 형태의 asset key만 반환하며, 실제 로딩 경로 또는 런타임 asset 참조로 변환하는 책임은 클라이언트의 asset resolver에 있다.
 
 ## 6. Executor 생명주기
@@ -303,7 +315,7 @@ app shutdown -> MaterialEventPublisher.shutdown_executor(wait=True)
 | --- | --- | --- |
 | `recipes` | CSV에서 적재한 일반 레시피 | 정수 `id`, 고유 `recipe_name` |
 | `generated_experiments` | 모든 합성 시도와 결과 | 문자열 `id`, 고유 `experiment_hash` |
-| `generated_materials` | 생성 물질 속성, 물리적 상태(state), 비주얼 상태 | 문자열 `id`, 고유 `material_hash` |
+| `generated_materials` | 생성 물질 속성, 물리적 상태(state), 비주얼 상태와 `visual_color`(텍스처 평균 RGBA) | 문자열 `id`, 고유 `material_hash` |
 | `generated_material_discoveries` | 플레이어별 물질 발견 이력 | 문자열 `id`, `material_id`, `player_id` |
 
 현재 `recipes`는 입력 3개와 출력 2개의 고정 컬럼 구조다. `generated_materials.recipe_candidates_json`은 문자열 후보 목록을 보관하지만 실행 가능한 일반 레시피로 등록하지 않는다.
@@ -352,6 +364,8 @@ UV_CACHE_DIR=/tmp/uv-cache uv run ruff format --check .
 | 그래프 구성 | `backend/src/agents/material_generation/graph.py` |
 | 노드 동작 | `backend/src/agents/material_generation/nodes.py` |
 | 분기 조건 | `backend/src/agents/material_generation/routing.py` |
+| DataTable 컬럼 매핑 | `backend/src/agents/material_columns.py` |
+| 텍스처 평균색상 → Unreal RGBA 변환 | `backend/src/visual/color.py` |
 | DB 모델 | `backend/src/db/models.py` |
 | 트랜잭션 경계 | `backend/src/db/engine.py` |
 | executor 생명주기 | `backend/src/app.py`, `backend/src/agents/material_generation/events.py` |

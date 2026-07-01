@@ -16,6 +16,7 @@ from visual.adapter import (
     create_image_adapter,
     resize_to_profile,
 )
+from visual.color import unreal_rgba_from_average_rgb
 from visual.profile import ICON, TEXTURE, THUMBNAIL
 from visual.settings import ImageGenSettings
 from visual.storage import (
@@ -125,6 +126,7 @@ class VisualAssetPipeline:
             )
 
             material.visual_status = "visual_ready"
+            material.visual_color = unreal_rgba_from_average_rgb(texture_master)
             material.visual_asset_key = icon_key
             material.texture_asset_key = texture_key
             material.thumbnail_asset_key = thumbnail_key

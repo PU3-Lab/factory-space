@@ -36,6 +36,23 @@ def test_agent_synthesize_existing_recipe(db_session: Session) -> None:
     assert len(res.outputs) == 1
     assert res.outputs[0].item_id == "iron_ingot"
     assert res.outputs[0].qty == 1
+    assert res.rowname == "iron_ingot"
+    assert res.form == "solid"
+    assert res.substance == "iron"
+    assert res.type == "metal"
+    assert res.shape == "ingot"
+    assert res.DIsplayName == "철괴"
+    assert res.VisualColor == "(R=0.67,G=0.69,B=0.72,A=1.0)"
+
+    cached = agent.synthesize(db_session, req)
+    assert cached.result_type == "existing_recipe"
+    assert cached.rowname == "iron_ingot"
+    assert cached.form == "solid"
+    assert cached.substance == "iron"
+    assert cached.type == "metal"
+    assert cached.shape == "ingot"
+    assert cached.DIsplayName == "철괴"
+    assert cached.VisualColor == "(R=0.67,G=0.69,B=0.72,A=1.0)"
 
 
 def test_agent_synthesize_failed_by_policy(db_session: Session) -> None:
@@ -76,6 +93,13 @@ def test_agent_synthesize_new_material_fallback_path(db_session: Session) -> Non
         assert res.name  # 비어있지 않음
         assert res.rarity in {"common", "uncommon", "rare", "epic"}
         assert res.state in {"solid", "liquid", "gas", "plasma"}
+        assert res.rowname == res.substance
+        assert res.rowname != "wood"
+        assert res.form == "solid"
+        assert res.type == "metal"
+        assert res.shape == "ingot"
+        assert res.DIsplayName == res.name
+        assert res.VisualColor == "(R=0.50,G=0.50,B=0.50,A=1.0)"
         assert res.visual_status == "visual_ready"
         assert res.visual_asset_key == f"materials/{res.material_id}/icon.png"
         assert res.texture_asset_key == f"materials/{res.material_id}/texture.png"
@@ -89,6 +113,7 @@ def test_agent_synthesize_new_material_fallback_path(db_session: Session) -> Non
         ).scalar_one()
         assert stored.state == "solid"
         assert stored.rarity == "uncommon"
+        assert stored.visual_color == "(R=0.50,G=0.50,B=0.50,A=1.0)"
 
 
 def test_material_creation_api_persists_material_without_duplicates(
@@ -292,6 +317,7 @@ def test_agent_synthesize_new_material_visual_asset_true_returns_ready_assets(
         assert res.visual_asset_key == f"materials/{res.material_id}/icon.png"
         assert res.texture_asset_key == f"materials/{res.material_id}/texture.png"
         assert res.thumbnail_asset_key == f"materials/{res.material_id}/thumbnail.png"
+        assert res.VisualColor == "(R=0.50,G=0.50,B=0.50,A=1.0)"
 
         # DB에서 업데이트된 재료를 쿼리
         db_session.expire_all()
@@ -306,6 +332,7 @@ def test_agent_synthesize_new_material_visual_asset_true_returns_ready_assets(
         assert (
             updated_material.visual_asset_key == f"materials/{res.material_id}/icon.png"
         )
+        assert updated_material.visual_color == "(R=0.50,G=0.50,B=0.50,A=1.0)"
 
 
 def test_visual_executor_permanent_shutdown_and_block(db_session: Session) -> None:
@@ -412,6 +439,7 @@ def test_agent_synthesize_cached_experiment_returns_ready_visual_asset_keys(
     stored = db_session.get(GeneratedMaterialModel, first.material_id)
     assert stored is not None
     stored.visual_status = "visual_ready"
+    stored.visual_color = "(R=0.25,G=0.50,B=0.75,A=1.0)"
     stored.visual_asset_key = f"materials/{first.material_id}/icon.png"
     stored.texture_asset_key = f"materials/{first.material_id}/texture.png"
     stored.thumbnail_asset_key = f"materials/{first.material_id}/thumbnail.png"
@@ -427,6 +455,7 @@ def test_agent_synthesize_cached_experiment_returns_ready_visual_asset_keys(
     assert cached.thumbnail_asset_key == (
         f"materials/{first.material_id}/thumbnail.png"
     )
+    assert cached.VisualColor == "(R=0.25,G=0.50,B=0.75,A=1.0)"
 
 
 def test_agent_synthesize_existing_material_returns_asset_keys_when_experiment_cache_miss(
@@ -446,6 +475,7 @@ def test_agent_synthesize_existing_material_returns_asset_keys_when_experiment_c
             rarity="rare",
             properties_json={},
             visual_status="visual_ready",
+            visual_color="(R=0.10,G=0.20,B=0.30,A=1.0)",
             visual_asset_key=f"materials/{material_id}/icon.png",
             texture_asset_key=f"materials/{material_id}/texture.png",
             thumbnail_asset_key=f"materials/{material_id}/thumbnail.png",
@@ -488,3 +518,4 @@ def test_agent_synthesize_existing_material_returns_asset_keys_when_experiment_c
     assert res.visual_asset_key == f"materials/{material_id}/icon.png"
     assert res.texture_asset_key == f"materials/{material_id}/texture.png"
     assert res.thumbnail_asset_key == f"materials/{material_id}/thumbnail.png"
+    assert res.VisualColor == "(R=0.10,G=0.20,B=0.30,A=1.0)"

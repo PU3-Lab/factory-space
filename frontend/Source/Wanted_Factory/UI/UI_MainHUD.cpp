@@ -4,6 +4,7 @@
 #include "Components/Image.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
+#include "Components/Widget.h"
 #include "Engine/GameInstance.h"
 #include "Engine/Texture2D.h"
 #include "PlanetEventManagerSubsystem.h"
@@ -37,6 +38,8 @@ void UUI_MainHUD::NativeConstruct()
 {
     Super::NativeConstruct();
 
+    HideSaveIndicator();
+
     if (GetWorld())
     {
         if (UPlanetEventManagerSubsystem* PlanetManager = GetWorld()->GetSubsystem<UPlanetEventManagerSubsystem>())
@@ -53,6 +56,11 @@ void UUI_MainHUD::NativeConstruct()
 
 void UUI_MainHUD::NativeDestruct()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(SaveIndicatorTimerHandle);
+    }
+
     if (GetWorld())
     {
         if (UPlanetEventManagerSubsystem* PlanetManager = GetWorld()->GetSubsystem<UPlanetEventManagerSubsystem>())
@@ -71,6 +79,28 @@ void UUI_MainHUD::ToggleQuestWindow()
     if (WBP_QuestWindow)
     {
         WBP_QuestWindow->ToggleQuestWindow();
+    }
+}
+
+void UUI_MainHUD::ShowSaveIndicator(float DisplaySeconds)
+{
+    UWidget* SaveIndicator = ResolveSaveIndicatorWidget();
+    if (!SaveIndicator)
+    {
+        return;
+    }
+
+    SaveIndicator->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(SaveIndicatorTimerHandle);
+        World->GetTimerManager().SetTimer(
+            SaveIndicatorTimerHandle,
+            this,
+            &UUI_MainHUD::HideSaveIndicator,
+            FMath::Max(0.1f, DisplaySeconds),
+            false);
     }
 }
 
@@ -298,6 +328,43 @@ void UUI_MainHUD::RefreshStormRiskBar(const FPlanetWeatherState& WeatherState)
     if (TXT_PlanetEvent)
     {
         TXT_PlanetEvent->SetText(FText::FromString(bHighRisk ? TEXT("모래폭풍 위험: 높음") : TEXT("모래폭풍 위험: 낮음")));
+    }
+}
+
+UWidget* UUI_MainHUD::ResolveSaveIndicatorWidget()
+{
+    if (UWidget* CachedWidget = CachedSaveIndicatorWidget.Get())
+    {
+        return CachedWidget;
+    }
+
+    static const FName CandidateNames[] = {
+        TEXT("IMG_Save"),
+        TEXT("IMG_SaveIcon"),
+        TEXT("IMG_Saving"),
+        TEXT("SaveIcon"),
+        TEXT("SavingIcon"),
+        TEXT("WBP_SaveIcon")
+    };
+
+    for (const FName CandidateName : CandidateNames)
+    {
+        if (UWidget* CandidateWidget = GetWidgetFromName(CandidateName))
+        {
+            CachedSaveIndicatorWidget = CandidateWidget;
+            CandidateWidget->SetVisibility(ESlateVisibility::Collapsed);
+            return CandidateWidget;
+        }
+    }
+
+    return nullptr;
+}
+
+void UUI_MainHUD::HideSaveIndicator()
+{
+    if (UWidget* SaveIndicator = ResolveSaveIndicatorWidget())
+    {
+        SaveIndicator->SetVisibility(ESlateVisibility::Collapsed);
     }
 }
 
