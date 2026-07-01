@@ -93,12 +93,12 @@ def test_agent_synthesize_new_material_fallback_path(db_session: Session) -> Non
         assert res.name  # 비어있지 않음
         assert res.rarity in {"common", "uncommon", "rare", "epic"}
         assert res.state in {"solid", "liquid", "gas", "plasma"}
-        assert res.rowname == "wood"
+        assert res.rowname == res.substance
+        assert res.rowname != "wood"
         assert res.form == "solid"
-        assert res.substance == "wood"
-        assert res.type == "organism"
-        assert res.shape == ""
-        assert res.DIsplayName == "목재"
+        assert res.type == "metal"
+        assert res.shape == "ingot"
+        assert res.DIsplayName == res.name
         assert res.VisualColor == "(R=0.50,G=0.50,B=0.50,A=1.0)"
         assert res.visual_status == "visual_ready"
         assert res.visual_asset_key == f"materials/{res.material_id}/icon.png"
