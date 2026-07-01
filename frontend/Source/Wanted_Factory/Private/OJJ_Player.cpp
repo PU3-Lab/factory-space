@@ -286,6 +286,13 @@ void AOJJ_Player::ApplySelectedCharacterAppearance()
 	{
 		JumpAnim = Appearance->JumpAnim;
 	}
+	// [루트모션 올라서기] 캐릭터별 사다리 마무리 몽타주 교체(GetUpMontage/JumpAnim 패턴). 비어 있으면(null)
+	// BP_OJJ_Player 기본(Man, AM_Man_Ladder_Finish) 유지 — DA 누락/미지정 시 기존 동작 보존(회귀 0). Woman은
+	// DA에 AM_Woman_Ladder_Finish 할당 시 그 몽타주로 올라서기. 미할당이면 스켈레톤 mismatch 없이 step-off 폴백.
+	if (Appearance->LadderFinishMontage)
+	{
+		LadderFinishMontage = Appearance->LadderFinishMontage;
+	}
 }
 
 void AOJJ_Player::PlayIntroSequence()
@@ -772,8 +779,8 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 		return;
 	}
 
-	// step-off 안착 보간 중엔 이동 입력 잠금(보간이 위치를 전담 → 진동/끼임 방지).
-	if (bSteppingOff)
+	// step-off 안착 보간 / 루트모션 올라서기 중엔 이동 입력 잠금(보간·루트모션이 위치를 전담 → 진동·이중이동 방지).
+	if (bSteppingOff || bClimbFinishing)
 	{
 		return;
 	}
@@ -782,28 +789,28 @@ void AOJJ_Player::Move(const FInputActionValue& Value)
 	// 상/하단 도달 시 등반 종료 — 상단은 step-off, 하단은 지면 복귀.
 	if (CurrentLadder)
 	{
-		AddMovementInput(FVector::UpVector, Axis.Y);
-
-		// 발 밑 Z로 상/하단 도달 판정. ClimbReachMargin 여유로 경계 떨림 방지(도달은 살짝 일찍).
+		// 발 밑 Z로 상/하단 도달 및 핸드오프 판정. ClimbReachMargin 여유로 경계 떨림 방지(도달은 살짝 일찍).
 		const float FeetZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 
-		// [#184/#343 옵션A] 긴 사다리만 마지막 FinishTriggerDistance 구간에서 Finish(올라서기 오버레이) 1회 재생.
-		// 짧은 사다리(ClimbHeight < FinishTriggerDistance)는 Finish 아예 스킵 — Loop만 + step-off 안착으로 종료
-		// (BeginClimb 직후 즉시트리거/허공 올라서기 방지). 옛 min(dist, ClimbHeight*0.5) 클램프는 "어쨌든 재생"
-		// 방식이라 폐기. Finish hips는 평탄화(Loop 높이 고정)라 캡슐 비행이 수직 전담 → 포즈 가산 상승 0(이중튐 없음).
-		// 올라서기 = 평탄 hips 위 팔/다리 모션 오버레이. ⚠️ 몽타주 Root Motion OFF 유지(이동은 비행 전담).
-		// bFinishPlaying = 한 등반당 1회 가드(BeginClimb/AbortClimb에서 리셋).
+		// [루트모션 올라서기] 긴 사다리(ClimbHeight ≥ FinishTriggerDistance) + Finish 몽타주 할당 시: top까지
+		// ClimbFinishHandoffDistance 남으면 비행 수직 이동을 끊고 루트모션 몽타주에 슬래브 안착을 넘긴다(애니=위치
+		// 일치). bFinishPlaying = 한 등반당 1회 시도 가드(BeginClimb/AbortClimb에서 리셋). BeginClimbFinish 실패
+		// (몽타주 null/재생 실패, Woman 등)면 폴백 — 아래 AddMovementInput + 도달판정이 계속 step-off로 마무리.
 		if (Axis.Y > 0.f && !bFinishPlaying && LadderFinishMontage
-			&& CurrentLadder->GetClimbHeight() >= FinishTriggerDistance)
+			&& CurrentLadder->GetClimbHeight() >= FinishTriggerDistance
+			&& (CurrentLadder->GetClimbTopZ() - FeetZ) <= ClimbFinishHandoffDistance)
 		{
-			const float RemainingToTop = CurrentLadder->GetClimbTopZ() - FeetZ;
-			if (RemainingToTop <= FinishTriggerDistance)
+			bFinishPlaying = true; // 성패 무관 1회 시도(매프레임 재시도 방지). 실패 시 폴백은 아래 도달판정이 담당.
+			if (BeginClimbFinish())
 			{
-				PlayAnimMontage(LadderFinishMontage);
-				bFinishPlaying = true;
+				return; // 이후 위치는 루트모션 전담 — 이번 프레임 입력 스킵(다음 프레임부터 bClimbFinishing 가드).
 			}
 		}
 
+		// 등반 중(#184): 전후축(W/S)을 수직 이동으로 재해석, 좌우(D/A)는 무시(사다리 축 고정).
+		AddMovementInput(FVector::UpVector, Axis.Y);
+
+		// 상/하단 도달 시 종료 — 상단은 step-off 안착(폴백: 몽타주 없음/짧은 사다리/재생 실패), 하단은 지면 복귀.
 		if (Axis.Y > 0.f && FeetZ >= CurrentLadder->GetClimbTopZ() - ClimbReachMargin)
 		{
 			EndClimb(/*bStepOffTop=*/true);
@@ -907,11 +914,9 @@ void AOJJ_Player::EndClimb(bool bStepOffTop)
 	AOJJ_Ladder* Ladder = CurrentLadder;
 	CurrentLadder = nullptr;
 	bClimbing = false;
-	// [#184] Finish 마무리 몽타주는 top 도착 '이전'에 Move() 거리트리거(FinishTriggerDistance)로 이미 재생됨
-	// — 여기서 재생하면 늦으므로(올라선 뒤 또 올라서기) 두지 않는다. bFinishPlaying은 다음 BeginClimb에서 리셋.
-	// [#343 codex교차검증 #5] Finish 몽타주(4s)가 마운트(~0.58s)보다 길어, 정지하지 않으면 step-off/초기 걷기에
-	// 팔·다리 올라서기 모션이 덧씌워진다(평탄화로 수직 튐은 없으나 포즈 잔상). top 도달 = 마운트 완료이므로
-	// 여기서 블렌드아웃. 인자 명시 → Finish가 활성일 때만 정지(다른 몽타주 영향 없음). 하단 종료 시엔 미재생이라 no-op.
+	// [폴백 경로] EndClimb은 이제 루트모션 핸드오프가 없는 경우만 도달한다(몽타주 미할당/재생 실패/짧은 사다리,
+	// 또는 하단 종료). 루트모션 올라서기는 BeginClimbFinish→OnLadderFinishMontageEnded가 전담(EndClimb 미경유).
+	// 안전상 Finish 몽타주가 어떤 이유로든 재생 중이면 정지(인자 명시 → 그 몽타주만, 미재생이면 no-op).
 	if (LadderFinishMontage)
 	{
 		StopAnimMontage(LadderFinishMontage);
@@ -976,6 +981,76 @@ void AOJJ_Player::ResumeWalkingWithCooldown()
 	}
 }
 
+bool AOJJ_Player::BeginClimbFinish()
+{
+	// [루트모션 올라서기] 비행 수직 이동을 끊고 루트모션 Finish 몽타주로 슬래브 안착을 넘긴다. 몽타주가 캐릭터를
+	// 위(+ 전방 슬래브 안쪽)로 이동시키므로, 재생 성공 시 Move()/Tick의 등반 입력·X/Y 당김을 전면 차단(이중이동 방지).
+	if (!CurrentLadder || !LadderFinishMontage)
+	{
+		return false;
+	}
+
+	UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+	if (!AnimInstance)
+	{
+		return false; // AnimInstance 없으면 폴백(step-off).
+	}
+
+	// 잔여 비행 속도 제거 — 루트모션만 위치를 몰도록. MOVE_Flying/중력0은 유지(공중에서 루트모션 적용 + 낙하 방지).
+	// 루트모션은 PhysFlying에서도 ApplyRootMotionToVelocity로 반영되므로 비행 모드에서 수직/전방 변위가 적용된다.
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+	}
+
+	const float Duration = AnimInstance->Montage_Play(LadderFinishMontage);
+	if (Duration <= 0.f)
+	{
+		return false; // 재생 실패(스켈레톤 불일치 등, Woman) → 폴백. 상태 미변경(비행 등반 유지).
+	}
+
+	// 종료 콜백 바인딩 — 몽타주가 끝나면(또는 중단되면) 슬래브 Z 스냅 보정 + 걷기 복귀. FOnMontageEnded는 비다이나믹.
+	FOnMontageEnded EndDelegate;
+	EndDelegate.BindUObject(this, &AOJJ_Player::OnLadderFinishMontageEnded);
+	AnimInstance->Montage_SetEndDelegate(EndDelegate, LadderFinishMontage);
+
+	// bClimbing은 끄되(Tick의 X/Y 당김 정지) CurrentLadder는 유지(종료 시 슬래브 Z 보정에 필요). 이동 입력 차단은
+	// bClimbFinishing(Move 상단 가드)이 담당. bOrientRotationToMovement=false(BeginClimb에서 끈 것)는 유지 —
+	// 루트모션 회전이 사다리-facing yaw를 흔들지 않게.
+	bClimbing = false;
+	bClimbFinishing = true;
+	return true;
+}
+
+void AOJJ_Player::OnLadderFinishMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+	// 다른 몽타주 종료거나 이미 청산됐으면 무시(AbortClimb 등이 먼저 정리해 bClimbFinishing=false인 경우).
+	if (Montage != LadderFinishMontage || !bClimbFinishing)
+	{
+		return;
+	}
+	bClimbFinishing = false;
+
+	// [도착 Z 검증] 루트모션 종료 위치의 발 Z가 슬래브 표면과 오차 이상 어긋나면 Z만 스냅(XY는 루트모션 결과 유지).
+	// 중단(bInterrupted: 다른 몽타주/AbortClimb)엔 스냅 생략 — 위치를 신뢰할 수 없음.
+	if (!bInterrupted && IsValid(CurrentLadder))
+	{
+		const float HalfHeight = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		const float TargetZ = CurrentLadder->GetClimbTopZ() + HalfHeight; // 발이 슬래브 표면에 딱 닿게.
+		const FVector Loc = GetActorLocation();
+		if (FMath::Abs(Loc.Z - TargetZ) > ClimbFinishZSnapTolerance)
+		{
+			SetActorLocation(FVector(Loc.X, Loc.Y, TargetZ),
+				/*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
+		}
+	}
+
+	CurrentLadder = nullptr;
+	bClimbing = false;
+	bFinishPlaying = false; // 다음 등반에서 Finish 재트리거 허용.
+	ResumeWalkingWithCooldown();
+}
+
 void AOJJ_Player::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -1013,7 +1088,7 @@ void AOJJ_Player::Tick(float DeltaSeconds)
 	// 사다리 파괴/invalid(pending-kill 포함) 시에도 강제 청산 — AbortClimb이 Flying 해제 + GravityScale 복원 +
 	// bOrientRotationToMovement=true(BeginClimb에서 끈 것) 복원을 보장한다. TObjectPtr는 weak 아니라 stale 가능 →
 	// 단순 null 체크론 부족(IsValid). 누락 시 등반 중 끈 회전이 영구 고착되어 걸어도 안 돌게 됨.
-	if (bClimbing && !IsValid(CurrentLadder))
+	if ((bClimbing || bClimbFinishing) && !IsValid(CurrentLadder))
 	{
 		AbortClimb();
 	}
@@ -1248,9 +1323,18 @@ void AOJJ_Player::AbortClimb()
 {
 	// 등반/step-off를 즉시 청산하고 걷기로 수렴(중력 복원). 빌드모드 진입·EndPlay·사다리 소멸 등
 	// 비정상 종료 경로에서 MOVE_Flying/GravityScale=0 고착을 방지하는 단일 안전 청산점.
-	if (!bClimbing && !bSteppingOff && !CurrentLadder)
+	if (!bClimbing && !bSteppingOff && !bClimbFinishing && !CurrentLadder)
 	{
 		return;
+	}
+	// [루트모션 올라서기] 진행 중이던 Finish 몽타주 정지 — 비정상 청산 시 루트모션이 계속 캐릭터를 끌지 않게.
+	// 플래그를 먼저 내려 StopAnimMontage가 부르는 종료 델리게이트(OnLadderFinishMontageEnded)가 no-op이 되게 한다
+	// (스냅/걷기복귀 중복 방지 — 청산은 아래에서 일괄 처리).
+	const bool bWasFinishing = bClimbFinishing;
+	bClimbFinishing = false;
+	if (bWasFinishing && LadderFinishMontage)
+	{
+		StopAnimMontage(LadderFinishMontage);
 	}
 	CurrentLadder = nullptr;
 	bClimbing = false;
