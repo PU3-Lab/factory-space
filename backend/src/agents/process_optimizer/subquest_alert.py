@@ -76,6 +76,10 @@ class SubquestAlertBuilder:
         if not subquest_mode:
             return OptimizationAlert(needed=False)
 
+        # Sprint 8: need_more_state 가 있으면 서브퀘스트 탐지를 무시하고 needed=False 반환
+        if getattr(report, "need_more_state", None) is not None:
+            return OptimizationAlert(needed=False)
+
         # 2. 공장 상태를 Pydantic 객체로 일관되게 정규화
         if isinstance(factory_state, dict):
             state_obj = FactoryState.model_validate(factory_state)
@@ -109,32 +113,148 @@ class SubquestAlertBuilder:
                 ),
             )
 
+        # --- A2. 고립 송전탑 이슈 탐지 (Power Sprint 4) ---
+        if report.isolated_power_nodes:
+            pole_id = report.isolated_power_nodes[0]
+            target_desc = TargetDescriptor(type="power_pole", id=pole_id)
+
+            unpowered_machines_str = ""
+            if report.unpowered_machines:
+                unpowered_machines_str = ", ".join(report.unpowered_machines)
+
+            if unpowered_machines_str:
+                reason = f"{pole_id}이 주 전력망과 연결되어 있지 않아 {unpowered_machines_str}이 전력을 받지 못하고 있습니다."
+                objective = f"{pole_id} 주변의 전력 연결을 확인하고 {unpowered_machines_str}에 전력이 공급되도록 직접 연결하세요."
+            else:
+                reason = f"{pole_id}이 주 전력망과 연결되어 있지 않습니다."
+                objective = f"{pole_id} 주변의 전력 연결 상태를 확인하고, 플레이어가 직접 전선을 연결하십시오."
+
+            return OptimizationAlert(
+                needed=True,
+                severity="medium",
+                reason=reason,
+                target=target_desc,
+                suggested_subquest=SuggestedSubquest(
+                    title="고립된 송전탑 확인",
+                    objective=objective,
+                    target=target_desc,
+                    severity="medium",
+                    next_request=SuggestedSubquestNextRequest(
+                        agent="process_optimizer",
+                        operation="analyze",
+                        goal=report.goal,
+                        request_source="subquest",
+                        target=target_desc,
+                    ),
+                ),
+            )
+
+        # --- A3. 미연결 발전기 이슈 탐지 (Power Sprint 4) ---
+        if report.disconnected_generators:
+            gen_id = report.disconnected_generators[0]
+            target_desc = TargetDescriptor(type="generator", id=gen_id)
+
+            reason = f"{gen_id}가 전력망에 연결되어 있지 않아 생산 전력이 누락되고 있습니다."
+            objective = f"{gen_id}와 가까운 송전탑의 연결 상태를 확인하고, 플레이어가 직접 연결하십시오."
+
+            return OptimizationAlert(
+                needed=True,
+                severity="medium",
+                reason=reason,
+                target=target_desc,
+                suggested_subquest=SuggestedSubquest(
+                    title="미연결 발전기 확인",
+                    objective=objective,
+                    target=target_desc,
+                    severity="medium",
+                    next_request=SuggestedSubquestNextRequest(
+                        agent="process_optimizer",
+                        operation="analyze",
+                        goal=report.goal,
+                        request_source="subquest",
+                        target=target_desc,
+                    ),
+                ),
+            )
+
+        # --- A4. 설비 정비 및 고장 이슈 탐지 (Power Sprint 7) ---
+        if report.maintenance_required_machines:
+            machine_id = report.maintenance_required_machines[0]
+            is_broken = machine_id in report.broken_machines
+
+            target_desc = TargetDescriptor(type="machine", id=machine_id)
+
+            if is_broken:
+                title = "고장 설비 점검"
+                objective = f"{machine_id} 설비가 고장(broken) 상태입니다. 현장으로 가 장비를 점검하고 수리하십시오."
+                reason = f"{machine_id} 설비가 고장 상태로 멈춰 있습니다."
+            else:
+                title = "설비 정비 수행"
+                objective = f"{machine_id}의 내구도가 기준치 이하로 떨어졌습니다. 더 큰 손상을 방지하기 위해 정비를 수행하세요."
+                reason = f"{machine_id}의 내구도가 낮아 정비가 필요합니다."
+
+            return OptimizationAlert(
+                needed=True,
+                severity="medium",
+                reason=reason,
+                target=target_desc,
+                suggested_subquest=SuggestedSubquest(
+                    title=title,
+                    objective=objective,
+                    target=target_desc,
+                    severity="medium",
+                    next_request=SuggestedSubquestNextRequest(
+                        agent="process_optimizer",
+                        operation="analyze",
+                        goal=report.goal,
+                        request_source="subquest",
+                        target=target_desc,
+                    ),
+                ),
+            )
+
         # --- B. 입력 부족 이슈 탐지 (우선순위 2 - severity: medium) ---
         if report.input_shortages:
             machine_id = report.input_shortages[0]
             machine_obj = machines_map.get(machine_id)
 
-            # 장비 타입 및 부족 자원 한글 이름 맵핑 구성
             machine_type_ko = "장비"
-            item_name_ko = "원자재"
-
             if machine_obj:
                 machine_type_ko = MACHINE_TYPE_MAP.get(machine_obj.type, "장비")
-                # 장비 입력 리스트 중 잔여량이 0 이하인 첫 자원 확인
-                for inp in machine_obj.inputs:
-                    if inp.amount <= 0:
-                        item_name_ko = ITEM_NAME_MAP.get(inp.item_id, inp.item_id)
-                        break
+
+            item_id = report.input_shortages_items.get(machine_id, "원자재")
+            item_name_ko = ITEM_NAME_MAP.get(item_id, item_id)
 
             target_desc = TargetDescriptor(type="machine", id=machine_id)
+
+            if not report.storages:
+                title = f"{machine_type_ko} 입력 라인 복구"
+                objective = f"{machine_id}에 {item_name_ko} 공급이 다시 들어오도록 컨베이어와 상류 설비를 확인하세요."
+                reason = f"{machine_id}의 입력 재고가 부족합니다."
+            else:
+                total_amount = 0.0
+                for storage in report.storages:
+                    for inv in storage.inventory:
+                        if inv.item_id == item_id:
+                            total_amount += inv.amount
+
+                if total_amount > 0.0:
+                    title = f"{item_name_ko} 공급 라인 점검"
+                    objective = f"{machine_id} 공급 창고에 {item_name_ko} 재고가 존재합니다. 창고와 {machine_id} 사이의 컨베이어 연결을 확인하여 공급을 복구하세요."
+                    reason = f"{machine_id}에 {item_name_ko}가 공급되지 않고 있습니다. (창고 재고 있음)"
+                else:
+                    title = f"{item_name_ko} 생산량 확충"
+                    objective = f"{machine_id}의 공급 창고에도 {item_name_ko}가 부족합니다. {item_name_ko} 채굴기나 생산 시설을 확충하여 절대적인 공급량을 늘리세요."
+                    reason = f"{machine_id}의 공급 창고에도 {item_name_ko}가 부족합니다."
+
             return OptimizationAlert(
                 needed=True,
                 severity="medium",
-                reason=f"{machine_id}의 입력 재고가 부족합니다.",
+                reason=reason,
                 target=target_desc,
                 suggested_subquest=SuggestedSubquest(
-                    title=f"{machine_type_ko} 입력 라인 복구",
-                    objective=f"{machine_id}에 {item_name_ko} 공급이 다시 들어오도록 컨베이어와 상류 설비를 확인하세요.",
+                    title=title,
+                    objective=objective,
                     target=target_desc,
                     severity="medium",
                     next_request=SuggestedSubquestNextRequest(

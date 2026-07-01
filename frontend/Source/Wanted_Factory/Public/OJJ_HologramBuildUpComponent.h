@@ -31,8 +31,12 @@ class WANTED_FACTORY_API UOJJ_HologramBuildUpComponent : public UActorComponent
 public:
 	UOJJ_HologramBuildUpComponent();
 
-	// 빌드업 시작 — Source 메시를 복제한 프록시 생성 + Progress 0→1 애니. HologramMaterial/Source 무효면 무동작(안전).
+	// 빌드업 시작 — Source 메시를 복제한 프록시 생성 + Progress 애니. HologramMaterial/Source 무효면 무동작(안전).
+	// 기본(bDissolveOut=false)은 설치 빌드업(Progress 0→1, 아래→위, 시안). 철거 디졸브아웃은 옵션(bDissolveOut/bOverrideColor)으로 구동.
 	void StartBuildUp(UStaticMeshComponent* Source);
+
+	// 진행 중 여부 — 독립 프록시 액터가 "시작 실패(머티리얼/메시 무효) 시 즉시 self Destroy" 판정에 사용.
+	bool IsRunning() const { return bRunning; }
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
@@ -47,6 +51,24 @@ public:
 	// z-fighting 방지용 프록시 스케일 배수(실제보다 약간 크게 = 경계 위 영역을 확실히 가림). 머티리얼 WPO로 띄우면 1.0.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hologram", meta = (ClampMin = "1.0"))
 	float ProxyScaleMultiplier = 1.02f;
+
+	// [철거 디졸브아웃] true면 Z 정규화를 뒤집어(MinZ↔MaxZ 스왑) Progress 0→1 진행에 메시가 "위→아래로 점차 사라짐"
+	// (전체 표시→상단부터 투명). 기본 false=설치 빌드업(아래→위 차오름, 정상 Z) — 기존 동작 불변.
+	// ⚠️ 머티리얼은 BLEND_Translucent라 opacity가 0까지 떨어져 완전 소멸 가능. 경계 위=불투명(홀로그램),
+	//    아래=투명이라 Z를 뒤집으면 상단이 투명 영역이 되어 위→아래로 걷힌다(머티리얼 무수정 — 값만).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hologram")
+	bool bDissolveOut = false;
+
+	// [철거 빌드다운] true면 MID의 HologramColor/ScanlineColor를 OverrideColor로 덮는다. 기본 false면 머티리얼 기본색(시안) 유지.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hologram")
+	bool bOverrideColor = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hologram", meta = (EditCondition = "bOverrideColor"))
+	FLinearColor OverrideColor = FLinearColor(1.0f, 0.0f, 0.0f);
+
+	// [철거 빌드다운] 효과 완료 시 소유 액터를 Destroy — 독립 프록시 액터(AOJJ_DemolishEffectActor) 자체소멸용. 기본 false.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hologram")
+	bool bDestroyOwnerOnFinish = false;
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

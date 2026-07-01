@@ -82,10 +82,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "OJJ|Animation")
 	bool ShouldPlayFallAnim() const;
 
-	// [게임진입 테스트] 위젯 전 독립 검증용 콘솔 명령 — PIE 콘솔에 `OJJ_DebugSetCharacter 1`(Woman)/`0`(Man)
-	// 입력 시 선택 서브시스템 설정 + 즉시 재스왑(레벨 재진입 없이 확인). 2단계 위젯 붙으면 제거 가능.
+	// [게임진입 테스트] 이름 기반 캐릭터 스왑 콘솔 명령 — PIE 콘솔에 `SetCharacter Woman` / `SetCharacter Man`.
+	// EOJJ_CharacterType 리플렉션을 돌며 짧은 이름·DisplayName(대소문자 무시)으로 매칭하므로 enum에 캐릭터가 추가돼도
+	// 이 명령은 자동 대응(수정 불필요). 매칭값 → SetSelectedCharacter → ApplySelectedCharacterAppearance(외형+per-character
+	// 데이터 일괄 적용). 알 수 없는 이름이면 사용 가능한 값을 로그로 안내 후 무시(크래시 없음).
 	UFUNCTION(Exec)
-	void OJJ_DebugSetCharacter(int32 CharacterIndex);
+	void SetCharacter(const FString& CharacterName);
 
 protected:
 	virtual void BeginPlay() override;
@@ -698,6 +700,12 @@ public:
 
 	UFUNCTION(Exec)
 	void TimeSet(int32 TotalMinutes);
+
+	UFUNCTION(Exec)
+	void GenerateFactoryState();
+
+	UFUNCTION(Exec)
+	void GenerateFactoryStateLog();
 
 	UFUNCTION(Exec, Category = "Cheats")
     void Cheat_ResetMachines();

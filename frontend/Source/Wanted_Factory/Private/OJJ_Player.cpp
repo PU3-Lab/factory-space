@@ -97,13 +97,12 @@ AOJJ_Player::AOJJ_Player()
 	NightSpotLight->SetupAttachment(RootComponent);
 	NightSpotLight->SetRelativeLocation(FVector(30.0f, 0.0f, 30.0f));
 	NightSpotLight->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
-	NightSpotLight->Intensity = 50.f;
-	NightSpotLight->AttenuationRadius = 1500.f;
+	NightSpotLight->Intensity = 50.0f;
+	NightSpotLight->AttenuationRadius = 1500.0f;
 	NightSpotLight->InnerConeAngle = 30.0f;
 	NightSpotLight->OuterConeAngle = 45.0f;
 	NightSpotLight->bUseInverseSquaredFalloff = false;
 	NightSpotLight->LightFalloffExponent = 2.5f;
-	NightSpotLight->SetIntensity(0.0f);
 	NightSpotLight->SetVisibility(false);
 }
 
@@ -507,19 +506,55 @@ void AOJJ_Player::HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 	bBlendingCamera = true;
 }
 
-void AOJJ_Player::OJJ_DebugSetCharacter(int32 CharacterIndex)
+void AOJJ_Player::SetCharacter(const FString& CharacterName)
 {
-	// [게임진입 테스트] 콘솔 디버그 — 서브시스템 값 설정 후 즉시 재스왑(BeginPlay 외 런타임 반영 검증).
-	if (UGameInstance* GameInstance = GetGameInstance())
+	// [게임진입 테스트] 이름 기반 콘솔 스왑 — enum 리플렉션으로 매칭해 enum 확장 시 자동 대응(인덱스 하드코딩 회피).
+	UGameInstance* GameInstance = GetGameInstance();
+	UOJJ_CharacterSelectionSubsystem* Selection =
+		GameInstance ? GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>() : nullptr;
+	if (!Selection)
 	{
-		if (UOJJ_CharacterSelectionSubsystem* Selection = GameInstance->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] SetCharacter — CharacterSelectionSubsystem 없음, 무시."));
+		return;
+	}
+
+	const UEnum* EnumPtr = StaticEnum<EOJJ_CharacterType>();
+	if (!EnumPtr)
+	{
+		return;
+	}
+	// NumEnums()는 UHT가 자동 추가하는 _MAX 항목을 포함하므로 -1로 실제 캐릭터 항목만 순회.
+	const int32 NumEntries = EnumPtr->NumEnums() - 1;
+
+	// 짧은 이름(예: "Woman") 또는 DisplayName과 대소문자 무시 비교로 enum 값 탐색.
+	for (int32 i = 0; i < NumEntries; ++i)
+	{
+		const FString ShortName = EnumPtr->GetNameStringByIndex(i);
+		const FString DisplayName = EnumPtr->GetDisplayNameTextByIndex(i).ToString();
+		if (ShortName.Equals(CharacterName, ESearchCase::IgnoreCase) ||
+			DisplayName.Equals(CharacterName, ESearchCase::IgnoreCase))
 		{
-			Selection->SetSelectedCharacter(
-				CharacterIndex == 1 ? EOJJ_CharacterType::Woman : EOJJ_CharacterType::Man);
+			const EOJJ_CharacterType NewType = static_cast<EOJJ_CharacterType>(EnumPtr->GetValueByIndex(i));
+			Selection->SetSelectedCharacter(NewType);
 			ApplySelectedCharacterAppearance();
-			UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] DebugSetCharacter=%d 적용"), CharacterIndex);
+			UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] SetCharacter='%s' 적용"), *DisplayName);
+			return;
 		}
 	}
+
+	// 매칭 실패 — 사용 가능한 값 안내 후 무시(크래시 없이 로그만).
+	FString Available;
+	for (int32 i = 0; i < NumEntries; ++i)
+	{
+		if (i > 0)
+		{
+			Available += TEXT(", ");
+		}
+		Available += EnumPtr->GetNameStringByIndex(i);
+	}
+	UE_LOG(LogTemp, Warning,
+		TEXT("[OJJ_Player] SetCharacter — 알 수 없는 캐릭터 '%s'. 사용 가능: %s"),
+		*CharacterName, *Available);
 }
 
 void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -1081,6 +1116,8 @@ void AOJJ_Player::UpdateResourceNameplate()
 			? PlayerController->PlayerCameraManager->GetCameraLocation()
 			: GetActorLocation();
 
+	const EBuildViewMode ViewMode = BuildController ? BuildController->GetBuildViewMode() : EBuildViewMode::None;
+	const bool bUseCameraXYDistance = ViewMode != EBuildViewMode::None;
 	const FVector CharacterLocation = GetActorLocation();
 	const float MaxDisplayDistanceSq = FMath::Square(ResourceNameplateTraceDistance);
 
@@ -1088,14 +1125,22 @@ void AOJJ_Player::UpdateResourceNameplate()
 	for (TActorIterator<AResourceBase> It(World); It; ++It)
 	{
 		AResourceBase* Resource = *It;
-		if (!IsValid(Resource) || !Resource->IsOreResource() ||
-			FVector::DistSquared(CharacterLocation, Resource->GetActorLocation()) > MaxDisplayDistanceSq)
+		if (!IsValid(Resource) || !Resource->IsOreResource())
+		{
+			continue;
+		}
+
+		const FVector ResourceLocation = Resource->GetActorLocation();
+		const float DistanceToResourceSq = bUseCameraXYDistance
+			? FVector::DistSquared2D(ViewerLocation, ResourceLocation)
+			: FVector::DistSquared(CharacterLocation, ResourceLocation);
+		if (DistanceToResourceSq > MaxDisplayDistanceSq)
 		{
 			continue;
 		}
 
 		const FVector DebugTextLocation =
-			Resource->GetActorLocation() + FVector(0.0f, 0.0f, 300.0f);
+			ResourceLocation + FVector(0.0f, 0.0f, 300.0f);
 
 		FString ResourceDisplayName = Resource->GetResourceRowName().ToString();
 		FResourceData ResourceData;
@@ -2501,6 +2546,42 @@ void AOJJ_Player::TriggerInventoryToggle()
 		   true
 		);
 	}
+}
+
+void AOJJ_Player::GenerateFactoryState()
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>())
+		{
+			FString SavedFilePath;
+			if (AgentClient->SaveProcessOptimizerStateUpdateJsonToDesktop(0, TEXT(""), TEXT(""), SavedFilePath))
+			{
+				UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] Factory state preview saved to: %s"), *SavedFilePath);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] GenerateFactoryState failed: Could not save preview file."));
+			}
+			return;
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] GenerateFactoryState failed: FactoryAgentClientSubsystem not found."));
+}
+
+void AOJJ_Player::GenerateFactoryStateLog()
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>())
+		{
+			AgentClient->LogProcessOptimizerStateUpdateJson(0, TEXT(""), TEXT(""));
+			return;
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] GenerateFactoryStateLog failed: FactoryAgentClientSubsystem not found."));
 }
 
 void AOJJ_Player::TutorialAdvance()

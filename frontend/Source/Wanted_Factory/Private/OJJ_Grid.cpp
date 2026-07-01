@@ -879,6 +879,16 @@ AOJJ_Grid::AOJJ_Grid()
 	GhostMeshComp->SetVisibility(false);
 	GhostMeshComp->SetVisibleInRayTracing(false);
 
+	// [#184] 사다리 고스트 ISM — 사다리 ISM 타일 구조를 재현(단일 GhostMeshComp로는 표현 불가). 머신/Foundation
+	// 고스트와 독립. 메시/인스턴스/머티리얼은 런타임(OJJ_ShowGhostForLadder)에서 부여 — 생성자는 충돌/그림자 차단 + 숨김.
+	LadderGhostISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("LadderGhostISM"));
+	LadderGhostISM->SetupAttachment(RootComponent);
+	LadderGhostISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	LadderGhostISM->SetCastShadow(false);
+	LadderGhostISM->SetVisibility(false);
+	LadderGhostISM->SetVisibleInRayTracing(false);
+	LadderGhostISM->SetCanEverAffectNavigation(false);
+
 	// 고스트 틴트 머티리얼 기본값(#187) — CDO에 박아 모든 그리드가 자동 적용(레벨별 수동 지정·맵 변경 불필요).
 	// 오버레이용 반투명(Translucent) 틴트 머티(파라미터 TintColor/Opacity). 인스턴스에서 교체 가능(EditAnywhere).
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> GhostMat(
@@ -2288,12 +2298,23 @@ void AOJJ_Grid::RefreshGridVisual()
 			GridColorOreAdjacentCells.Reset();
 		}
 
+		// [진입 hitch] 전체 GridSize(예 756²) 대신 카메라/플레이어 중심 윈도우만 그린다(렌더 한정, 분류 로직 동일).
+		// VisibleGridRadius<=0 또는 중심 미설정(센티넬)이면 전체(폴백). 화면 밖 셀은 안 보이므로 생성 불필요.
+		int32 MinX = 0, MaxX = GridSize.X - 1, MinY = 0, MaxY = GridSize.Y - 1;
+		if (VisibleGridRadius > 0 && VisualWindowCenter.X != INT_MIN)
+		{
+			MinX = FMath::Max(0, VisualWindowCenter.X - VisibleGridRadius);
+			MaxX = FMath::Min(GridSize.X - 1, VisualWindowCenter.X + VisibleGridRadius);
+			MinY = FMath::Max(0, VisualWindowCenter.Y - VisibleGridRadius);
+			MaxY = FMath::Min(GridSize.Y - 1, VisualWindowCenter.Y + VisibleGridRadius);
+		}
+
 		TArray<FTransform> GreenXforms;
 		TArray<FTransform> RedXforms;
 		TArray<FTransform> BlueXforms;
-		for (int32 X = 0; X < GridSize.X; ++X)
+		for (int32 X = MinX; X <= MaxX; ++X)
 		{
-			for (int32 Y = 0; Y < GridSize.Y; ++Y)
+			for (int32 Y = MinY; Y <= MaxY; ++Y)
 			{
 				const FIntPoint Cell(X, Y);
 				switch (OJJ_ClassifyCellColor(Cell))
@@ -2324,6 +2345,31 @@ void AOJJ_Grid::RefreshGridVisual()
 			for (const FIntPoint& Cell : WaterCells) { BlueXforms.Add(MakeCellXform(Cell)); }
 			if (WaterCellISM && BlueXforms.Num() > 0) { WaterCellISM->AddInstances(BlueXforms, /*bShouldReturnIndices=*/false, /*bWorldSpace=*/true); }
 		}
+	}
+}
+
+void AOJJ_Grid::UpdateVisualWindow(const FVector& WorldCenter)
+{
+	// [진입 hitch] 빌드모드 중 시각화 윈도우 중심을 추종. 중심 셀이 충분히 이동했을 때만 재페인트(매 프레임 재구성 방지).
+	if (VisibleGridRadius <= 0)
+	{
+		return; // 윈도잉 끔(전체 모드) — 추종 불필요.
+	}
+
+	const FIntPoint NewCenter = WorldToGrid(WorldCenter);
+	const bool bUnset = (VisualWindowCenter.X == INT_MIN);
+	const bool bMoved = bUnset
+		|| FMath::Abs(NewCenter.X - VisualWindowCenter.X) >= VisualWindowRepaintStep
+		|| FMath::Abs(NewCenter.Y - VisualWindowCenter.Y) >= VisualWindowRepaintStep;
+	if (!bMoved)
+	{
+		return;
+	}
+
+	VisualWindowCenter = NewCenter;
+	if (bVisualizationActive)
+	{
+		RefreshGridVisual();
 	}
 }
 
@@ -5495,18 +5541,11 @@ void AOJJ_Grid::OJJ_ShowGhostForRamp(AOJJ_Foundation* RampCDO, FIntPoint Origin,
 	GhostMeshComp->SetVisibility(true);
 }
 
-void AOJJ_Grid::OJJ_ShowGhostForLadder(const FVector& BottomLocation, float ClimbHeight, const FRotator& Rotation, bool bValid)
+void AOJJ_Grid::OJJ_ShowGhostForLadder(AOJJ_Ladder* LadderCDO, const FVector& BottomLocation, float ClimbHeight, const FRotator& Rotation, bool bValid)
 {
-	if (!GhostMeshComp || ClimbHeight < 1.0f)
-	{
-		OJJ_HideGhost();
-		return;
-	}
-
-	// 고스트는 실제 사다리 ISM(타일)과 독립적으로 엔진 Cube 얇은 박스로 위치/높이만 표시(깔끔한 배치 인디케이터,
-	// 실제 메시 교체와 무관). 단발 로드 캐시 — 엔진 기본 에셋이라 항상 가용(게임스레드 전용).
-	static UStaticMesh* GhostCube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
-	if (!GhostCube)
+	// 사다리는 1칸 메시를 N개 타일링한 ISM이라 전용 LadderGhostISM에 실제 적층을 재현(AOJJ_Ladder와 동일 — 프리뷰=배치).
+	// LadderCDO/메시/높이/MID 어느 하나라도 무효면 안전 숨김(배치·다른 고스트 영향 0).
+	if (!LadderGhostISM || !LadderCDO || ClimbHeight < 1.0f)
 	{
 		OJJ_HideGhost();
 		return;
@@ -5514,26 +5553,24 @@ void AOJJ_Grid::OJJ_ShowGhostForLadder(const FVector& BottomLocation, float Clim
 
 	OJJ_EnsureGhostMIDs();
 	UMaterialInstanceDynamic* GhostMID = bValid ? GhostValidMID.Get() : GhostInvalidMID.Get();
-	if (!GhostMID)
+	// IsValid 가드(#187): null뿐 아니라 GC pending/무효 MID도 제외(머신 고스트와 동일).
+	if (!IsValid(GhostMID))
 	{
 		OJJ_HideGhost();
 		return;
 	}
 
-	// 엔진 Cube(100uu) → 가로/세로 0.2(20uu) 얇게, 높이 = ClimbHeight, 중심 = 바닥 + ClimbHeight/2.
-	const float ZScale = FMath::Max(ClimbHeight, 1.0f) / 100.0f;
-	const FVector Scale(0.2f, 0.2f, ZScale);
-	const FVector CenterLocation(BottomLocation.X, BottomLocation.Y, BottomLocation.Z + ClimbHeight * 0.5f);
-
-	GhostMeshComp->SetStaticMesh(GhostCube);
-	GhostMeshComp->SetWorldScale3D(Scale);
-	GhostMeshComp->SetWorldLocationAndRotation(CenterLocation, Rotation);
+	// ISM 컴포넌트를 실제 스폰 transform(BottomLocation, Rotation)에 정렬, 스케일 1(타일 스케일은 인스턴스에 포함).
+	// 인스턴스(로컬)는 LadderCDO가 ApplyDimensions와 동일 식으로 채운다 → 고스트 모양/높이가 실제 사다리와 일치.
+	LadderGhostISM->SetWorldScale3D(FVector(1.0f));
+	LadderGhostISM->SetWorldLocationAndRotation(BottomLocation, Rotation);
+	LadderCDO->OJJ_BuildGhostInstances(LadderGhostISM, ClimbHeight);
 
 	// 틴트는 Overlay Material 패스(#187 B안) — 머신/Foundation 고스트와 동일. Nanite 메시는 오버레이 미렌더라 방어.
-	GhostMeshComp->SetForceDisableNanite(true);
-	GhostMeshComp->EmptyOverrideMaterials();
-	GhostMeshComp->SetOverlayMaterial(GhostMID);
-	GhostMeshComp->SetVisibility(true);
+	LadderGhostISM->SetForceDisableNanite(true);
+	LadderGhostISM->EmptyOverrideMaterials();
+	LadderGhostISM->SetOverlayMaterial(GhostMID);
+	LadderGhostISM->SetVisibility(true);
 }
 
 void AOJJ_Grid::OJJ_HideGhost()
@@ -5542,6 +5579,13 @@ void AOJJ_Grid::OJJ_HideGhost()
 	{
 		GhostMeshComp->SetVisibility(false);
 		GhostMeshComp->SetOverlayMaterial(nullptr); // 오버레이 패스도 해제(전환 잔존 0).
+	}
+	// [#184] 사다리 고스트 ISM도 동반 숨김 + 인스턴스 청소(잔존 타일 0). 다른 모드엔 빈 ISM이라 무영향.
+	if (LadderGhostISM)
+	{
+		LadderGhostISM->SetVisibility(false);
+		LadderGhostISM->SetOverlayMaterial(nullptr);
+		LadderGhostISM->ClearInstances();
 	}
 }
 

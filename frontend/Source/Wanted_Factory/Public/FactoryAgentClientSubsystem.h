@@ -91,6 +91,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
 	bool SendOperatorGuideQuestion(const FString& Question, const FString& ClientId);
 
+	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
+	bool SendProcessOptimizerStateUpdate(int32 FactoryRevision, const FString& SessionId, const FString& ClientId);
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
+	FString BuildProcessOptimizerStateUpdateJson(int32 FactoryRevision, const FString& SessionId, const FString& ClientId);
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
+	void LogProcessOptimizerStateUpdateJson(int32 FactoryRevision, const FString& SessionId, const FString& ClientId);
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
+	bool SaveProcessOptimizerStateUpdateJsonToDesktop(
+		int32 FactoryRevision,
+		const FString& SessionId,
+		const FString& ClientId,
+		FString& OutSavedFilePath);
+
 	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Messages")
 	bool SendRawMessage(const FString& RawMessage);
 

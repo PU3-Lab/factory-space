@@ -1,0 +1,116 @@
+{
+  "state_update_request": {
+    "type": "agent.request",
+    "request_id": "test-optimizer-power-state-update-001",
+    "session_id": "session-test-unreal-power-999",
+    "client_id": "unreal-sample-client",
+    "agent": "process_optimizer",
+    "payload": {
+      "operation": "state_update",
+      "goal": "power_saving",
+      "factoryRevision": 15,
+      "factory_state": {
+        "machines": [
+          {
+            "id": "smelter_1",
+            "type": "smelter",
+            "status": "idle",
+            "operating_rate": 0.0,
+            "power_consumption": 15.0,
+            "connected_power_node_ids": ["pole_30"]
+          }
+        ],
+        "conveyors": [],
+        "power_grid": {
+          "produced": 120.0,
+          "consumed": 150.0,
+          "nodes": [
+            {
+              "id": "pole_1",
+              "type": "power_pole",
+              "connected_node_ids": ["pole_2"],
+              "connected_machine_ids": ["generator_1"]
+            },
+            {
+              "id": "pole_30",
+              "type": "power_pole",
+              "connected_node_ids": [],
+              "connected_machine_ids": ["smelter_1"]
+            }
+          ],
+          "generators": [
+            {
+              "id": "generator_1",
+              "produced": 30.0,
+              "connected": true,
+              "connected_power_node_ids": ["pole_1"]
+            },
+            {
+              "id": "generator_5",
+              "produced": 30.0,
+              "connected": false,
+              "connected_power_node_ids": []
+            }
+          ]
+        }
+      }
+    },
+    "context": {
+      "language": "ko",
+      "mode": "gameplay"
+    }
+  },
+  "analyze_request": {
+    "type": "agent.request",
+    "request_id": "test-optimizer-power-analyze-002",
+    "session_id": "session-test-unreal-power-999",
+    "client_id": "unreal-sample-client",
+    "agent": "process_optimizer",
+    "payload": {
+      "operation": "analyze",
+      "goal": "power_saving",
+      "factoryRevision": 15,
+      "target": {
+        "type": "power_pole",
+        "id": "pole_30"
+      },
+      "factory_state": {
+        "machines": [
+          {
+            "id": "smelter_1",
+            "type": "smelter",
+            "status": "idle",
+            "operating_rate": 0.0,
+            "power_consumption": 15.0,
+            "connected_power_node_ids": ["pole_30"]
+          }
+        ],
+        "conveyors": [],
+        "power_grid": {
+          "produced": 120.0,
+          "consumed": 150.0,
+          "nodes": [
+            {
+              "id": "pole_30",
+              "type": "power_pole",
+              "connected_node_ids": [],
+              "connected_machine_ids": ["smelter_1"]
+            }
+          ],
+          "generators": [
+            {
+              "id": "generator_5",
+              "produced": 30.0,
+              "connected": false,
+              "connected_power_node_ids": []
+            }
+          ]
+        }
+      }
+    },
+    "context": {
+      "language": "ko",
+      "mode": "gameplay"
+    }
+  }
+}

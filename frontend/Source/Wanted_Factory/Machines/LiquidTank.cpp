@@ -48,7 +48,7 @@ void ALiquidTank::SetSelectedOutputLiquid(FName ItemID)
 {
 	if (!ItemID.IsNone() && !IsLiquidItem(ItemID))
 	{
-		LOG_SSR_W(TEXT("Liquid tank output rejected non-liquid item: %s"), *ItemID.ToString());
+		// LOG_SSR_W(TEXT("Liquid tank output rejected non-liquid item: %s"), *ItemID.ToString());
 		return;
 	}
 

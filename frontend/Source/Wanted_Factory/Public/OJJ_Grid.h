@@ -167,6 +167,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visualization", meta = (ClampMin = "1"))
 	int32 VisualizationRange;
 
+	// [진입 hitch] 그리드 오버레이를 전체(GridSize 756²)가 아니라 카메라/플레이어 중심 (2R+1)² 셀만 그린다(렌더 한정).
+	// 0이면 윈도잉 끔(전체). 빌드 로직/쿼리는 GridSize 전체 유지 — 격자가 "그려지는 범위"만 주변으로 한정.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visualization", meta = (ClampMin = "0"))
+	int32 VisibleGridRadius = 30;
+
+	// 윈도우 중심 셀이 이만큼 이동하면 재페인트(매 프레임 재구성 방지). 작을수록 부드럽지만 재페인트 잦음.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid|Visualization", meta = (ClampMin = "1"))
+	int32 VisualWindowRepaintStep = 8;
+
+	// 현재 시각화 윈도우 중심 셀. 센티넬(INT_MIN)=미설정 → RefreshGridVisual이 전체 그림(폴백).
+	FIntPoint VisualWindowCenter = FIntPoint(INT_MIN, INT_MIN);
+
 	// 시각 타일 리프트(uu) — GroundZ 추종 셀에서 평탄 타일이 경사 지형면과 교차해 줄무늬로 썰리는 것 방지.
 	// F2-1부터 GroundZ가 최고점 기준이라 셀 내 교차는 구조적으로 해소 — 단 5점 샘플이 ±0.4셀이라
 	// 가장자리 미샘플 잔존 교차 가능. 리프트는 PIE 실측 후 0 축소 재검토(F2 계획 §1).
@@ -450,6 +462,12 @@ protected:
 	// 머신(전 서브모드) + 평판 Foundation만 대상. 셀 변경 시에만 갱신(매 프레임 Tick 없음).
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Ghost")
 	TObjectPtr<UStaticMeshComponent> GhostMeshComp;
+
+	// [#184] 사다리 고스트 전용 ISM — 사다리는 1칸 메시를 N개 수직 타일링한 ISM 구조라 단일 GhostMeshComp(단일 메시)로는
+	// 실제 모양 표현 불가. 머신/Foundation 고스트(GhostMeshComp)와 독립된 별도 ISM에 AOJJ_Ladder와 동일 적층을 재현
+	// (프리뷰=배치). 틴트는 동일 GhostValidMID/InvalidMID 오버레이 패스 재사용. OJJ_HideGhost가 함께 숨김.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid|Ghost")
+	TObjectPtr<UInstancedStaticMeshComponent> LadderGhostISM;
 
 	// 고스트용 반투명 베이스 머티리얼(사용자가 에디터에서 지정 — 벡터 파라미터 TintColor, 스칼라 Opacity 가정).
 	// 미지정이면 고스트 비활성(안전한 no-op) — OJJ_EnsureGhostMIDs가 1회 경고.
@@ -880,6 +898,13 @@ public:
 	// per-cell ISM 재적재. void 셀은 양쪽 다 제외. 클리어 후 재적재라 진입/퇴장 반복에도 중복·잔존 없음.
 	void RefreshGridVisual();
 
+	// [진입 hitch] 시각화 윈도우 중심을 월드 좌표로 갱신(빌드모드 중 카메라/플레이어 추종).
+	// 중심 셀이 VisualWindowRepaintStep 이상 이동했을 때만 RefreshGridVisual 재호출(매 프레임 재구성 방지).
+	void UpdateVisualWindow(const FVector& WorldCenter);
+
+	// [진입 hitch] 진입 직전 시각화 윈도우 중심 셀을 시드(첫 paint가 전체 대신 윈도우만 그리도록). 재페인트 안 함.
+	void SetVisualWindowCenterCell(FIntPoint CenterCell) { VisualWindowCenter = CenterCell; }
+
 	// [그리드 색상 2단계] 든 머신/모드의 지형규칙 주입 + 필요 시 recolor. 시그니처(Mode/raw/water) 동일하면
 	// 스킵(창고↔제련 등 동일 규칙 전환 시 90k 풀갱신 회피). 다르면 bVisualizationActive일 때 RefreshGridVisual.
 	void OJJ_UpdateGridColorRule(EOJJGridColorMode Mode, bool bAllowRawGround, bool bAllowWater);
@@ -1284,9 +1309,10 @@ bool OJJ_BuildConveyorPlacementPath(
 	void OJJ_ShowGhostForRamp(AOJJ_Foundation* RampCDO, FIntPoint Origin, FIntPoint EffSize,
 		int32 EffRotSteps, int32 RiseSteps, bool bValid);
 
-	// [#184] 사다리 고스트 — 자유 배치(그리드 셀 스냅 아님). 바닥 월드위치 + ClimbHeight로 엔진 Cube 얇은 세로
-	// 박스 고스트를 그린다(실제 사다리 ISM 타일과 독립 — 깔끔한 위치/높이 인디케이터). bValid → 초록/빨강 오버레이.
-	void OJJ_ShowGhostForLadder(const FVector& BottomLocation, float ClimbHeight, const FRotator& Rotation, bool bValid);
+	// [#184] 사다리 고스트 — 자유 배치(그리드 셀 스냅 아님). LadderCDO의 실제 타일 적층(OJJ_BuildGhostInstances)을
+	// 전용 LadderGhostISM에 재현해 실제 사다리 모양으로 표시(막대 Cube 대체). ISM을 (BottomLocation, Rotation) =
+	// 스폰 transform에 정렬하므로 실제 배치와 일치. bValid → 초록/빨강 오버레이. CDO/메시/MID 미비 시 안전 숨김.
+	void OJJ_ShowGhostForLadder(AOJJ_Ladder* LadderCDO, const FVector& BottomLocation, float ClimbHeight, const FRotator& Rotation, bool bValid);
 
 	// 고스트 숨김(ClearHoverPreview / 램프 선택 / 미지정 머티리얼 등).
 	void OJJ_HideGhost();

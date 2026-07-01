@@ -94,6 +94,15 @@ def validate_factory_state(state: ProcessOptimizerGraphState) -> dict[str, Any]:
     if not factory_state and payload and "machines" in payload:
         factory_state = payload
 
+    if not factory_state:
+        from agents.process_optimizer.snapshot_store import process_optimizer_snapshot_store
+        client_id = context.get("client_id") or "unreal"
+        snapshot = process_optimizer_snapshot_store.get_latest(session_id, client_id)
+        if snapshot and snapshot.factory_state:
+            factory_state = snapshot.factory_state
+            if revision is None or revision == 0:
+                revision = snapshot.factoryRevision
+
     error = None
     if not factory_state:
         error = "Factory state is missing in payload."
@@ -141,7 +150,10 @@ def calculate_metrics(state: ProcessOptimizerGraphState) -> dict[str, Any]:
             factory_revision=state["factoryRevision"],
             goal=state["goal"],
         )
-        return {"metrics": report}
+        res = {"metrics": report}
+        if report.need_more_state:
+            res["need_more_state_payload"] = report.need_more_state
+        return res
     except Exception as e:
         return {"error": f"Failed to calculate metrics: {str(e)}"}
 
@@ -322,6 +334,12 @@ def return_preview_plan(state: ProcessOptimizerGraphState) -> dict[str, Any]:
     Returns:
         WebSocket 응답에 사용할 ``previewPayload`` 상태 변경값입니다.
     """
+    if state.get("need_more_state_payload"):
+        payload = dict(state["need_more_state_payload"])
+        payload["factoryRevision"] = state.get("factoryRevision", 0)
+        payload["goal"] = state.get("goal", "balance")
+        return {"previewPayload": payload}
+
     if state.get("error"):
         error_payload = {
             "status": "error",

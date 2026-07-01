@@ -110,7 +110,7 @@ void APump::OnPlacedOnGrid(AOJJ_Grid* Grid, FIntPoint Origin, int32 RotationStep
 	}
 	else
 	{
-		LOG_SSR_W(TEXT("OnPlacedOnGrid: no adjacent liquid water (race?). Pump=%s"), *GetName());
+		// LOG_SSR_W(TEXT("OnPlacedOnGrid: no adjacent liquid water (race?). Pump=%s"), *GetName());
 	}
 }
 
@@ -126,11 +126,11 @@ void APump::SetLinkedResource(AResourceBase* NewResource)
 
 	if (LinkedResource)
 	{
-		LOG_SSR_W(TEXT("Pump linked to resource: %s"), *LinkedResource->GetName());
+		// LOG_SSR_W(TEXT("Pump linked to resource: %s"), *LinkedResource->GetName());
 	}
 	else
 	{
-		LOG_SSR_W(TEXT("Pump linked resource is null."));
+		// LOG_SSR_W(TEXT("Pump linked resource is null."));
 	}
 }
 
@@ -138,72 +138,72 @@ bool APump::CanPump() const
 {
 	if (PumpAmount <= 0)
 	{
-		LOG_SSR_W(TEXT("CanPump failed: Invalid PumpAmount=%d."), PumpAmount);
+		// LOG_SSR_W(TEXT("CanPump failed: Invalid PumpAmount=%d."), PumpAmount);
 		return false;
 	}
 
 	if (isBroken() && bDisableWhenBroken)
 	{
-		LOG_SSR_W(TEXT("CanPump failed: Pump is broken."));
+		// LOG_SSR_W(TEXT("CanPump failed: Pump is broken."));
 		return false;
 	}
 
 	if (MachineState == EMachineState::Disabled || MachineState == EMachineState::NoPower)
 	{
-		LOG_SSR_W(TEXT("CanPump failed: Machine is not available."));
+		// LOG_SSR_W(TEXT("CanPump failed: Machine is not available."));
 		return false;
 	}
 
 	if (!HasEnoughPower())
 	{
-		LOG_SSR_W(TEXT("CanPump failed: Not enough power."));
+		// LOG_SSR_W(TEXT("CanPump failed: Not enough power."));
 		return false;
 	}
 
 	if (!LinkedResource)
 	{
-		LOG_SSR_W(TEXT("CanPump failed: LinkedResource is null."));
+		// LOG_SSR_W(TEXT("CanPump failed: LinkedResource is null."));
 		return false;
 	}
 
 	FResourceData Data;
 	if (!LinkedResource->GetResourceData(Data))
 	{
-		LOG_SSR_W(
-			TEXT("CanPump failed: ResourceData is invalid. Resource=%s RowName=%s"),
-			*LinkedResource->GetName(),
-			*LinkedResource->GetResourceRowName().ToString()
-		);
+		// LOG_SSR_W(
+		// 	TEXT("CanPump failed: ResourceData is invalid. Resource=%s RowName=%s"),
+		// 	*LinkedResource->GetName(),
+		// 	*LinkedResource->GetResourceRowName().ToString()
+		// );
 		return false;
 	}
 
 	if (Data.form != LiquidFormName)
 	{
-		LOG_SSR_W(
-			TEXT("CanPump failed: Resource form is not liquid. Resource=%s RowName=%s Form=%s"),
-			*LinkedResource->GetName(),
-			*LinkedResource->GetResourceRowName().ToString(),
-			*Data.form.ToString()
-		);
+		// LOG_SSR_W(
+		// 	TEXT("CanPump failed: Resource form is not liquid. Resource=%s RowName=%s Form=%s"),
+		// 	*LinkedResource->GetName(),
+		// 	*LinkedResource->GetResourceRowName().ToString(),
+		// 	*Data.form.ToString()
+		// );
 		return false;
 	}
 
 	const FName ResourceID = LinkedResource->GetResourceRowName();
 	if (ResourceID.IsNone())
 	{
-		LOG_SSR_W(TEXT("CanPump failed: Resource row name is None."));
+		// LOG_SSR_W(TEXT("CanPump failed: Resource row name is None."));
 		return false;
 	}
 
 	const int32 CurrentOutputCount = OutputBuffer.FindRef(ResourceID);
 	if (CurrentOutputCount + PumpAmount > MaxBufferPerItem)
 	{
-		LOG_SSR_W(
-			TEXT("CanPump failed: Output buffer full. Item=%s Count=%d Max=%d"),
-			*ResourceID.ToString(),
-			CurrentOutputCount,
-			MaxBufferPerItem
-		);
+		// LOG_SSR_W(
+		// 	TEXT("CanPump failed: Output buffer full. Item=%s Count=%d Max=%d"),
+		// 	*ResourceID.ToString(),
+		// 	CurrentOutputCount,
+		// 	MaxBufferPerItem
+		// );
 		return false;
 	}
 
@@ -219,17 +219,17 @@ void APump::StartPumping()
 
 	if (PumpAmount <= 0 || PumpInterval <= 0.f)
 	{
-		LOG_SSR_W(
-			TEXT("Cannot start pumping. Invalid pump settings. PumpAmount=%d PumpInterval=%.2f"),
-			PumpAmount,
-			PumpInterval
-		);
+		// LOG_SSR_W(
+		// 	TEXT("Cannot start pumping. Invalid pump settings. PumpAmount=%d PumpInterval=%.2f"),
+		// 	PumpAmount,
+		// 	PumpInterval
+		// );
 		return;
 	}
 
 	if (!CanPump())
 	{
-		LOG_SSR_W(TEXT("Cannot start pumping."));
+		// LOG_SSR_W(TEXT("Cannot start pumping."));
 		return;
 	}
 
@@ -242,7 +242,7 @@ void APump::StartPumping()
 		true
 	);
 
-	LOG_SSR_W(TEXT("Pumping started."));
+	// LOG_SSR_W(TEXT("Pumping started."));
 }
 
 void APump::StopPumping()
@@ -250,7 +250,7 @@ void APump::StopPumping()
 	GetWorldTimerManager().ClearTimer(PumpTimerHandle);
 	StopProcess();
 
-	LOG_SSR_W(TEXT("Pumping stopped."));
+	// LOG_SSR_W(TEXT("Pumping stopped."));
 }
 
 void APump::PumpResource()
@@ -264,14 +264,14 @@ void APump::PumpResource()
 	const FName ResourceID = LinkedResource->GetResourceRowName();
 	if (!LinkedResource->ConsumeResource(PumpAmount))
 	{
-		LOG_SSR_W(TEXT("Liquid resource depleted."));
+		// LOG_SSR_W(TEXT("Liquid resource depleted."));
 		StopPumping();
 		return;
 	}
 
 	AddOutputItem(ResourceID, PumpAmount);
 
-	LOG_SSR_W(TEXT("Pumped Liquid Resource: %s x %d"),
-		*ResourceID.ToString(),
-		PumpAmount);
+	// LOG_SSR_W(TEXT("Pumped Liquid Resource: %s x %d"),
+	// 	*ResourceID.ToString(),
+	// 	PumpAmount);
 }

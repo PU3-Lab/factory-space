@@ -49,7 +49,7 @@ void AAirCompressor::OnPlacedOnGrid(AOJJ_Grid* Grid, FIntPoint Origin, int32 Rot
 	AResourceBase* Gas = FindAdjacentGas(Grid, Origin, RotationSteps);
 	if (!Gas)
 	{
-		LOG_SSR_W(TEXT("OnPlacedOnGrid: no adjacent gas resource. AirCompressor=%s"), *GetName());
+		// LOG_SSR_W(TEXT("OnPlacedOnGrid: no adjacent gas resource. AirCompressor=%s"), *GetName());
 		return;
 	}
 
@@ -121,11 +121,11 @@ void AAirCompressor::SetLinkedResource(AResourceBase* NewResource)
 
 	if (LinkedResource)
 	{
-		LOG_SSR_W(TEXT("AirCompressor linked to resource: %s"), *LinkedResource->GetName());
+		// LOG_SSR_W(TEXT("AirCompressor linked to resource: %s"), *LinkedResource->GetName());
 	}
 	else
 	{
-		LOG_SSR_W(TEXT("AirCompressor linked resource is null."));
+		// LOG_SSR_W(TEXT("AirCompressor linked resource is null."));
 	}
 }
 
@@ -133,72 +133,72 @@ bool AAirCompressor::CanCompress() const
 {
 	if (CompressAmount <= 0)
 	{
-		LOG_SSR_W(TEXT("CanCompress failed: Invalid CompressAmount=%d."), CompressAmount);
+		// LOG_SSR_W(TEXT("CanCompress failed: Invalid CompressAmount=%d."), CompressAmount);
 		return false;
 	}
 
 	if (isBroken() && bDisableWhenBroken)
 	{
-		LOG_SSR_W(TEXT("CanCompress failed: AirCompressor is broken."));
+		// LOG_SSR_W(TEXT("CanCompress failed: AirCompressor is broken."));
 		return false;
 	}
 
 	if (MachineState == EMachineState::Disabled || MachineState == EMachineState::NoPower)
 	{
-		LOG_SSR_W(TEXT("CanCompress failed: Machine is not available."));
+		// LOG_SSR_W(TEXT("CanCompress failed: Machine is not available."));
 		return false;
 	}
 
 	if (!HasEnoughPower())
 	{
-		LOG_SSR_W(TEXT("CanCompress failed: Not enough power."));
+		// LOG_SSR_W(TEXT("CanCompress failed: Not enough power."));
 		return false;
 	}
 
 	if (!LinkedResource)
 	{
-		LOG_SSR_W(TEXT("CanCompress failed: LinkedResource is null."));
+		// LOG_SSR_W(TEXT("CanCompress failed: LinkedResource is null."));
 		return false;
 	}
 
 	FResourceData Data;
 	if (!LinkedResource->GetResourceData(Data))
 	{
-		LOG_SSR_W(
-			TEXT("CanCompress failed: ResourceData is invalid. Resource=%s RowName=%s"),
-			*LinkedResource->GetName(),
-			*LinkedResource->GetResourceRowName().ToString()
-		);
+		// LOG_SSR_W(
+		// 	TEXT("CanCompress failed: ResourceData is invalid. Resource=%s RowName=%s"),
+		// 	*LinkedResource->GetName(),
+		// 	*LinkedResource->GetResourceRowName().ToString()
+		// );
 		return false;
 	}
 
 	if (Data.form != GasFormName)
 	{
-		LOG_SSR_W(
-			TEXT("CanCompress failed: Resource form is not gas. Resource=%s RowName=%s Form=%s"),
-			*LinkedResource->GetName(),
-			*LinkedResource->GetResourceRowName().ToString(),
-			*Data.form.ToString()
-		);
+		// LOG_SSR_W(
+		// 	TEXT("CanCompress failed: Resource form is not gas. Resource=%s RowName=%s Form=%s"),
+		// 	*LinkedResource->GetName(),
+		// 	*LinkedResource->GetResourceRowName().ToString(),
+		// 	*Data.form.ToString()
+		// );
 		return false;
 	}
 
 	const FName ResourceID = LinkedResource->GetResourceRowName();
 	if (ResourceID.IsNone())
 	{
-		LOG_SSR_W(TEXT("CanCompress failed: Resource row name is None."));
+		// LOG_SSR_W(TEXT("CanCompress failed: Resource row name is None."));
 		return false;
 	}
 
 	const int32 CurrentOutputCount = OutputBuffer.FindRef(ResourceID);
 	if (CurrentOutputCount + CompressAmount > MaxBufferPerItem)
 	{
-		LOG_SSR_W(
-			TEXT("CanCompress failed: Output buffer full. Item=%s Count=%d Max=%d"),
-			*ResourceID.ToString(),
-			CurrentOutputCount,
-			MaxBufferPerItem
-		);
+		// LOG_SSR_W(
+		// 	TEXT("CanCompress failed: Output buffer full. Item=%s Count=%d Max=%d"),
+		// 	*ResourceID.ToString(),
+		// 	CurrentOutputCount,
+		// 	MaxBufferPerItem
+		// );
 		return false;
 	}
 
@@ -214,17 +214,17 @@ void AAirCompressor::StartCompressing()
 
 	if (CompressAmount <= 0 || CompressInterval <= 0.f)
 	{
-		LOG_SSR_W(
-			TEXT("Cannot start compressing. Invalid compress settings. CompressAmount=%d CompressInterval=%.2f"),
-			CompressAmount,
-			CompressInterval
-		);
+		// LOG_SSR_W(
+		// 	TEXT("Cannot start compressing. Invalid compress settings. CompressAmount=%d CompressInterval=%.2f"),
+		// 	CompressAmount,
+		// 	CompressInterval
+		// );
 		return;
 	}
 
 	if (!CanCompress())
 	{
-		LOG_SSR_W(TEXT("Cannot start compressing."));
+		// LOG_SSR_W(TEXT("Cannot start compressing."));
 		return;
 	}
 
@@ -237,7 +237,7 @@ void AAirCompressor::StartCompressing()
 		true
 	);
 
-	LOG_SSR_W(TEXT("Compressing started."));
+	// LOG_SSR_W(TEXT("Compressing started."));
 }
 
 void AAirCompressor::StopCompressing()
@@ -245,7 +245,7 @@ void AAirCompressor::StopCompressing()
 	GetWorldTimerManager().ClearTimer(CompressTimerHandle);
 	StopProcess();
 
-	LOG_SSR_W(TEXT("Compressing stopped."));
+	// LOG_SSR_W(TEXT("Compressing stopped."));
 }
 
 void AAirCompressor::CompressResource()
@@ -259,15 +259,15 @@ void AAirCompressor::CompressResource()
 	const FName ResourceID = LinkedResource->GetResourceRowName();
 	if (!LinkedResource->ConsumeResource(CompressAmount))
 	{
-		LOG_SSR_W(TEXT("Gas resource depleted."));
+		// LOG_SSR_W(TEXT("Gas resource depleted."));
 		StopCompressing();
 		return;
 	}
 
 	AddOutputItem(ResourceID, CompressAmount);
 
-	LOG_SSR_W(TEXT("Compressed Gas Resource: %s x %d"),
-		*ResourceID.ToString(),
-		CompressAmount);
+	// LOG_SSR_W(TEXT("Compressed Gas Resource: %s x %d"),
+	// 	*ResourceID.ToString(),
+	// 	CompressAmount);
 }
 

@@ -80,7 +80,7 @@ void AEscapePod::RegisterToNearestGrid()
 
 	if (!BestGrid)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[EscapePod] No grid found for pre-placed escape pod: %s"), *GetName());
+		// UE_LOG(LogTemp, Warning, TEXT("[EscapePod] No grid found for pre-placed escape pod: %s"), *GetName());
 		return;
 	}
 
@@ -91,8 +91,8 @@ void AEscapePod::RegisterToNearestGrid()
 	FString OutReason;
 	if (!BestGrid->RegisterExistingMachineOccupancyOnly(this, BestOrigin, OutReason))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[EscapePod] Failed to register pre-placed escape pod: %s (%s)"),
-			*GetName(),
-			*OutReason);
+		// UE_LOG(LogTemp, Warning, TEXT("[EscapePod] Failed to register pre-placed escape pod: %s (%s)"),
+		// 	*GetName(),
+		// 	*OutReason);
 	}
 }
