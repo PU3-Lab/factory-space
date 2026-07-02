@@ -828,6 +828,29 @@ void AOJJ_Player::CompleteEndingRestore()
 	// 검정 오버레이 제거 — 이후의 '검정→게임 화면' 페이드인은 카메라 페이드(StartCameraFade)가 담당.
 	RemoveEndingFadeOverlay();
 
+	// [엔딩 복귀 환경 정리] 낮(09:00) 설정 + 진행 중 자기폭풍/모래폭풍 즉시 종료 — 엔딩 영상이 낮 배경이라
+	// 복귀 화면도 낮·맑음으로 잇는다. 페이즈 정의상 00~12시=Day라 540분=09:00이 낮(기존 O키 단축키와 동일값).
+	// 카메라 페이드인 시작 전에 실행 — DayNightController 태양 보간(Tick 폴링)이 검정 화면 뒤에서 끝나는지는
+	// PIE 확인 필요(보간 속도상 페이드 1초 내 수렴 예상).
+	if (World)
+	{
+		if (UPlanetEventManagerSubsystem* PlanetManager = World->GetSubsystem<UPlanetEventManagerSubsystem>())
+		{
+			PlanetManager->SetCurrentTimeByMinutes(540);
+			PlanetManager->EndActiveEvent();
+
+			// MarkGameCleared(FinishEndingSequence)의 저장은 시각 변경 전 스냅샷 — 변경된 TimeState/EventState를
+			// 재저장해 다음 로드가 엔딩 전 시각·폭풍으로 되돌아가는 것을 방지(60초 자동저장 전 종료 대비).
+			if (UGameInstance* GameInstance = GetGameInstance())
+			{
+				if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+				{
+					SaveSubsystem->SaveCurrentGame();
+				}
+			}
+		}
+	}
+
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
 		// 페이드인(블랙 → 게임 화면) + 뷰타겟 플레이어 복귀 블렌드 — 샌드박스 계속.

@@ -374,6 +374,31 @@ void SanitizeJsonIdentifierArray(const FString& FieldName, const TArray<TSharedP
 		}
 	}
 }
+
+TSharedPtr<FJsonObject> BuildDurabilityObject(const AMachineBase* Machine)
+{
+	const TSharedPtr<FJsonObject> DurabilityObject = MakeShared<FJsonObject>();
+	if (!Machine)
+	{
+		DurabilityObject->SetNumberField(TEXT("current"), 0.0);
+		DurabilityObject->SetNumberField(TEXT("max"), 0.0);
+		DurabilityObject->SetNumberField(TEXT("ratio"), 0.0);
+		DurabilityObject->SetBoolField(TEXT("is_broken"), false);
+		DurabilityObject->SetBoolField(TEXT("is_infinite"), false);
+		return DurabilityObject;
+	}
+
+	const double MaxDurability = Machine->GetMaxDurability();
+	const double CurrentDurability = Machine->GetCurrentDurability();
+	DurabilityObject->SetNumberField(TEXT("current"), CurrentDurability);
+	DurabilityObject->SetNumberField(TEXT("max"), MaxDurability);
+	DurabilityObject->SetNumberField(
+		TEXT("ratio"),
+		MaxDurability > 0.0 ? CurrentDurability / MaxDurability : 0.0);
+	DurabilityObject->SetBoolField(TEXT("is_broken"), Machine->isBroken());
+	DurabilityObject->SetBoolField(TEXT("is_infinite"), Machine->IsInfiniteDurability());
+	return DurabilityObject;
+}
 }
 
 void UFactoryAgentClientSubsystem::Deinitialize()
@@ -644,6 +669,10 @@ bool UFactoryAgentClientSubsystem::SaveProcessOptimizerStateUpdateJsonToDesktop(
 	FString& OutSavedFilePath)
 {
 	const FString PreviewJson = BuildProcessOptimizerStateUpdateJson(FactoryRevision, SessionId, ClientId);
+	TSharedPtr<FJsonObject> PreviewObject;
+	const FString JsonToSave = FactoryAgentJsonUtils::ParseJsonObject(PreviewJson, PreviewObject)
+		? FactoryAgentJsonUtils::WritePrettyJsonObject(PreviewObject)
+		: PreviewJson;
 	const FString UserProfilePath = FPlatformMisc::GetEnvironmentVariable(TEXT("USERPROFILE"));
 	const FString DesktopDirectory = UserProfilePath.IsEmpty()
 		? FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir())
@@ -659,7 +688,7 @@ bool UFactoryAgentClientSubsystem::SaveProcessOptimizerStateUpdateJsonToDesktop(
 
 	const FString FileName = FString::Printf(TEXT("process_optimizer_factory_state_%03d.json"), FMath::Max(0, FactoryRevision));
 	const FString SavedFilePath = FPaths::Combine(DesktopDirectory, FileName);
-	if (!FFileHelper::SaveStringToFile(PreviewJson, *SavedFilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+	if (!FFileHelper::SaveStringToFile(JsonToSave, *SavedFilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
 	{
 		OutSavedFilePath.Reset();
 		LOG_LC_W(TEXT("Failed to save factory state preview file: %s"), *SavedFilePath);
@@ -675,6 +704,49 @@ FString UFactoryAgentClientSubsystem::BuildProcessOptimizerStateUpdateJson(
 	int32 FactoryRevision,
 	const FString& SessionId,
 	const FString& ClientId)
+{
+	return BuildProcessOptimizerRequestJson(
+		FactoryRevision,
+		SessionId,
+		ClientId,
+		TEXT("state_update"),
+		TEXT("periodic"),
+		TEXT("optimizer-state"));
+}
+
+bool UFactoryAgentClientSubsystem::SendProcessOptimizerAnalyzeRequest(
+	int32 FactoryRevision,
+	const FString& SessionId,
+	const FString& ClientId)
+{
+	return SendRawMessage(
+		BuildProcessOptimizerAnalyzeRequestJson(
+			FactoryRevision,
+			SessionId,
+			ClientId));
+}
+
+FString UFactoryAgentClientSubsystem::BuildProcessOptimizerAnalyzeRequestJson(
+	int32 FactoryRevision,
+	const FString& SessionId,
+	const FString& ClientId)
+{
+	return BuildProcessOptimizerRequestJson(
+		FactoryRevision,
+		SessionId,
+		ClientId,
+		TEXT("analyze"),
+		TEXT("player"),
+		TEXT("optimizer-analyze"));
+}
+
+FString UFactoryAgentClientSubsystem::BuildProcessOptimizerRequestJson(
+	int32 FactoryRevision,
+	const FString& SessionId,
+	const FString& ClientId,
+	const FString& Operation,
+	const FString& RequestSource,
+	const FString& RequestIdPrefix)
 {
 	const int32 SafeFactoryRevision = FMath::Max(0, FactoryRevision);
 	const FString ResolvedSessionId = SessionId.IsEmpty() ? ProcessOptimizerSessionId : SessionId;
@@ -837,10 +909,13 @@ FString UFactoryAgentClientSubsystem::BuildProcessOptimizerStateUpdateJson(
 		}
 
 		const FString MachineId = MakeMachineIdString(MachineNode);
+		const FString MachineStatus = MachineStateToStatusString(Machine->GetMachineState());
 		const TSharedPtr<FJsonObject> MachineObject = MakeShared<FJsonObject>();
 		MachineObject->SetStringField(TEXT("id"), MachineId);
 		MachineObject->SetStringField(TEXT("type"), GetNormalizedMachineType(Machine));
-		MachineObject->SetStringField(TEXT("status"), MachineStateToStatusString(Machine->GetMachineState()));
+		MachineObject->SetStringField(TEXT("status"), MachineStatus);
+		MachineObject->SetStringField(TEXT("equipment_status"), MachineStatus);
+		MachineObject->SetObjectField(TEXT("durability"), BuildDurabilityObject(Machine).ToSharedRef());
 		MachineObject->SetArrayField(
 			TEXT("connected_power_node_ids"),
 			MakeStringArray(MachineToNearbyNodeIds.FindRef(MachineId)));
@@ -928,8 +1003,11 @@ FString UFactoryAgentClientSubsystem::BuildProcessOptimizerStateUpdateJson(
 
 		const FString GeneratorId = MakeMachineIdString(MachineNode);
 		const TArray<FString> ConnectedNodeIds = GeneratorToConnectedNodeIds.FindRef(GeneratorId);
+		const FString GeneratorStatus = MachineStateToStatusString(PowerPlant->GetMachineState());
 		const TSharedPtr<FJsonObject> GeneratorObject = MakeShared<FJsonObject>();
 		GeneratorObject->SetStringField(TEXT("id"), GeneratorId);
+		GeneratorObject->SetStringField(TEXT("equipment_status"), GeneratorStatus);
+		GeneratorObject->SetObjectField(TEXT("durability"), BuildDurabilityObject(PowerPlant).ToSharedRef());
 		GeneratorObject->SetNumberField(TEXT("produced"), PowerPlant->GetCurrentPowerOutput());
 		GeneratorObject->SetBoolField(TEXT("connected"), ConnectedNodeIds.Num() > 0);
 		GeneratorObject->SetArrayField(TEXT("connected_power_node_ids"), MakeStringArray(ConnectedNodeIds));
@@ -957,7 +1035,8 @@ FString UFactoryAgentClientSubsystem::BuildProcessOptimizerStateUpdateJson(
 	SanitizeJsonIdentifierObject(FactoryStateObject);
 
 	const TSharedPtr<FJsonObject> PayloadObject = MakeShared<FJsonObject>();
-	PayloadObject->SetStringField(TEXT("operation"), TEXT("state_update"));
+	PayloadObject->SetStringField(TEXT("operation"), Operation);
+	PayloadObject->SetStringField(TEXT("request_source"), RequestSource);
 	PayloadObject->SetStringField(TEXT("goal"), TEXT("balance"));
 	PayloadObject->SetNumberField(TEXT("factoryRevision"), SafeFactoryRevision);
 	PayloadObject->SetObjectField(TEXT("factory_state"), FactoryStateObject.ToSharedRef());
@@ -970,7 +1049,7 @@ FString UFactoryAgentClientSubsystem::BuildProcessOptimizerStateUpdateJson(
 	RequestObject->SetStringField(TEXT("type"), AgentRequestType);
 	RequestObject->SetStringField(
 		TEXT("request_id"),
-		FString::Printf(TEXT("unreal-optimizer-state-%03d"), SafeFactoryRevision));
+		FString::Printf(TEXT("%s-%03d"), *RequestIdPrefix, SafeFactoryRevision));
 	RequestObject->SetStringField(TEXT("session_id"), ResolvedSessionId);
 	RequestObject->SetStringField(TEXT("client_id"), ResolvedClientId);
 	RequestObject->SetStringField(TEXT("agent"), ProcessOptimizerAgentId);

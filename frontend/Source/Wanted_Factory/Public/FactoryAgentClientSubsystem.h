@@ -286,6 +286,18 @@ public:
 	FString BuildProcessOptimizerStateUpdateJson(int32 FactoryRevision, const FString& SessionId, const FString& ClientId);
 
 	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
+	bool SendProcessOptimizerAnalyzeRequest(
+		int32 FactoryRevision,
+		const FString& SessionId,
+		const FString& ClientId);
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
+	FString BuildProcessOptimizerAnalyzeRequestJson(
+		int32 FactoryRevision,
+		const FString& SessionId,
+		const FString& ClientId);
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
 	void LogProcessOptimizerStateUpdateJson(int32 FactoryRevision, const FString& SessionId, const FString& ClientId);
 
 	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
@@ -329,4 +341,11 @@ private:
 		const FString& SessionId,
 		const FString& ClientId,
 		int32 ContextTemperature) const;
+	FString BuildProcessOptimizerRequestJson(
+		int32 FactoryRevision,
+		const FString& SessionId,
+		const FString& ClientId,
+		const FString& Operation,
+		const FString& RequestSource,
+		const FString& RequestIdPrefix);
 };

@@ -2,6 +2,7 @@
 
 #include "Dom/JsonObject.h"
 #include "Policies/CondensedJsonPrintPolicy.h"
+#include "Policies/PrettyJsonPrintPolicy.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
@@ -30,6 +31,20 @@ namespace FactoryAgentJsonUtils
 		FString Output;
 		const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
 			TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Output);
+		FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
+		return Output;
+	}
+
+	FString WritePrettyJsonObject(const TSharedPtr<FJsonObject>& JsonObject)
+	{
+		if (!JsonObject.IsValid())
+		{
+			return TEXT("{}");
+		}
+
+		FString Output;
+		const TSharedRef<TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>> Writer =
+			TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&Output);
 		FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
 		return Output;
 	}
