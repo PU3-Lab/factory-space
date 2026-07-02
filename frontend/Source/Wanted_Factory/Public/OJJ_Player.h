@@ -16,6 +16,7 @@ class AOJJ_BuildController;
 // 빌드 뷰 모드(None/TopDown/TPS) — 정의는 OJJ_BuildController.h. B/V 입력 라우팅에서 값으로 사용.
 enum class EBuildViewMode : uint8;
 class AOJJ_BuildCamera;
+class ACameraActor;
 class AOJJ_Ladder;
 class AMachineBase;
 class UUI_MachineInteract;
@@ -664,6 +665,135 @@ protected:
 	// 않도록 몽타주 길이 기준으로 잡으며, 어떤 경로로도 입력이 영구 잠기지 않게 하는 최종 방어선(진짜 비정상 전용).
 	void ForceFinishIntro();
 
+	// --- Ending 연출 (통신탑 설치 시 엔딩 시네마틱) ---
+	// 흐름: PlayEndingSequence(입력잠금 + 탑 로우앵글 컷1 + 미세 푸시인) → 페이드아웃 → ShowEndingVideo(BP 위젯)
+	//       → 위젯이 FinishEndingSequence 호출(클리어 저장 + 페이드인 + 카메라/입력 복귀 → 샌드박스 계속).
+	// 로컬(설치한) 플레이어 화면 전용 — 리플리케이션 범위 밖(멀티 동기화 미고려).
+
+	// 컷1 카메라: 탑 중심에서의 수평 거리(uu).
+	UPROPERTY(EditAnywhere, Category = "Ending", meta = (ClampMin = "1.0"))
+	float EndingCamDistance = 900.f;
+
+	// 컷1 카메라: 탑 바닥(Bounds 최저 Z)에서 올릴 높이(uu) — 로우 앵글 정도.
+	UPROPERTY(EditAnywhere, Category = "Ending")
+	float EndingCamHeightOffset = 150.f;
+
+	// 컷1 동안 카메라가 탑 방향으로 전진할 총 거리(uu). 정적에 가까운 미세 푸시인.
+	UPROPERTY(EditAnywhere, Category = "Ending", meta = (ClampMin = "0.0"))
+	float EndingPushInAmount = 120.f;
+
+	// 컷1(로우앵글 + 푸시인) 길이(초). 종료 시 페이드아웃 시작.
+	UPROPERTY(EditAnywhere, Category = "Ending", meta = (ClampMin = "0.1"))
+	float EndingCut1Duration = 4.f;
+
+	// 페이드 아웃/인 각각의 길이(초).
+	UPROPERTY(EditAnywhere, Category = "Ending", meta = (ClampMin = "0.0"))
+	float EndingFadeDuration = 1.f;
+
+	// 엔딩 영상 위젯 자체의 페이드인/아웃 길이(초) — UMG 애니 대신 C++이 RenderOpacity를 직접 보간
+	// (WBP_EndingCinematic의 UMG 애니 트랙이 계속 오작동해 위젯 생명주기처럼 페이드도 C++ 소관으로 통일).
+	UPROPERTY(EditAnywhere, Category = "Ending", meta = (ClampMin = "0.01"))
+	float EndingWidgetFadeDuration = 0.75f;
+
+	// VideoReady(OnMediaOpened) 수신 후 페이드인 시작까지 추가 지연(초). OnMediaOpened는 '파일 열림' 시점이라
+	// 첫 프레임이 Media Texture에 기록되기 전 — 그 틈에 올리면 이전 재생 잔상이 짧게 비친다(로그 계측으로 확인).
+	UPROPERTY(EditAnywhere, Category = "Ending", meta = (ClampMin = "0.0"))
+	float EndingFadeInDelay = 0.2f;
+
+	// 영상 단계 안전 타임아웃 상한(초) — 위젯이 FinishEndingSequence를 끝내 못 부르는 비정상 대비.
+	// 실제 영상 길이보다 넉넉히(영상 재생/종료 통지 자체는 BP 위젯 담당).
+	UPROPERTY(EditAnywhere, Category = "Ending", meta = (ClampMin = "1.0"))
+	float EndingVideoMaxSeconds = 120.f;
+
+	// 엔딩 영상 위젯(BP, 2단계 제작·할당). 위젯은 영상 종료/스킵 시 FinishEndingSequence를 호출해야 한다.
+	// 미지정이면 영상 단계를 스킵하고 바로 복귀(안전 — 로그만 남김).
+	UPROPERTY(EditDefaultsOnly, Category = "Ending")
+	TSubclassOf<UUserWidget> EndingVideoWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> EndingVideoWidgetInstance;
+
+	// PlayEndingSequence가 스폰하는 컷1 카메라. 복귀 블렌드가 원본을 참조하므로 즉시 파괴 대신 수명 만료로 자멸.
+	UPROPERTY(Transient)
+	TObjectPtr<ACameraActor> EndingCamera;
+
+	// 엔딩 시퀀스 재진입/중복 종료 가드.
+	bool bEndingSequenceActive = false;
+
+	// [엔딩 입력 잠금] DisableInput 실제 적용 여부 — 인트로(bIntroInputDisabled)와 동일한 1:1 복구 짝 보장.
+	bool bEndingInputDisabled = false;
+
+	// 컷1 푸시인 진행 중 플래그(Tick이 보간). 진행 상태는 elapsed/시작위치/방향으로 추적.
+	bool bEndingPushInActive = false;
+	float EndingPushInElapsed = 0.f;
+	FVector EndingCamStartLocation = FVector::ZeroVector;
+	FVector EndingCamPushDir = FVector::ForwardVector;
+
+	// [위젯 페이드] 검은 오버레이 알파 보간 상태(푸시인과 동일한 Tick 구동 패턴). 0=없음,
+	// +1=페이드인(오버레이 알파→0, 검정이 걷히며 영상 드러남), -1=페이드아웃(→1, 검정으로 덮임).
+	// 페이드아웃 완료 시 Tick이 CompleteEndingRestore를 호출한다. 시작 알파는 중도 스킵(페이드인 중 종료) 시
+	// 밝기 점프 없이 현재 값에서 이어가기 위한 캡처.
+	int32 EndingWidgetFadeDirection = 0;
+	float EndingWidgetFadeElapsed = 0.f;
+	float EndingWidgetFadeStartOpacity = 0.f;
+
+	// [엔딩 페이드 오버레이] RenderOpacity 방식은 위젯이 뒤 배경과 반투명 합성돼 '검정→영상'이 아니라 갑자기
+	// 나타나는 체감 → 화면 전체 검정 레이어(SImage)를 영상 위젯 위에 얹고 그 알파를 보간한다(1=검정, 0=영상).
+	// StartCameraFade는 씬 렌더링만 덮고 UMG 위엔 못 그리므로 오버레이 방식으로 확정. Slate 직접 부착이라
+	// UPROPERTY 불가 — CompleteEndingRestore/EndPlay에서 명시 제거.
+	TSharedPtr<class SImage> EndingFadeOverlayImage;
+	float EndingFadeOverlayAlpha = 1.f;
+
+	// [오버레이] 생성(이미 있으면 알파만 적용) — 뷰포트 Slate 레이어 300(UMG AddToViewport(200)은 내부 +10이라 210).
+	void EnsureEndingFadeOverlay(float InitialAlpha);
+	// [오버레이] 검정 알파 적용(0~1 클램프) + 캐시 갱신.
+	void SetEndingFadeOverlayAlpha(float Alpha);
+	// [오버레이] 뷰포트에서 제거 + 핸들 해제(미부착이면 no-op).
+	void RemoveEndingFadeOverlay();
+
+	// [위젯 페이드인 게이트] Open Source가 비동기라 미디어가 실제 열리기 전에 페이드인하면 Media Texture의
+	// 이전 재생 잔상 프레임이 떠오른 뒤 0초로 점프한다 → 페이드인은 NotifyEndingVideoReady(OnMediaOpened)가
+	// 올 때까지 Opacity 0으로 대기. 중복 호출/타이밍 꼬임 방지 1회성 플래그 + 미도착 대비 폴백 타이머.
+	bool bEndingWidgetFadeInStarted = false;
+	// 페이드인 게이팅 단계 공용 타이머 — ①폴백(2초, Ready 미도착) → ②Ready 수신 후 EndingFadeInDelay 지연.
+	// 두 용도가 시간상 겹치지 않아 핸들 하나를 재사용(CompleteEndingRestore가 일괄 취소).
+	FTimerHandle EndingWidgetReadyTimerHandle;
+
+	// [위젯 페이드인 실행] EndingFadeInDelay 지연 타이머 콜백 — 지연 중 엔딩이 끝났으면 no-op(가드).
+	void StartEndingWidgetFadeIn();
+
+	FTimerHandle EndingStageTimerHandle;  // 단계 전환 공용(컷1 종료→페이드, 페이드 종료→영상)
+	FTimerHandle EndingSafetyTimerHandle; // soft-lock 최종 방어선(ForceFinishEnding)
+
+	// 컷1 종료 콜백 — 푸시인 정지 + 페이드아웃 시작 + 페이드 완료 시 ShowEndingVideo 예약.
+	void StartEndingFadeOut();
+
+	// 페이드아웃 완료 후 엔딩 영상 위젯 표시(최상위 ZOrder + UI 입력). 클래스 미지정이면 즉시 종료 경로.
+	void ShowEndingVideo();
+
+	// [위젯 페이드인 시작 신호] 영상 위젯(BP)이 OnMediaOpened 시점에 호출하는 계약 — 미디어가 실제 열린 뒤에만
+	// 페이드인(0→1)을 시작해 잔상 프레임 노출을 막는다. 미호출 대비 ShowEndingVideo의 2초 폴백 타이머가 대신 부른다.
+	// 중복 호출/엔딩 종료 후 지연 호출은 무시(가드).
+	UFUNCTION(BlueprintCallable, Category = "Ending")
+	void NotifyEndingVideoReady();
+
+	// 엔딩 종료 진입점 — 클리어 저장 후 위젯을 RenderOpacity 1→0으로 페이드아웃하고, 완료 시
+	// CompleteEndingRestore가 실제 복귀를 수행한다(위젯 없는 비정상 경로는 페이드 스킵·즉시 복귀).
+	// 영상 위젯(BP)이 영상 종료/스킵 시 호출한다. 중복 호출 가드 포함.
+	UFUNCTION(BlueprintCallable, Category = "Ending")
+	void FinishEndingSequence();
+
+	// 엔딩 실제 복귀 — 카메라 페이드인 + 뷰타겟/입력 복원 + 위젯 제거/타이머 정리(구 FinishEndingSequence 후반부).
+	// 위젯 페이드아웃 완료(Tick) 또는 페이드 스킵 경로에서만 호출.
+	void CompleteEndingRestore();
+
+	// [엔딩 안전망] 타임아웃 강제 종료 — 어떤 경로로도 입력이 영구 잠기지 않게 하는 최종 방어선.
+	void ForceFinishEnding();
+
+	// [엔딩] 입력 복구 + UI 입력모드/커서 원복의 단일 출처(인트로 TryRestoreIntroInput 규약).
+	// PC가 아직 없으면 복구 보류 + false(호출부가 재시도 예약).
+	bool TryRestoreEndingInput();
+
 	// [빌드 작업등] L키 토글 상태(빌드모드 한정). UpdateNightSpotLightVisibility가 매 틱 이 값을 읽어
 	// TPS=NightSpotLight, TopDown=BuildCamera 하향광으로 분배한다. 빌드 해제 시 false로 리셋.
 	bool bWorkLightOn = false;
@@ -763,6 +893,14 @@ public:
 
 	UFUNCTION(Exec, Category = "Cheats")
     void Cheat_ResetMachines();
+
+	// [엔딩] 통신탑 설치 확정 시 BuildController가 호출하는 엔딩 시퀀스 진입점(로컬 화면 전용).
+	// 재진입 가드 포함 — 연출 중 중복 호출 무시. 클리어 여부(1회성) 체크는 호출부(BuildController) 책임.
+	void PlayEndingSequence(AActor* TowerActor);
+
+	// [엔딩 PIE 검증용] 월드의 첫 통신탑을 찾아 엔딩 연출을 강제 재생(클리어 플래그 무시). 콘솔: `PlayEnding`
+	UFUNCTION(Exec)
+	void PlayEnding();
 protected:
 	void SetDemolishModeShortcut();
 	// [#184] C키 — 사다리 빌드 서브모드 진입(빌드모드 중에만, SetDemolishModeShortcut 패턴). 공용키 개편서 H로 이동.
