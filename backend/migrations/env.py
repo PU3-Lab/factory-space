@@ -20,10 +20,15 @@ target_metadata = [Base.metadata, metadata]
 
 
 def _database_url() -> str:
-    url = os.environ.get("FACTORY_DATABASE_URL") or os.environ.get("DATABASE_URL")
+    url = (
+        os.environ.get("FACTORY_ALEMBIC_DATABASE_URL")
+        or os.environ.get("FACTORY_RAG_DATABASE_URL")
+        or os.environ.get("FACTORY_DATABASE_URL")
+        or os.environ.get("DATABASE_URL")
+    )
     if not url:
         raise RuntimeError(
-            "DATABASE_URL or FACTORY_DATABASE_URL is required to run Alembic migrations.",
+            "DATABASE_URL, FACTORY_RAG_DATABASE_URL, or FACTORY_DATABASE_URL is required to run Alembic migrations.",
         )
     return url
 

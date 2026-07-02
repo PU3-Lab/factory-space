@@ -20,6 +20,7 @@ from agents.operator_guide.manual_context_builder import (
 from agents.operator_guide.prompt_builder import ManualQAPromptBuilder
 from agents.operator_guide.question_classifier import (
     ContextNeedClassifier,
+    LLMIntentClassifier,
     ManualQAQuestionClassifier,
 )
 from agents.operator_guide.schemas import ManualQAResult
@@ -116,6 +117,7 @@ class ManualQAService:
         self._repository = repository or CsvManualQARepository()
         self._rag_runtime = rag_runtime or self._global_rag_runtime
         self._question_classifier = ManualQAQuestionClassifier(self._repository)
+        self._llm_intent_classifier = LLMIntentClassifier(llm_adapter, self._repository)
         self._need_classifier = ContextNeedClassifier(llm_adapter)
         self._game_state_tool = CurrentGameStateTool()
         self._context_builder = ManualQAContextBuilder(self._repository)
@@ -147,7 +149,9 @@ class ManualQAService:
         if on_progress and topic in PROGRESS_CATALOG:
             on_progress(PROGRESS_CATALOG[topic][0][0], PROGRESS_CATALOG[topic][0][1])
 
-        intent = self._question_classifier.classify(question)
+        intent = self._question_classifier.classify(question, context)
+        if intent.is_ambiguous:
+            intent = self._llm_intent_classifier.classify_ambiguous(question, intent)
         prompt_context = self._context_builder.build(question, intent)
         recent_conversation = _recent_conversation(context)
         confirmed_facts = _confirmed_facts(context)

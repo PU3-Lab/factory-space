@@ -23,7 +23,9 @@ def main() -> None:
     os.environ.setdefault("DATABASE_URL", LOCAL_DATABASE_URL)
 
     config = Config(str(backend_root / "alembic.ini"))
-    db_url = os.environ.get("FACTORY_DATABASE_URL") or os.environ.get("DATABASE_URL")
+    db_url = os.environ.get("DATABASE_URL")
+    if db_url is not None:
+        os.environ["FACTORY_ALEMBIC_DATABASE_URL"] = db_url
     print(f"[Migrate] Applying migrations (alembic upgrade head) on {db_url}")
     command.upgrade(config, "head")
 

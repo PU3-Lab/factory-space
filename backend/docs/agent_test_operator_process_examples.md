@@ -224,6 +224,59 @@ agent-test에서 아래 질문을 바꿔 넣으며 `final_answer`를 확인한�
 - 근거가 부족하면 추측하지 않고 다시 물어볼 수 있게 안내한다.
 ```
 
+### 2.6 통신탑(제작 가능한 설치물) 제작 및 애매한 질문
+
+통신탑처럼 장비(`equipment`)와 생산 가능한 자원(`resource`) 양쪽의 성격을 모두 가진 설치물의 예시입니다.
+
+#### A. 명확한 제작 질문 (Unambiguous Crafting)
+질문에 `지어`, `건설`, `재료` 등 생산 관련 키워드가 포함되면 바로 자원 레시피 질문으로 수렴합니다.
+
+```json
+{
+  "type": "agent.request",
+  "request_id": "operator-guide-telecom-recipe-001",
+  "session_id": "agent-test-session",
+  "client_id": "agent-test-console",
+  "agent": "operator_guide",
+  "payload": {
+    "question": "통신탑 어떻게 지어야 해?"
+  },
+  "context": {
+    "language": "ko",
+    "mode": "agent_test"
+  }
+}
+```
+
+기대 결과:
+- `isAmbiguous: false`
+- `question_type: resource_question` 또는 `recipe_question`
+- 합성기에서 철근 20개, 구리선 20개, 주석판 20개 등을 사용해 조립한다는 답변이 나옴.
+
+#### B. 모호한 질문 (Ambiguous Question)
+의도 분류 키워드가 명확하지 않은 경우, 내부적으로 `isAmbiguous: true`로 마킹한 뒤 백엔드 LLM 보조 의도 분류기를 거쳐 최종 의도로 보정되거나 룰 기반 fallback이 수행됩니다.
+
+```json
+{
+  "type": "agent.request",
+  "request_id": "operator-guide-telecom-ambiguous-001",
+  "session_id": "agent-test-session",
+  "client_id": "agent-test-console",
+  "agent": "operator_guide",
+  "payload": {
+    "question": "통신탑 알려줘"
+  },
+  "context": {
+    "language": "ko",
+    "mode": "agent_test"
+  }
+}
+```
+
+기대 결과:
+- `isAmbiguous: true` 또는 LLM 보정이 성공하면 `false`
+- `target_ids`에 장비 ID(`equipment_telecommunication_tower`)와 자원 ID(`resource_TeleCommunicationTower`) 후보가 안전하게 획득됨.
+
 ## 3. process_optimizer 예시
 
 `process_optimizer`는 자동 실행 Agent가 아니다. `state_update`는 상태 기억만 하고, `analyze`는 preview 계획만 반환한다. 실제 공장 변경 명령은 플레이어가 승인한 `apply` 요청 이후에만 생성된다.
