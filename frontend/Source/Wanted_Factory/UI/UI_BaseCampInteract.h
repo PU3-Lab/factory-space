@@ -8,6 +8,7 @@ class AMachineBase;
 class UUniformGridPanel;
 class UDragDropOperation;
 class UBorder;
+class UButton;
 class UImage;
 class UTextBlock;
 class UProgressBar;
@@ -37,6 +38,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "BaseCamp UI")
     void RefreshFactoryStatus();
 
+    UFUNCTION(BlueprintCallable, Category = "BaseCamp UI")
+    bool RequestMaterialGeneration();
+
     void RefreshAllUpgradeNodes();
 
 protected:
@@ -49,6 +53,7 @@ protected:
     UPROPERTY(meta = (BindWidget)) class UButton* BTN_Tab_FactoryStatus;
     UPROPERTY(meta = (BindWidget)) class UButton* BTN_Tab_LevelUpgrade;
     UPROPERTY(meta = (BindWidget)) class UButton* BTN_Tab_newMaterial;
+    UPROPERTY(meta = (BindWidgetOptional)) class UButton* BTN_RequestMaterialGeneration;
     UPROPERTY(meta = (BindWidget)) class UWidgetSwitcher* WS_SubPaneSwitcher;
 
     // --- 공장 상태창 탭 관련 ---
@@ -105,6 +110,7 @@ protected:
     UFUNCTION() void OnStatusTabClicked();
     UFUNCTION() void OnUpgradeTabClicked();
     UFUNCTION() void OnMaterialTabClicked();
+    UFUNCTION() void OnRequestMaterialGenerationClicked();
     void SwitchSubPaneMode(EBaseCampSubMode NewMode);
 
 private:

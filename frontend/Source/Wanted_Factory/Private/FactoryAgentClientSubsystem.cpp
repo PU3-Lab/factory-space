@@ -185,6 +185,53 @@ TArray<TSharedPtr<FJsonValue>> MakeStringArray(const TArray<FString>& Values)
 	return JsonValues;
 }
 
+FString SanitizeFileToken(FString Value)
+{
+	Value.TrimStartAndEndInline();
+	if (Value.IsEmpty())
+	{
+		return TEXT("unknown");
+	}
+
+	for (const TCHAR InvalidCharacter : { TEXT('<'), TEXT('>'), TEXT(':'), TEXT('"'), TEXT('/'), TEXT('\\'), TEXT('|'), TEXT('?'), TEXT('*') })
+	{
+		const TCHAR SearchText[] = { InvalidCharacter, TEXT('\0') };
+		Value.ReplaceInline(SearchText, TEXT("_"), ESearchCase::CaseSensitive);
+	}
+
+	while (Value.Contains(TEXT("__")))
+	{
+		Value.ReplaceInline(TEXT("__"), TEXT("_"), ESearchCase::CaseSensitive);
+	}
+
+	return Value;
+}
+
+bool SaveJsonToDesktop(const FString& FileName, const FString& JsonText, FString& OutSavedFilePath)
+{
+	const FString UserProfilePath = FPlatformMisc::GetEnvironmentVariable(TEXT("USERPROFILE"));
+	const FString DesktopDirectory = UserProfilePath.IsEmpty()
+		? FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir())
+		: FPaths::Combine(UserProfilePath, TEXT("Desktop"));
+
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	if (!PlatformFile.DirectoryExists(*DesktopDirectory) && !PlatformFile.CreateDirectoryTree(*DesktopDirectory))
+	{
+		OutSavedFilePath.Reset();
+		return false;
+	}
+
+	const FString SavedFilePath = FPaths::Combine(DesktopDirectory, FileName);
+	if (!FFileHelper::SaveStringToFile(JsonText, *SavedFilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+	{
+		OutSavedFilePath.Reset();
+		return false;
+	}
+
+	OutSavedFilePath = SavedFilePath;
+	return true;
+}
+
 bool TryGetBoolField(const TSharedPtr<FJsonObject>& JsonObject, const TCHAR* FieldName, bool DefaultValue = false)
 {
 	bool Value = DefaultValue;
@@ -941,6 +988,7 @@ bool UFactoryAgentClientSubsystem::SendRawMessage(const FString& RawMessage)
 		return false;
 	}
 
+	LOG_LC(TEXT("Factory agent WebSocket sending: %s"), *RawMessage);
 	Socket->Send(RawMessage);
 	return true;
 }
@@ -1048,6 +1096,16 @@ void UFactoryAgentClientSubsystem::HandleSocketMessage(const FString& Message)
 		const TSharedPtr<FJsonObject> PayloadObject = FactoryAgentJsonUtils::GetObjectField(RootObject, TEXT("payload"));
 		if (Agent == MaterialGenerationAgentId)
 		{
+			FString SavedFilePath;
+			const FString RequestToken = SanitizeFileToken(RequestId);
+			if (SaveJsonToDesktop(
+				FString::Printf(TEXT("material_generation_response_%s.json"), *RequestToken),
+				Message,
+				SavedFilePath))
+			{
+				LOG_LC(TEXT("Material generation response saved: %s"), *SavedFilePath);
+			}
+
 			FFactoryMaterialGenerationResponse MaterialResponse;
 			if (TryBuildMaterialGenerationResponse(RequestId, Agent, PayloadObject, MaterialResponse))
 			{
@@ -1068,6 +1126,16 @@ void UFactoryAgentClientSubsystem::HandleSocketMessage(const FString& Message)
 		const TSharedPtr<FJsonObject> ErrorObject = FactoryAgentJsonUtils::GetObjectField(RootObject, TEXT("error"));
 		if (Agent == MaterialGenerationAgentId)
 		{
+			FString SavedFilePath;
+			const FString RequestToken = SanitizeFileToken(RequestId);
+			if (SaveJsonToDesktop(
+				FString::Printf(TEXT("material_generation_error_%s.json"), *RequestToken),
+				Message,
+				SavedFilePath))
+			{
+				LOG_LC(TEXT("Material generation error saved: %s"), *SavedFilePath);
+			}
+
 			PendingMaterialGenerationRequests.Remove(RequestId);
 		}
 		OnAgentErrorReceived.Broadcast(
