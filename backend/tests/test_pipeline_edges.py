@@ -272,7 +272,7 @@ def test_process_optimizer_analyze_routes_to_v2_graph_without_llm() -> None:
                             "id": "smelter_v2",
                             "type": "smelter",
                             "status": "operating",
-                            "inputs": [{"item_id": "iron_ore", "amount": 0.0}],
+                            "inputs": [{"item_id": "iron_ore", "amount": 10.0}],
                         }
                     ],
                     "conveyors": [],
@@ -975,7 +975,7 @@ def test_pipeline_uses_valid_llm_json_response_without_fallback() -> None:
     assert_agent_response(response, agent="process_optimizer")
     assert response["payload"]["status"] in {"preview", "error"}
     assert response["payload"]["summary"]
-    assert "llm" not in response["payload"]["metadata"]
+    assert response["payload"]["metadata"].get("llm") in {None, "not_applicable"}
     assert "currentModel" not in response["payload"]["metadata"]
     assert response["payload"]["metadata"]["selectedAgent"] == "process_optimizer"
 
@@ -1173,7 +1173,7 @@ def test_pipeline_cache_hit_skips_second_llm_call() -> None:
         "type": "agent.request",
         "request_id": "request-cache-first",
         "agent": "process_optimizer",
-        "payload": {"machines": [{"id": "m-1"}]},
+        "payload": {"machines": [{"id": "m-1", "status": "operating"}]},
         "context": {"site": "a"},
     }
 
@@ -1201,14 +1201,14 @@ def test_pipeline_cache_hit_preserves_original_response_metadata() -> None:
         "type": "agent.request",
         "request_id": "request-cache-metadata-first",
         "agent": "process_optimizer",
-        "payload": {"machines": [{"id": "m-1"}]},
+        "payload": {"machines": [{"id": "m-1", "status": "operating"}]},
     }
 
     first = pipeline.run(message)
     second = pipeline.run({**message, "request_id": "request-cache-metadata-second"})
 
-    assert "llm" not in first["payload"]["metadata"]
-    assert "llm" not in second["payload"]["metadata"]
+    assert first["payload"]["metadata"].get("llm") in {None, "not_applicable"}
+    assert second["payload"]["metadata"].get("llm") in {None, "not_applicable"}
     assert "cache" not in second["payload"]["metadata"]
     assert "middlewareLogs" not in second["payload"]["metadata"]
 

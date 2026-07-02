@@ -66,6 +66,61 @@ struct FTutorialRequirement
 	int32 RequiredCount = 1;
 };
 
+bool ParseTutorialRewardEntry(const FString& EntryText, FQuestRewardItem& OutReward)
+{
+	FString TrimmedEntry = EntryText.TrimStartAndEnd();
+	if (TrimmedEntry.IsEmpty())
+	{
+		return false;
+	}
+
+	FString ItemIdString;
+	FString QuantityString;
+	if (TrimmedEntry.Split(TEXT(":"), &ItemIdString, &QuantityString))
+	{
+		ItemIdString = ItemIdString.TrimStartAndEnd();
+		QuantityString = QuantityString.TrimStartAndEnd();
+	}
+	else
+	{
+		TArray<FString> Parts;
+		TrimmedEntry.ParseIntoArrayWS(Parts);
+		if (Parts.Num() < 2)
+		{
+			return false;
+		}
+
+		QuantityString = Parts.Pop();
+		ItemIdString = FString::Join(Parts, TEXT("_")).ToLower();
+	}
+
+	const int32 Quantity = FCString::Atoi(*QuantityString);
+	if (ItemIdString.IsEmpty() || Quantity <= 0)
+	{
+		return false;
+	}
+
+	OutReward.ItemId = FName(*ItemIdString);
+	OutReward.Quantity = Quantity;
+	return !OutReward.ItemId.IsNone();
+}
+
+void ParseTutorialRewardString(const FString& RewardText, TArray<FQuestRewardItem>& OutRewards)
+{
+	OutRewards.Reset();
+
+	TArray<FString> Entries;
+	RewardText.ParseIntoArray(Entries, TEXT(";"), true);
+	for (const FString& Entry : Entries)
+	{
+		FQuestRewardItem Reward;
+		if (ParseTutorialRewardEntry(Entry, Reward))
+		{
+			OutRewards.Add(Reward);
+		}
+	}
+}
+
 TSharedPtr<FJsonObject> CreateProductionPayload(const FString& Question)
 {
 	const TSharedPtr<FJsonObject> PayloadObject = MakeShared<FJsonObject>();
@@ -109,6 +164,7 @@ bool ReadQuestState(const TSharedPtr<FJsonObject>& QuestObject, FQuestState& Out
 	OutQuest.Description = FText::FromString(FactoryAgentJsonUtils::GetStringField(QuestObject, TEXT("description")));
 	OutQuest.Status = EQuestStatus::Active;
 	OutQuest.Objectives.Empty();
+	OutQuest.Rewards.Empty();
 
 	const TArray<TSharedPtr<FJsonValue>>* ObjectiveValues = nullptr;
 	if (QuestObject->TryGetArrayField(TEXT("objectives"), ObjectiveValues) && ObjectiveValues)
@@ -119,6 +175,11 @@ bool ReadQuestState(const TSharedPtr<FJsonObject>& QuestObject, FQuestState& Out
 			if (ReadQuestObjective(ObjectiveValue->AsObject(), Objective))
 			{
 				OutQuest.Objectives.Add(Objective);
+
+				FQuestRewardItem Reward;
+				Reward.ItemId = Objective.TargetId;
+				Reward.Quantity = 10;
+				OutQuest.Rewards.Add(Reward);
 			}
 		}
 	}
@@ -502,6 +563,7 @@ void UQuestManagerSubsystem::Deinitialize()
 {
 	if (AgentClient)
 	{
+		AgentClient->OnConnected.RemoveAll(this);
 		AgentClient->OnAgentResponseReceived.RemoveAll(this);
 		AgentClient->OnAgentErrorReceived.RemoveAll(this);
 	}
@@ -512,6 +574,7 @@ void UQuestManagerSubsystem::Deinitialize()
 	}
 
 	PendingSubQuestRequestIds.Empty();
+	bPendingAutoSubQuestRequest = false;
 	AgentClient = nullptr;
 	WarehouseSubsystem = nullptr;
 
@@ -652,6 +715,24 @@ FString UQuestManagerSubsystem::RequestSubQuests()
 FString UQuestManagerSubsystem::RequestProductionSubQuests(const FString& Question)
 {
 	return SendSubQuestRequest(FactoryAgentJsonUtils::WriteJsonObject(CreateProductionPayload(Question)));
+}
+
+void UQuestManagerSubsystem::RequestSubQuestsWhenConnected()
+{
+	if (!AgentClient || !SubQuests.IsEmpty() || !PendingSubQuestRequestIds.IsEmpty())
+	{
+		return;
+	}
+
+	if (AgentClient->IsConnected())
+	{
+		bPendingAutoSubQuestRequest = false;
+		RequestSubQuests();
+		return;
+	}
+
+	bPendingAutoSubQuestRequest = true;
+	ConnectQuestAgent();
 }
 
 void UQuestManagerSubsystem::StartTutorialQuestTest()
@@ -900,6 +981,7 @@ void UQuestManagerSubsystem::RevealPendingTutorialStartDialogue()
 	if (CurrentTutorialQuestId == TEXT("TUT_COMM_001"))
 	{
 		bFullQuestWindowUnlocked = true;
+		RequestSubQuestsWhenConnected();
 	}
 
 	bPendingTutorialStartDialogueReveal = false;
@@ -968,6 +1050,8 @@ void UQuestManagerSubsystem::BindAgentClient()
 		return;
 	}
 
+	AgentClient->OnConnected.RemoveDynamic(this, &UQuestManagerSubsystem::HandleAgentConnected);
+	AgentClient->OnConnected.AddDynamic(this, &UQuestManagerSubsystem::HandleAgentConnected);
 	AgentClient->OnAgentResponseReceived.AddDynamic(this, &UQuestManagerSubsystem::HandleAgentResponse);
 	AgentClient->OnAgentErrorReceived.AddDynamic(this, &UQuestManagerSubsystem::HandleAgentError);
 }
@@ -1184,6 +1268,7 @@ void UQuestManagerSubsystem::RefreshSubQuestCompletion(bool bForceBroadcast)
 		if (IsQuestCompletedByWarehouse(Quest))
 		{
 			Quest.Status = EQuestStatus::Completed;
+			GrantQuestRewards(Quest);
 			bAnyQuestUpdated = true;
 		}
 	}
@@ -1324,13 +1409,27 @@ bool UQuestManagerSubsystem::AdvanceTutorialQuestStep(bool bFromManualTest)
 		return false;
 	}
 
+	TArray<FQuestRewardItem> TutorialRewards;
+	ParseTutorialRewardString(CurrentStep->Reward, TutorialRewards);
+
 	LogTutorialDialogue(CurrentStep->QuestId, TEXT("on_complete"));
+
+	if (CurrentStep->QuestId == TEXT("TUT_COMM_007"))
+	{
+		RequestSubQuestsWhenConnected();
+	}
 
 	if (CurrentStep->NextQuestId.IsEmpty())
 	{
 		CurrentTutorialQuestId.Empty();
 		bTutorialQuestTestActive = false;
 		bPendingTutorialStartDialogueReveal = false;
+		if (!TutorialRewards.IsEmpty())
+		{
+			FQuestState RewardQuest;
+			RewardQuest.Rewards = TutorialRewards;
+			GrantQuestRewards(RewardQuest);
+		}
 		return true;
 	}
 
@@ -1348,8 +1447,20 @@ bool UQuestManagerSubsystem::AdvanceTutorialQuestStep(bool bFromManualTest)
 	}
 
 	CurrentTutorialQuestId = CurrentStep->NextQuestId;
+	if (CurrentTutorialQuestId == TEXT("TUT_COMM_001"))
+	{
+		bFullQuestWindowUnlocked = true;
+		RequestSubQuestsWhenConnected();
+	}
+
 	bPendingTutorialStartDialogueReveal = true;
 	BroadcastCurrentTutorialQuestStep();
+	if (!TutorialRewards.IsEmpty())
+	{
+		FQuestState RewardQuest;
+		RewardQuest.Rewards = TutorialRewards;
+		GrantQuestRewards(RewardQuest);
+	}
 	return true;
 }
 
@@ -1469,6 +1580,17 @@ void UQuestManagerSubsystem::HandleWarehouseItemAdded(FName ItemID, int32 AddedC
 	}
 
 	RefreshMainQuestCompletion();
+}
+
+void UQuestManagerSubsystem::HandleAgentConnected()
+{
+	if (!bPendingAutoSubQuestRequest)
+	{
+		return;
+	}
+
+	bPendingAutoSubQuestRequest = false;
+	RequestSubQuests();
 }
 
 void UQuestManagerSubsystem::HandleAgentResponse(

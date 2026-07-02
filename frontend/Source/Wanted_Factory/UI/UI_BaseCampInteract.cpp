@@ -101,7 +101,7 @@ void UUI_BaseCampInteract::NativeTick(const FGeometry& MyGeometry, float InDelta
     FName OutputName = Recipe.OutputItem1;
     if (!ManualDroppedOutputItemID.IsNone()) OutputName = ManualDroppedOutputItemID;
     int32 OutputAmount = TargetBaseCamp->GetOutputBuffer().FindRef(OutputName);
-    UpdateOutputUI(OutputName, OutputAmount, TargetBaseCamp->GetMaxOutput());
+    UpdateOutputUI(OutputName, OutputAmount);
 }
 
 void UUI_BaseCampInteract::UpdateInputSlotUI(int32 SlotIndex, FName ItemName, int32 CurrentAmount, int32 MaxAmount)
@@ -145,16 +145,14 @@ void UUI_BaseCampInteract::UpdateInputSlotUI(int32 SlotIndex, FName ItemName, in
     }
 }
 
-void UUI_BaseCampInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, int32 MaxAmount)
+void UUI_BaseCampInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount)
 {
     const FName DisplayItemName = ItemName.IsNone() ? LastOutputVisualItemID : ItemName;
     if (!ItemName.IsNone()) LastOutputVisualItemID = ItemName;
 
-    if (TXT_OutputName && TXT_OutputCount && PB_OutputBuffer)
+    if (TXT_OutputName)
     {
         TXT_OutputName->SetText(GetResourceDisplayText(ResourceDataTable, DisplayItemName));
-        TXT_OutputCount->SetText(FText::FromString(FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount)));
-        PB_OutputBuffer->SetPercent((MaxAmount > 0) ? (float)CurrentAmount / MaxAmount : 0.0f);
     }
 
     if (IMG_OutputIcon)
@@ -246,7 +244,10 @@ void UUI_BaseCampInteract::RefreshFactoryStatus()
 
     // 전력 데이터 반영
     FFactoryPowerOverview PowerOverview = FactoryManager->GetFactoryPowerOverview();
-    FString PowerString = FString::Printf(TEXT("%.1fW / %.1fW"), PowerOverview.CurrentDemandPower, PowerOverview.CurrentAvailablePower);
+    FString PowerString = FString::Printf(
+        TEXT("소모량 %.1fW / 총 전력량 %.1fW"),
+        PowerOverview.CurrentDemandPower,
+        PowerOverview.CurrentAvailablePower);
     TXT_PowerStatus->SetText(FText::FromString(PowerString));
 
     // 프로그레스 바 퍼센트 계산 (0.0f ~ 1.0f)

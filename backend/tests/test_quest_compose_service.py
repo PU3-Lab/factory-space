@@ -30,6 +30,7 @@ def test_db() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+        engine.dispose()
         if os.path.exists(db_path):
             os.unlink(db_path)
 

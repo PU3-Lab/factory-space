@@ -131,20 +131,17 @@ def test_pipeline_memory_context_and_query_expansion_integration() -> None:
 
     llm = StubLLM(
         [
-            # 1턴: 라우팅 결정 & 최종 답변
-            top_agent_decision("operator_guide"),
+            # 1턴: 최종 답변
             (
                 '{"final_answer":"컨베이어 정지 시에는 전력과 출력 저장고를 확인하세요.",'
                 '"actions":[],"question":"컨베이어가 멈췄어","topic":"troubleshooting"}'
             ),
-            # 2턴: 라우팅 결정 & 최종 답변
-            top_agent_decision("operator_guide"),
+            # 2턴: 최종 답변
             (
                 '{"final_answer":"전력이 정상이면 출력 저장 공간이 가득 찼는지 확인하세요.",'
                 '"actions":[],"question":"전력은 정상인데?","topic":"troubleshooting"}'
             ),
-            # 3턴: 라우팅 결정 & 최종 답변
-            top_agent_decision("operator_guide"),
+            # 3턴: 최종 답변
             (
                 '{"final_answer":"저장 공간도 비어 있다면 벨트 방향 연결을 확인하세요.",'
                 '"actions":[],"question":"그럼 다음은?","topic":"troubleshooting"}'

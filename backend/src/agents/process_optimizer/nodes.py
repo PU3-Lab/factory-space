@@ -241,7 +241,7 @@ def validate_preview_candidates(state: ProcessOptimizerGraphState) -> dict[str, 
     Returns:
         검증에 실패하면 오류 정보를, 통과하면 빈 변경값을 반환합니다.
     """
-    if state.get("error") or not state.get("suggestions"):
+    if state.get("error") or state.get("suggestions") is None:
         return {}
 
     validator = SuggestionValidationTool()
@@ -264,7 +264,7 @@ def create_preview_plan(state: ProcessOptimizerGraphState) -> dict[str, Any]:
     Returns:
         새 계획 ID와 만료 시각이 포함된 ``PreviewPlan``입니다.
     """
-    if state.get("error") or not state.get("suggestions"):
+    if state.get("error") or state.get("suggestions") is None:
         return {}
 
     suggestions = state["suggestions"]
@@ -282,9 +282,9 @@ def create_preview_plan(state: ProcessOptimizerGraphState) -> dict[str, Any]:
     }
 
     for sug in suggestions:
-        if "input" in sug.id:
+        if any(w in sug.id for w in ("input", "supply", "production")):
             expected_effect["resolved_input_shortages_count"] += 1
-        elif "output" in sug.id:
+        elif any(w in sug.id for w in ("output", "demand", "consumption")):
             expected_effect["resolved_output_blocks_count"] += 1
         elif "conveyor" in sug.id:
             expected_effect["resolved_conveyor_congestions_count"] += 1
@@ -380,7 +380,7 @@ def return_preview_plan(state: ProcessOptimizerGraphState) -> dict[str, Any]:
         if has_matching_suggestion:
             first_sug = suggestions[0]
             issue_desc = "공정상 문제"
-            if "input" in first_sug.id:
+            if "input" in first_sug.id or "supply" in first_sug.id:
                 issue_desc = "입력 재고 부족"
             elif "output" in first_sug.id:
                 issue_desc = "생산품 출력 적체"
