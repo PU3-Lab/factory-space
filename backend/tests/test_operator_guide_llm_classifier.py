@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import pytest
+
 from agents.operator_guide.csv_repository import CsvManualQARepository
 from agents.operator_guide.question_classifier import (
-    ManualQAQuestionClassifier,
     LLMIntentClassifier,
+    ManualQAQuestionClassifier,
 )
-from agents.operator_guide.schemas import ManualQAIntent
 
 
 class MockLLMAdapter:

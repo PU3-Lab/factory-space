@@ -20,8 +20,8 @@ from agents.operator_guide.manual_context_builder import (
 from agents.operator_guide.prompt_builder import ManualQAPromptBuilder
 from agents.operator_guide.question_classifier import (
     ContextNeedClassifier,
-    ManualQAQuestionClassifier,
     LLMIntentClassifier,
+    ManualQAQuestionClassifier,
 )
 from agents.operator_guide.schemas import ManualQAResult
 from agents.operator_guide.session_memory import OPERATOR_GUIDE_RECENT_CONVERSATION_KEY

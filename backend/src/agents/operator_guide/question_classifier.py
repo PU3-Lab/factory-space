@@ -397,7 +397,6 @@ class LLMIntentClassifier:
             return rule_intent
 
     def _build_prompt(self, question: str, candidate_targets: list[dict[str, str]]) -> str:
-        import json
         targets_json = json.dumps(candidate_targets, ensure_ascii=False, indent=2)
         intents_json = json.dumps(self._candidate_intents, ensure_ascii=False)
         return f"""You are a factory guide assistant. Clarify the player's intent for the given question.
@@ -425,7 +424,6 @@ Example Output:
 """
 
     def _parse_json_response(self, text: str) -> dict[str, Any] | None:
-        import json
         try:
             cleaned = text.strip()
             if cleaned.startswith("`"):
