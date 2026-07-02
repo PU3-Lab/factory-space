@@ -2887,6 +2887,35 @@ void AOJJ_Player::ResetGame()
 	UGameplayStatics::OpenLevel(this, FName(*LevelName));
 }
 
+void AOJJ_Player::ResetTutorial()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!GameInstance)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ResetTutorial] GameInstance not found."));
+		return;
+	}
+
+	UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>();
+	if (!QuestManager)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ResetTutorial] QuestManagerSubsystem not found."));
+		return;
+	}
+
+	QuestManager->StartTutorialQuestTest();
+
+	if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+	{
+		const bool bSaved = SaveSubsystem->SaveCurrentGame();
+		UE_LOG(LogTemp, Log, TEXT("[ResetTutorial] Tutorial progress reset. Saved=%s"),
+			bSaved ? TEXT("true") : TEXT("false"));
+		return;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[ResetTutorial] Tutorial progress reset. Save subsystem not available."));
+}
+
 void AOJJ_Player::BackupAndResetGame()
 {
 	UGameInstance* GameInstance = GetGameInstance();

@@ -735,6 +735,9 @@ public:
 	void ResetGame();
 
 	UFUNCTION(Exec)
+	void ResetTutorial();
+
+	UFUNCTION(Exec)
 	void BackupAndResetGame();
 
 	UFUNCTION(Exec)
