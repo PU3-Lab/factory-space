@@ -286,21 +286,6 @@ void UUI_BaseCampInteract::NativeOnDragDetected(const FGeometry& MyGeometry, con
 
     DragOp->DraggedItemID = DraggingInputItemID;
     DragOp->Payload = this;
-    DragOp->Pivot = EDragPivot::TopLeft;
-    DragOp->Offset = FVector2D::ZeroVector;
-
-    if (DraggingInputIcon)
-    {
-        UImage* DragVisualImage = NewObject<UImage>(GetOwningPlayer(), UImage::StaticClass());
-        if (DragVisualImage)
-        {
-            FSlateBrush DragBrush = DraggingInputIcon->GetBrush();
-            DragBrush.SetImageSize(FVector2D(64.f, 64.f));
-            DragVisualImage->SetBrush(DragBrush);
-            DragVisualImage->SetDesiredSizeOverride(FVector2D(64.f, 64.f));
-            DragOp->DefaultDragVisual = DragVisualImage;
-        }
-    }
 
     OutOperation = DragOp;
 }
