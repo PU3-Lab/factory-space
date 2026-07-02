@@ -251,9 +251,9 @@ void UUI_DialogueBalloon::DisplayCurrentLine()
     {
         // 퀘스트가 끝나 대사가 비어있다면, 인풋 창은 내버려 두고 
         // 말풍선 배경(Image_229)과 글자가 담긴 'Size Box 세트'만 깔끔하게 투명 청소합니다
-        if (SB_DialogueData)   SB_DialogueData->SetVisibility(ESlateVisibility::Collapsed);
-        if (DialogueContainer) DialogueContainer->SetVisibility(ESlateVisibility::Collapsed);
-        if (TXT_Dialogue)      TXT_Dialogue->SetText(FText::GetEmpty());
+        if (SB_DialogueData)   SB_DialogueData->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        if (DialogueContainer) DialogueContainer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        if (TXT_Dialogue)      TXT_Dialogue->SetText(FText::FromString(TEXT(" ")));
         UpdateContinuePromptVisibility();
         return;
     }

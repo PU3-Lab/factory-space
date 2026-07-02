@@ -711,13 +711,18 @@ bool UQuestManagerSubsystem::CanDismissTutorialCompletionDialogue() const
 		&& !LastTutorialDialogueLines.IsEmpty();
 }
 
+bool UQuestManagerSubsystem::IsFullQuestWindowUnlocked() const
+{
+	return bFullQuestWindowUnlocked;
+}
+
 bool UQuestManagerSubsystem::DismissTutorialCompletionDialogue()
 {
 	if (!CanDismissTutorialCompletionDialogue())
 	{
 		return false;
 	}
-
+	
 	LastTutorialDialogueQuestId.Empty();
 	LastTutorialDialogueTriggerType.Empty();
 	LastTutorialDialogueLines.Reset();
@@ -865,6 +870,13 @@ void UQuestManagerSubsystem::RestoreTutorialSaveState(
 	LastTutorialDialogueTriggerType = InLastTutorialDialogueTriggerType;
 	LastTutorialDialogueLines = InLastTutorialDialogueLines;
 	TutorialProgressCounts = InTutorialProgressCounts;
+	
+	const int32* UnlockStepIndex = TutorialQuestStepIndexById.Find(TEXT("TUT_COMM_001"));
+	const int32* CurrentStepIndex = TutorialQuestStepIndexById.Find(CurrentTutorialQuestId);
+	bFullQuestWindowUnlocked = UnlockStepIndex
+		&& CurrentStepIndex
+		&& *CurrentStepIndex >= *UnlockStepIndex
+		&& !bPendingTutorialStartDialogueReveal;
 
 	BroadcastCurrentTutorialQuestStep();
 	OnTutorialDialogueLogged.Broadcast(
@@ -883,6 +895,11 @@ void UQuestManagerSubsystem::RevealPendingTutorialStartDialogue()
 	if (!bPendingTutorialStartDialogueReveal || CurrentTutorialQuestId.IsEmpty())
 	{
 		return;
+	}
+
+	if (CurrentTutorialQuestId == TEXT("TUT_COMM_001"))
+	{
+		bFullQuestWindowUnlocked = true;
 	}
 
 	bPendingTutorialStartDialogueReveal = false;

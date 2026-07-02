@@ -3,12 +3,15 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "OJJ_BuildController.h"
+#include "QuestManagerSubsystem.h"
 #include "UI_BuildModeMain.generated.h"
 
 class UButton;
 class UImage;
 class UTextBlock;
 class UWidgetAnimation;
+class UUI_QuestWindow;
+class UUI_SimpleQuestWindow;
 
 UENUM(BlueprintType)
 enum class EBuildSubMode : uint8
@@ -41,6 +44,7 @@ class WANTED_FACTORY_API UUI_BuildModeMain : public UUserWidget
 
 public:
     virtual void NativeConstruct() override;
+    virtual void NativeDestruct() override;
     virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
     UFUNCTION(BlueprintCallable, Category = "Build Mode")
@@ -71,6 +75,12 @@ protected:
     UImage* IMG_SelectedPreview;
     UPROPERTY(meta = (BindWidget))
     UTextBlock* TXT_SelectedName;
+
+    UPROPERTY(meta = (BindWidgetOptional))
+    UUI_QuestWindow* WBP_QuestWindow;
+
+    UPROPERTY(meta = (BindWidgetOptional))
+    UUI_SimpleQuestWindow* WBP_SimpleQuestWindow;
 private:
     EBuildSubMode CurrentSubMode = EBuildSubMode::Machine;
     EBuildSubMode PendingSubMode = EBuildSubMode::Machine;
@@ -103,8 +113,16 @@ private:
 
     UFUNCTION() void OnHotbarOutFinished();
 
+    UFUNCTION()
+    void HandleTutorialStepChangedForSimpleQuest(const FTutorialQuestStep& Step);
+
+    UFUNCTION()
+    void HandleTutorialDialogueLoggedForQuestWindow(const FString& QuestId, const FString& TriggerType, const TArray<FTutorialQuestDialogueLine>& Lines);
+
     void InitializeHotbarRegistry();
     void RefreshHotbarSlotsVisual();
     void UpdateSelectedPreview();
+    void RefreshQuestWindowMode();
+    void RefreshSimpleQuestWindow();
     TMap<FName, int32> CachedMachineLevels;
 };
