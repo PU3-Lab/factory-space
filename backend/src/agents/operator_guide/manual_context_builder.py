@@ -167,8 +167,14 @@ class ManualQAContextBuilder:
 
     def _fallback_answer(self, *, has_evidence: bool) -> str:
         if has_evidence:
-            return "지금은 답변을 완성하지 못했지만, 관련 매뉴얼 근거는 찾았습니다. 잠시 후 다시 물어보면 확인한 내용을 바탕으로 정리해드릴게요."
-        return "지금은 관련 매뉴얼 근거를 찾지 못했습니다. 장비 이름이나 자원 이름을 조금 더 구체적으로 말해주면 다시 확인해볼게요."
+            return (
+                "지금은 답변을 완성하지 못했지만, 관련 매뉴얼 근거는 찾았습니다.\n\n"
+                "잠시 후 다시 물어보면 확인한 내용을 바탕으로 정리해드릴게요."
+            )
+        return (
+            "지금은 관련 매뉴얼 근거를 찾지 못했습니다.\n\n"
+            "장비 이름이나 자원 이름을 조금 더 구체적으로 말해주면 다시 확인해볼게요."
+        )
 
     def _dedupe_sources(
         self,
