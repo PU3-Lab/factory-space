@@ -2481,6 +2481,15 @@ void AOJJ_Player::TriggerHUDQuestWindowToggle()
 	{
 		if (BuildModeWidgetInstance)
 		{
+			if (UGameInstance* GI = GetGameInstance())
+			{
+				UQuestManagerSubsystem* QuestManager = GI->GetSubsystem<UQuestManagerSubsystem>();
+				if (!QuestManager || !QuestManager->IsFullQuestWindowUnlocked())
+				{
+					return;
+				}
+			}
+
 			UUI_QuestWindow* BuildQuestWindow = Cast<UUI_QuestWindow>(BuildModeWidgetInstance->GetWidgetFromName(TEXT("WBP_QuestWindow")));
 			if (BuildQuestWindow)
 			{

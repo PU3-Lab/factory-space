@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "PlanetEventManagerSubsystem.h"
+#include "UI_SimpleQuestWindow.h"
+#include "QuestManagerSubsystem.h"
 #include "UI_MainHUD.generated.h"
 
 class UImage;
@@ -32,6 +34,9 @@ public:
 protected:
     UPROPERTY(meta = (BindWidget))
     class UUI_QuestWindow* WBP_QuestWindow;
+    
+    UPROPERTY(meta = (BindWidget))
+    class UUI_SimpleQuestWindow* WBP_SimpleQuestWindow;
 
     UPROPERTY(meta = (BindWidget))
     class UTextBlock* TXT_InGameTime;
@@ -136,6 +141,15 @@ protected:
     virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 private:
+    void RefreshQuestWindowMode();
+    void RefreshSimpleQuestWindow();
+
+    UFUNCTION()
+    void HandleTutorialStepChangedForSimpleQuest(const FTutorialQuestStep& Step);
+
+    UFUNCTION()
+    void HandleTutorialDialogueLoggedForQuestWindow(const FString& QuestId, const FString& TriggerType, const TArray<FTutorialQuestDialogueLine>& Lines);
+    
     UFUNCTION()
     void HandleWeatherChanged(const FPlanetWeatherState& WeatherState);
 

@@ -171,6 +171,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Quest|Tutorial")
 	FOnTutorialDialogueLogged OnTutorialDialogueLogged;
+	
+	UFUNCTION(BlueprintPure, Category = "Quest|Tutorial")
+	bool IsFullQuestWindowUnlocked() const;
 
 	UFUNCTION(BlueprintPure, Category = "Quest|Main")
 	bool GetCurrentMainQuest(FQuestState& OutQuest) const;
@@ -305,6 +308,7 @@ private:
 	FString CurrentTutorialQuestId;
 	bool bTutorialQuestTestActive = false;
 	bool bPendingTutorialStartDialogueReveal = false;
+	bool bFullQuestWindowUnlocked = false;
 	FString LastTutorialDialogueQuestId;
 	FString LastTutorialDialogueTriggerType;
 
