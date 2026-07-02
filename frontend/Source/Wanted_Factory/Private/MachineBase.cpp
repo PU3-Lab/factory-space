@@ -529,6 +529,32 @@ bool AMachineBase::AddItem(FName ItemID, int32 Count)
 	return true;
 }
 
+bool AMachineBase::TakeInputItem(FName ItemID, int32 Count)
+{
+	if (ItemID.IsNone() || Count <= 0)
+	{
+		return false;
+	}
+
+	int32* FoundCount = InputInventory.Find(ItemID);
+	if (!FoundCount || *FoundCount < Count)
+	{
+		return false;
+	}
+
+	*FoundCount -= Count;
+
+	if (*FoundCount <= 0)
+	{
+		InputInventory.Remove(ItemID);
+	}
+
+	UpdateDebugBufferText();
+	UpdateStateIndicator();
+
+	return true;
+}
+
 void AMachineBase::TryStartProcess()
 {
 	RefreshMachineState();
