@@ -155,7 +155,8 @@ def test_manual_qa_troubleshooting_fallback_keeps_csv_metadata() -> None:
     response = answer_manual_qa("제련기가 왜 안 돌아가?")
 
     assert response["question_type"] == "troubleshooting_question"
-    assert "관련 매뉴얼 근거는 찾았습니다" in response["final_answer"]
+    assert "전력, 입력 자원, 출력 저장 공간" in response["final_answer"]
+    assert "먼저 전력 → 입력 자원" in response["final_answer"]
     source_ids = {source["doc_id"] for source in response["sources"]}
     assert {"issue_machine_stopped", "equipment_smelter"} <= source_ids
     action_ids = {action["action_id"] for action in response["recommended_actions"]}
@@ -166,23 +167,30 @@ def test_manual_qa_troubleshooting_fallback_keeps_csv_metadata() -> None:
     } <= action_ids
 
 
-def test_manual_qa_fallback_does_not_build_rule_based_template_answers() -> None:
+def test_manual_qa_fallback_builds_csv_based_template_answers() -> None:
     equipment_response = answer_manual_qa("제련기는 뭐야?")
     recipe_response = answer_manual_qa("철괴 만들려면 뭐가 필요해?")
     unknown_response = answer_manual_qa("우주 엘리베이터는 어떻게 업그레이드해?")
 
-    assert equipment_response["final_answer"] == (
-        "지금은 답변을 완성하지 못했지만, 관련 매뉴얼 근거는 찾았습니다.\n\n"
-        "잠시 후 다시 물어보면 확인한 내용을 바탕으로 정리해드릴게요."
-    )
-    assert recipe_response["final_answer"] == (
-        "지금은 답변을 완성하지 못했지만, 관련 매뉴얼 근거는 찾았습니다.\n\n"
-        "잠시 후 다시 물어보면 확인한 내용을 바탕으로 정리해드릴게요."
-    )
+    assert "제련기는 광석이나 원재료를 가공" in equipment_response["final_answer"]
+    assert "대표 출력 자원은 철괴" in equipment_response["final_answer"]
+    assert "철괴는 제련기에서 만들 수 있어요" in recipe_response["final_answer"]
+    assert "필요 재료는 철광석 2개" in recipe_response["final_answer"]
     assert unknown_response["final_answer"] == (
         "지금은 관련 매뉴얼 근거를 찾지 못했습니다.\n\n"
         "장비 이름이나 자원 이름을 조금 더 구체적으로 말해주면 다시 확인해볼게요."
     )
+
+
+def test_manual_qa_fallback_explains_telecommunication_tower_recipe() -> None:
+    response = answer_manual_qa("통신탑 어떻게 만들어?")
+
+    assert response["question_type"] == "resource_question"
+    assert "통신탑은 합성기에서 만들 수 있어요" in response["final_answer"]
+    assert "철근 20개" in response["final_answer"]
+    assert "구리선 20개" in response["final_answer"]
+    assert "주석판 20개" in response["final_answer"]
+    assert "resource_" not in response["final_answer"]
 
 
 def test_manual_qa_answers_use_formal_tone() -> None:

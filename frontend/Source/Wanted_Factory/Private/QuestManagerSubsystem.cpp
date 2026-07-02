@@ -66,6 +66,61 @@ struct FTutorialRequirement
 	int32 RequiredCount = 1;
 };
 
+bool ParseTutorialRewardEntry(const FString& EntryText, FQuestRewardItem& OutReward)
+{
+	FString TrimmedEntry = EntryText.TrimStartAndEnd();
+	if (TrimmedEntry.IsEmpty())
+	{
+		return false;
+	}
+
+	FString ItemIdString;
+	FString QuantityString;
+	if (TrimmedEntry.Split(TEXT(":"), &ItemIdString, &QuantityString))
+	{
+		ItemIdString = ItemIdString.TrimStartAndEnd();
+		QuantityString = QuantityString.TrimStartAndEnd();
+	}
+	else
+	{
+		TArray<FString> Parts;
+		TrimmedEntry.ParseIntoArrayWS(Parts);
+		if (Parts.Num() < 2)
+		{
+			return false;
+		}
+
+		QuantityString = Parts.Pop();
+		ItemIdString = FString::Join(Parts, TEXT("_")).ToLower();
+	}
+
+	const int32 Quantity = FCString::Atoi(*QuantityString);
+	if (ItemIdString.IsEmpty() || Quantity <= 0)
+	{
+		return false;
+	}
+
+	OutReward.ItemId = FName(*ItemIdString);
+	OutReward.Quantity = Quantity;
+	return !OutReward.ItemId.IsNone();
+}
+
+void ParseTutorialRewardString(const FString& RewardText, TArray<FQuestRewardItem>& OutRewards)
+{
+	OutRewards.Reset();
+
+	TArray<FString> Entries;
+	RewardText.ParseIntoArray(Entries, TEXT(";"), true);
+	for (const FString& Entry : Entries)
+	{
+		FQuestRewardItem Reward;
+		if (ParseTutorialRewardEntry(Entry, Reward))
+		{
+			OutRewards.Add(Reward);
+		}
+	}
+}
+
 TSharedPtr<FJsonObject> CreateProductionPayload(const FString& Question)
 {
 	const TSharedPtr<FJsonObject> PayloadObject = MakeShared<FJsonObject>();
@@ -109,6 +164,7 @@ bool ReadQuestState(const TSharedPtr<FJsonObject>& QuestObject, FQuestState& Out
 	OutQuest.Description = FText::FromString(FactoryAgentJsonUtils::GetStringField(QuestObject, TEXT("description")));
 	OutQuest.Status = EQuestStatus::Active;
 	OutQuest.Objectives.Empty();
+	OutQuest.Rewards.Empty();
 
 	const TArray<TSharedPtr<FJsonValue>>* ObjectiveValues = nullptr;
 	if (QuestObject->TryGetArrayField(TEXT("objectives"), ObjectiveValues) && ObjectiveValues)
@@ -119,6 +175,11 @@ bool ReadQuestState(const TSharedPtr<FJsonObject>& QuestObject, FQuestState& Out
 			if (ReadQuestObjective(ObjectiveValue->AsObject(), Objective))
 			{
 				OutQuest.Objectives.Add(Objective);
+
+				FQuestRewardItem Reward;
+				Reward.ItemId = Objective.TargetId;
+				Reward.Quantity = 10;
+				OutQuest.Rewards.Add(Reward);
 			}
 		}
 	}
@@ -1184,6 +1245,7 @@ void UQuestManagerSubsystem::RefreshSubQuestCompletion(bool bForceBroadcast)
 		if (IsQuestCompletedByWarehouse(Quest))
 		{
 			Quest.Status = EQuestStatus::Completed;
+			GrantQuestRewards(Quest);
 			bAnyQuestUpdated = true;
 		}
 	}
@@ -1324,6 +1386,9 @@ bool UQuestManagerSubsystem::AdvanceTutorialQuestStep(bool bFromManualTest)
 		return false;
 	}
 
+	TArray<FQuestRewardItem> TutorialRewards;
+	ParseTutorialRewardString(CurrentStep->Reward, TutorialRewards);
+
 	LogTutorialDialogue(CurrentStep->QuestId, TEXT("on_complete"));
 
 	if (CurrentStep->NextQuestId.IsEmpty())
@@ -1331,6 +1396,12 @@ bool UQuestManagerSubsystem::AdvanceTutorialQuestStep(bool bFromManualTest)
 		CurrentTutorialQuestId.Empty();
 		bTutorialQuestTestActive = false;
 		bPendingTutorialStartDialogueReveal = false;
+		if (!TutorialRewards.IsEmpty())
+		{
+			FQuestState RewardQuest;
+			RewardQuest.Rewards = TutorialRewards;
+			GrantQuestRewards(RewardQuest);
+		}
 		return true;
 	}
 
@@ -1350,6 +1421,12 @@ bool UQuestManagerSubsystem::AdvanceTutorialQuestStep(bool bFromManualTest)
 	CurrentTutorialQuestId = CurrentStep->NextQuestId;
 	bPendingTutorialStartDialogueReveal = true;
 	BroadcastCurrentTutorialQuestStep();
+	if (!TutorialRewards.IsEmpty())
+	{
+		FQuestState RewardQuest;
+		RewardQuest.Rewards = TutorialRewards;
+		GrantQuestRewards(RewardQuest);
+	}
 	return true;
 }
 

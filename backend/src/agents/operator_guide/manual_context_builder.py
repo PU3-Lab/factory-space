@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -18,6 +19,10 @@ from agents.operator_guide.schemas import (
     ManualQAResult,
     ManualQASource,
     RecommendedAction,
+)
+
+_RAW_ID_PAREN_RE = re.compile(
+    r"\s*\((?:equipment|resource|recipe|issue|action)_[^)]+\)"
 )
 
 
@@ -109,7 +114,10 @@ class ManualQAContextBuilder:
         result = ManualQAResult(
             question=question,
             question_type=intent.question_type,
-            answer=self._fallback_answer(has_evidence=bool(sources)),
+            answer=self._fallback_answer(
+                has_evidence=bool(sources),
+                records=evidence["records"],
+            ),
             sources=self._dedupe_sources(sources),
             recommended_actions=actions,
             confidence=self._confidence(intent, sources),
@@ -165,7 +173,22 @@ class ManualQAContextBuilder:
             return "high"
         return "low"
 
-    def _fallback_answer(self, *, has_evidence: bool) -> str:
+    def _fallback_answer(
+        self,
+        *,
+        has_evidence: bool,
+        records: list[dict[str, Any]] | None = None,
+    ) -> str:
+        if has_evidence and records:
+            if rule_answer := self._rule_fallback_answer(records):
+                return rule_answer
+            if recipe_answer := self._recipe_fallback_answer(records):
+                return recipe_answer
+            if resource_answer := self._resource_fallback_answer(records):
+                return resource_answer
+            if equipment_answer := self._equipment_fallback_answer(records):
+                return equipment_answer
+
         if has_evidence:
             return (
                 "지금은 답변을 완성하지 못했지만, 관련 매뉴얼 근거는 찾았습니다.\n\n"
@@ -175,6 +198,151 @@ class ManualQAContextBuilder:
             "지금은 관련 매뉴얼 근거를 찾지 못했습니다.\n\n"
             "장비 이름이나 자원 이름을 조금 더 구체적으로 말해주면 다시 확인해볼게요."
         )
+
+    def _recipe_fallback_answer(self, records: list[dict[str, Any]]) -> str:
+        recipe = self._first_record(records, "recipe")
+        if recipe is None:
+            return ""
+
+        output_name = self._resource_display_name(str(recipe.get("output_resource") or ""))
+        recipe_name = self._display_text(str(recipe.get("name") or ""))
+        target_name = output_name or recipe_name or "이 자원"
+        equipment_name = self._equipment_display_name(
+            str(recipe.get("required_equipment") or "")
+        )
+        input_resources = [
+            self._resource_amount_display_name(str(raw_resource))
+            for raw_resource in recipe.get("input_resources", [])
+        ]
+        input_resources = [resource for resource in input_resources if resource]
+        first_sentence = self._subject(target_name)
+        if equipment_name:
+            first_sentence += f" {equipment_name}에서 만들 수 있어요."
+        else:
+            first_sentence += " 관련 제작 공정에서 만들 수 있어요."
+
+        detail_parts: list[str] = []
+        if input_resources:
+            detail_parts.append(f"필요 재료는 {', '.join(input_resources)}입니다.")
+        production_steps = self._display_text(str(recipe.get("production_steps") or ""))
+        if production_steps:
+            detail_parts.append(f"생산 흐름은 {production_steps} 순서입니다.")
+        if not detail_parts:
+            detail_parts.append("세부 재료와 생산 장비는 매뉴얼의 해당 제작 공정을 확인하면 됩니다.")
+
+        return f"{first_sentence}\n\n{' '.join(detail_parts)}"
+
+    def _resource_fallback_answer(self, records: list[dict[str, Any]]) -> str:
+        resource = self._first_record(records, "resource")
+        if resource is None:
+            return ""
+
+        name = self._display_text(str(resource.get("name") or "이 자원"))
+        acquisition = self._display_text(str(resource.get("acquisition_method") or ""))
+        produced_by = self._equipment_display_name(str(resource.get("produced_by") or ""))
+        if acquisition:
+            first_sentence = acquisition
+        elif produced_by:
+            first_sentence = f"{self._subject(name)} {produced_by}에서 생산합니다."
+        else:
+            first_sentence = f"{name}에 대한 매뉴얼 근거를 찾았습니다."
+
+        used_for = self._display_text(str(resource.get("used_for") or ""))
+        if used_for:
+            return f"{first_sentence}\n\n주요 사용처는 {used_for}입니다."
+        return f"{first_sentence}\n\n관련 제작 공정과 연결 장비를 함께 확인해보면 좋아요."
+
+    def _equipment_fallback_answer(self, records: list[dict[str, Any]]) -> str:
+        equipment = self._first_record(records, "equipment")
+        if equipment is None:
+            return ""
+
+        name = self._display_text(str(equipment.get("name") or "이 장비"))
+        role = self._display_text(str(equipment.get("role") or ""))
+        output_resources = [
+            self._resource_display_name(str(raw_resource))
+            for raw_resource in equipment.get("output_resources", [])
+        ]
+        output_resources = [resource for resource in output_resources if resource]
+        if role:
+            first_sentence = f"{self._subject(name)} {role}입니다."
+        else:
+            first_sentence = f"{name}에 대한 매뉴얼 근거를 찾았습니다."
+
+        if output_resources:
+            visible_outputs = output_resources[:3]
+            output_text = ", ".join(visible_outputs)
+            if len(output_resources) > len(visible_outputs):
+                output_text += " 등"
+            return f"{first_sentence}\n\n대표 출력 자원은 {output_text}입니다."
+        return f"{first_sentence}\n\n입력과 출력 연결 상태를 함께 확인해보면 좋아요."
+
+    def _rule_fallback_answer(self, records: list[dict[str, Any]]) -> str:
+        rule = self._first_record(records, "troubleshooting")
+        if rule is None:
+            return ""
+
+        name = self._display_text(str(rule.get("name") or "문제 상황"))
+        resolution = self._display_text(str(rule.get("resolution") or ""))
+        check_order = [
+            self._display_text(str(raw_step))
+            for raw_step in rule.get("check_order", [])
+        ]
+        check_order = [step for step in check_order if step]
+
+        first_sentence = f"{name}는 먼저 원인을 순서대로 좁혀보는 게 좋아요."
+        if resolution:
+            first_sentence = resolution
+
+        if check_order:
+            if len(check_order) == 1:
+                return f"{first_sentence}\n\n먼저 {check_order[0]}하세요."
+            return f"{first_sentence}\n\n확인 순서는 {', '.join(check_order)}입니다."
+        return f"{first_sentence}\n\n전력, 입력 자원, 출력 공간부터 차례로 확인해보세요."
+
+    def _first_record(
+        self,
+        records: list[dict[str, Any]],
+        record_type: str,
+    ) -> dict[str, Any] | None:
+        for record in records:
+            if record.get("type") == record_type:
+                return record
+        return None
+
+    def _resource_amount_display_name(self, value: str) -> str:
+        resource_id, _, amount = value.partition(":")
+        name = self._resource_display_name(resource_id)
+        if not name:
+            return ""
+        if amount:
+            return f"{name} {amount}개"
+        return name
+
+    def _resource_display_name(self, value: str) -> str:
+        resource_id = value.partition(":")[0]
+        resource = self._repository.get_resource(resource_id)
+        if resource is not None:
+            return resource.name
+        return self._display_text(value)
+
+    def _equipment_display_name(self, value: str) -> str:
+        equipment_id = value.partition(":")[0]
+        equipment = self._repository.get_equipment(equipment_id)
+        if equipment is not None:
+            return equipment.name
+        return self._display_text(value)
+
+    def _display_text(self, value: str) -> str:
+        return _RAW_ID_PAREN_RE.sub("", value).strip()
+
+    def _subject(self, name: str) -> str:
+        if not name:
+            return "이 항목은"
+        last_char = name[-1]
+        if "가" <= last_char <= "힣" and (ord(last_char) - ord("가")) % 28:
+            return f"{name}은"
+        return f"{name}는"
 
     def _dedupe_sources(
         self,
