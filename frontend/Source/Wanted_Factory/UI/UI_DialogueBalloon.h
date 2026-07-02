@@ -5,6 +5,8 @@
 #include "QuestManagerSubsystem.h"
 #include "UI_DialogueBalloon.generated.h"
 
+class UBorder;
+
 UCLASS()
 class WANTED_FACTORY_API UUI_DialogueBalloon : public UUserWidget
 {
@@ -15,10 +17,12 @@ protected:
 	UPROPERTY(meta = (BindWidget)) class UWidget* DialogueContainer;
 	UPROPERTY(meta = (BindWidget)) class USizeBox* SB_DialogueData;
 	UPROPERTY(meta = (BindWidgetOptional)) class UImage* IMG_RightClickPrompt;
+	UPROPERTY(meta = (BindWidget)) UBorder* B_OperatorInput;
 
 	virtual void NativeConstruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Quest|UI")
