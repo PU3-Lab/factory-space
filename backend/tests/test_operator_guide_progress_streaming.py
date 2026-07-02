@@ -14,22 +14,22 @@ from agents.pipeline.runtime import AgentPipeline
 from tests.harness import StubLLM, top_agent_decision
 
 RECIPE_PROGRESS = [
-    ("rag_search", "관련 레시피를 찾는 중입니다..."),
-    ("state_check", "필요한 입력 자원을 확인하는 중입니다..."),
-    ("logic_format", "생산 흐름을 정리하는 중입니다..."),
+    ("rag_search", "관련 레시피 매뉴얼을 확인하는 중입니다..."),
+    ("state_check", "필요한 재료와 장비를 살펴보는 중입니다..."),
+    ("logic_format", "생산 흐름을 이해하기 쉽게 정리하는 중입니다..."),
 ]
 
 MACHINE_PROGRESS = [
-    ("rag_search", "장비 매뉴얼을 펼쳐보는 중입니다..."),
-    ("state_check", "입력과 출력 자원을 확인하는 중입니다..."),
-    ("logic_format", "연결 가능한 장비를 살펴보는 중입니다..."),
+    ("rag_search", "장비 매뉴얼을 확인하는 중입니다..."),
+    ("state_check", "입력과 출력 자원을 살펴보는 중입니다..."),
+    ("logic_format", "플레이어가 이해하기 쉽게 정리하는 중입니다..."),
 ]
 
 TROUBLESHOOTING_PROGRESS = [
-    ("rag_search", "공장의 전체 흐름을 읽는 중입니다..."),
+    ("rag_search", "문제 상황과 관련된 매뉴얼을 찾는 중입니다..."),
     ("state_check", "선택된 장비 상태를 확인하는 중입니다..."),
     ("power_check", "전력과 입력 자원 상태를 대조하는 중입니다..."),
-    ("document_find", "관련 문제 해결 매뉴얼을 찾는 중입니다..."),
+    ("document_find", "관련 문제 해결 절차를 확인하는 중입니다..."),
     ("step_arrange", "점검 순서를 정리하는 중입니다..."),
 ]
 

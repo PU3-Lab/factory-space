@@ -55,6 +55,15 @@ def test_target_analyze_input_shortage() -> None:
                     },
                 ],
                 "conveyors": [],
+                "storages": [
+                    {
+                        "id": "storage_1",
+                        "inventory": [
+                            {"item_id": "iron_ore", "amount": 10.0, "max_amount": 100.0},
+                            {"item_id": "iron_ingot", "amount": 10.0, "max_amount": 100.0}
+                        ]
+                    }
+                ],
                 "power_grid": {"produced": 100.0, "consumed": 50.0},
             },
         },
@@ -117,6 +126,14 @@ def test_target_analyze_output_blocked() -> None:
                     },
                 ],
                 "conveyors": [],
+                "storages": [
+                    {
+                        "id": "storage_1",
+                        "inventory": [
+                            {"item_id": "iron_ore", "amount": 10.0, "max_amount": 100.0}
+                        ]
+                    }
+                ],
                 "power_grid": {"produced": 100.0, "consumed": 50.0},
             },
         },
@@ -171,6 +188,14 @@ def test_target_analyze_unrelated_target() -> None:
                     },
                 ],
                 "conveyors": [],
+                "storages": [
+                    {
+                        "id": "storage_1",
+                        "inventory": [
+                            {"item_id": "iron_ore", "amount": 10.0, "max_amount": 100.0}
+                        ]
+                    }
+                ],
                 "power_grid": {"produced": 100.0, "consumed": 50.0},
             },
         },
@@ -227,6 +252,14 @@ def test_target_analyze_highlight_targets_prepended() -> None:
                     },
                 ],
                 "conveyors": [],
+                "storages": [
+                    {
+                        "id": "storage_1",
+                        "inventory": [
+                            {"item_id": "iron_ore", "amount": 10.0, "max_amount": 100.0}
+                        ]
+                    }
+                ],
                 "power_grid": {"produced": 100.0, "consumed": 50.0},
             },
         },
