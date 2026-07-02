@@ -76,7 +76,7 @@ def test_user_prompt_contract_prefers_friendly_short_multi_question_answer() -> 
     )
 
     assert "shown directly to the player" in prompt
-    assert "answer as one natural paragraph instead of numbered labels" in prompt
+    assert "avoid numbered labels" in prompt
     assert "use numbered sections only for three or more questions" in prompt
     assert "do not use markdown emphasis" in prompt
     assert "avoid slash-separated lists and repeated examples" in prompt

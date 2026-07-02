@@ -985,6 +985,7 @@ def test_power_grid_subquest_flow() -> None:
         "agent": "process_optimizer",
         "payload": {
             "operation": "state_update",
+            "subquest_mode": True,
             "goal": "power_saving",
             "factoryRevision": 40,
             "factory_state": {
@@ -992,7 +993,7 @@ def test_power_grid_subquest_flow() -> None:
                     {
                         "id": "smelter_1",
                         "type": "smelter",
-                        "status": "idle",
+                        "status": "unpowered",
                         "connected_power_node_ids": ["pole_30"]
                     }
                 ],

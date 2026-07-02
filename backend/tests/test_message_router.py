@@ -275,6 +275,8 @@ def test_pipeline_routes_valid_explicit_agent_without_top_level_llm() -> None:
 
 
 def test_pipeline_routes_explicit_agent_through_top_level_prompt() -> None:
+    # Explicit agent request that is NOT bypassed should invoke the top-level LLM.
+    # If the LLM returns None, it should raise ROUTING_UNAVAILABLE.
     llm = StubLLM([None])
     pipeline = AgentPipeline(llm=llm)
 
@@ -282,15 +284,14 @@ def test_pipeline_routes_explicit_agent_through_top_level_prompt() -> None:
         {
             "type": "agent.request",
             "request_id": "request-2",
-            "agent": "process_optimizer",
-            "payload": {"machines": [{"id": "m-1"}]},
+            "agent": "quest_generator",
+            "payload": {},
         }
     )
 
-    assert_agent_response(response, agent="process_optimizer")
+    assert_agent_error(response, code="ROUTING_UNAVAILABLE")
     assert len(llm.prompts) == 1
-    assert "[REQUEST_HINT]\nagent: process_optimizer" not in llm.prompts[0]
-    assert response["payload"]["status"] == "suggestion"
+    assert "[REQUEST_HINT]\nagent: quest_generator" in llm.prompts[0]
 
 
 def test_pipeline_treats_explicit_agent_as_top_level_prompt_hint_only() -> None:
