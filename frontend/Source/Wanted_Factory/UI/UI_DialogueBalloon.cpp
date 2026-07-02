@@ -23,6 +23,8 @@ void UUI_DialogueBalloon::NativeConstruct()
     {
         ET_OperatorInput->OnTextCommitted.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnTextCommitted);
         ET_OperatorInput->OnTextCommitted.AddDynamic(this, &UUI_DialogueBalloon::HandleOnTextCommitted);
+        ET_OperatorInput->SetText(FText::GetEmpty());
+        ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
     }
 
     if (UGameInstance* GI = GetGameInstance())
@@ -85,7 +87,7 @@ void UUI_DialogueBalloon::HandleOnTextCommitted(const FText& Text, ETextCommit::
     const FString QuestionStr = Text.ToString().TrimStartAndEnd();
     
     // 엔터를 치면 내용 유무 상관없이 인풋창은 즉시 초기화 및 증발
-    ET_OperatorInput->SetText(FText::GetEmpty());
+    ET_OperatorInput->SetText(FText::FromString(QuestionStr));
     ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
 
     // 포커스를 완벽하게 꺼내 캐릭터 조작 모드로 강제 복구
@@ -351,7 +353,6 @@ void UUI_DialogueBalloon::ToggleAIGuide(APlayerController* PC)
     if (bHasExternalDialogue)
     {
         ClearExternalDialogue();
-        ET_OperatorInput->SetText(FText::GetEmpty());
         ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
         
         PC->SetInputMode(FInputModeGameOnly());
@@ -375,12 +376,10 @@ void UUI_DialogueBalloon::ToggleAIGuide(APlayerController* PC)
         ET_OperatorInput->SetFocus();
         
         // / 키 입력 로직이 텍스트 필드를 오염시켜 힌트텍스트를 지우던 버그를 강제 세척합니다.
-        ET_OperatorInput->SetText(FText::GetEmpty());
     }
     else
     {
         // 이미 켜져 있는 상태에서 다시 누르면 취소하고 탈출
-        ET_OperatorInput->SetText(FText::GetEmpty());
         ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
         PC->SetInputMode(FInputModeGameOnly());
         PC->bShowMouseCursor = false;

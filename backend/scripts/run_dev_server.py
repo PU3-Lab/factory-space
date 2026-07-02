@@ -55,7 +55,9 @@ def run_migrations(backend_root: Path) -> None:
     """Apply Alembic migrations up to head against the configured database."""
 
     config = Config(str(backend_root / "alembic.ini"))
-    db_url = os.environ.get("FACTORY_DATABASE_URL") or os.environ.get("DATABASE_URL")
+    db_url = os.environ.get("DATABASE_URL")
+    if db_url is not None:
+        os.environ["FACTORY_ALEMBIC_DATABASE_URL"] = db_url
     print(f"[Dev Server] Applying migrations (alembic upgrade head) on {db_url}")
     command.upgrade(config, "head")
 

@@ -12,6 +12,7 @@
 #include "Engine/Texture2D.h"
 #include "FactoryManagerSubsystem.h"
 #include "GameFramework/PlayerController.h"
+#include "MaterialGenerationRegistrySubsystem.h"
 #include "Machines/MachineSubsystem.h"
 #include "Materials/Material.h"
 #include "NiagaraComponent.h"
@@ -528,6 +529,32 @@ bool AMachineBase::AddItem(FName ItemID, int32 Count)
 	return true;
 }
 
+bool AMachineBase::TakeInputItem(FName ItemID, int32 Count)
+{
+	if (ItemID.IsNone() || Count <= 0)
+	{
+		return false;
+	}
+
+	int32* FoundCount = InputInventory.Find(ItemID);
+	if (!FoundCount || *FoundCount < Count)
+	{
+		return false;
+	}
+
+	*FoundCount -= Count;
+
+	if (*FoundCount <= 0)
+	{
+		InputInventory.Remove(ItemID);
+	}
+
+	UpdateDebugBufferText();
+	UpdateStateIndicator();
+
+	return true;
+}
+
 void AMachineBase::TryStartProcess()
 {
 	RefreshMachineState();
@@ -559,6 +586,25 @@ void AMachineBase::TryStartProcess()
 	}
 
 	bool bHasBlockedCraftableRecipe = false;
+	if (UMaterialGenerationRegistrySubsystem* MaterialRegistry =
+		GetGameInstance() ? GetGameInstance()->GetSubsystem<UMaterialGenerationRegistrySubsystem>() : nullptr)
+	{
+		FRecipeTable RuntimeRecipe;
+		if (MaterialRegistry->FindFirstRuntimeRecipe(MachineType, InputInventory, RuntimeRecipe))
+		{
+			if (!CanAddToOutputBuffer(RuntimeRecipe))
+			{
+				bHasBlockedCraftableRecipe = true;
+			}
+			else
+			{
+				CurrentRecipe = RuntimeRecipe;
+				ProcessTime = CurrentRecipe.CraftingTime;
+				StartProcess();
+				return;
+			}
+		}
+	}
 
 	for (const TPair<FName, int32>& InputPair : InputInventory)
 	{

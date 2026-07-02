@@ -30,7 +30,9 @@ def main(argv: Sequence[str] | None = None, output: TextIO | None = None) -> int
     out = output
     database_url = _database_url()
     if database_url is None:
-        raise RuntimeError("DATABASE_URL or FACTORY_DATABASE_URL is required.")
+        raise RuntimeError(
+            "FACTORY_RAG_DATABASE_URL or FACTORY_DATABASE_URL is required."
+        )
 
     data_directory = _data_dir(args.data_dir)
     repository = CsvManualQARepository(data_directory)
@@ -81,7 +83,7 @@ def format_summary(summary: ManualRagUpsertSummary, *, dry_run: bool) -> str:
             [
                 "",
                 "실제로 반영하려면:",
-                "uv run --env-file .env python scripts/ingest_manual_rag.py",
+                "uv run --env-file .env.prod python scripts/ingest_manual_rag.py",
             ],
         )
     return "\n".join(lines)
@@ -96,8 +98,8 @@ def format_database_error() -> str:
             "",
             "예시:",
             "docker compose -f docker-compose.rag.yml up -d",
-            "uv run --env-file .env alembic upgrade head",
-            "uv run --env-file .env python scripts/ingest_manual_rag.py --dry-run",
+            "uv run --env-file .env.prod alembic upgrade head",
+            "uv run --env-file .env.prod python scripts/ingest_manual_rag.py --dry-run",
         ],
     )
 
@@ -118,7 +120,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 
 def _database_url() -> str | None:
-    return os.environ.get("FACTORY_DATABASE_URL") or os.environ.get("DATABASE_URL")
+    return os.environ.get("FACTORY_RAG_DATABASE_URL") or os.environ.get(
+        "FACTORY_DATABASE_URL"
+    )
 
 
 def _data_dir(data_dir: Path | None) -> Path | None:

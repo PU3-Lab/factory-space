@@ -124,6 +124,7 @@ class ManualQAContextBuilder:
             primary_manual=intent.primary_manual,
             supporting_manuals=intent.supporting_manuals,
             target_ids=intent.target_ids,
+            is_ambiguous=intent.is_ambiguous,
         )
         return ManualQAPromptContext(result=result, evidence=evidence)
 

@@ -8,6 +8,7 @@ class AMachineBase;
 class UUniformGridPanel;
 class UDragDropOperation;
 class UBorder;
+class UButton;
 class UImage;
 class UTextBlock;
 class UProgressBar;
@@ -37,18 +38,27 @@ public:
     UFUNCTION(BlueprintCallable, Category = "BaseCamp UI")
     void RefreshFactoryStatus();
 
+    UFUNCTION(BlueprintCallable, Category = "BaseCamp UI")
+    bool RequestMaterialGeneration();
+
     void RefreshAllUpgradeNodes();
+    bool TakeInputItemForInventoryDrop(FName ItemID);
+    void RefreshCampInventoryAfterInventoryDrop();
+    void ReturnInputItemFromFailedDrop(FName ItemID);
 
 protected:
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
     virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
     virtual bool NativeOnDrop(const FGeometry& MyGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+    virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+    virtual void NativeOnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& InPointerEvent, UDragDropOperation*& OutOperation) override;
 
     // --- 기본 상단 탭 및 스위처 ---
     UPROPERTY(meta = (BindWidget)) class UButton* BTN_Tab_FactoryStatus;
     UPROPERTY(meta = (BindWidget)) class UButton* BTN_Tab_LevelUpgrade;
     UPROPERTY(meta = (BindWidget)) class UButton* BTN_Tab_newMaterial;
+    UPROPERTY(meta = (BindWidgetOptional)) class UButton* BTN_RequestMaterialGeneration;
     UPROPERTY(meta = (BindWidget)) class UWidgetSwitcher* WS_SubPaneSwitcher;
 
     // --- 공장 상태창 탭 관련 ---
@@ -82,8 +92,6 @@ protected:
 
     UPROPERTY(meta = (BindWidget)) UImage* IMG_OutputIcon;
     UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_OutputName;
-    UPROPERTY(meta = (BindWidget)) UProgressBar* PB_OutputBuffer;
-    UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_OutputCount;
 
     // --- 우측하단 가방 그리드 관련 ---
     UPROPERTY(meta = (BindWidget)) UUniformGridPanel* GDP_CampInventoryGrid;
@@ -99,14 +107,19 @@ protected:
     FName LastInputVisualItemID_2 = NAME_None;
     FName LastInputVisualItemID_3 = NAME_None;
     FName LastOutputVisualItemID = NAME_None;
+    FName DraggingInputItemID = NAME_None;
+
+    UPROPERTY()
+    UImage* DraggingInputIcon = nullptr;
 
     void RefreshCampInventoryGrid();
     void UpdateInputSlotUI(int32 SlotIndex, FName ItemName, int32 CurrentAmount, int32 MaxAmount);
-    void UpdateOutputUI(FName ItemName, int32 CurrentAmount, int32 MaxAmount);
+    void UpdateOutputUI(FName ItemName, int32 CurrentAmount);
     
     UFUNCTION() void OnStatusTabClicked();
     UFUNCTION() void OnUpgradeTabClicked();
     UFUNCTION() void OnMaterialTabClicked();
+    UFUNCTION() void OnRequestMaterialGenerationClicked();
     void SwitchSubPaneMode(EBaseCampSubMode NewMode);
 
 private:

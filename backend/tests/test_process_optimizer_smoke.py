@@ -1,4 +1,4 @@
-﻿"""Integration smoke tests for the process optimizer agent pipeline."""
+"""Integration smoke tests for the process optimizer agent pipeline."""
 
 from __future__ import annotations
 
@@ -99,7 +99,18 @@ def test_process_optimizer_analyze_and_security_smoke() -> None:
             }
         ],
         "conveyors": [],
-        "power_grid": {"produced": 10.0, "consumed": 15.0},
+        "storages": [
+            {
+                "id": "storage_1",
+                "inventory": [{"item_id": "iron_ore", "amount": 10.0, "max_amount": 10.0}]
+            }
+        ],
+        "power_grid": {
+            "produced": 10.0,
+            "consumed": 15.0,
+            "nodes": [{"id": "pole_1", "type": "power_pole", "connected_node_ids": []}],
+            "generators": [{"id": "generator_1", "produced": 10.0, "connected": True, "connected_power_node_ids": ["pole_1"]}]
+        },
     }
     process_optimizer_memory.update(session_id, factory_state, 12)
 
@@ -153,7 +164,7 @@ def test_process_optimizer_analyze_and_security_smoke() -> None:
     assert payload["status"] == "preview"
     assert payload["factoryRevision"] == 12
     assert len(payload["suggestions"]) >= 1
-    assert payload["suggestions"][0]["id"] == "suggest_input_smelter_1"
+    assert payload["suggestions"][0]["id"] == "inspect_iron_ore_supply_smelter_1"
     assert "smelter_1" in payload["ui_hints"]["highlight_targets"]
 
     response_model = ProcessOptimizerResponse.model_validate(payload)
@@ -181,6 +192,12 @@ def test_process_optimizer_goal_priority_smoke() -> None:
             {
                 "id": "conv_99",
                 "congestion_rate": 0.9,
+            }
+        ],
+        "storages": [
+            {
+                "id": "storage_1",
+                "inventory": [{"item_id": "iron_ore", "amount": 10.0, "max_amount": 100.0}]
             }
         ],
         "power_grid": {"produced": 100.0, "consumed": 80.0},
@@ -228,6 +245,12 @@ def test_process_optimizer_prompt_injection_defense_smoke() -> None:
             }
         ],
         "conveyors": [],
+        "storages": [
+            {
+                "id": "storage_1",
+                "inventory": [{"item_id": "iron_ore", "amount": 10.0, "max_amount": 100.0}]
+            }
+        ],
         "power_grid": {"produced": 100.0, "consumed": 80.0},
     }
     process_optimizer_memory.update(session_id, factory_state, 10)
@@ -304,6 +327,12 @@ def test_process_optimizer_invalid_json_fallback_smoke() -> None:
             }
         ],
         "conveyors": [],
+        "storages": [
+            {
+                "id": "storage_1",
+                "inventory": [{"item_id": "iron_ore", "amount": 10.0, "max_amount": 100.0}]
+            }
+        ],
         "power_grid": {"produced": 100.0, "consumed": 80.0},
     }
     process_optimizer_memory.update(session_id, factory_state, 20)
@@ -334,7 +363,7 @@ def test_process_optimizer_invalid_json_fallback_smoke() -> None:
 
     payload = res["payload"]
     assert payload["status"] == "preview"
-    assert "fallbackReason" not in res["payload"]["metadata"]
+    assert res["payload"]["metadata"]["fallbackReason"] == "llm_unavailable"
     assert payload["factoryRevision"] == 20
     assert "summary" in payload
     assert "suggestions" in payload
@@ -371,6 +400,12 @@ def test_process_optimizer_v2_full_workflow_smoke() -> None:
                     }
                 ],
                 "conveyors": [],
+                "storages": [
+                    {
+                        "id": "storage_1",
+                        "inventory": [{"item_id": "iron_ore", "amount": 10.0, "max_amount": 100.0}]
+                    }
+                ],
                 "power_grid": {"produced": 100, "consumed": 50}
             }
         }
@@ -413,7 +448,7 @@ def test_process_optimizer_v2_full_workflow_smoke() -> None:
             "plan_id": plan_id,
             "factoryRevision": 10,
             "approval": True,
-            "approved_change_ids": ["suggest_input_smelter_1"],
+            "approved_change_ids": ["inspect_iron_ore_supply_smelter_1"],
             "factory_state": {
                 "machines": [
                     {
@@ -425,6 +460,12 @@ def test_process_optimizer_v2_full_workflow_smoke() -> None:
                     }
                 ],
                 "conveyors": [],
+                "storages": [
+                    {
+                        "id": "storage_1",
+                        "inventory": [{"item_id": "iron_ore", "amount": 10.0, "max_amount": 100.0}]
+                    }
+                ],
                 "power_grid": {"produced": 100, "consumed": 50}
             }
         }

@@ -42,6 +42,12 @@ def _process_optimizer_analyze_payload(machine_id: str = "smelter_1") -> dict[st
                 }
             ],
             "conveyors": [],
+            "storages": [
+                {
+                    "id": "storage_1",
+                    "inventory": [{"item_id": "iron_ore", "amount": 10.0, "max_amount": 100.0}],
+                }
+            ],
             "power_grid": {"produced": 100.0, "consumed": 50.0},
         },
     }

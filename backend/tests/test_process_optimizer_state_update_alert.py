@@ -54,6 +54,12 @@ def test_alert_builder_direct_input_shortage() -> None:
                 inputs=[InventoryItem(item_id="iron_ore", amount=0.0)],
                 outputs=[InventoryItem(item_id="iron_ingot", amount=5.0)],
             )
+        ],
+        storages=[
+            {
+                "id": "storage_1",
+                "inventory": [{"item_id": "iron_ore", "amount": 10.0, "max_amount": 100.0}]
+            }
         ]
     )
 
@@ -67,7 +73,7 @@ def test_alert_builder_direct_input_shortage() -> None:
     assert alert.target.type == "machine"
     assert alert.target.id == "smelter_1"
     assert alert.suggested_subquest is not None
-    assert alert.suggested_subquest.title == "제련기 입력 라인 복구"
+    assert alert.suggested_subquest.title == "철광석 공급 라인 점검"
     assert "철광석" in alert.suggested_subquest.objective
 
 
@@ -107,7 +113,14 @@ def test_alert_builder_direct_power_issue() -> None:
     analyzer = FactoryStateAnalyzerTool()
     builder = SubquestAlertBuilder()
 
-    state = FactoryState(power_grid=PowerGridState(produced=50.0, consumed=60.0))
+    state = FactoryState(
+        power_grid={
+            "produced": 50.0,
+            "consumed": 60.0,
+            "nodes": [{"id": "pole_1", "type": "power_pole", "connected_node_ids": []}],
+            "generators": [{"id": "generator_1", "produced": 50.0, "connected": True, "connected_power_node_ids": ["pole_1"]}]
+        }
+    )
 
     report = analyzer.analyze(state, factory_revision=1, goal="balance")
     alert = builder.build_alert(report, state, subquest_mode=True)
@@ -179,7 +192,12 @@ def test_pipeline_state_update_alert_integration() -> None:
             "factory_state": {
                 "machines": [],
                 "conveyors": [],
-                "power_grid": {"produced": 100.0, "consumed": 120.0},
+                "power_grid": {
+                    "produced": 100.0,
+                    "consumed": 120.0,
+                    "nodes": [{"id": "pole_1", "type": "power_pole", "connected_node_ids": []}],
+                    "generators": [{"id": "generator_1", "produced": 100.0, "connected": True, "connected_power_node_ids": ["pole_1"]}]
+                },
             },
         },
     }

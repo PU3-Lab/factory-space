@@ -34,6 +34,12 @@ def test_agent_build_prompt_includes_metrics_and_rules() -> None:
                 }
             ],
             "conveyors": [],
+            "storages": [
+                {
+                    "id": "storage_1",
+                    "inventory": [{"item_id": "iron_ore", "amount": 10.0, "max_amount": 100.0}],
+                }
+            ],
             "power_grid": {"produced": 100.0, "consumed": 50.0},
         },
     }
@@ -57,7 +63,7 @@ def test_agent_build_prompt_includes_metrics_and_rules() -> None:
     # - 분석된 수치 포함 여부
     assert "0.80" in prompt  # 평균 설비 가동률
     assert "smelter_1" in prompt  # 감지된 머신 ID
-    assert "suggest_input_smelter_1" in prompt  # 생성된 제안 ID
+    assert "inspect_iron_ore_supply_smelter_1" in prompt  # 생성된 제안 ID
     assert "throughput" in prompt  # 지정된 goal
     assert "15" in prompt  # revision
 
@@ -94,7 +100,32 @@ def test_agent_fallback_structure_validity() -> None:
                 },
             ],
             "conveyors": [],
-            "power_grid": {"produced": 50.0, "consumed": 80.0},  # power_issue 발생
+            "storages": [
+                {
+                    "id": "storage_1",
+                    "inventory": [{"item_id": "iron_ore", "amount": 10.0, "max_amount": 100.0}],
+                }
+            ],
+            "power_grid": {
+                "produced": 50.0,
+                "consumed": 80.0,
+                "nodes": [
+                    {
+                        "id": "pole_1",
+                        "type": "power_pole",
+                        "connected_node_ids": [],
+                        "connected_machine_ids": ["smelter_1"]
+                    }
+                ],
+                "generators": [
+                    {
+                        "id": "generator_1",
+                        "produced": 50.0,
+                        "connected": True,
+                        "connected_power_node_ids": ["pole_1"]
+                    }
+                ],
+            },  # power_issue 발생
         },
     }
 
@@ -120,7 +151,7 @@ def test_agent_fallback_structure_validity() -> None:
     suggestions = response_model.suggestions
     assert len(suggestions) <= 3
     assert any(s.id == "suggest_power_issue" for s in suggestions)
-    assert any(s.id == "suggest_input_smelter_1" for s in suggestions)
+    assert any(s.id == "inspect_iron_ore_supply_smelter_1" for s in suggestions)
 
     # 3. 빈 팩토리 상태일 때의 fallback 처리 검증
     empty_payload = {
@@ -152,6 +183,12 @@ def test_agent_build_prompt_drops_invalid_suggestions(
                 }
             ],
             "conveyors": [],
+            "storages": [
+                {
+                    "id": "storage_1",
+                    "inventory": [{"item_id": "iron_ore", "amount": 10.0, "max_amount": 100.0}],
+                }
+            ],
             "power_grid": {"produced": 100.0, "consumed": 50.0},
         },
     }
@@ -166,7 +203,7 @@ def test_agent_build_prompt_drops_invalid_suggestions(
 
     assert '"suggestions": []' in prompt
     assert '"highlight_targets": []' in prompt
-    assert "suggest_input_smelter_1" not in prompt
+    assert "inspect_iron_ore_supply_smelter_1" not in prompt
 
 
 def test_agent_fallback_drops_invalid_suggestions(
@@ -188,6 +225,12 @@ def test_agent_fallback_drops_invalid_suggestions(
                 }
             ],
             "conveyors": [],
+            "storages": [
+                {
+                    "id": "storage_1",
+                    "inventory": [{"item_id": "iron_ore", "amount": 10.0, "max_amount": 100.0}],
+                }
+            ],
             "power_grid": {"produced": 100.0, "consumed": 50.0},
         },
     }

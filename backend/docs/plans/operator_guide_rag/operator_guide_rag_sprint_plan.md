@@ -915,6 +915,76 @@ troubleshooter:
 - 최종 `agent.response` JSON 구조는 기존 Unreal 계약을 깨지 않는다.
 - 문서에 "내부 추론 노출이 아니라 UX용 진행 상태 메시지"임이 명확히 적혀 있다.
 
+## Sprint 17. Hybrid Intent Keyword Guard
+
+### 목표
+
+제작 가능한 설치물에 대한 자연어 제작 질문을 규칙형 분류기가 우선 처리한다.
+
+### 포함 범위
+
+- `지어`, `짓`, `건설`, `건축`, `조립`, `레시피`, `만들기` 표현 처리
+- 통신탑 제작 질문 smoke test
+- 제작 레시피 핵심 근거 검증
+
+### 완료 기준
+
+- `통신탑 어떻게 지어야 해?`가 `unknown_question`으로 떨어지지 않는다.
+- 답변 근거에 `통신탑 제작 공정`, `합성기`, `철근 20`, `구리선 20`, `주석판 20`이 포함된다.
+
+## Sprint 18. Ambiguity Detection
+
+### 목표
+
+resource와 equipment 양쪽에 존재하는 대상처럼 규칙형 분류가 애매한 경우를 감지한다.
+
+### 포함 범위
+
+- 동일 표시명이 여러 manual type에 존재하는 경우 감지
+- `unknown_question`이지만 CSV/RAG 후보가 있는 경우 감지
+- LLM 보정 대상으로 넘길 수 있는 내부 metadata 설계
+
+### 완료 기준
+
+- 애매한 질문을 테스트에서 식별할 수 있다.
+- 명확한 질문은 기존처럼 빠르게 처리된다.
+
+## Sprint 19. LLM Intent Classifier
+
+### 목표
+
+애매한 질문에 한해서 LLM이 질문 의도를 보정한다.
+
+### 포함 범위
+
+- LLM 보조 의도 분류기
+- candidate intent/target 제한
+- JSON 응답 validation
+- 실패 시 규칙형 fallback 유지
+
+### 완료 기준
+
+- ambiguous 질문에서만 LLM 보조 분류기가 호출된다.
+- LLM 실패 시에도 operator_guide 응답 흐름이 깨지지 않는다.
+
+## Sprint 20. Regression & Unreal Docs
+
+### 목표
+
+하이브리드 의도 분류 결과를 회귀 테스트와 Unreal 공유 문서로 고정한다.
+
+### 포함 범위
+
+- 통신탑 제작 질문 회귀 테스트
+- 장비/자원/레시피/고장 질문 혼합 테스트
+- agent-test 예시 문서 업데이트
+- Unreal 팀 공유용 설명 문서 업데이트
+
+### 완료 기준
+
+- 대표 질문 세트가 모두 기대 의도로 분류된다.
+- Unreal 팀이 최신 코드 반영, 서버 재시작, RAG/CSV 업데이트 확인 절차를 문서만 보고 따라갈 수 있다.
+
 ## 추천 우선순위
 
 가장 먼저 이어서 할 작업은 Sprint 5이다.

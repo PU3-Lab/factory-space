@@ -19,11 +19,11 @@ from agents.operator_guide.debug_router import router as debug_router
 from agents.operator_guide.multi_question_rag_retriever import MultiQuestionRagRetriever
 from agents.operator_guide.rag_embedding import create_embedding_provider
 from agents.operator_guide.rag_retriever import ManualRagRetriever
-from agents.operator_guide.rag_store import SqlAlchemyManualRagStore
+from agents.operator_guide.rag_store import create_manual_rag_store_from_env
 from agents.operator_guide.service import ManualQAService
 from agents.pipeline import AgentPipeline
 from agents.quest_generator.quest_router import router as quest_router
-from db.engine import engine, get_db_session
+from db.engine import get_db_session
 from db.models import RecipeModel
 from db.recipe_ingestion import ingest_recipes
 from docs_router import router as docs_router
@@ -107,7 +107,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if os.environ.get("FACTORY_RAG_RUNTIME_MOCK") != "true":
         try:
             embedding_provider = create_embedding_provider()
-            search_store = SqlAlchemyManualRagStore(engine)
+            search_store = create_manual_rag_store_from_env()
+            if search_store is None:
+                raise RuntimeError(
+                    "FACTORY_RAG_DATABASE_URL is required for operator_guide RAG runtime."
+                )
             retriever = ManualRagRetriever(
                 embedding_provider=embedding_provider,
                 search_store=search_store,
