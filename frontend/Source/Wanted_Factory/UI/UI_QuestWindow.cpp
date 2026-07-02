@@ -135,7 +135,7 @@ void UUI_QuestWindow::UpdateMainQuestUI(const FQuestState& MainQuest)
         return;
     }
 
-    FText BracketedTitle = FText::Format(FText::FromString(TEXT("[ {0} ]")), MainQuest.Title);
+    FText BracketedTitle = FText::Format(FText::FromString(TEXT("[메인] {0}")), MainQuest.Title);
     TXT_MainQuestTitle->SetText(BracketedTitle);
 
     TXT_MainQuestDesc->SetText(MainQuest.Description);
@@ -312,7 +312,7 @@ void UUI_QuestWindow::DisplayTutorialStep(const FTutorialQuestStep& Step)
     UGameInstance* GI = GetGameInstance();
     UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
 
-    FText BracketedTitle = FText::Format(FText::FromString(TEXT("[ {0} ]")), FText::FromString(Step.Title));
+    FText BracketedTitle = FText::Format(FText::FromString(TEXT("[메인] {0}")), FText::FromString(Step.Title));
     TXT_MainQuestTitle->SetText(BracketedTitle);
     
     TXT_MainQuestDesc->SetText(FText::FromString(
@@ -353,7 +353,7 @@ void UUI_QuestWindow::UpdateQuestZoneVisibility()
         if (TXT_MainQuestDesc)  TXT_MainQuestDesc->SetText(FText::GetEmpty());
     }
     // 서브 퀘스트 영역 최종 표시 처리 호출
-    UpdateSubQuestZoneVisibility();
+    VB_SubQuestZone->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 }
 
 void UUI_QuestWindow::UpdateSubQuestZoneVisibility()
