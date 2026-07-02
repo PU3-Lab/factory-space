@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+_SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?。！？])\s+")
+
 _DUPLICATE_DISPLAY_NAME_RE = re.compile(
     r"(?<![0-9A-Za-z_가-힣])([0-9A-Za-z_가-힣]+)\(\1\)"
 )
@@ -52,4 +54,21 @@ def sanitize_player_facing_answer(answer: str) -> str:
     text = _DUPLICATE_DISPLAY_NAME_RE.sub(r"\1", text)
     text = _HANGUL_SLASH_PAIR_RE.sub(r"\1이나 \2", text)
     text = re.sub(r"[ \t]{2,}", " ", text)
-    return text.strip()
+    return _format_dialogue_paragraphs(text.strip())
+
+
+def _format_dialogue_paragraphs(answer: str) -> str:
+    """NPC 대화창에서 읽기 쉽도록 짧은 답변도 첫 문장 뒤에 문단을 나눕니다."""
+
+    if "\n" in answer:
+        return answer
+
+    sentences = [
+        sentence.strip()
+        for sentence in _SENTENCE_BOUNDARY_RE.split(answer)
+        if sentence.strip()
+    ]
+    if len(sentences) < 2:
+        return answer
+
+    return f"{sentences[0]}\n\n{' '.join(sentences[1:])}"

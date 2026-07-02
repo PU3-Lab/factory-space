@@ -16,7 +16,7 @@ def test_sanitize_player_facing_answer_removes_duplicate_name_and_raw_ids() -> N
     )
 
     assert sanitize_player_facing_answer(answer) == (
-        "분쇄기는 고체 자원을 분말이나 톱밥으로 바꾸는 장비예요. "
+        "분쇄기는 고체 자원을 분말이나 톱밥으로 바꾸는 장비예요.\n\n"
         "철괴는 제련기에서 만들어요."
     )
 
@@ -34,6 +34,18 @@ def test_sanitize_operator_guide_response_payload_updates_only_final_answer() ->
     assert sanitized["final_answer"] == "분쇄기는 분말이나 톱밥을 만들어요."
     assert sanitized["question"] == "분쇄기가 뭐야?"
     assert payload["final_answer"] == "분쇄기(분쇄기)는 분말/톱밥을 만들어요."
+
+
+def test_sanitize_player_facing_answer_splits_dialogue_paragraphs() -> None:
+    answer = (
+        "제련기는 광석이나 원재료를 가공해서 주괴 같은 자원으로 바꿔 주는 생산 장비예요. "
+        "제련기에서 나온 결과물은 다음 공정의 재료로 이어져서 더 복잡한 제작으로 사용됩니다."
+    )
+
+    assert sanitize_player_facing_answer(answer) == (
+        "제련기는 광석이나 원재료를 가공해서 주괴 같은 자원으로 바꿔 주는 생산 장비예요.\n\n"
+        "제련기에서 나온 결과물은 다음 공정의 재료로 이어져서 더 복잡한 제작으로 사용됩니다."
+    )
 
 
 def test_pipeline_sanitizes_cached_operator_guide_response() -> None:
