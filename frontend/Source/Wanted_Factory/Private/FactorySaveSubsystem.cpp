@@ -261,6 +261,9 @@ bool UFactorySaveSubsystem::SaveCurrentGame()
 		MaterialRegistry->ExportSaveData(SaveGame->DynamicMaterials, SaveGame->DynamicRecipes);
 	}
 
+	// [엔딩] 클리어 플래그 영속화 — 런타임 캐시가 단일 진실원(MarkGameCleared가 셋).
+	SaveGame->bGameCleared = bGameCleared;
+
 	// [게임진입] 선택 캐릭터 저장(OJJ 합의). Continue 시 LoadCurrentGame이 SetSelectedCharacter로 복원한다.
 	if (UOJJ_CharacterSelectionSubsystem* CharacterSelection = GetGameInstance()->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
 	{
@@ -446,6 +449,9 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 	{
 		CharacterSelection->SetSelectedCharacter(SaveGame->SavedCharacterType);
 	}
+
+	// [엔딩] 클리어 플래그 복원 — Continue 시 통신탑 재설치로 엔딩이 다시 재생되지 않게.
+	bGameCleared = SaveGame->bGameCleared;
 
 	bIsRestoring = true;
 	StopAutoSaveTimer();
@@ -749,8 +755,23 @@ bool UFactorySaveSubsystem::ResetToNewGame()
 	StopAutoSaveTimer();
 	bIsRestoring = false;
 	bHasLoadedInitialState = false;
+	// [엔딩] 새 게임은 미클리어 상태에서 시작 — 클리어 잔존 시 새 게임에서 엔딩이 스킵되는 것 방지.
+	bGameCleared = false;
 	bIsResettingToNewGame = true;
 	return UGameplayStatics::DeleteGameInSlot(SaveSlotName, 0);
+}
+
+void UFactorySaveSubsystem::MarkGameCleared()
+{
+	// [엔딩] 클리어 확정 1회성 — 이미 클리어면 no-op(중복 저장 방지). 즉시 저장이 실패해도 런타임 캐시는
+	// 유지되므로 이번 세션 내 재발동은 없고, 다음 자동저장(60초 주기)이 자연히 영속화한다.
+	if (bGameCleared)
+	{
+		return;
+	}
+	bGameCleared = true;
+	SaveCurrentGame();
+	UE_LOG(LogTemp, Log, TEXT("[FactorySave] 게임 클리어 기록(bGameCleared=true) + 저장."));
 }
 
 bool UFactorySaveSubsystem::BackupCurrentGame()

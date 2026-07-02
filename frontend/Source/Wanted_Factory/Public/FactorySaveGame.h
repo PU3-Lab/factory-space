@@ -186,6 +186,11 @@ public:
 	UPROPERTY()
 	TArray<FString> SubQuestTitles;
 
+	// [엔딩] 게임 클리어(통신탑 설치 → 엔딩 시네마틱 재생 완료) 1회성 플래그 — 재설치 시 엔딩 재발동 방지.
+	// 런타임 판정/기록은 UFactorySaveSubsystem(IsGameCleared/MarkGameCleared)이 담당.
+	UPROPERTY()
+	bool bGameCleared = false;
+
 	UPROPERTY()
 	bool bTutorialQuestTestActive = false;
 

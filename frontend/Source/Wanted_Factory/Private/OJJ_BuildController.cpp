@@ -13,6 +13,8 @@
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "FactoryManagerSubsystem.h"
+#include "FactorySaveSubsystem.h"
+#include "OJJ_Player.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
@@ -1463,8 +1465,33 @@ void AOJJ_BuildController::OnLeftClickPressed()
 
 	// 吏곸쟾 origin???댁젣 ?먯쑀?????ㅼ쓬 UpdateMouseHover?먯꽌 鍮④컯?쇰줈 媛뺤젣 ?ы몴??
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
+	// [엔딩 시네마틱] 통신탑(최종 목표) 여부는 SetPlacementMode(None)가 모드를 지우기 전에 캡처.
+	const bool bPlacedTeleCommunicationTower =
+		(PlacementMode == EOJJ_BuildPlacementMode::TeleCommunicationTower);
 	// [손 비우기] 단일 배치(머신) 성공 후 선택 해제 — 빌드모드 유지(PlacementMode만 None). Z키와 동일 경로(고스트 숨김/호버 리셋). 컨베이어/파이프 드래그·철거는 무관.
 	SetPlacementMode(EOJJ_BuildPlacementMode::None);
+
+	// [엔딩 시네마틱] 통신탑 설치 확정 → 미클리어면 1회 엔딩 연출(클리어 후 재설치는 스킵 — FactorySave 플래그).
+	// 배치 후처리까지 모두 끝낸 뒤 트리거 — 연출이 빌드모드 해제(SetBuildViewMode None)를 유발해도 이 함수의
+	// 배치 로직과 얽히지 않는다. 로컬(설치한) 플레이어 화면 전용 — 리플리케이션 범위 밖(멀티 동기화 미고려).
+	if (bPlacedTeleCommunicationTower)
+	{
+		bool bAlreadyCleared = false;
+		if (UGameInstance* GameInstance = World->GetGameInstance())
+		{
+			if (const UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+			{
+				bAlreadyCleared = SaveSubsystem->IsGameCleared();
+			}
+		}
+		if (!bAlreadyCleared)
+		{
+			if (AOJJ_Player* Player = Cast<AOJJ_Player>(UGameplayStatics::GetPlayerPawn(this, 0)))
+			{
+				Player->PlayEndingSequence(NewMachine);
+			}
+		}
+	}
 }
 
 // === Foundation 紐⑤뱶 (F1-b ??癒몄떊 寃쎈줈? ?낅┰, 而ㅻ쾭由ъ? 諛곗튂) ===

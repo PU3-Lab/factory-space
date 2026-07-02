@@ -486,8 +486,8 @@ void UUI_BaseCampInteract::RefreshCampInventoryGrid()
         if (Item.Value > 0) ItemIDs.Add(Item.Key);
     }
     
-    int32 MaxColumns = 5;  
-    int32 TotalSlots = 30; 
+    int32 MaxColumns = 4;
+    int32 TotalSlots = 24;
 
     for (int32 i = 0; i < TotalSlots; ++i)
     {

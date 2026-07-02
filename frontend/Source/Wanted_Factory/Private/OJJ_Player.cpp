@@ -17,6 +17,11 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Camera/CameraActor.h"
+#include "Machines/TeleCommunicationTower.h"
+#include "Engine/GameViewportClient.h"
+#include "Widgets/Images/SImage.h"
+#include "Styling/CoreStyle.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Components/SpotLightComponent.h"
@@ -513,6 +518,404 @@ void AOJJ_Player::HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 	bBlendingCamera = true;
 }
 
+void AOJJ_Player::PlayEndingSequence(AActor* TowerActor)
+{
+	// [엔딩] 통신탑 설치 확정 → 컷1(탑 로우앵글 정적 + 미세 푸시인) → 페이드아웃 → 영상 위젯 → 복귀.
+	// 로컬 화면 전용(리플리케이션 범위 밖). 재진입 가드 — 연출 중 중복 트리거 무시.
+	if (bEndingSequenceActive)
+	{
+		return;
+	}
+	if (!TowerActor)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] 엔딩 시퀀스 스킵 — TowerActor null."));
+		return;
+	}
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 빌드모드(탑다운/TPS)에서 설치 직후 호출되므로 먼저 일반 뷰로 해제 — 종료 시 복귀 뷰타겟(this)·IMC·커서
+	// 상태와 정합. HandleBuildModeKey에 '현재 모드'를 재전달하면 토글 규칙상 None으로 해제된다.
+	if (BuildController && BuildController->GetBuildViewMode() != EBuildViewMode::None)
+	{
+		HandleBuildModeKey(BuildController->GetBuildViewMode());
+	}
+
+	bEndingSequenceActive = true;
+
+	// 입력 잠금 — 인트로와 동일하게 PC 유효 시에만 잠그고 플래그로 1:1 복구를 보장(soft-lock 방지).
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (PC)
+	{
+		DisableInput(PC);
+		bEndingInputDisabled = true;
+	}
+
+	// 컷1 카메라 배치: 탑 Bounds 기준 바닥 근처 높이 + 수평거리 EndingCamDistance. 방향은 '탑→플레이어' 수평
+	// (설치 직후 플레이어가 보던 면을 그대로 보는 각도). 수평 성분이 퇴화하면 탑 forward로 폴백.
+	FVector TowerOrigin, TowerExtent;
+	TowerActor->GetActorBounds(true, TowerOrigin, TowerExtent);
+	FVector HorizDir = GetActorLocation() - TowerOrigin;
+	HorizDir.Z = 0.f;
+	if (!HorizDir.Normalize())
+	{
+		HorizDir = TowerActor->GetActorForwardVector().GetSafeNormal2D();
+		if (HorizDir.IsNearlyZero())
+		{
+			HorizDir = FVector::ForwardVector;
+		}
+	}
+	const float TowerBaseZ = TowerOrigin.Z - TowerExtent.Z;
+	const FVector CamLoc(
+		TowerOrigin.X + HorizDir.X * EndingCamDistance,
+		TowerOrigin.Y + HorizDir.Y * EndingCamDistance,
+		TowerBaseZ + EndingCamHeightOffset);
+	// 로우앵글 LookAt: 탑 중심(Bounds Origin) — 바닥 근처 카메라가 자연히 올려다보는 피치가 되고,
+	// 탑이 높을수록 화면 위로 뻗는다. 프레이밍 미세조정은 EndingCamDistance/HeightOffset로.
+	const FVector LookTarget(TowerOrigin.X, TowerOrigin.Y, TowerOrigin.Z + TowerExtent.Z * 0.25f);
+	const FRotator CamRot = (LookTarget - CamLoc).Rotation();
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	EndingCamera = World->SpawnActor<ACameraActor>(ACameraActor::StaticClass(), CamLoc, CamRot, SpawnParams);
+	if (!EndingCamera)
+	{
+		// 스폰 실패 — 연출 없이 즉시 종료 경로로 수렴(클리어 저장 + 입력 복구). soft-lock 방지.
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] 엔딩 카메라 스폰 실패 — 연출 스킵, 즉시 종료 처리."));
+		FinishEndingSequence();
+		return;
+	}
+
+	if (PC)
+	{
+		PC->SetViewTargetWithBlend(EndingCamera, 1.0f);
+	}
+
+	// 미세 푸시인 준비 — Tick이 EndingCut1Duration에 걸쳐 EndingPushInAmount만큼 탑 방향으로 전진(smoothstep).
+	EndingCamStartLocation = CamLoc;
+	EndingCamPushDir = -HorizDir;
+	EndingPushInElapsed = 0.f;
+	bEndingPushInActive = true;
+
+	// 컷1 종료 → 페이드아웃(→ 영상)으로 단계 전환. soft-lock 최종 방어선은 컷1+페이드+블렌드 예상시간+여유로
+	// 무장하고, 영상 단계 진입 시(ShowEndingVideo) 영상 상한 기준으로 재무장한다.
+	World->GetTimerManager().SetTimer(
+		EndingStageTimerHandle, this, &AOJJ_Player::StartEndingFadeOut, EndingCut1Duration, false);
+	World->GetTimerManager().SetTimer(
+		EndingSafetyTimerHandle, this, &AOJJ_Player::ForceFinishEnding,
+		1.f + EndingCut1Duration + EndingFadeDuration + 10.f, false);
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[OJJ_Player] 엔딩 시퀀스 시작 — 컷1 %.1fs(푸시인 %.0fuu) + 페이드 %.1fs. 입력잠금=%d"),
+		EndingCut1Duration, EndingPushInAmount, EndingFadeDuration, bEndingInputDisabled ? 1 : 0);
+}
+
+void AOJJ_Player::StartEndingFadeOut()
+{
+	// 컷1 종료 — 푸시인 정지 + 블랙 페이드아웃. bHoldWhenFinished=true로 페이드 완료 후에도 블랙 유지
+	// (영상 위젯이 그 위에 표시되고, FinishEndingSequence의 페이드인이 해제한다).
+	bEndingPushInActive = false;
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (PC->PlayerCameraManager)
+		{
+			PC->PlayerCameraManager->StartCameraFade(0.f, 1.f, EndingFadeDuration, FLinearColor::Black, false, true);
+		}
+	}
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			EndingStageTimerHandle, this, &AOJJ_Player::ShowEndingVideo,
+			FMath::Max(EndingFadeDuration, 0.01f), false);
+	}
+}
+
+void AOJJ_Player::ShowEndingVideo()
+{
+	// 페이드아웃 완료 — 엔딩 영상 위젯(BP) 표시. 위젯이 영상 재생/종료 감지를 담당하고, 끝나면
+	// FinishEndingSequence를 호출한다(2단계 BP 계약). 미지정/생성 실패면 영상 단계를 건너뛰고 즉시 복귀(안전).
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!EndingVideoWidgetClass || !PC)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OJJ_Player] 엔딩 영상 위젯 미지정(또는 PC 없음) — 영상 단계 스킵, 즉시 복귀. BP_OJJ_Player의 EndingVideoWidgetClass 확인."));
+		FinishEndingSequence();
+		return;
+	}
+
+	EndingVideoWidgetInstance = CreateWidget<UUserWidget>(PC, EndingVideoWidgetClass);
+	if (!EndingVideoWidgetInstance)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] 엔딩 영상 위젯 생성 실패 — 영상 단계 스킵, 즉시 복귀."));
+		FinishEndingSequence();
+		return;
+	}
+	// 페이드 블랙/기존 HUD 위에 최상위로 표시(위젯 불투명도는 1 고정). 페이드는 UMG 애니/RenderOpacity 대신
+	// 검정 오버레이 알파를 C++이 직접 보간(Tick — 푸시인과 동일 패턴) — '검정→영상' 전환 체감. BP는 재생/종료
+	// 감지만 담당한다. 페이드인 '시작'은 여기서 하지 않는다 — Open Source가 비동기라 미디어가 열리기 전에 걷으면
+	// Media Texture의 이전 재생 잔상 프레임이 떠오른 뒤 0초로 점프한다. 오버레이 완전 검정(알파 1)으로 대기하고,
+	// 위젯의 OnMediaOpened → NotifyEndingVideoReady(+지연)가 걷어내기 시작한다.
+	EndingVideoWidgetInstance->AddToViewport(200);
+	EnsureEndingFadeOverlay(1.f);
+	bEndingWidgetFadeInStarted = false;
+
+	// [폴백] OnMediaOpened 바인딩 누락/열기 실패로 신호가 영영 안 오면 검은 화면에 갇힌다 — 2초 내 미도착 시
+	// 강제로 페이드인 시작(NotifyEndingVideoReady가 자체 가드로 중복 무해). Ready가 먼저 오면 타이머 취소.
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			EndingWidgetReadyTimerHandle, this, &AOJJ_Player::NotifyEndingVideoReady, 2.f, false);
+	}
+
+	// 위젯 상호작용(스킵 버튼 등)을 위해 UI 전용 입력 — 폰 입력은 DisableInput으로 잠긴 상태 유지.
+	// 원복은 TryRestoreEndingInput(GameOnly + 커서 숨김)이 담당.
+	PC->SetInputMode(FInputModeUIOnly());
+	PC->bShowMouseCursor = true;
+
+	// 안전 타임아웃 재무장 — 위젯이 FinishEndingSequence를 끝내 못 부르는 비정상 대비(영상 상한 + 여유).
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			EndingSafetyTimerHandle, this, &AOJJ_Player::ForceFinishEnding, EndingVideoMaxSeconds + 10.f, false);
+	}
+}
+
+void AOJJ_Player::NotifyEndingVideoReady()
+{
+	// [위젯 페이드인 시작] OnMediaOpened(BP) 또는 2초 폴백 타이머가 호출 — 미디어가 실제 열린 뒤에만 페이드인.
+	// 가드: 이미 시작했거나(중복/폴백 경합), 엔딩이 끝났거나(지연 호출 — 페이드아웃 중 재시작 방지), 위젯이 없으면 무시.
+	UWorld* World = GetWorld();
+	if (bEndingWidgetFadeInStarted || !bEndingSequenceActive || !EndingVideoWidgetInstance)
+	{
+		return;
+	}
+	bEndingWidgetFadeInStarted = true;
+
+	// OnMediaOpened는 '파일 열림' 시점 — 첫 프레임이 Media Texture에 기록되기 전이라 즉시 올리면 이전 재생
+	// 잔상이 짧게 비친다 → EndingFadeInDelay만큼 더 기다렸다 페이드인(폴백 경로도 같은 지연 경유, 무방).
+	// 폴백 타이머는 만료/불요이므로 핸들을 지연 타이머로 재사용.
+	if (World && EndingFadeInDelay > 0.f)
+	{
+		World->GetTimerManager().ClearTimer(EndingWidgetReadyTimerHandle);
+		World->GetTimerManager().SetTimer(
+			EndingWidgetReadyTimerHandle, this, &AOJJ_Player::StartEndingWidgetFadeIn, EndingFadeInDelay, false);
+		return;
+	}
+	if (World)
+	{
+		World->GetTimerManager().ClearTimer(EndingWidgetReadyTimerHandle);
+	}
+	StartEndingWidgetFadeIn();
+}
+
+void AOJJ_Player::StartEndingWidgetFadeIn()
+{
+	// [위젯 페이드인 실행] EndingFadeInDelay 지연 후 콜백 — 지연 중 스킵/종료됐을 수 있어 재가드.
+	// 페이드인 = 검정 오버레이 알파 현재값→0 (검정이 걷히며 영상 드러남).
+	if (!bEndingSequenceActive || !EndingVideoWidgetInstance)
+	{
+		return;
+	}
+	EndingWidgetFadeStartOpacity = EndingFadeOverlayAlpha;
+	EndingWidgetFadeElapsed = 0.f;
+	EndingWidgetFadeDirection = 1;
+}
+
+void AOJJ_Player::EnsureEndingFadeOverlay(float InitialAlpha)
+{
+	// [엔딩 페이드 오버레이] 화면 전체 검정 SImage(WhiteBrush 틴트)를 뷰포트 Slate 레이어 300에 부착 —
+	// UMG AddToViewport(200)은 내부적으로 +10 오프셋(레이어 210)이라 영상 위젯 확실히 위.
+	// HitTestInvisible로 아래 영상 위젯의 스킵 버튼 등 UI 입력을 막지 않는다.
+	if (EndingFadeOverlayImage.IsValid())
+	{
+		SetEndingFadeOverlayAlpha(InitialAlpha);
+		return;
+	}
+	UWorld* World = GetWorld();
+	UGameViewportClient* Viewport = World ? World->GetGameViewport() : nullptr;
+	if (!Viewport)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Ending] 페이드 오버레이 생성 실패 — GameViewport 없음(페이드 없이 진행)."));
+		return;
+	}
+	SAssignNew(EndingFadeOverlayImage, SImage)
+		.Image(FCoreStyle::Get().GetBrush("WhiteBrush"))
+		.Visibility(EVisibility::HitTestInvisible);
+	Viewport->AddViewportWidgetContent(EndingFadeOverlayImage.ToSharedRef(), 300);
+	SetEndingFadeOverlayAlpha(InitialAlpha);
+}
+
+void AOJJ_Player::SetEndingFadeOverlayAlpha(float Alpha)
+{
+	EndingFadeOverlayAlpha = FMath::Clamp(Alpha, 0.f, 1.f);
+	if (EndingFadeOverlayImage.IsValid())
+	{
+		EndingFadeOverlayImage->SetColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, EndingFadeOverlayAlpha));
+	}
+}
+
+void AOJJ_Player::RemoveEndingFadeOverlay()
+{
+	if (!EndingFadeOverlayImage.IsValid())
+	{
+		return;
+	}
+	if (UWorld* World = GetWorld())
+	{
+		if (UGameViewportClient* Viewport = World->GetGameViewport())
+		{
+			Viewport->RemoveViewportWidgetContent(EndingFadeOverlayImage.ToSharedRef());
+		}
+	}
+	EndingFadeOverlayImage.Reset();
+}
+
+void AOJJ_Player::FinishEndingSequence()
+{
+	// [엔딩 종료 진입점] 정상(영상 위젯 호출)·비정상(안전망/스폰 실패) 공용 수렴점. 중복 호출 가드.
+	if (!bEndingSequenceActive)
+	{
+		return;
+	}
+	bEndingSequenceActive = false;
+	bEndingPushInActive = false;
+
+	// 클리어 플래그 영속화 — 재설치 시 엔딩 재발동 방지의 단일 출처(BuildController가 이 값을 읽고 스킵).
+	// 위젯 페이드아웃(아래)보다 먼저 기록 — 페이드 중 어떤 비정상이 나도 클리어는 이미 저장돼 있다(안전 우선).
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+		{
+			SaveSubsystem->MarkGameCleared();
+		}
+	}
+
+	// 위젯이 살아 있으면 검정 오버레이 알파 현재값→1 페이드아웃(검정 덮임) 먼저 — 완료 시 Tick이
+	// CompleteEndingRestore 호출. (페이드인 도중 스킵돼도 현재 알파에서 이어가 밝기 점프 없음.)
+	// 위젯 없는 비정상 경로는 페이드 스킵·즉시 복귀.
+	if (EndingVideoWidgetInstance)
+	{
+		EnsureEndingFadeOverlay(EndingFadeOverlayAlpha);
+		EndingWidgetFadeStartOpacity = EndingFadeOverlayAlpha;
+		EndingWidgetFadeElapsed = 0.f;
+		EndingWidgetFadeDirection = -1;
+		return;
+	}
+	CompleteEndingRestore();
+}
+
+void AOJJ_Player::CompleteEndingRestore()
+{
+	// [엔딩 실제 복귀] 위젯 페이드아웃 완료(Tick) 또는 페이드 스킵 경로에서 호출 — 구 FinishEndingSequence 후반부.
+	EndingWidgetFadeDirection = 0;
+
+	UWorld* World = GetWorld();
+	if (World)
+	{
+		World->GetTimerManager().ClearTimer(EndingStageTimerHandle);
+		World->GetTimerManager().ClearTimer(EndingSafetyTimerHandle);
+		World->GetTimerManager().ClearTimer(EndingWidgetReadyTimerHandle);
+	}
+
+	if (EndingVideoWidgetInstance)
+	{
+		EndingVideoWidgetInstance->RemoveFromParent();
+		EndingVideoWidgetInstance = nullptr;
+	}
+	// 검정 오버레이 제거 — 이후의 '검정→게임 화면' 페이드인은 카메라 페이드(StartCameraFade)가 담당.
+	RemoveEndingFadeOverlay();
+
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		// 페이드인(블랙 → 게임 화면) + 뷰타겟 플레이어 복귀 블렌드 — 샌드박스 계속.
+		if (PC->PlayerCameraManager)
+		{
+			PC->PlayerCameraManager->StartCameraFade(1.f, 0.f, EndingFadeDuration, FLinearColor::Black, false, false);
+		}
+		PC->SetViewTargetWithBlend(this, 1.0f);
+	}
+
+	// 복귀 블렌드(1초) 동안 뷰타겟 원본이 살아 있어야 하므로 즉시 파괴 대신 수명 만료로 자멸.
+	if (EndingCamera)
+	{
+		EndingCamera->SetLifeSpan(2.f);
+		EndingCamera = nullptr;
+	}
+
+	// 입력 복구(1:1). PC가 아직 없으면 인트로처럼 짧게 재시도 예약 — 어떤 경로로도 영구 잠금 없음.
+	if (!TryRestoreEndingInput() && World)
+	{
+		World->GetTimerManager().SetTimer(
+			EndingSafetyTimerHandle, this, &AOJJ_Player::ForceFinishEnding, 0.5f, false);
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] 엔딩 시퀀스 종료 — 클리어 저장 + 카메라/입력 복귀."));
+}
+
+void AOJJ_Player::ForceFinishEnding()
+{
+	// [엔딩 안전망] 이미 정상 종료 + 입력 복구 완료면 no-op.
+	if (!bEndingSequenceActive && !bEndingInputDisabled)
+	{
+		return;
+	}
+	UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] 엔딩 안전 타임아웃 — 강제 종료 처리(soft-lock 방지)."));
+	if (bEndingSequenceActive)
+	{
+		FinishEndingSequence(); // 입력 복구/재시도까지 내부에서 처리
+		return;
+	}
+	// 시퀀스는 끝났는데 입력 복구만 보류된 경로(PC 지연) — 복구될 때까지 짧게 재시도.
+	if (!TryRestoreEndingInput())
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(
+				EndingSafetyTimerHandle, this, &AOJJ_Player::ForceFinishEnding, 0.5f, false);
+		}
+	}
+}
+
+bool AOJJ_Player::TryRestoreEndingInput()
+{
+	// [엔딩] 입력 복구 단일 출처 — 인트로 TryRestoreIntroInput과 동일 규약(1:1 짝, PC 없으면 보류 + false).
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (bEndingInputDisabled)
+	{
+		if (!PC)
+		{
+			return false;
+		}
+		EnableInput(PC);
+		bEndingInputDisabled = false;
+	}
+	// 영상 위젯이 남긴 UI 입력모드/커서를 게임 전용으로 원복(잠그지 않았어도 멱등·안전).
+	if (PC)
+	{
+		PC->SetInputMode(FInputModeGameOnly());
+		PC->bShowMouseCursor = false;
+	}
+	return true;
+}
+
+void AOJJ_Player::PlayEnding()
+{
+	// [PIE 검증용] 월드의 첫 통신탑으로 엔딩 연출 강제 재생 — 클리어 플래그를 무시하고 Player 진입점을 직접 호출
+	// (플래그 체크는 BuildController 트리거 쪽 책임이라 여기엔 없음). 통신탑이 없으면 로그만.
+	for (TActorIterator<ATeleCommunicationTower> It(GetWorld()); It; ++It)
+	{
+		if (ATeleCommunicationTower* Tower = *It)
+		{
+			PlayEndingSequence(Tower);
+			return;
+		}
+	}
+	UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] PlayEnding — 월드에 통신탑이 없어 재생 불가. 먼저 설치하세요."));
+}
+
 void AOJJ_Player::SetCharacter(const FString& CharacterName)
 {
 	// [게임진입 테스트] 이름 기반 콘솔 스왑 — enum 리플렉션으로 매칭해 enum 확장 시 자동 대응(인덱스 하드코딩 회피).
@@ -577,6 +980,9 @@ void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	// 등반/step-off 중 폰 파괴·언포제스 시 비행/중력0 상태가 남지 않도록 청산(폰 재사용 안전).
 	AbortClimb();
+
+	// [엔딩] 뷰포트에 직접 부착한 검정 페이드 오버레이 잔존 방지(연출 도중 폰 파괴/레벨 전환 대비).
+	RemoveEndingFadeOverlay();
 
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -1117,6 +1523,38 @@ void AOJJ_Player::Tick(float DeltaSeconds)
 					World->GetTimerManager().ClearTimer(IntroSafetyTimerHandle);
 				}
 				UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] 인트로 카메라 블렌드 완료 — 3인칭 복귀 + 입력 복구."));
+			}
+		}
+	}
+
+	// [엔딩 컷1] 카메라 미세 푸시인 — EndingCut1Duration에 걸쳐 EndingPushInAmount만큼 탑 방향으로 전진
+	// (smoothstep — 시작/끝 감속으로 정적에 가까운 긴장감). 카메라가 사라졌으면 no-op(가드).
+	if (bEndingPushInActive && EndingCamera)
+	{
+		EndingPushInElapsed += DeltaSeconds;
+		const float Alpha = FMath::Clamp(EndingPushInElapsed / FMath::Max(EndingCut1Duration, KINDA_SMALL_NUMBER), 0.f, 1.f);
+		const float Eased = FMath::SmoothStep(0.f, 1.f, Alpha);
+		EndingCamera->SetActorLocation(EndingCamStartLocation + EndingCamPushDir * (EndingPushInAmount * Eased));
+	}
+
+	// [엔딩 위젯 페이드] 검정 오버레이 알파를 C++이 직접 보간(UMG 애니/RenderOpacity 의존 제거) — 푸시인과 동일 패턴.
+	// +1=페이드인(알파 시작값→0, 검정 걷힘), -1=페이드아웃(→1, 검정 덮임 — 완료 시 CompleteEndingRestore로 실제 복귀).
+	// 오버레이가 도중에 사라진 비정상이어도 페이드아웃 경로면 복귀는 반드시 수행(잠금 잔존 방지).
+	if (EndingWidgetFadeDirection != 0)
+	{
+		EndingWidgetFadeElapsed += DeltaSeconds;
+		const float FadeAlpha = FMath::Clamp(
+			EndingWidgetFadeElapsed / FMath::Max(EndingWidgetFadeDuration, KINDA_SMALL_NUMBER), 0.f, 1.f);
+		const float FadeEased = FMath::SmoothStep(0.f, 1.f, FadeAlpha);
+		const float TargetOverlayAlpha = (EndingWidgetFadeDirection > 0) ? 0.f : 1.f;
+		SetEndingFadeOverlayAlpha(FMath::Lerp(EndingWidgetFadeStartOpacity, TargetOverlayAlpha, FadeEased));
+		if (FadeAlpha >= 1.f || !EndingFadeOverlayImage.IsValid())
+		{
+			const bool bWasFadeOut = (EndingWidgetFadeDirection < 0);
+			EndingWidgetFadeDirection = 0;
+			if (bWasFadeOut)
+			{
+				CompleteEndingRestore();
 			}
 		}
 	}
