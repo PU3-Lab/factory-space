@@ -1170,6 +1170,10 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 	// [카테고리 순환] ←/→ 방향키 = 빌드모드(TPS+TopDown) 설치 카테고리 순환(기계↔전력↔건물). 슬롯키와 동일한
 	// 레거시 BindKey 패턴(IA 에셋 불필요). 빌드모드 가드는 핸들러(CycleBuildCategory)에서 처리 — None(빌드 밖) 무동작.
+	PlayerInputComponent->BindKey(EKeys::P, IE_Pressed, this, &AOJJ_Player::TriggerPlanetEventNoneShortcut);
+	PlayerInputComponent->BindKey(EKeys::LeftBracket, IE_Pressed, this, &AOJJ_Player::TriggerPlanetEventMagneticShortcut);
+	PlayerInputComponent->BindKey(EKeys::RightBracket, IE_Pressed, this, &AOJJ_Player::TriggerPlanetEventSandShortcut);
+	PlayerInputComponent->BindKey(EKeys::O, IE_Pressed, this, &AOJJ_Player::TimeSetMorningShortcut);
 	PlayerInputComponent->BindKey(EKeys::Right, IE_Pressed, this, &AOJJ_Player::CycleCategoryNext);
 	PlayerInputComponent->BindKey(EKeys::Left,  IE_Pressed, this, &AOJJ_Player::CycleCategoryPrev);
 
@@ -2370,6 +2374,26 @@ void AOJJ_Player::CancelPlacementShortcut()
 
 // [#405 일부, 공용키 C] TPS 빌드모드에서만 1인칭↔3인칭 토글. 레거시 BindKey라 IMC 게이팅 없음 →
 // IsInBuildMode + TPS 가드 필수(탑다운/비빌드/None에서 C는 무동작).
+void AOJJ_Player::TriggerPlanetEventNoneShortcut()
+{
+	TriggerPlanetEvent(TEXT("none"));
+}
+
+void AOJJ_Player::TriggerPlanetEventMagneticShortcut()
+{
+	TriggerPlanetEvent(TEXT("magnetic"));
+}
+
+void AOJJ_Player::TriggerPlanetEventSandShortcut()
+{
+	TriggerPlanetEvent(TEXT("sand"));
+}
+
+void AOJJ_Player::TimeSetMorningShortcut()
+{
+	TimeSet(540);
+}
+
 void AOJJ_Player::ToggleBuildFPVShortcut()
 {
 	if (!BuildController || !BuildController->IsInBuildMode())

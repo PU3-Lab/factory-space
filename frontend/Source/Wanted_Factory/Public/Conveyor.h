@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Resource/ResourceData.h"
 #include "Conveyor.generated.h"
 
 class AMachineBase;
@@ -14,7 +15,7 @@ class UStaticMesh;
 class UStaticMeshComponent;
 class USceneComponent;
 class UTextRenderComponent;
-struct FResourceData;
+struct FFactoryDynamicMaterialRecord;
 
 struct FConveyorDepartingVisual
 {
@@ -320,6 +321,18 @@ protected:
 	TObjectPtr<UStaticMesh> PowderVisualMesh;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UStaticMesh> OreVisualMesh;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMesh> IngotVisualMesh;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMesh> WireVisualMesh;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMesh> PlateVisualMesh;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> PowderVisualMaterialBase;
 
 	FTimerHandle ItemMoveTimerHandle;
@@ -413,8 +426,12 @@ private:
 	bool ShouldRaiseInputOccluder() const;
 	UStaticMeshComponent* CreateVisualComponentForItem(int32 VisualId, FName ItemId);
 	const FResourceData* FindResourceData(FName ItemId) const;
+	bool TryGetRuntimeMaterialRecord(FName ItemId, FFactoryDynamicMaterialRecord& OutRecord) const;
+	EResourceShape ResolveItemShape(FName ItemId) const;
+	FLinearColor ResolveItemVisualColor(FName ItemId) const;
 	bool IsPowderItem(FName ItemId) const;
 	UStaticMesh* ResolveItemStaticMesh(FName ItemId) const;
+	UStaticMesh* ResolveRepresentativeStaticMesh(EResourceShape Shape) const;
 	FTransform BuildItemVisualTransform(FName ItemId, const FVector& ItemLocation, const FRotator& ItemRotation, float BaseItemScale) const;
 	float GetItemVisualVerticalAdjustment(FName ItemId, const FVector& ItemScale) const;
 	FRotator ResolveItemVisualRotation(int32 SlotIndex, const FVector& StartLocation, const FVector& EndLocation, float MoveAlpha) const;

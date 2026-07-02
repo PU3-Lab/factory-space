@@ -135,7 +135,7 @@ void UUI_WarehouseInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, 
 
     if (TXT_OutputName && TXT_OutputCount && PB_OutputBuffer)
     {
-        TXT_OutputName->SetText(GetResourceDisplayText(ResourceDataTable, DisplayItemName));
+        TXT_OutputName->SetText(GetResourceDisplayText(this, ResourceDataTable, DisplayItemName));
         FString CountStr = FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount);
         TXT_OutputCount->SetText(FText::FromString(CountStr));
         
@@ -149,32 +149,12 @@ void UUI_WarehouseInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, 
         return;
     }
 
-    if (ResourceDataTable && IMG_OutputIcon)
+    if (IMG_OutputIcon)
     {
-        if (FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(DisplayItemName, TEXT("FindOutputContext")))
+        if (UTexture2D* IconTexture = GetResourceIconTexture(this, ResourceDataTable, DisplayItemName))
         {
-            UTexture2D* IconTexture = nullptr;
-            if (RowData->ImgAsset.IsValid())
-            {
-                IconTexture = RowData->ImgAsset.Get();
-            }
-            else
-            {
-                IconTexture = RowData->ImgAsset.LoadSynchronous();
-            }
-
-            if (IconTexture)
-            {
-                IMG_OutputIcon->SetVisibility(ESlateVisibility::Visible);
-                IMG_OutputIcon->SetBrushFromTexture(IconTexture);
-            }
-            else
-            {
-                IMG_OutputIcon->SetBrush(FSlateBrush());
-                IMG_OutputIcon->SetVisibility(ESlateVisibility::Hidden);
-                return;
-            }
-
+            IMG_OutputIcon->SetVisibility(ESlateVisibility::Visible);
+            IMG_OutputIcon->SetBrushFromTexture(IconTexture);
             if (CurrentAmount <= 0 && DisplayItemName != ManualDroppedOutputItemID)
             {
                 IMG_OutputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.15f));

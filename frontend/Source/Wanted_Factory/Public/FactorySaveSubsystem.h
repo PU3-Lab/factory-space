@@ -47,6 +47,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Factory Save")
 	void MarkGameCleared();
 
+	UFUNCTION(BlueprintCallable, Category = "Factory Save")
+	bool SendManualProcessOptimizerStateUpdate();
+
 private:
 	UPROPERTY()
 	FString SaveSlotName = TEXT("FactorySpace_Autosave");

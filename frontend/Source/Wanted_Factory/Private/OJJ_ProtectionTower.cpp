@@ -188,11 +188,12 @@ void AOJJ_ProtectionTower::UpdateDomeVisual(float DeltaSeconds)
 	const float TargetAlpha = bTargetShow ? 1.0f : 0.0f;
 	const bool bBlendingIn = TargetAlpha > ShieldVisualAlpha;
 	const float BlendSeconds = bBlendingIn ? ShieldBlendInSeconds : ShieldBlendOutSeconds;
-	const float BlendRate = BlendSeconds > KINDA_SMALL_NUMBER ? (1.0f / BlendSeconds) : 1.0f;
-	ShieldVisualAlpha = FMath::FInterpConstantTo(ShieldVisualAlpha, TargetAlpha, DeltaSeconds, BlendRate);
+	const float BlendInterpSpeed = BlendSeconds > KINDA_SMALL_NUMBER ? (4.0f / BlendSeconds) : 4.0f;
+	ShieldVisualAlpha = FMath::FInterpTo(ShieldVisualAlpha, TargetAlpha, DeltaSeconds, BlendInterpSpeed);
+	ShieldVisualAlpha = FMath::Clamp(ShieldVisualAlpha, 0.0f, 1.0f);
 
-	const float SmoothedAlpha = FMath::InterpEaseInOut(0.0f, 1.0f, ShieldVisualAlpha, 2.0f);
+	const float SmoothedAlpha = FMath::InterpEaseInOut(0.0f, 1.0f, ShieldVisualAlpha, 3.0f);
 	const float DomeScale = (GetShieldRadius() / 50.0f) * FMath::Lerp(0.05f, 1.0f, SmoothedAlpha);
 	ShieldDomeComponent->SetRelativeScale3D(FVector(DomeScale));
-	ShieldDomeComponent->SetVisibility(bTargetShow || ShieldVisualAlpha > KINDA_SMALL_NUMBER);
+	ShieldDomeComponent->SetVisibility(bTargetShow || SmoothedAlpha > KINDA_SMALL_NUMBER);
 }

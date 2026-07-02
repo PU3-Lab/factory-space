@@ -13,6 +13,7 @@
 #include "UI/UI_InventorySlot.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "FactoryAgentClientSubsystem.h"
+#include "FactorySaveSubsystem.h"
 #include "MachineBase.h"
 #include "FactoryManagerSubsystem.h"
 #include "UI_FactoryStatusRow.h"
@@ -41,6 +42,7 @@ void UUI_BaseCampInteract::SetTargetMachine(AMachineBase* InMachine)
     LastInputVisualItemID_2 = NAME_None;
     LastInputVisualItemID_3 = NAME_None;
     LastOutputVisualItemID = NAME_None;
+    LatestMaterialGenerationOutputItemID = NAME_None;
     DraggingInputItemID = NAME_None;
     DraggingInputIcon = nullptr;
 }
@@ -73,6 +75,25 @@ void UUI_BaseCampInteract::NativeConstruct()
         BTN_RequestMaterialGeneration->OnClicked.AddDynamic(this, &UUI_BaseCampInteract::OnRequestMaterialGenerationClicked);
     }
 
+    if (BTN_RequestOptimization)
+    {
+        BTN_RequestOptimization->OnClicked.RemoveDynamic(this, &UUI_BaseCampInteract::OnRequestOptimizationClicked);
+        BTN_RequestOptimization->OnClicked.AddDynamic(this, &UUI_BaseCampInteract::OnRequestOptimizationClicked);
+    }
+
+    if (UGameInstance* GameInstance = GetGameInstance())
+    {
+        if (UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>())
+        {
+            AgentClient->OnMaterialGenerationResponseReceived.RemoveDynamic(
+                this,
+                &UUI_BaseCampInteract::HandleMaterialGenerationResponse);
+            AgentClient->OnMaterialGenerationResponseReceived.AddDynamic(
+                this,
+                &UUI_BaseCampInteract::HandleMaterialGenerationResponse);
+        }
+    }
+
     // 초기 화면 상태 지정
     SwitchSubPaneMode(EBaseCampSubMode::LevelUpgrade);
     RefreshAllUpgradeNodes();
@@ -80,6 +101,16 @@ void UUI_BaseCampInteract::NativeConstruct()
 
 void UUI_BaseCampInteract::NativeDestruct()
 {
+    if (UGameInstance* GameInstance = GetGameInstance())
+    {
+        if (UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>())
+        {
+            AgentClient->OnMaterialGenerationResponseReceived.RemoveDynamic(
+                this,
+                &UUI_BaseCampInteract::HandleMaterialGenerationResponse);
+        }
+    }
+
     OnClosed.Broadcast();
     Super::NativeDestruct();
 }
@@ -118,6 +149,14 @@ void UUI_BaseCampInteract::NativeTick(const FGeometry& MyGeometry, float InDelta
     UpdateInputSlotUI(3, ExpectedInputs[2], InputInv.FindRef(ExpectedInputs[2]), MaxInputAmount);
 
     FName OutputName = Recipe.OutputItem1;
+    if (OutputName.IsNone())
+    {
+        TargetBaseCamp->PeekFirstOutputItem(OutputName);
+    }
+    if (OutputName.IsNone() && !LatestMaterialGenerationOutputItemID.IsNone())
+    {
+        OutputName = LatestMaterialGenerationOutputItemID;
+    }
     if (!ManualDroppedOutputItemID.IsNone()) OutputName = ManualDroppedOutputItemID;
     int32 OutputAmount = TargetBaseCamp->GetOutputBuffer().FindRef(OutputName);
     UpdateOutputUI(OutputName, OutputAmount);
@@ -136,7 +175,7 @@ void UUI_BaseCampInteract::UpdateInputSlotUI(int32 SlotIndex, FName ItemName, in
 
     if (TargetTXT_Name && TargetTXT_Count && TargetPB_Buffer)
     {
-        TargetTXT_Name->SetText(DisplayItemName.IsNone() ? FText::GetEmpty() : GetResourceDisplayText(ResourceDataTable, DisplayItemName));
+        TargetTXT_Name->SetText(DisplayItemName.IsNone() ? FText::GetEmpty() : GetResourceDisplayText(this, ResourceDataTable, DisplayItemName));
         TargetTXT_Count->SetText(CurrentAmount > 0 ? FText::FromString(FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount)) : FText::GetEmpty());
         TargetPB_Buffer->SetPercent((MaxAmount > 0) ? (float)CurrentAmount / MaxAmount : 0.0f);
     }
@@ -151,15 +190,10 @@ void UUI_BaseCampInteract::UpdateInputSlotUI(int32 SlotIndex, FName ItemName, in
         }
 
         TargetIMG_Icon->SetVisibility(ESlateVisibility::Visible);
-        if (ResourceDataTable)
+        if (UTexture2D* Tex = GetResourceIconTexture(this, ResourceDataTable, DisplayItemName))
         {
-            FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(DisplayItemName, TEXT("FindInputSlotIcon"));
-            if (RowData)
-            {
-                UTexture2D* Tex = RowData->ImgAsset.IsValid() ? RowData->ImgAsset.Get() : RowData->ImgAsset.LoadSynchronous();
-                if (Tex) TargetIMG_Icon->SetBrushFromTexture(Tex);
-                TargetIMG_Icon->SetColorAndOpacity(FLinearColor::White);
-            }
+            TargetIMG_Icon->SetBrushFromTexture(Tex);
+            TargetIMG_Icon->SetColorAndOpacity(FLinearColor::White);
         }
     }
 }
@@ -171,7 +205,7 @@ void UUI_BaseCampInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount)
 
     if (TXT_OutputName)
     {
-        TXT_OutputName->SetText(GetResourceDisplayText(ResourceDataTable, DisplayItemName));
+        TXT_OutputName->SetText(GetResourceDisplayText(this, ResourceDataTable, DisplayItemName));
     }
 
     if (IMG_OutputIcon)
@@ -183,15 +217,10 @@ void UUI_BaseCampInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount)
         }
 
         IMG_OutputIcon->SetVisibility(ESlateVisibility::Visible);
-        if (ResourceDataTable)
+        if (UTexture2D* Tex = GetResourceIconTexture(this, ResourceDataTable, DisplayItemName))
         {
-            FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(DisplayItemName, TEXT("FindOutputIcon"));
-            if (RowData)
-            {
-                UTexture2D* Tex = RowData->ImgAsset.IsValid() ? RowData->ImgAsset.Get() : RowData->ImgAsset.LoadSynchronous();
-                if (Tex) IMG_OutputIcon->SetBrushFromTexture(Tex);
-                IMG_OutputIcon->SetColorAndOpacity((CurrentAmount <= 0 && DisplayItemName != ManualDroppedOutputItemID) ? FLinearColor(1.f, 1.f, 1.f, 0.15f) : FLinearColor::White);
-            }
+            IMG_OutputIcon->SetBrushFromTexture(Tex);
+            IMG_OutputIcon->SetColorAndOpacity((CurrentAmount <= 0 && DisplayItemName != ManualDroppedOutputItemID) ? FLinearColor(1.f, 1.f, 1.f, 0.15f) : FLinearColor::White);
         }
     }
 }
@@ -327,6 +356,29 @@ void UUI_BaseCampInteract::OnStatusTabClicked() { SwitchSubPaneMode(EBaseCampSub
 void UUI_BaseCampInteract::OnUpgradeTabClicked() { SwitchSubPaneMode(EBaseCampSubMode::LevelUpgrade); }
 void UUI_BaseCampInteract::OnMaterialTabClicked() { SwitchSubPaneMode(EBaseCampSubMode::newMaterial); }
 void UUI_BaseCampInteract::OnRequestMaterialGenerationClicked() { RequestMaterialGeneration(); }
+void UUI_BaseCampInteract::OnRequestOptimizationClicked() { RequestProcessOptimization(); }
+
+void UUI_BaseCampInteract::HandleMaterialGenerationResponse(const FFactoryMaterialGenerationResponse& Response)
+{
+    if (!Response.MaterialId.IsEmpty())
+    {
+        LatestMaterialGenerationOutputItemID = FName(Response.MaterialId);
+        LastOutputVisualItemID = LatestMaterialGenerationOutputItemID;
+        UpdateOutputUI(LatestMaterialGenerationOutputItemID, TargetBaseCamp
+            ? TargetBaseCamp->GetOutputBuffer().FindRef(LatestMaterialGenerationOutputItemID)
+            : 0);
+        return;
+    }
+
+    if (Response.Outputs.Num() > 0 && !Response.Outputs[0].ItemId.IsNone())
+    {
+        LatestMaterialGenerationOutputItemID = Response.Outputs[0].ItemId;
+        LastOutputVisualItemID = LatestMaterialGenerationOutputItemID;
+        UpdateOutputUI(LatestMaterialGenerationOutputItemID, TargetBaseCamp
+            ? TargetBaseCamp->GetOutputBuffer().FindRef(LatestMaterialGenerationOutputItemID)
+            : 0);
+    }
+}
 
 bool UUI_BaseCampInteract::RequestMaterialGeneration()
 {
@@ -388,6 +440,20 @@ bool UUI_BaseCampInteract::RequestMaterialGeneration()
     return AgentClient->SendMaterialGenerationRequest(Inputs, TEXT(""), true, TEXT("basecamp-ui-001"));
 }
 
+bool UUI_BaseCampInteract::RequestProcessOptimization()
+{
+    UGameInstance* GameInstance = GetGameInstance();
+    UFactorySaveSubsystem* SaveSubsystem = GameInstance
+        ? GameInstance->GetSubsystem<UFactorySaveSubsystem>()
+        : nullptr;
+    if (!SaveSubsystem)
+    {
+        return false;
+    }
+
+    return SaveSubsystem->SendManualProcessOptimizerStateUpdate();
+}
+
 void UUI_BaseCampInteract::SwitchSubPaneMode(EBaseCampSubMode NewMode)
 {
     if (!WS_SubPaneSwitcher) return;
@@ -442,18 +508,8 @@ void UUI_BaseCampInteract::RefreshFactoryStatus()
     for (const FFactoryItemProductionStat& Stat : ProductionStats)
     {
         if (Stat.ItemID.IsNone()) continue;
-        FText SolvedItemName = FText::FromName(Stat.ItemID);
-        UTexture2D* SolvedIcon = nullptr;
-
-        if (ResourceDataTable)
-        {
-            FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(Stat.ItemID, TEXT("BaseCamp_Status_Lookup"));
-            if (RowData)
-            {
-                if (!RowData->DisplayName.IsEmpty()) SolvedItemName = FText::FromString(RowData->DisplayName);
-                SolvedIcon = RowData->ImgAsset.IsValid() ? RowData->ImgAsset.Get() : RowData->ImgAsset.LoadSynchronous();
-            }
-        }
+        const FText SolvedItemName = GetResourceDisplayText(this, ResourceDataTable, Stat.ItemID);
+        UTexture2D* SolvedIcon = GetResourceIconTexture(this, ResourceDataTable, Stat.ItemID);
 
         if (FactoryStatusRowClass)
         {

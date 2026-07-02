@@ -154,7 +154,7 @@ void UUI_SynthesizerInteract::UpdateInputSlotUI(int32 SlotIndex, FName ItemName,
 
     if (TargetTXT_Name && TargetTXT_Count && TargetPB_Buffer)
     {
-        TargetTXT_Name->SetText(GetResourceDisplayText(ResourceDataTable, DisplayItemName));
+        TargetTXT_Name->SetText(GetResourceDisplayText(this, ResourceDataTable, DisplayItemName));
         TargetTXT_Count->SetText(FText::FromString(FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount)));
         TargetPB_Buffer->SetPercent((MaxAmount > 0) ? (float)CurrentAmount / MaxAmount : 0.0f);
     }
@@ -168,15 +168,10 @@ void UUI_SynthesizerInteract::UpdateInputSlotUI(int32 SlotIndex, FName ItemName,
         }
 
         TargetIMG_Icon->SetVisibility(ESlateVisibility::Visible);
-        if (ResourceDataTable)
+        if (UTexture2D* Tex = GetResourceIconTexture(this, ResourceDataTable, DisplayItemName))
         {
-            FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(DisplayItemName, TEXT("FindInputSlotIcon"));
-            if (RowData)
-            {
-                UTexture2D* Tex = RowData->ImgAsset.IsValid() ? RowData->ImgAsset.Get() : RowData->ImgAsset.LoadSynchronous();
-                if (Tex) TargetIMG_Icon->SetBrushFromTexture(Tex);
-                TargetIMG_Icon->SetColorAndOpacity(CurrentAmount <= 0 ? FLinearColor(1.f, 1.f, 1.f, 0.3f) : FLinearColor::White);
-            }
+            TargetIMG_Icon->SetBrushFromTexture(Tex);
+            TargetIMG_Icon->SetColorAndOpacity(CurrentAmount <= 0 ? FLinearColor(1.f, 1.f, 1.f, 0.3f) : FLinearColor::White);
         }
     }
 }
@@ -188,7 +183,7 @@ void UUI_SynthesizerInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount
 
     if (TXT_OutputName && TXT_OutputCount && PB_OutputBuffer)
     {
-        TXT_OutputName->SetText(GetResourceDisplayText(ResourceDataTable, DisplayItemName));
+        TXT_OutputName->SetText(GetResourceDisplayText(this, ResourceDataTable, DisplayItemName));
         TXT_OutputCount->SetText(FText::FromString(FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount)));
         PB_OutputBuffer->SetPercent((MaxAmount > 0) ? (float)CurrentAmount / MaxAmount : 0.0f);
     }
@@ -202,15 +197,10 @@ void UUI_SynthesizerInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount
         }
 
         IMG_OutputIcon->SetVisibility(ESlateVisibility::Visible);
-        if (ResourceDataTable)
+        if (UTexture2D* Tex = GetResourceIconTexture(this, ResourceDataTable, DisplayItemName))
         {
-            FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(DisplayItemName, TEXT("FindOutputIcon"));
-            if (RowData)
-            {
-                UTexture2D* Tex = RowData->ImgAsset.IsValid() ? RowData->ImgAsset.Get() : RowData->ImgAsset.LoadSynchronous();
-                if (Tex) IMG_OutputIcon->SetBrushFromTexture(Tex);
-                IMG_OutputIcon->SetColorAndOpacity((CurrentAmount <= 0 && DisplayItemName != ManualDroppedOutputItemID) ? FLinearColor(1.f, 1.f, 1.f, 0.15f) : FLinearColor::White);
-            }
+            IMG_OutputIcon->SetBrushFromTexture(Tex);
+            IMG_OutputIcon->SetColorAndOpacity((CurrentAmount <= 0 && DisplayItemName != ManualDroppedOutputItemID) ? FLinearColor(1.f, 1.f, 1.f, 0.15f) : FLinearColor::White);
         }
     }
 }

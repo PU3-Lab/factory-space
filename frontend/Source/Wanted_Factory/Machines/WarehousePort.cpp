@@ -1,6 +1,7 @@
 #include "Machines/WarehousePort.h"
 
 #include "Engine/DataTable.h"
+#include "MaterialGenerationRegistrySubsystem.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "Resource/ResourceData.h"
 #include "UObject/ConstructorHelpers.h"
@@ -154,13 +155,32 @@ UPlayerWarehouseSubsystem* AWarehousePort::GetWarehouse() const
 
 bool AWarehousePort::IsSolidItem(FName ItemID) const
 {
-	if (!ResourceTable || ItemID.IsNone())
+	if (ItemID.IsNone())
 	{
 		return false;
 	}
 
-	const FResourceData* Resource = ResourceTable->FindRow<FResourceData>(ItemID, TEXT("WarehousePort.IsSolidItem"));
-	return Resource && Resource->form == FName(TEXT("solid"));
+	if (ResourceTable)
+	{
+		const FResourceData* Resource = ResourceTable->FindRow<FResourceData>(ItemID, TEXT("WarehousePort.IsSolidItem"));
+		if (Resource)
+		{
+			return Resource->form == FName(TEXT("solid"));
+		}
+	}
+
+	const UGameInstance* GameInstance = GetGameInstance();
+	const UMaterialGenerationRegistrySubsystem* MaterialRegistry = GameInstance
+		? GameInstance->GetSubsystem<UMaterialGenerationRegistrySubsystem>()
+		: nullptr;
+	if (!MaterialRegistry)
+	{
+		return false;
+	}
+
+	FFactoryDynamicMaterialRecord MaterialRecord;
+	return MaterialRegistry->FindDynamicMaterialRecord(ItemID, MaterialRecord)
+		&& MaterialRecord.Form.TrimStartAndEnd().Equals(TEXT("solid"), ESearchCase::IgnoreCase);
 }
 
 bool AWarehousePort::CanStoreSolid(FName ItemID, int32 Count) const

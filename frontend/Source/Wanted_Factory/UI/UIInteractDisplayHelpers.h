@@ -7,16 +7,36 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataTable.h"
+#include "Engine/Texture2D.h"
+#include "Engine/GameInstance.h"
+#include "MaterialGenerationRegistrySubsystem.h"
 #include "Resource/ResourceData.h"
 #include "Machines/MachineSubsystem.h"
 
 namespace UIInteractHelpers
 {
-inline FText GetResourceDisplayText(const UDataTable* ResourceDataTable, FName ItemName)
+inline UMaterialGenerationRegistrySubsystem* GetMaterialRegistrySubsystem(const UObject* WorldContextObject)
+{
+    const UGameInstance* GameInstance = WorldContextObject
+        ? WorldContextObject->GetWorld() ? WorldContextObject->GetWorld()->GetGameInstance() : nullptr
+        : nullptr;
+    return GameInstance ? GameInstance->GetSubsystem<UMaterialGenerationRegistrySubsystem>() : nullptr;
+}
+
+inline FText GetResourceDisplayText(const UObject* WorldContextObject, const UDataTable* ResourceDataTable, FName ItemName)
 {
     if (ItemName.IsNone())
     {
         return FText::GetEmpty();
+    }
+
+    if (UMaterialGenerationRegistrySubsystem* MaterialRegistry = GetMaterialRegistrySubsystem(WorldContextObject))
+    {
+        const FText RuntimeDisplayText = MaterialRegistry->GetMaterialDisplayText(ItemName);
+        if (!RuntimeDisplayText.IsEmpty())
+        {
+            return RuntimeDisplayText;
+        }
     }
 
     if (ResourceDataTable)
@@ -31,6 +51,32 @@ inline FText GetResourceDisplayText(const UDataTable* ResourceDataTable, FName I
     }
 
     return FText::FromName(ItemName);
+}
+
+inline UTexture2D* GetResourceIconTexture(const UObject* WorldContextObject, const UDataTable* ResourceDataTable, FName ItemName)
+{
+    if (ItemName.IsNone())
+    {
+        return nullptr;
+    }
+
+    if (UMaterialGenerationRegistrySubsystem* MaterialRegistry = GetMaterialRegistrySubsystem(WorldContextObject))
+    {
+        if (UTexture2D* RuntimeTexture = MaterialRegistry->GetMaterialThumbnailTexture(ItemName))
+        {
+            return RuntimeTexture;
+        }
+    }
+
+    if (ResourceDataTable)
+    {
+        if (const FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemName, TEXT("GetResourceIconTexture")))
+        {
+            return RowData->ImgAsset.IsValid() ? RowData->ImgAsset.Get() : RowData->ImgAsset.LoadSynchronous();
+        }
+    }
+
+    return nullptr;
 }
 
 inline FText GetMachineDisplayText(UMachineSubsystem* MachineSubsystem, FName MachineTypeName)
