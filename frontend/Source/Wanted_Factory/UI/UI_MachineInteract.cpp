@@ -254,7 +254,7 @@ void UUI_MachineInteract::UpdateInputUI(FName ItemName, int32 CurrentAmount, int
 
     if (TXT_InputName && TXT_InputCount && PB_InputBuffer)
     {
-        TXT_InputName->SetText(GetResourceDisplayText(ResourceDataTable, DisplayItemName));
+        TXT_InputName->SetText(GetResourceDisplayText(this, ResourceDataTable, DisplayItemName));
         
         FString CountStr = FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount);
         TXT_InputCount->SetText(FText::FromString(CountStr));
@@ -278,20 +278,16 @@ void UUI_MachineInteract::UpdateInputUI(FName ItemName, int32 CurrentAmount, int
 
     if (IMG_InputIcon)
     {
-        IMG_InputIcon->SetVisibility(ESlateVisibility::Visible);
-        
-        FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(DisplayItemName, TEXT("FindInputIconContext"));
-        if (RowData)
+        if (UTexture2D* IconTexture = GetResourceIconTexture(this, ResourceDataTable, DisplayItemName))
         {
-            if (RowData->ImgAsset.IsValid()) IMG_InputIcon->SetBrushFromTexture(RowData->ImgAsset.Get());
-            else
-            {
-                UTexture2D* LoadedTexture = RowData->ImgAsset.LoadSynchronous();
-                if (LoadedTexture) IMG_InputIcon->SetBrushFromTexture(LoadedTexture);
-            }
-            
+            IMG_InputIcon->SetVisibility(ESlateVisibility::Visible);
+            IMG_InputIcon->SetBrushFromTexture(IconTexture);
             if (CurrentAmount <= 0) IMG_InputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.3f));
             else                    IMG_InputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
+        }
+        else
+        {
+            IMG_InputIcon->SetVisibility(ESlateVisibility::Hidden);
         }
     }
 }
@@ -307,7 +303,7 @@ void UUI_MachineInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, in
     if (TXT_OutputName && TXT_OutputCount && PB_OutputBuffer)
     {
         // 1. 산출물 이름 텍스트 세팅
-        TXT_OutputName->SetText(GetResourceDisplayText(ResourceDataTable, DisplayItemName));
+        TXT_OutputName->SetText(GetResourceDisplayText(this, ResourceDataTable, DisplayItemName));
         
         // 2. 수량 텍스트 세팅 (예: "850 / 2000")
         FString CountStr = FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount);
@@ -323,31 +319,12 @@ void UUI_MachineInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, in
         return;
     }
 
-    if (ResourceDataTable && IMG_OutputIcon)
+    if (IMG_OutputIcon)
     {
-        if (FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(DisplayItemName, TEXT("FindOutputIconContext")))
+        if (UTexture2D* IconTexture = GetResourceIconTexture(this, ResourceDataTable, DisplayItemName))
         {
-            UTexture2D* IconTexture = nullptr;
-            if (RowData->ImgAsset.IsValid())
-            {
-                IconTexture = RowData->ImgAsset.Get();
-            }
-            else
-            {
-                IconTexture = RowData->ImgAsset.LoadSynchronous();
-            }
-
-            if (IconTexture)
-            {
-                IMG_OutputIcon->SetVisibility(ESlateVisibility::Visible);
-                IMG_OutputIcon->SetBrushFromTexture(IconTexture);
-            }
-            else
-            {
-                IMG_OutputIcon->SetBrush(FSlateBrush());
-                IMG_OutputIcon->SetVisibility(ESlateVisibility::Hidden);
-                return;
-            }
+            IMG_OutputIcon->SetVisibility(ESlateVisibility::Visible);
+            IMG_OutputIcon->SetBrushFromTexture(IconTexture);
             if (CurrentAmount <= 0 && DisplayItemName != ManualDroppedOutputItemID)
             {
                 IMG_OutputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.15f));

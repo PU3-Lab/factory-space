@@ -1,9 +1,37 @@
 #include "MaterialGenerationRegistrySubsystem.h"
 
 #include "FactorySaveSubsystem.h"
+#include "Engine/Texture2D.h"
+#include "ImageUtils.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 
 namespace
 {
+	FLinearColor ParseRuntimeVisualColorText(const FString& ColorText)
+	{
+		FString NormalizedColor = ColorText.TrimStartAndEnd();
+		NormalizedColor.RemoveFromStart(TEXT("("));
+		NormalizedColor.RemoveFromEnd(TEXT(")"));
+
+		FLinearColor ParsedColor = FLinearColor::White;
+		if (ParsedColor.InitFromString(NormalizedColor))
+		{
+			return ParsedColor;
+		}
+
+		return FLinearColor::White;
+	}
+
+	FString NormalizeRelativeAssetKey(const FString& AssetKey)
+	{
+		FString Normalized = AssetKey.TrimStartAndEnd();
+		Normalized.ReplaceInline(TEXT("\\"), TEXT("/"));
+		Normalized.RemoveFromStart(TEXT("./"));
+		Normalized.RemoveFromStart(TEXT("/"));
+		return Normalized;
+	}
+
 	void AddRecipeInput(
 		TArray<FFactoryMaterialRequestInput>& Inputs,
 		const FName ItemId,
@@ -85,6 +113,83 @@ void UMaterialGenerationRegistrySubsystem::ImportSaveData(
 {
 	DynamicMaterials = InMaterials;
 	DynamicRecipes = InRecipes;
+	ThumbnailTextureCache.Reset();
+}
+
+bool UMaterialGenerationRegistrySubsystem::FindDynamicMaterialRecord(
+	FName MaterialId,
+	FFactoryDynamicMaterialRecord& OutRecord) const
+{
+	if (MaterialId.IsNone())
+	{
+		return false;
+	}
+
+	const FFactoryDynamicMaterialRecord* FoundRecord = DynamicMaterials.FindByPredicate(
+		[MaterialId](const FFactoryDynamicMaterialRecord& ExistingRecord)
+		{
+			return ExistingRecord.MaterialId == MaterialId;
+		});
+	if (!FoundRecord)
+	{
+		return false;
+	}
+
+	OutRecord = *FoundRecord;
+	return true;
+}
+
+FText UMaterialGenerationRegistrySubsystem::GetMaterialDisplayText(FName MaterialId) const
+{
+	FFactoryDynamicMaterialRecord MaterialRecord;
+	if (!FindDynamicMaterialRecord(MaterialId, MaterialRecord))
+	{
+		return FText::GetEmpty();
+	}
+
+	if (!MaterialRecord.DisplayName.TrimStartAndEnd().IsEmpty())
+	{
+		return FText::FromString(MaterialRecord.DisplayName);
+	}
+
+	if (!MaterialRecord.Name.TrimStartAndEnd().IsEmpty())
+	{
+		return FText::FromString(MaterialRecord.Name);
+	}
+
+	if (!MaterialRecord.RowName.TrimStartAndEnd().IsEmpty())
+	{
+		return FText::FromString(MaterialRecord.RowName);
+	}
+
+	return FText::FromName(MaterialId);
+}
+
+UTexture2D* UMaterialGenerationRegistrySubsystem::GetMaterialThumbnailTexture(FName MaterialId)
+{
+	if (MaterialId.IsNone())
+	{
+		return nullptr;
+	}
+
+	if (TObjectPtr<UTexture2D>* CachedTexture = ThumbnailTextureCache.Find(MaterialId))
+	{
+		return CachedTexture->Get();
+	}
+
+	FFactoryDynamicMaterialRecord MaterialRecord;
+	if (!FindDynamicMaterialRecord(MaterialId, MaterialRecord))
+	{
+		return nullptr;
+	}
+
+	UTexture2D* LoadedTexture = LoadTextureFromMaterialRecord(MaterialRecord);
+	if (!LoadedTexture)
+	{
+		LoadedTexture = CreateGeneratedThumbnailTexture(MaterialId, MaterialRecord);
+	}
+	ThumbnailTextureCache.Add(MaterialId, LoadedTexture);
+	return LoadedTexture;
 }
 
 bool UMaterialGenerationRegistrySubsystem::FindFirstRuntimeRecipe(
@@ -197,6 +302,7 @@ void UMaterialGenerationRegistrySubsystem::RegisterDynamicMaterial(
 	}
 
 	DynamicMaterials.Add(MaterialRecord);
+	ThumbnailTextureCache.Remove(MaterialRecord.MaterialId);
 }
 
 void UMaterialGenerationRegistrySubsystem::RegisterDynamicRecipe(
@@ -289,4 +395,92 @@ FString UMaterialGenerationRegistrySubsystem::BuildRecipeKey(
 	}
 
 	return FString::Join(Parts, TEXT("|"));
+}
+
+UTexture2D* UMaterialGenerationRegistrySubsystem::LoadTextureFromMaterialRecord(
+	const FFactoryDynamicMaterialRecord& MaterialRecord)
+{
+	TArray<FString> AssetKeys;
+	AssetKeys.Add(MaterialRecord.ThumbnailAssetKey);
+	AssetKeys.Add(MaterialRecord.TextureAssetKey);
+	AssetKeys.Add(MaterialRecord.VisualAssetKey);
+	AssetKeys.Add(MaterialRecord.FallbackIcon);
+
+	const FString ProjectRootDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir(), TEXT("../"));
+	const FString BackendMaterialsDir = FPaths::Combine(ProjectRootDir, TEXT("backend"), TEXT("var"), TEXT("materials"));
+
+	for (const FString& RawAssetKey : AssetKeys)
+	{
+		const FString AssetKey = RawAssetKey.TrimStartAndEnd();
+		if (AssetKey.IsEmpty())
+		{
+			continue;
+		}
+
+		if (AssetKey.StartsWith(TEXT("/Game/")) || AssetKey.StartsWith(TEXT("/Engine/")))
+		{
+			if (UTexture2D* AssetTexture = LoadObject<UTexture2D>(nullptr, *AssetKey))
+			{
+				return AssetTexture;
+			}
+		}
+
+		const FString RelativeAssetKey = NormalizeRelativeAssetKey(AssetKey);
+		TArray<FString> CandidatePaths;
+		CandidatePaths.Add(AssetKey);
+		CandidatePaths.Add(FPaths::ConvertRelativePathToFull(FPaths::ProjectDir(), RelativeAssetKey));
+		CandidatePaths.Add(FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir(), RelativeAssetKey));
+		CandidatePaths.Add(FPaths::Combine(BackendMaterialsDir, RelativeAssetKey));
+
+		for (const FString& CandidatePath : CandidatePaths)
+		{
+			if (FPaths::FileExists(CandidatePath))
+			{
+				return FImageUtils::ImportFileAsTexture2D(CandidatePath);
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+FLinearColor UMaterialGenerationRegistrySubsystem::ResolveMaterialPreviewColor(
+	const FFactoryDynamicMaterialRecord& MaterialRecord) const
+{
+	return ParseRuntimeVisualColorText(MaterialRecord.VisualColor);
+}
+
+UTexture2D* UMaterialGenerationRegistrySubsystem::CreateGeneratedThumbnailTexture(
+	FName MaterialId,
+	const FFactoryDynamicMaterialRecord& MaterialRecord)
+{
+	UTexture2D* Texture = UTexture2D::CreateTransient(64, 64, PF_B8G8R8A8);
+	if (!Texture || !Texture->GetPlatformData() || Texture->GetPlatformData()->Mips.Num() == 0)
+	{
+		return nullptr;
+	}
+
+	const FLinearColor PreviewColor = ResolveMaterialPreviewColor(MaterialRecord);
+	const FColor FillColor = PreviewColor.ToFColor(true);
+	FTexture2DMipMap& Mip = Texture->GetPlatformData()->Mips[0];
+	void* Data = Mip.BulkData.Lock(LOCK_READ_WRITE);
+	if (!Data)
+	{
+		Mip.BulkData.Unlock();
+		return nullptr;
+	}
+
+	FMemory::Memset(Data, 0, 64 * 64 * sizeof(FColor));
+	FColor* Pixels = static_cast<FColor*>(Data);
+	for (int32 Index = 0; Index < 64 * 64; ++Index)
+	{
+		Pixels[Index] = FillColor;
+	}
+
+	Mip.BulkData.Unlock();
+	Texture->SRGB = true;
+	Texture->NeverStream = true;
+	Texture->UpdateResource();
+	Texture->Rename(*FString::Printf(TEXT("MGThumb_%s"), *MaterialId.ToString()), this);
+	return Texture;
 }

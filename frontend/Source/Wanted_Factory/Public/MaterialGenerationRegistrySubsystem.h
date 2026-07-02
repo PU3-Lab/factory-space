@@ -24,6 +24,12 @@ public:
 		const TArray<FFactoryDynamicMaterialRecord>& InMaterials,
 		const TArray<FFactoryDynamicRecipeRecord>& InRecipes);
 
+	bool FindDynamicMaterialRecord(FName MaterialId, FFactoryDynamicMaterialRecord& OutRecord) const;
+
+	FText GetMaterialDisplayText(FName MaterialId) const;
+
+	UTexture2D* GetMaterialThumbnailTexture(FName MaterialId);
+
 	bool FindFirstRuntimeRecipe(
 		const FName MachineType,
 		const TMap<FName, int32>& InputInventory,
@@ -36,6 +42,9 @@ private:
 	UPROPERTY()
 	TArray<FFactoryDynamicRecipeRecord> DynamicRecipes;
 
+	UPROPERTY(Transient)
+	TMap<FName, TObjectPtr<UTexture2D>> ThumbnailTextureCache;
+
 	UFUNCTION()
 	void HandleMaterialGenerationResponse(const FFactoryMaterialGenerationResponse& Response);
 
@@ -43,5 +52,8 @@ private:
 	void RegisterDynamicRecipe(
 		const FFactoryPendingMaterialGenerationRequest& Request,
 		const FFactoryMaterialGenerationResponse& Response);
+	FLinearColor ResolveMaterialPreviewColor(const FFactoryDynamicMaterialRecord& MaterialRecord) const;
+	UTexture2D* CreateGeneratedThumbnailTexture(FName MaterialId, const FFactoryDynamicMaterialRecord& MaterialRecord);
+	UTexture2D* LoadTextureFromMaterialRecord(const FFactoryDynamicMaterialRecord& MaterialRecord);
 	static FString BuildRecipeKey(const FName MachineType, const TArray<FFactoryMaterialRequestInput>& Inputs);
 };

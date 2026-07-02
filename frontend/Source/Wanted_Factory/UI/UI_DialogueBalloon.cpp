@@ -37,6 +37,7 @@ void UUI_DialogueBalloon::NativeConstruct()
             AgentClient->OnAgentResponseReceived.AddDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideResponse);
             AgentClient->OnAgentErrorReceived.AddDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideError);
             AgentClient->OnAgentProgressReceived.AddDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideProgress);
+            AgentClient->OnMaterialGenerationResponseReceived.AddDynamic(this, &UUI_DialogueBalloon::HandleOnMaterialGenerationResponse);
         }
     }
 
@@ -72,6 +73,7 @@ void UUI_DialogueBalloon::NativeDestruct()
             AgentClient->OnAgentResponseReceived.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideResponse);
             AgentClient->OnAgentErrorReceived.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideError);
             AgentClient->OnAgentProgressReceived.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideProgress);
+            AgentClient->OnMaterialGenerationResponseReceived.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnMaterialGenerationResponse);
         }
     }
 
@@ -153,6 +155,17 @@ void UUI_DialogueBalloon::HandleOnOperatorGuideProgress(const FString& RequestId
     if (ProgressMessage.IsEmpty()) return;
 
     ShowExternalDialogue(ProgressMessage);
+}
+
+void UUI_DialogueBalloon::HandleOnMaterialGenerationResponse(const FFactoryMaterialGenerationResponse& Response)
+{
+    const FString DialogueMessage = Response.Message.TrimStartAndEnd();
+    if (DialogueMessage.IsEmpty())
+    {
+        return;
+    }
+
+    ShowExternalDialogue(DialogueMessage);
 }
 
 void UUI_DialogueBalloon::RefreshDialogueUI()

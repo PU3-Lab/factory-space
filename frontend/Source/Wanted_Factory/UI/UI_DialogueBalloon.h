@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "FactoryAgentClientSubsystem.h"
 #include "QuestManagerSubsystem.h"
 #include "UI_DialogueBalloon.generated.h"
 
@@ -59,6 +60,9 @@ private:
 
 	UFUNCTION()
 	void HandleOnOperatorGuideProgress(const FString& RequestId, const FString& Agent, const FString& Stage, const FString& Message, const FString& RawMessage);
+
+	UFUNCTION()
+	void HandleOnMaterialGenerationResponse(const FFactoryMaterialGenerationResponse& Response);
 	
 	UPROPERTY()
 	class UQuestManagerSubsystem* QuestSubsystem;
