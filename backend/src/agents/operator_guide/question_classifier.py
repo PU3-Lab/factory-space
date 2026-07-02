@@ -24,8 +24,21 @@ TROUBLESHOOTING_KEYWORDS = (
     "부족",
     "막",
 )
-RECIPE_KEYWORDS = ("필요", "만들려면", "재료", "요구")
-RESOURCE_PRODUCTION_KEYWORDS = ("어떻게 만들어", "어떻게 만들", "생산", "제작")
+RECIPE_KEYWORDS = ("필요", "만들려면", "재료", "요구", "레시피")
+RESOURCE_PRODUCTION_KEYWORDS = (
+    "어떻게 만들어",
+    "어떻게 만들",
+    "만드는",
+    "만들기",
+    "지어",
+    "지으",
+    "짓",
+    "건설",
+    "건축",
+    "조립",
+    "생산",
+    "제작",
+)
 EQUIPMENT_KEYWORDS = ("뭐야", "무엇", "역할", "설명")
 
 
@@ -40,41 +53,47 @@ class ManualQAQuestionClassifier:
     def __init__(self, repository: CsvManualQARepository) -> None:
         self._repository = repository
 
-    def classify(self, question: str) -> ManualQAIntent:
+    def classify(self, question: str, context: dict[str, Any] | None = None) -> ManualQAIntent:
+        """단순 규칙 기반으로 플레이어의 질문 카테고리를 분류하고 애매성(ambiguity)을 판별합니다.
+
+        초보자용 설명:
+            질문에 대상 기기/아이템 이름이 있으나 의도(생산법, 역할, 트러블슈팅 등)를 명확히 구분하기
+            어려운 경우(예: '통신탑 알려줘')를 감지하여 is_ambiguous 플래그를 True로 설정합니다.
+            이후 Sprint 19에서 이 플래그가 켜진 질문들을 LLM 분류기로 보강하게 됩니다.
+        """
         equipment = self._repository.find_equipment_by_question(question)
         resource = self._repository.find_resource_by_question(question)
         recipe = self._repository.find_recipe_by_question(question)
 
+        question_type = "unknown_question"
+        primary_manual = "unknown"
+        supporting_manuals = []
+        target_ids = []
+
         if self._has_any(question, TROUBLESHOOTING_KEYWORDS):
-            target_ids = []
+            question_type = "troubleshooting_question"
+            primary_manual = "troubleshooting"
+            supporting_manuals = [
+                "equipment",
+                "resources",
+                "recipes",
+                "action_policy",
+            ]
             if equipment is not None:
                 target_ids.append(equipment.equipment_id)
             target_ids.append("issue_machine_stopped")
-            return ManualQAIntent(
-                question_type="troubleshooting_question",
-                primary_manual="troubleshooting",
-                supporting_manuals=[
-                    "equipment",
-                    "resources",
-                    "recipes",
-                    "action_policy",
-                ],
-                target_ids=target_ids,
-            )
 
-        if resource is not None and self._has_any(question, RECIPE_KEYWORDS):
+        elif resource is not None and self._has_any(question, RECIPE_KEYWORDS):
             recipe_for_resource = self._repository.find_recipe_by_output_resource(
                 resource.resource_id
             )
             if recipe_for_resource is not None:
-                return ManualQAIntent(
-                    question_type="recipe_question",
-                    primary_manual="recipes",
-                    supporting_manuals=["resources", "equipment"],
-                    target_ids=[recipe_for_resource.recipe_id, resource.resource_id],
-                )
+                question_type = "recipe_question"
+                primary_manual = "recipes"
+                supporting_manuals = ["resources", "equipment"]
+                target_ids = [recipe_for_resource.recipe_id, resource.resource_id]
 
-        if resource is not None and self._has_any(
+        elif resource is not None and self._has_any(
             question, RESOURCE_PRODUCTION_KEYWORDS
         ):
             target_ids = [resource.resource_id]
@@ -83,34 +102,71 @@ class ManualQAQuestionClassifier:
             )
             if recipe_for_resource is not None:
                 target_ids.append(recipe_for_resource.recipe_id)
-            return ManualQAIntent(
-                question_type="resource_question",
-                primary_manual="resources",
-                supporting_manuals=["recipes", "equipment"],
-                target_ids=target_ids,
-            )
+            question_type = "resource_question"
+            primary_manual = "resources"
+            supporting_manuals = ["recipes", "equipment"]
 
-        if recipe is not None and self._has_any(question, RECIPE_KEYWORDS):
-            return ManualQAIntent(
-                question_type="recipe_question",
-                primary_manual="recipes",
-                supporting_manuals=["resources", "equipment"],
-                target_ids=[recipe.recipe_id, *_recipe_resource_ids(recipe)],
-            )
+        elif recipe is not None and self._has_any(question, RECIPE_KEYWORDS):
+            question_type = "recipe_question"
+            primary_manual = "recipes"
+            supporting_manuals = ["resources", "equipment"]
+            target_ids = [recipe.recipe_id, *_recipe_resource_ids(recipe)]
 
-        if equipment is not None and self._has_any(question, EQUIPMENT_KEYWORDS):
-            return ManualQAIntent(
-                question_type="equipment_question",
-                primary_manual="equipment",
-                supporting_manuals=["recipes", "troubleshooting"],
-                target_ids=[equipment.equipment_id],
+        elif equipment is not None and self._has_any(question, EQUIPMENT_KEYWORDS):
+            question_type = "equipment_question"
+            primary_manual = "equipment"
+            supporting_manuals = ["recipes", "troubleshooting"]
+            target_ids = [equipment.equipment_id]
+
+        # 애매함(Ambiguity) 판별 로직
+        is_ambiguous = False
+
+        # 조건 1: 동일 표시명이 장비(equipment)와 자원(resource) 양쪽에 있는 경우
+        is_double_presence = (equipment is not None and resource is not None)
+        if is_double_presence:
+            # 명확한 의도 지시어(만들어, 지어, 뭐야 등)가 없는 경우 애매한 것으로 판단
+            specific_keywords = (
+                "만들어", "만들기", "만드는", "지어", "짓", "조립", "건설", "생산", "제작",
+                "뭐야", "무엇", "역할", "설명"
             )
+            if not self._has_any(question, specific_keywords):
+                is_ambiguous = True
+                if equipment.equipment_id not in target_ids:
+                    target_ids.append(equipment.equipment_id)
+                if resource.resource_id not in target_ids:
+                    target_ids.append(resource.resource_id)
+
+        # 조건 2/3: 결과가 unknown_question이지만 매칭된 대상(CSV 후보)이 있거나, 
+        # 혹은 context 상의 selectedMachine이 있어 대상 추론이 가능한 경우
+        if question_type == "unknown_question":
+            has_question_target = (equipment is not None or resource is not None or recipe is not None)
+            
+            has_context_target = False
+            if context:
+                game_state = context.get("current_game_state")
+                if isinstance(game_state, dict):
+                    selected_machine = game_state.get("selectedMachine")
+                    if selected_machine and self._repository.get_equipment(selected_machine):
+                        has_context_target = True
+
+            if has_question_target or has_context_target:
+                is_ambiguous = True
+
+        # unknown_question 상태에서 대상이 식별되었다면 target_ids에 후보군 추가
+        if question_type == "unknown_question":
+            if equipment is not None and equipment.equipment_id not in target_ids:
+                target_ids.append(equipment.equipment_id)
+            if resource is not None and resource.resource_id not in target_ids:
+                target_ids.append(resource.resource_id)
+            if recipe is not None and recipe.recipe_id not in target_ids:
+                target_ids.append(recipe.recipe_id)
 
         return ManualQAIntent(
-            question_type="unknown_question",
-            primary_manual="unknown",
-            supporting_manuals=[],
-            target_ids=[],
+            question_type=question_type,
+            primary_manual=primary_manual,
+            supporting_manuals=supporting_manuals,
+            target_ids=target_ids,
+            is_ambiguous=is_ambiguous,
         )
 
     def _has_any(self, question: str, keywords: tuple[str, ...]) -> bool:

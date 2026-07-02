@@ -147,7 +147,7 @@ class ManualQAService:
         if on_progress and topic in PROGRESS_CATALOG:
             on_progress(PROGRESS_CATALOG[topic][0][0], PROGRESS_CATALOG[topic][0][1])
 
-        intent = self._question_classifier.classify(question)
+        intent = self._question_classifier.classify(question, context)
         prompt_context = self._context_builder.build(question, intent)
         recent_conversation = _recent_conversation(context)
         confirmed_facts = _confirmed_facts(context)

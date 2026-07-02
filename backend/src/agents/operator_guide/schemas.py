@@ -47,6 +47,7 @@ class ManualQAIntent(BaseModel):
     primary_manual: str
     supporting_manuals: list[str] = Field(default_factory=list)
     target_ids: list[str] = Field(default_factory=list)
+    is_ambiguous: bool = False
 
 
 class ManualQASource(BaseModel):
@@ -110,6 +111,7 @@ class ManualQAResult(BaseModel):
     used_current_game_state: bool = False
     required_state_scopes: list[str] = Field(default_factory=list)
     available_scopes: list[str] = Field(default_factory=list)
+    is_ambiguous: bool = False
 
     @computed_field
     @property
@@ -137,4 +139,5 @@ class ManualQAResult(BaseModel):
             "usedCurrentGameState": self.used_current_game_state,
             "requiredStateScopes": self.required_state_scopes,
             "availableScopes": self.available_scopes,
+            "isAmbiguous": self.is_ambiguous,
         }
