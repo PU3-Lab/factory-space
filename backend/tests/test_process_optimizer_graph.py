@@ -1,4 +1,4 @@
-﻿"""Unit tests for Process Optimizer LangGraph v2 Sprint 3."""
+"""Unit tests for Process Optimizer LangGraph v2 Sprint 3."""
 
 from agents.process_optimizer.graph import compile_process_optimizer_graph
 from agents.process_optimizer.preview_store import preview_plan_store
@@ -83,6 +83,12 @@ def test_input_shortage_generates_preview_and_stores_top_level_session_id():
                     }
                 ],
                 "conveyors": [],
+                "storages": [
+                    {
+                        "id": "storage_01",
+                        "inventory": [{"item_id": "iron_ore", "amount": 10.0, "max_amount": 100.0}],
+                    }
+                ],
                 "power_grid": {"produced": 50.0, "consumed": 10.0},
             },
         },
@@ -110,7 +116,7 @@ def test_input_shortage_generates_preview_and_stores_top_level_session_id():
 
     changes = preview["changes"]
     assert len(changes) == 1
-    assert changes[0]["id"] == "suggest_input_smelter_01"
+    assert changes[0]["id"] == "inspect_iron_ore_supply_smelter_01"
 
     effect = preview["expected_effect"]
     assert effect["estimated"] is False
@@ -142,6 +148,12 @@ def test_payload_session_id_is_supported_for_test_console_compatibility():
                     }
                 ],
                 "conveyors": [],
+                "storages": [
+                    {
+                        "id": "storage_payload",
+                        "inventory": [{"item_id": "ore", "amount": 10.0, "max_amount": 100.0}],
+                    }
+                ],
                 "power_grid": {"produced": 50.0, "consumed": 10.0},
             },
         },
@@ -302,7 +314,13 @@ def test_suggestions_limited_to_three():
                     },
                 ],
                 "conveyors": [],
-                "power_grid": {"produced": 10.0, "consumed": 50.0},
+                "storages": [
+                    {
+                        "id": "storage_limit_3",
+                        "inventory": [{"item_id": "ore", "amount": 10.0, "max_amount": 100.0}],
+                    }
+                ],
+                "power_grid": {"produced": 100.0, "consumed": 50.0},
             },
         },
     }
