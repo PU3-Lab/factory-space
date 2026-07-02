@@ -40,6 +40,20 @@ void UUI_MainHUD::NativeConstruct()
 
     HideSaveIndicator();
 
+    UGameInstance* GI = GetGameInstance();
+    UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+
+    RefreshQuestWindowMode();
+    
+    if (QuestManager)
+    {
+        QuestManager->OnTutorialStepChanged.RemoveDynamic(this, &UUI_MainHUD::HandleTutorialStepChangedForSimpleQuest);
+        QuestManager->OnTutorialStepChanged.AddDynamic(this, &UUI_MainHUD::HandleTutorialStepChangedForSimpleQuest);
+        QuestManager->OnTutorialDialogueLogged.RemoveDynamic(this, &UUI_MainHUD::HandleTutorialDialogueLoggedForQuestWindow);
+        QuestManager->OnTutorialDialogueLogged.AddDynamic(this, &UUI_MainHUD::HandleTutorialDialogueLoggedForQuestWindow);
+        RefreshSimpleQuestWindow();
+    }
+
     if (GetWorld())
     {
         if (UPlanetEventManagerSubsystem* PlanetManager = GetWorld()->GetSubsystem<UPlanetEventManagerSubsystem>())
@@ -71,11 +85,97 @@ void UUI_MainHUD::NativeDestruct()
         }
     }
 
+    if (UGameInstance* GI = GetGameInstance())
+    {
+        if (UQuestManagerSubsystem* QuestManager = GI->GetSubsystem<UQuestManagerSubsystem>())
+        {
+            QuestManager->OnTutorialStepChanged.RemoveDynamic(this, &UUI_MainHUD::HandleTutorialStepChangedForSimpleQuest);
+            QuestManager->OnTutorialDialogueLogged.RemoveDynamic(this, &UUI_MainHUD::HandleTutorialDialogueLoggedForQuestWindow);
+        }
+    }
+
     Super::NativeDestruct();
+}
+
+void UUI_MainHUD::RefreshQuestWindowMode()
+{
+    UGameInstance* GI = GetGameInstance();
+    UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+
+    const bool bShowFullQuestWindow =
+        QuestManager && QuestManager->IsFullQuestWindowUnlocked();
+
+    if (WBP_QuestWindow)
+    {
+        WBP_QuestWindow->SetVisibility(
+            bShowFullQuestWindow ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+    }
+
+    if (WBP_SimpleQuestWindow)
+    {
+        WBP_SimpleQuestWindow->SetVisibility(
+            bShowFullQuestWindow ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+    }
+}
+
+void UUI_MainHUD::RefreshSimpleQuestWindow()
+{
+    if (!WBP_SimpleQuestWindow)
+    {
+        return;
+    }
+
+    UGameInstance* GI = GetGameInstance();
+    UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+    if (!QuestManager)
+    {
+        return;
+    }
+
+    FTutorialQuestStep CurrentStep;
+    if (!QuestManager->GetCurrentTutorialQuestStep(CurrentStep))
+    {
+        return;
+    }
+
+    WBP_SimpleQuestWindow->UpdateSimpleQuest(
+        FText::FromString(CurrentStep.Title),
+        FText::FromString(QuestManager->GetTutorialStepDisplayDescription(CurrentStep)));
+}
+
+void UUI_MainHUD::HandleTutorialStepChangedForSimpleQuest(const FTutorialQuestStep& Step)
+{
+    if (!WBP_SimpleQuestWindow)
+    {
+        return;
+    }
+
+    UGameInstance* GI = GetGameInstance();
+    UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+
+    WBP_SimpleQuestWindow->UpdateSimpleQuest(
+        FText::FromString(Step.Title),
+        FText::FromString(QuestManager ? QuestManager->GetTutorialStepDisplayDescription(Step) : Step.Description));
+
+    RefreshQuestWindowMode();
+}
+
+void UUI_MainHUD::HandleTutorialDialogueLoggedForQuestWindow(const FString& QuestId, const FString& TriggerType, const TArray<FTutorialQuestDialogueLine>& Lines)
+{
+    RefreshQuestWindowMode();
+    RefreshSimpleQuestWindow();
 }
 
 void UUI_MainHUD::ToggleQuestWindow()
 {
+    UGameInstance* GI = GetGameInstance();
+    UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+
+    if (!QuestManager || !QuestManager->IsFullQuestWindowUnlocked())
+    {
+        return;
+    }
+
     if (WBP_QuestWindow)
     {
         WBP_QuestWindow->ToggleQuestWindow();

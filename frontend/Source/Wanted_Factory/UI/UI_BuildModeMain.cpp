@@ -6,6 +6,9 @@
 #include "Components/ContentWidget.h"
 #include "Machines/MachineSubsystem.h"
 #include "QuestManagerSubsystem.h"
+#include "UI_QuestWindow.h"
+#include "UI_SimpleQuestWindow.h"
+#include "Engine/GameInstance.h"
 #include "Kismet/GameplayStatics.h"
 #include "Animation/WidgetAnimation.h"
 
@@ -119,6 +122,102 @@ void UUI_BuildModeMain::NativeConstruct()
     
     InitializeHotbarRegistry();
     RefreshHotbarSlotsVisual();
+    RefreshQuestWindowMode();
+
+    if (UGameInstance* GI = GetGameInstance())
+    {
+        if (UQuestManagerSubsystem* QuestManager = GI->GetSubsystem<UQuestManagerSubsystem>())
+        {
+            QuestManager->OnTutorialStepChanged.RemoveDynamic(this, &UUI_BuildModeMain::HandleTutorialStepChangedForSimpleQuest);
+            QuestManager->OnTutorialStepChanged.AddDynamic(this, &UUI_BuildModeMain::HandleTutorialStepChangedForSimpleQuest);
+            QuestManager->OnTutorialDialogueLogged.RemoveDynamic(this, &UUI_BuildModeMain::HandleTutorialDialogueLoggedForQuestWindow);
+            QuestManager->OnTutorialDialogueLogged.AddDynamic(this, &UUI_BuildModeMain::HandleTutorialDialogueLoggedForQuestWindow);
+            RefreshSimpleQuestWindow();
+        }
+    }
+}
+
+void UUI_BuildModeMain::NativeDestruct()
+{
+    if (UGameInstance* GI = GetGameInstance())
+    {
+        if (UQuestManagerSubsystem* QuestManager = GI->GetSubsystem<UQuestManagerSubsystem>())
+        {
+            QuestManager->OnTutorialStepChanged.RemoveDynamic(this, &UUI_BuildModeMain::HandleTutorialStepChangedForSimpleQuest);
+            QuestManager->OnTutorialDialogueLogged.RemoveDynamic(this, &UUI_BuildModeMain::HandleTutorialDialogueLoggedForQuestWindow);
+        }
+    }
+
+    Super::NativeDestruct();
+}
+
+void UUI_BuildModeMain::RefreshQuestWindowMode()
+{
+    UGameInstance* GI = GetGameInstance();
+    UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+
+    const bool bShowFullQuestWindow =
+        QuestManager && QuestManager->IsFullQuestWindowUnlocked();
+
+    if (WBP_QuestWindow)
+    {
+        WBP_QuestWindow->SetVisibility(
+            bShowFullQuestWindow ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+    }
+
+    if (WBP_SimpleQuestWindow)
+    {
+        WBP_SimpleQuestWindow->SetVisibility(
+            bShowFullQuestWindow ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+    }
+}
+
+void UUI_BuildModeMain::RefreshSimpleQuestWindow()
+{
+    if (!WBP_SimpleQuestWindow)
+    {
+        return;
+    }
+
+    UGameInstance* GI = GetGameInstance();
+    UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+    if (!QuestManager)
+    {
+        return;
+    }
+
+    FTutorialQuestStep CurrentStep;
+    if (!QuestManager->GetCurrentTutorialQuestStep(CurrentStep))
+    {
+        return;
+    }
+
+    WBP_SimpleQuestWindow->UpdateSimpleQuest(
+        FText::FromString(CurrentStep.Title),
+        FText::FromString(QuestManager->GetTutorialStepDisplayDescription(CurrentStep)));
+}
+
+void UUI_BuildModeMain::HandleTutorialStepChangedForSimpleQuest(const FTutorialQuestStep& Step)
+{
+    if (!WBP_SimpleQuestWindow)
+    {
+        return;
+    }
+
+    UGameInstance* GI = GetGameInstance();
+    UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+
+    WBP_SimpleQuestWindow->UpdateSimpleQuest(
+        FText::FromString(Step.Title),
+        FText::FromString(QuestManager ? QuestManager->GetTutorialStepDisplayDescription(Step) : Step.Description));
+
+    RefreshQuestWindowMode();
+}
+
+void UUI_BuildModeMain::HandleTutorialDialogueLoggedForQuestWindow(const FString& QuestId, const FString& TriggerType, const TArray<FTutorialQuestDialogueLine>& Lines)
+{
+    RefreshQuestWindowMode();
+    RefreshSimpleQuestWindow();
 }
 
 void UUI_BuildModeMain::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)

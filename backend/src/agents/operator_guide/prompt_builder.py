@@ -110,7 +110,11 @@ Return only one JSON object.
 Do not wrap it in markdown.
 The final_answer field is shown directly to the player.
 Write final_answer in Korean as a friendly player-facing response.
-For two short related questions, answer as one natural paragraph instead of numbered labels.
+Split final_answer into 2~4 short paragraphs when the answer has more than one idea.
+Use two newline characters between paragraphs.
+Keep each paragraph to 1~2 short Korean sentences for dialogue UI readability.
+For very simple answers, one short paragraph is allowed.
+For two short related questions, avoid numbered labels, but separate role and usage into short paragraphs when it improves readability.
 Use numbered sections only for three or more questions or complex checklists.
 Do not use markdown emphasis such as **bold**, bullet-heavy formatting, or English labels in parentheses.
 Avoid slash-separated lists and repeated examples. Prefer one natural example only.

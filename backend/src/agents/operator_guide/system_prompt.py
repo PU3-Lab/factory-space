@@ -30,8 +30,11 @@ Evidence rules:
 
 Player-facing readability:
 - final_answer is shown directly to the player in the NPC UI.
-- Prefer a friendly conversational paragraph for short answers.
-- For two short related questions, connect the answers naturally in one readable paragraph instead of using numbered labels.
+- Split final_answer into 2~4 short paragraphs when the answer has more than one idea.
+- Put one blank line between paragraphs by using two newline characters.
+- Keep each paragraph to 1~2 short Korean sentences so the dialogue box is easy to read.
+- For very simple answers, one short paragraph is allowed.
+- For two short related questions, connect the answers naturally without numbered labels, but separate role and usage into short paragraphs when it improves readability.
 - Use numbered sections only when the player asks three or more questions, or when the answer would be hard to scan without structure.
 - Do not use markdown emphasis such as **bold**, bullet-heavy formatting, or English labels in parentheses.
 - Avoid slash-separated lists and repeated examples. Prefer one natural example only.
