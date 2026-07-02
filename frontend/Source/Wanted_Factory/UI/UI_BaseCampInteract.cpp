@@ -12,6 +12,7 @@
 #include "UI_UpgradeNode.h"
 #include "UI/UI_InventorySlot.h"
 #include "PlayerWarehouseSubsystem.h"
+#include "FactoryAgentClientSubsystem.h"
 #include "MachineBase.h"
 #include "FactoryManagerSubsystem.h"
 #include "UI_FactoryStatusRow.h"
@@ -52,6 +53,12 @@ void UUI_BaseCampInteract::NativeConstruct()
     {
         BTN_Tab_newMaterial->OnClicked.RemoveDynamic(this, &UUI_BaseCampInteract::OnMaterialTabClicked);
         BTN_Tab_newMaterial->OnClicked.AddDynamic(this, &UUI_BaseCampInteract::OnMaterialTabClicked);
+    }
+
+    if (BTN_RequestMaterialGeneration)
+    {
+        BTN_RequestMaterialGeneration->OnClicked.RemoveDynamic(this, &UUI_BaseCampInteract::OnRequestMaterialGenerationClicked);
+        BTN_RequestMaterialGeneration->OnClicked.AddDynamic(this, &UUI_BaseCampInteract::OnRequestMaterialGenerationClicked);
     }
 
     // 초기 화면 상태 지정
@@ -214,6 +221,67 @@ bool UUI_BaseCampInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDrag
 void UUI_BaseCampInteract::OnStatusTabClicked() { SwitchSubPaneMode(EBaseCampSubMode::FactoryStatus); }
 void UUI_BaseCampInteract::OnUpgradeTabClicked() { SwitchSubPaneMode(EBaseCampSubMode::LevelUpgrade); }
 void UUI_BaseCampInteract::OnMaterialTabClicked() { SwitchSubPaneMode(EBaseCampSubMode::newMaterial); }
+void UUI_BaseCampInteract::OnRequestMaterialGenerationClicked() { RequestMaterialGeneration(); }
+
+bool UUI_BaseCampInteract::RequestMaterialGeneration()
+{
+    if (!TargetBaseCamp)
+    {
+        return false;
+    }
+
+    UGameInstance* GameInstance = GetGameInstance();
+    UFactoryAgentClientSubsystem* AgentClient = GameInstance
+        ? GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>()
+        : nullptr;
+    if (!AgentClient)
+    {
+        return false;
+    }
+
+    TArray<FFactoryMaterialRequestInput> Inputs;
+    Inputs.Reserve(3);
+
+    TArray<TPair<FName, int32>> SortedInputs = TargetBaseCamp->GetInputInventory().Array();
+    SortedInputs.Sort([](const TPair<FName, int32>& Left, const TPair<FName, int32>& Right)
+    {
+        if (Left.Key != Right.Key)
+        {
+            return Left.Key.LexicalLess(Right.Key);
+        }
+
+        return Left.Value < Right.Value;
+    });
+
+    for (const TPair<FName, int32>& InputPair : SortedInputs)
+    {
+        if (InputPair.Key.IsNone() || InputPair.Value <= 0)
+        {
+            continue;
+        }
+
+        FFactoryMaterialRequestInput& Input = Inputs.AddDefaulted_GetRef();
+        Input.ItemId = InputPair.Key;
+        Input.Quantity = InputPair.Value;
+
+        if (Inputs.Num() >= 3)
+        {
+            break;
+        }
+    }
+
+    if (Inputs.Num() == 0)
+    {
+        return false;
+    }
+
+    if (AgentClient->GetConnectionState() == EFactoryAgentConnectionState::Disconnected)
+    {
+        AgentClient->ConnectToDefaultServer();
+    }
+
+    return AgentClient->SendMaterialGenerationRequest(Inputs, TEXT(""), true, TEXT("basecamp-ui-001"));
+}
 
 void UUI_BaseCampInteract::SwitchSubPaneMode(EBaseCampSubMode NewMode)
 {
