@@ -17,7 +17,7 @@
 #include "UI_FactoryStatusRow.h"
 #include "Resource/ResourceData.h"
 #include "ItemDragDropOperation.h"
-#include "UI/UIInteractDisplayHelpers.h" // 🌟 기존 오리지널 텍스트 변환 헬퍼 인클루드
+#include "UI/UIInteractDisplayHelpers.h"
 #include "Blueprint/DragDropOperation.h" 
 
 using namespace UIInteractHelpers;
