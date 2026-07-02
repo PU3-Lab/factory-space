@@ -1129,3 +1129,52 @@ CSV는 원본으로 유지하고 PostgreSQL + pgvector는 검색 인덱스로 �
 fallback은 retrieval 실패와 model 실패를 분리한다.
 progress message는 chain-of-thought가 아니라 플레이어 UX용 pipeline 상태 메시지로 제공한다.
 ```
+
+## Hybrid Intent Classification 확장 계획
+
+통신탑처럼 하나의 표시명이 `resource`와 `equipment` 양쪽에 존재하는 경우, 단순 키워드 분류만으로는 플레이어 질문 의도를 놓칠 수 있다.
+
+예를 들어 통신탑은 배치되면 장비이지만, 제작 레시피의 결과물로는 resource 테이블에 존재한다. 따라서 `통신탑이 뭐야?`는 장비/역할 설명으로, `통신탑 어떻게 지어야 해?` 또는 `통신탑 건설 재료 알려줘`는 제작 레시피 질문으로 처리되어야 한다.
+
+최종 방향은 규칙형 분류기를 버리는 것이 아니라, 다음과 같은 하이브리드 구조로 확장하는 것이다.
+
+```text
+Player Question
+→ Rule-based question_classifier
+→ 명확한 질문이면 CSV/RAG context 구성
+→ unknown 또는 ambiguous 질문이면 LLM intent classifier 보조 호출
+→ 최종 intent 확정
+→ CSV/RAG 근거 구성
+→ LLM final answer 생성
+```
+
+### 설계 원칙
+
+- 기본 경로는 현재의 키워드 + CSV 매칭 기반 분류기를 유지한다.
+- LLM 의도 분류는 모든 질문에 호출하지 않고, 애매한 경우에만 사용한다.
+- LLM 의도 분류 실패, quota 실패, JSON 파싱 실패가 발생해도 기존 규칙형 결과 또는 안전한 fallback으로 답변한다.
+- `resource`와 `equipment`에 같은 표시명이 있는 경우를 ambiguous 후보로 감지한다.
+- `unknown_question`이지만 CSV/RAG 후보가 존재하는 경우 LLM 보정 대상으로 본다.
+- 제작 가능한 설치물은 `만들기`, `지어`, `짓`, `건설`, `건축`, `조립`, `레시피`, `재료` 같은 표현에서 recipe/resource 우선으로 처리한다.
+
+### 목표 사용자 경험
+
+플레이어가 아래처럼 자연스럽게 물어도 operator_guide가 제작 레시피 근거를 찾아야 한다.
+
+```text
+통신탑 어떻게 만들어?
+통신탑 어떻게 지어야 해?
+통신탑 건설 재료 알려줘
+통신탑 조립 방법 알려줘
+통신탑 레시피 알려줘
+```
+
+정상 답변에는 최소한 다음 근거가 포함되어야 한다.
+
+```text
+통신탑 제작 공정
+합성기
+철근 20
+구리선 20
+주석판 20
+```

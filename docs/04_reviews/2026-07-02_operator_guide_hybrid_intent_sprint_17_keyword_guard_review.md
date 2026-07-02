@@ -12,7 +12,8 @@
 - **키워드 기반 분류기 사전 정의 키워드 보강**:
   - **[question_classifier.py](file:///c:/factory-space/backend/src/agents/operator_guide/question_classifier.py)**:
     - 제작/생산 관련 키워드 풀(`RESOURCE_PRODUCTION_KEYWORDS`)에 `지어`, `지으`, `짓`, `건설`, `건축`, `조립` 등의 건설 및 배치 관련 한국어 동사/명사 변형을 추가했습니다.
-    - 레시피 질문용 키워드 풀(`RECIPE_KEYWORDS`)에 `만들기`, `만드는`, `레시피`를 추가로 확보하여 의도 탐지력을 넓혔습니다.
+    - 레시피 질문용 키워드 풀(`RECIPE_KEYWORDS`)에는 `레시피`를 추가했습니다.
+    - `만드는`, `만들기`는 제작/생산 표현이므로 `RESOURCE_PRODUCTION_KEYWORDS`에 포함하여 자원 생산 질문으로 처리되도록 했습니다.
 - **통신탑(TeleCommunicationTower) 제작 질문 대응**:
   - 통신탑처럼 장비(`equipment_telecommunication_tower`)와 자원(`resource_TeleCommunicationTower`) 속성을 동시에 가진 설치물의 제작법 질문("어떻게 지어?", "건설 재료 알려줘")이 `unknown_question`으로 이탈하지 않고 `resource_question` 또는 `recipe_question` 의도로 정상 수렴하도록 규칙 흐름을 정돈했습니다.
 - **스모크 테스트 보강 및 검증**:

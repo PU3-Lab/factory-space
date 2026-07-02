@@ -19,12 +19,19 @@ TROUBLESHOOTING_KEYWORDS = (
     "왜",
     "안 돌아",
     "안돌아",
+    "안 해",
+    "안해",
+    "안 들어",
+    "안들어",
+    "들어오지",
     "작동하지",
+    "작동을 안",
     "멈",
     "고장",
     "부족",
     "막",
 )
+INPUT_FLOW_KEYWORDS = ("안 들어", "안들어", "들어오지", "입력", "투입")
 RECIPE_KEYWORDS = ("필요", "만들려면", "재료", "요구", "레시피")
 RESOURCE_PRODUCTION_KEYWORDS = (
     "어떻게 만들어",
@@ -40,6 +47,7 @@ RESOURCE_PRODUCTION_KEYWORDS = (
     "생산",
     "제작",
 )
+RESOURCE_USAGE_KEYWORDS = ("어디에 써", "어디에 사용", "사용처", "용도", "쓰여")
 EQUIPMENT_KEYWORDS = ("뭐야", "무엇", "역할", "설명")
 
 
@@ -82,7 +90,12 @@ class ManualQAQuestionClassifier:
             ]
             if equipment is not None:
                 target_ids.append(equipment.equipment_id)
-            target_ids.append("issue_machine_stopped")
+            if resource is not None:
+                target_ids.append(resource.resource_id)
+            if self._has_any(question, INPUT_FLOW_KEYWORDS):
+                target_ids.append("issue_no_input")
+            else:
+                target_ids.append("issue_machine_stopped")
 
         elif resource is not None and self._has_any(question, RECIPE_KEYWORDS):
             recipe_for_resource = self._repository.find_recipe_by_output_resource(
@@ -103,6 +116,12 @@ class ManualQAQuestionClassifier:
             )
             if recipe_for_resource is not None:
                 target_ids.append(recipe_for_resource.recipe_id)
+            question_type = "resource_question"
+            primary_manual = "resources"
+            supporting_manuals = ["recipes", "equipment"]
+
+        elif resource is not None and self._has_any(question, RESOURCE_USAGE_KEYWORDS):
+            target_ids = [resource.resource_id]
             question_type = "resource_question"
             primary_manual = "resources"
             supporting_manuals = ["recipes", "equipment"]
