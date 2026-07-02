@@ -536,6 +536,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Machine | Conveyor")
 	virtual bool ReceiveConveyorItem(FName ItemID, int32 Count = 1);
 
+	/** Whether conveyor entrance/exit occluder cubes may be shown beside this machine. */
+	virtual bool ShouldUseConveyorOccluder() const { return true; }
+
 	UFUNCTION(BlueprintCallable, Category = "Machine | Debug")
 	void UpdateDebugBufferText();
 
