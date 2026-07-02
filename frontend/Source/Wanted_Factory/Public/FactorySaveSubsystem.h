@@ -50,6 +50,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Factory Save")
 	bool SendManualProcessOptimizerStateUpdate();
 
+	UFUNCTION(BlueprintCallable, Category = "Factory Save")
+	bool SendManualProcessOptimizerAnalyzeRequest();
+
 private:
 	UPROPERTY()
 	FString SaveSlotName = TEXT("FactorySpace_Autosave");

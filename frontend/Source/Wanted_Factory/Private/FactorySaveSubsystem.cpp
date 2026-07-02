@@ -996,6 +996,31 @@ bool UFactorySaveSubsystem::SendManualProcessOptimizerStateUpdate()
 	return true;
 }
 
+bool UFactorySaveSubsystem::SendManualProcessOptimizerAnalyzeRequest()
+{
+	UFactoryAgentClientSubsystem* AgentClient = GetGameInstance()->GetSubsystem<UFactoryAgentClientSubsystem>();
+	if (!AgentClient)
+	{
+		return false;
+	}
+
+	if (!AgentClient->SendProcessOptimizerAnalyzeRequest(
+		NextProcessOptimizerFactoryRevision,
+		TEXT(""),
+		TEXT("")))
+	{
+		if (AgentClient->GetConnectionState() == EFactoryAgentConnectionState::Disconnected)
+		{
+			AgentClient->ConnectToDefaultServer();
+		}
+
+		return false;
+	}
+
+	++NextProcessOptimizerFactoryRevision;
+	return true;
+}
+
 void UFactorySaveSubsystem::HandlePreExitSave()
 {
 	if (bIsResettingToNewGame || bHasHandledShutdownSave)

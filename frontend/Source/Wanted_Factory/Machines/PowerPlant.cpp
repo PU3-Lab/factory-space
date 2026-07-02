@@ -21,6 +21,7 @@ void APowerPlant::ApplyMachineData(const FMachineTableRow& MachineData)
 	BasePowerOutput = FMath::Max(0.f, MachineData.Power);
 	PowerConsumption = 0.f;
 	bNeedPower = false;
+	RefreshPowerPlantState();
 }
 
 bool APowerPlant::AddItem(FName ItemID, int32 Count)
@@ -57,4 +58,31 @@ float APowerPlant::GetCurrentPowerOutput() const
 float APowerPlant::CalculatePowerOutput() const
 {
 	return BasePowerOutput;
+}
+
+void APowerPlant::Tick(float DeltaSeconds)
+{
+	RefreshPowerPlantState();
+	Super::Tick(DeltaSeconds);
+}
+
+void APowerPlant::RefreshPowerPlantState()
+{
+	EMachineState NewState = EMachineState::Idle;
+	if (isBroken() && bDisableWhenBroken)
+	{
+		NewState = EMachineState::Disabled;
+	}
+	else if (CanGeneratePower() && GetCurrentPowerOutput() > 0.0f)
+	{
+		NewState = EMachineState::Working;
+	}
+
+	if (MachineState == NewState)
+	{
+		return;
+	}
+
+	MachineState = NewState;
+	UpdateStateIndicator();
 }

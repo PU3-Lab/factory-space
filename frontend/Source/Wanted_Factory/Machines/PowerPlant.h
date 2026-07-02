@@ -28,8 +28,13 @@ public:
 	float GetBasePowerOutput() const { return BasePowerOutput; }
 
 protected:
+	virtual void Tick(float DeltaSeconds) override;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine | Power Plant", meta = (ClampMin = "0.0"))
 	float BasePowerOutput = 20.0f;
 
 	virtual float CalculatePowerOutput() const;
+
+private:
+	void RefreshPowerPlantState();
 };

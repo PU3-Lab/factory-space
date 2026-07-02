@@ -451,7 +451,7 @@ bool UUI_BaseCampInteract::RequestProcessOptimization()
         return false;
     }
 
-    return SaveSubsystem->SendManualProcessOptimizerStateUpdate();
+    return SaveSubsystem->SendManualProcessOptimizerAnalyzeRequest();
 }
 
 void UUI_BaseCampInteract::SwitchSubPaneMode(EBaseCampSubMode NewMode)
