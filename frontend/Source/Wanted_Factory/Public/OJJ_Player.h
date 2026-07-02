@@ -909,6 +909,10 @@ protected:
 	void SetFoundationModeShortcut();
 	void SetRampFoundationModeShortcut();
 	void CancelPlacementShortcut();
+	void TriggerPlanetEventNoneShortcut();
+	void TriggerPlanetEventMagneticShortcut();
+	void TriggerPlanetEventSandShortcut();
+	void TimeSetMorningShortcut();
 	// [#405 일부] C키 — TPS 빌드모드에서만 1인칭↔3인칭 토글(레거시 BindKey + IsInBuildMode·TPS 가드).
 	// 1인칭=SpringArm ArmLength 0 + GetMesh() OwnerNoSee(자기 뷰에서만 몸 숨김, 멀티 안전).
 	void ToggleBuildFPVShortcut();

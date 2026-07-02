@@ -10,6 +10,7 @@
 #include "Engine/DataTable.h"
 #include "Engine/StaticMesh.h"
 #include "FactoryManagerSubsystem.h"
+#include "MaterialGenerationRegistrySubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "MachineBase.h"
@@ -140,6 +141,62 @@ bool ShouldUseVisualColorTint(const FResourceData* ResourceData)
 		|| ResourceData->shape == EResourceShape::wire
 		|| ResourceData->shape == EResourceShape::plate;
 }
+
+EResourceShape ParseRuntimeShape(const FString& ShapeText)
+{
+	const FString NormalizedShape = ShapeText.TrimStartAndEnd().ToLower();
+	if (NormalizedShape == TEXT("ore"))
+	{
+		return EResourceShape::Ore;
+	}
+	if (NormalizedShape == TEXT("ingot"))
+	{
+		return EResourceShape::Ingot;
+	}
+	if (NormalizedShape == TEXT("powder"))
+	{
+		return EResourceShape::Powder;
+	}
+	if (NormalizedShape == TEXT("bar"))
+	{
+		return EResourceShape::bar;
+	}
+	if (NormalizedShape == TEXT("wire"))
+	{
+		return EResourceShape::wire;
+	}
+	if (NormalizedShape == TEXT("plate"))
+	{
+		return EResourceShape::plate;
+	}
+
+	return EResourceShape::None;
+}
+
+bool ShouldUseVisualColorTint(EResourceShape Shape)
+{
+	return Shape == EResourceShape::Powder
+		|| Shape == EResourceShape::bar
+		|| Shape == EResourceShape::wire
+		|| Shape == EResourceShape::plate
+		|| Shape == EResourceShape::Ingot
+		|| Shape == EResourceShape::Ore;
+}
+
+FLinearColor ParseRuntimeVisualColor(const FString& ColorText)
+{
+	FString NormalizedColor = ColorText.TrimStartAndEnd();
+	NormalizedColor.RemoveFromStart(TEXT("("));
+	NormalizedColor.RemoveFromEnd(TEXT(")"));
+
+	FLinearColor ParsedColor = FLinearColor::White;
+	if (ParsedColor.InitFromString(NormalizedColor))
+	{
+		return ParsedColor;
+	}
+
+	return FLinearColor::White;
+}
 }
 
 AConveyor::AConveyor()
@@ -196,6 +253,8 @@ AConveyor::AConveyor()
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Engine/BasicShapes/Cube.Cube"));
 	if (CubeMesh.Succeeded())
 	{
+		IngotVisualMesh = CubeMesh.Object;
+		PlateVisualMesh = CubeMesh.Object;
 		StraightSegmentInstances->SetStaticMesh(CubeMesh.Object);
 		CornerSegmentInstances->SetStaticMesh(CubeMesh.Object);
 		ItemVisualInstances->SetStaticMesh(CubeMesh.Object);
@@ -208,6 +267,18 @@ AConveyor::AConveyor()
 	{
 		PowderVisualMesh = ConeMesh.Object;
 		FlowArrowInstances->SetStaticMesh(ConeMesh.Object);
+	}
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	if (SphereMesh.Succeeded())
+	{
+		OreVisualMesh = SphereMesh.Object;
+	}
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (CylinderMesh.Succeeded())
+	{
+		WireVisualMesh = CylinderMesh.Object;
 	}
 
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> MaterialAsset(
@@ -884,13 +955,23 @@ void AConveyor::MoveItemsOneGrid()
 
 bool AConveyor::IsSolidItem(FName ItemID) const
 {
-	if (!ResourceTable || ItemID.IsNone())
+	if (ItemID.IsNone())
 	{
 		return false;
 	}
 
-	const FResourceData* Resource = ResourceTable->FindRow<FResourceData>(ItemID, TEXT("Conveyor.IsSolidItem"));
-	return Resource && Resource->form == FName(TEXT("solid"));
+	if (ResourceTable)
+	{
+		const FResourceData* Resource = ResourceTable->FindRow<FResourceData>(ItemID, TEXT("Conveyor.IsSolidItem"));
+		if (Resource)
+		{
+			return Resource->form == FName(TEXT("solid"));
+		}
+	}
+
+	FFactoryDynamicMaterialRecord MaterialRecord;
+	return TryGetRuntimeMaterialRecord(ItemID, MaterialRecord)
+		&& MaterialRecord.Form.TrimStartAndEnd().Equals(TEXT("solid"), ESearchCase::IgnoreCase);
 }
 
 void AConveyor::RefreshItemVisualInstances()
@@ -1313,8 +1394,9 @@ UStaticMeshComponent* AConveyor::CreateVisualComponentForItem(int32 VisualId, FN
 	}
 
 	const FResourceData* ResourceData = FindResourceData(ItemId);
-	const bool bUsePowderVisual = ResourceData && ResourceData->shape == EResourceShape::Powder;
-	const bool bUseVisualColorTint = ShouldUseVisualColorTint(ResourceData);
+	const EResourceShape ItemShape = ResolveItemShape(ItemId);
+	const bool bUsePowderVisual = ItemShape == EResourceShape::Powder;
+	const bool bUseVisualColorTint = ResourceData ? ShouldUseVisualColorTint(ResourceData) : ShouldUseVisualColorTint(ItemShape);
 	UStaticMesh* ItemMesh = bUsePowderVisual ? PowderVisualMesh.Get() : ResolveItemStaticMesh(ItemId);
 	UStaticMesh* FallbackMesh = ItemVisualInstances ? ItemVisualInstances->GetStaticMesh() : nullptr;
 	UStaticMesh* MeshToUse = ItemMesh ? ItemMesh : FallbackMesh;
@@ -1340,7 +1422,7 @@ UStaticMeshComponent* AConveyor::CreateVisualComponentForItem(int32 VisualId, FN
 	NewComponent->SetCanEverAffectNavigation(false);
 	if (bUseVisualColorTint)
 	{
-		const FLinearColor ItemColor = ResourceData ? ResourceData->VisualColor : FLinearColor::White;
+		const FLinearColor ItemColor = ResolveItemVisualColor(ItemId);
 		const int32 MaterialCount = FMath::Max(1, MeshToUse->GetStaticMaterials().Num());
 		for (int32 MaterialIndex = 0; MaterialIndex < MaterialCount; ++MaterialIndex)
 		{
@@ -1399,26 +1481,136 @@ const FResourceData* AConveyor::FindResourceData(FName ItemId) const
 
 bool AConveyor::IsPowderItem(FName ItemId) const
 {
-	const FResourceData* Resource = FindResourceData(ItemId);
-	return Resource && Resource->shape == EResourceShape::Powder;
+	return ResolveItemShape(ItemId) == EResourceShape::Powder;
 }
 
 UStaticMesh* AConveyor::ResolveItemStaticMesh(FName ItemId) const
 {
 	const FResourceData* Resource = FindResourceData(ItemId);
-	if (!Resource)
+	if (Resource && !Resource->StaticMeshAsset.IsNull())
+	{
+		if (UStaticMesh* Mesh = Resource->StaticMeshAsset.IsValid()
+			? Resource->StaticMeshAsset.Get()
+			: Resource->StaticMeshAsset.LoadSynchronous())
+		{
+			return Mesh;
+		}
+	}
+
+	return ResolveRepresentativeStaticMesh(ResolveItemShape(ItemId));
+}
+
+bool AConveyor::TryGetRuntimeMaterialRecord(FName ItemId, FFactoryDynamicMaterialRecord& OutRecord) const
+{
+	if (ItemId.IsNone())
+	{
+		return false;
+	}
+
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UMaterialGenerationRegistrySubsystem* MaterialRegistry =
+			GameInstance->GetSubsystem<UMaterialGenerationRegistrySubsystem>())
+		{
+			return MaterialRegistry->FindDynamicMaterialRecord(ItemId, OutRecord);
+		}
+	}
+
+	return false;
+}
+
+EResourceShape AConveyor::ResolveItemShape(FName ItemId) const
+{
+	if (const FResourceData* Resource = FindResourceData(ItemId))
+	{
+		return Resource->shape;
+	}
+
+	FFactoryDynamicMaterialRecord MaterialRecord;
+	return TryGetRuntimeMaterialRecord(ItemId, MaterialRecord)
+		? ParseRuntimeShape(MaterialRecord.Shape)
+		: EResourceShape::None;
+}
+
+FLinearColor AConveyor::ResolveItemVisualColor(FName ItemId) const
+{
+	if (const FResourceData* Resource = FindResourceData(ItemId))
+	{
+		return Resource->VisualColor;
+	}
+
+	FFactoryDynamicMaterialRecord MaterialRecord;
+	return TryGetRuntimeMaterialRecord(ItemId, MaterialRecord)
+		? ParseRuntimeVisualColor(MaterialRecord.VisualColor)
+		: FLinearColor::White;
+}
+
+UStaticMesh* AConveyor::ResolveRepresentativeStaticMesh(EResourceShape Shape) const
+{
+	if (Shape == EResourceShape::None)
 	{
 		return nullptr;
 	}
 
-	if (Resource->StaticMeshAsset.IsNull())
+	static const TArray<EResourceShape> PreferredShapeOrder = {
+		EResourceShape::Ingot,
+		EResourceShape::Ore,
+		EResourceShape::Powder,
+		EResourceShape::bar,
+		EResourceShape::wire,
+		EResourceShape::plate
+	};
+
+	TArray<EResourceShape> SearchOrder;
+	SearchOrder.Add(Shape);
+	for (EResourceShape CandidateShape : PreferredShapeOrder)
 	{
-		return nullptr;
+		if (CandidateShape != Shape)
+		{
+			SearchOrder.Add(CandidateShape);
+		}
 	}
 
-	return Resource->StaticMeshAsset.IsValid()
-		? Resource->StaticMeshAsset.Get()
-		: Resource->StaticMeshAsset.LoadSynchronous();
+	if (ResourceTable)
+	{
+		for (EResourceShape CandidateShape : SearchOrder)
+		{
+			for (const TPair<FName, uint8*>& RowPair : ResourceTable->GetRowMap())
+			{
+				const FResourceData* RowData = reinterpret_cast<const FResourceData*>(RowPair.Value);
+				if (!RowData || RowData->shape != CandidateShape || RowData->StaticMeshAsset.IsNull())
+				{
+					continue;
+				}
+
+				UStaticMesh* Mesh = RowData->StaticMeshAsset.IsValid()
+					? RowData->StaticMeshAsset.Get()
+					: RowData->StaticMeshAsset.LoadSynchronous();
+				if (Mesh)
+				{
+					return Mesh;
+				}
+			}
+		}
+	}
+
+	switch (Shape)
+	{
+	case EResourceShape::Powder:
+		return PowderVisualMesh.Get();
+	case EResourceShape::Ore:
+		return OreVisualMesh.Get();
+	case EResourceShape::wire:
+		return WireVisualMesh.Get();
+	case EResourceShape::plate:
+		return PlateVisualMesh.Get();
+	case EResourceShape::bar:
+	case EResourceShape::Ingot:
+		return IngotVisualMesh.Get();
+	case EResourceShape::None:
+	default:
+		return ItemVisualInstances ? ItemVisualInstances->GetStaticMesh() : nullptr;
+	}
 }
 
 FTransform AConveyor::BuildItemVisualTransform(

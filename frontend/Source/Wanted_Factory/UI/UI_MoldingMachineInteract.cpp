@@ -203,19 +203,17 @@ void UUI_MoldingMachineInteract::NativeTick(const FGeometry& MyGeometry, float I
     if (!InputName.IsNone())
     {
         // 데이터 테이블을 거쳐 한글 이름으로 변환합니다.
-        if (TXT_InputName)  TXT_InputName->SetText(GetResourceDisplayText(ResourceDataTable, InputName));
+        if (TXT_InputName)  TXT_InputName->SetText(GetResourceDisplayText(this, ResourceDataTable, InputName));
         if (TXT_InputCount) TXT_InputCount->SetText(FText::FromString(FString::Printf(TEXT("%d / %d"), InputAmount, MaxInputAmount)));
         if (PB_InputBuffer) PB_InputBuffer->SetPercent((MaxInputAmount > 0) ? (float)InputAmount / MaxInputAmount : 0.0f);
         
         // 데이터 테이블에서 에셋 텍스처를 실시간 로드해 바인딩합니다.
-        if (IMG_InputIcon && ResourceDataTable)
+        if (IMG_InputIcon)
         {
-            IMG_InputIcon->SetVisibility(ESlateVisibility::Visible);
-            FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(InputName, TEXT("FindInputIconContext"));
-            if (RowData)
+            if (UTexture2D* IconTex = GetResourceIconTexture(this, ResourceDataTable, InputName))
             {
-                UTexture2D* IconTex = RowData->ImgAsset.IsValid() ? RowData->ImgAsset.Get() : RowData->ImgAsset.LoadSynchronous();
-                if (IconTex) IMG_InputIcon->SetBrushFromTexture(IconTex);
+                IMG_InputIcon->SetVisibility(ESlateVisibility::Visible);
+                IMG_InputIcon->SetBrushFromTexture(IconTex);
             }
             IMG_InputIcon->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
         }
@@ -286,18 +284,16 @@ void UUI_MoldingMachineInteract::NativeTick(const FGeometry& MyGeometry, float I
     // ── [출력 UI 렌더링 구역] 수량 관계없이 이름과 아이콘 가이드라인 유지 ──
     if (!OutputName.IsNone())
     {
-        if (TXT_OutputName)  TXT_OutputName->SetText(GetResourceDisplayText(ResourceDataTable, OutputName));
+        if (TXT_OutputName)  TXT_OutputName->SetText(GetResourceDisplayText(this, ResourceDataTable, OutputName));
         if (TXT_OutputCount) TXT_OutputCount->SetText(FText::FromString(FString::Printf(TEXT("%d / %d"), OutputAmount, MaxOutputAmount)));
         if (PB_OutputBuffer) PB_OutputBuffer->SetPercent((MaxOutputAmount > 0) ? (float)OutputAmount / MaxOutputAmount : 0.0f);
         
-        if (IMG_OutputIcon && ResourceDataTable)
+        if (IMG_OutputIcon)
         {
-            IMG_OutputIcon->SetVisibility(ESlateVisibility::SelfHitTestInvisible); // 팀원 패치 코드 유지
-            FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(OutputName, TEXT("FindOutputIconContext"));
-            if (RowData)
+            if (UTexture2D* IconTex = GetResourceIconTexture(this, ResourceDataTable, OutputName))
             {
-                UTexture2D* IconTex = RowData->ImgAsset.IsValid() ? RowData->ImgAsset.Get() : RowData->ImgAsset.LoadSynchronous();
-                if (IconTex) IMG_OutputIcon->SetBrushFromTexture(IconTex);
+                IMG_OutputIcon->SetVisibility(ESlateVisibility::SelfHitTestInvisible); // 팀원 패치 코드 유지
+                IMG_OutputIcon->SetBrushFromTexture(IconTex);
             }
             
             // 수량이 0개일 때는 15% 불투명도로 흐릿한 가이드라인 연출, 쌓이면 선명하게(1.0) 연출

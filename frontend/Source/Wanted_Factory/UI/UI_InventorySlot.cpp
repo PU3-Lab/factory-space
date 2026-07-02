@@ -9,6 +9,9 @@
 #include "UI/UI_BaseCampInteract.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
+#include "UI/UIInteractDisplayHelpers.h"
+
+using namespace UIInteractHelpers;
 
 UUI_InventorySlot::UUI_InventorySlot(const FObjectInitializer& ObjectInitializer)
    : Super(ObjectInitializer)
@@ -43,28 +46,9 @@ void UUI_InventorySlot::UpdateSlot(FName ItemID, int32 ItemCount)
     }
 
     // 3. 데이터 테이블에서 아이템 ID 정보 찾기
-    if (!ResourceDataTable)
+    if (IMG_ItemIcon)
     {
-       if (IMG_ItemIcon) IMG_ItemIcon->SetVisibility(ESlateVisibility::Hidden);
-       return;
-    }
-    
-    FResourceData* RowData = ResourceDataTable->FindRow<FResourceData>(ItemID, TEXT("FindResourceIconContext"));
-
-    if (RowData && IMG_ItemIcon)
-    {
-       UTexture2D* IconTexture = nullptr;
-
-       if (RowData->ImgAsset.IsValid())
-       {
-          IconTexture = RowData->ImgAsset.Get();
-       }
-       else
-       {
-          IconTexture = RowData->ImgAsset.LoadSynchronous();
-       }
-
-       if (IconTexture)
+       if (UTexture2D* IconTexture = GetResourceIconTexture(this, ResourceDataTable, ItemID))
        {
           IMG_ItemIcon->SetVisibility(ESlateVisibility::Visible);
           IMG_ItemIcon->SetBrushFromTexture(IconTexture);
@@ -73,10 +57,6 @@ void UUI_InventorySlot::UpdateSlot(FName ItemID, int32 ItemCount)
        {
           IMG_ItemIcon->SetVisibility(ESlateVisibility::Hidden);
        }
-    }
-    else if (IMG_ItemIcon)
-    {
-       IMG_ItemIcon->SetVisibility(ESlateVisibility::Hidden);
     }
 }
 

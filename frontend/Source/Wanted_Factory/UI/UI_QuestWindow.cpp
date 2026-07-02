@@ -5,6 +5,16 @@
 #include "Engine/GameInstance.h"
 #include "UI_QuestNotify.h"
 #include "Components/Border.h"
+#include "UIInteractDisplayHelpers.h"
+
+namespace
+{
+    UDataTable* GetQuestRewardResourceTable()
+    {
+        static UDataTable* CachedResourceTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData"));
+        return CachedResourceTable;
+    }
+}
 
 namespace
 {
@@ -40,12 +50,34 @@ namespace
         return FString::Printf(TEXT("%s\n%s"), *Line1, *Line2);
     }
 
-    FString BuildRewardText(const FQuestState& Quest)
+    FString ResolveRewardDisplayName(const UObject* WorldContextObject, FName RewardItemId)
+    {
+        const FText ResourceDisplayText = UIInteractHelpers::GetResourceDisplayText(
+            WorldContextObject,
+            GetQuestRewardResourceTable(),
+            RewardItemId);
+        if (!ResourceDisplayText.IsEmpty() && ResourceDisplayText.ToString() != RewardItemId.ToString())
+        {
+            return ResourceDisplayText.ToString();
+        }
+
+        const UGameInstance* GameInstance = WorldContextObject ? WorldContextObject->GetWorld()->GetGameInstance() : nullptr;
+        UMachineSubsystem* MachineSubsystem = GameInstance ? GameInstance->GetSubsystem<UMachineSubsystem>() : nullptr;
+        const FText MachineDisplayText = UIInteractHelpers::GetMachineDisplayText(MachineSubsystem, RewardItemId);
+        if (!MachineDisplayText.IsEmpty())
+        {
+            return MachineDisplayText.ToString();
+        }
+
+        return RewardItemId.ToString();
+    }
+
+    FString BuildRewardText(const UObject* WorldContextObject, const FQuestState& Quest)
     {
         TArray<FString> RewardTexts;
         for (const FQuestRewardItem& Reward : Quest.Rewards)
         {
-            RewardTexts.Add(FString::Printf(TEXT("%s x%d"), *Reward.ItemId.ToString(), Reward.Quantity));
+            RewardTexts.Add(FString::Printf(TEXT("%s x%d"), *ResolveRewardDisplayName(WorldContextObject, Reward.ItemId), Reward.Quantity));
         }
         return RewardTexts.IsEmpty() ? TEXT("No reward") : FString::Join(RewardTexts, TEXT(", "));
     }
@@ -254,7 +286,7 @@ void UUI_QuestWindow::ShowSubQuestCompletedNotify(const FQuestState& Quest)
     }
 
     NotifyWidget->AddToViewport(100);
-    NotifyWidget->PlayNotify(Quest.Title.ToString(), BuildRewardText(Quest));
+    NotifyWidget->PlayNotify(Quest.Title.ToString(), BuildRewardText(this, Quest));
 }
 
 void UUI_QuestWindow::UpdateSubQuestTexts(const TArray<FQuestState>& Quests)
