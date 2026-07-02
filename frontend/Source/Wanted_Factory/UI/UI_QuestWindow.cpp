@@ -135,7 +135,7 @@ void UUI_QuestWindow::UpdateMainQuestUI(const FQuestState& MainQuest)
         return;
     }
 
-    FText BracketedTitle = FText::Format(FText::FromString(TEXT("[ {0} ]")), MainQuest.Title);
+    FText BracketedTitle = FText::Format(FText::FromString(TEXT("[메인] {0}")), MainQuest.Title);
     TXT_MainQuestTitle->SetText(BracketedTitle);
 
     TXT_MainQuestDesc->SetText(MainQuest.Description);
@@ -259,13 +259,6 @@ void UUI_QuestWindow::ShowSubQuestCompletedNotify(const FQuestState& Quest)
 
 void UUI_QuestWindow::UpdateSubQuestTexts(const TArray<FQuestState>& Quests)
 {
-    // 서브퀘스트 데이터가 없으면 안내문을 켜고, 있으면 완전히 접어버립니다.
-    if (TXT_NoSubQuestsPlaceholder)
-    {
-        ESlateVisibility NewVisibility = Quests.IsEmpty() ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed;
-        TXT_NoSubQuestsPlaceholder->SetVisibility(NewVisibility);
-    }
-
     TArray<URichTextBlock*> SubBoxes = { TXT_SubQuest_1, TXT_SubQuest_2, TXT_SubQuest_3, TXT_SubQuest_4, TXT_SubQuest_5 };
 
     for (int32 i = 0; i < SubBoxes.Num(); ++i)
@@ -312,7 +305,7 @@ void UUI_QuestWindow::DisplayTutorialStep(const FTutorialQuestStep& Step)
     UGameInstance* GI = GetGameInstance();
     UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
 
-    FText BracketedTitle = FText::Format(FText::FromString(TEXT("[ {0} ]")), FText::FromString(Step.Title));
+    FText BracketedTitle = FText::Format(FText::FromString(TEXT("[메인] {0}")), FText::FromString(Step.Title));
     TXT_MainQuestTitle->SetText(BracketedTitle);
     
     TXT_MainQuestDesc->SetText(FText::FromString(
@@ -333,27 +326,39 @@ void UUI_QuestWindow::UpdateQuestZoneVisibility()
     FTutorialQuestStep CurrentStep;
     const bool bHasTutorialStep = QuestManager->GetCurrentTutorialQuestStep(CurrentStep);
 
-    //메인 퀘스트가 완전히 끝났는지 상태 판정식 결합
-    bool bIsMainQuestActive = false;
+    // 2. 메인 퀘스트 진행 여부 판정 (서브시스템 연동 완료)
     FQuestState MainQuest;
+    // GetCurrentMainQuest가 false를 리턴하면 다음 메인 퀘스트가 없다는 의미(올 클리어)입니다.
+    const bool bIsMainQuestActive = QuestManager->GetCurrentMainQuest(MainQuest);
 
-    // 튜토리얼이나 진행 중인 메인 퀘스트가 "진행 중"일 때만 노출을 허용합니다.
-    const bool bShouldShowMainZone = bHasTutorialStep || bIsMainQuestActive;
+    // 튜토리얼이 진행 중이거나, 유효한 메인 퀘스트가 남아있을 때만 데이터를 노출합니다.
+    const bool bShouldShowMainContents = bHasTutorialStep || bIsMainQuestActive;
 
-    if (bShouldShowMainZone)
+    // 메인 퀘스트 영역(Zone) 자체는 여백을 채우기 위해 항상 보임 상태로 유지합니다.
+    VB_MainQuestZone->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+    if (bShouldShowMainContents)
     {
-        VB_MainQuestZone->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        if (TXT_MainQuestTitle) TXT_MainQuestTitle->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        if (TXT_MainQuestDesc)  TXT_MainQuestDesc->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     }
     else
     {
-        // 서브퀘스트가 위로 밀리지 않습니다.
-        VB_MainQuestZone->SetVisibility(ESlateVisibility::Hidden);
-
-        if (TXT_MainQuestTitle) TXT_MainQuestTitle->SetText(FText::GetEmpty());
-        if (TXT_MainQuestDesc)  TXT_MainQuestDesc->SetText(FText::GetEmpty());
+        // 메인 퀘스트가 완전히 끝났을 때: 타이틀/설명을 비우고 숨긴 뒤 플레이스홀더만 노출
+        if (TXT_MainQuestTitle) 
+        {
+            TXT_MainQuestTitle->SetText(FText::GetEmpty());
+            TXT_MainQuestTitle->SetVisibility(ESlateVisibility::Collapsed);
+        }
+        if (TXT_MainQuestDesc)  
+        {
+            TXT_MainQuestDesc->SetText(FText::GetEmpty());
+            TXT_MainQuestDesc->SetVisibility(ESlateVisibility::Collapsed);
+        }
     }
-    // 서브 퀘스트 영역 최종 표시 처리 호출
-    UpdateSubQuestZoneVisibility();
+
+    // 서브 퀘스트 영역 표시 처리
+    VB_SubQuestZone->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 }
 
 void UUI_QuestWindow::UpdateSubQuestZoneVisibility()

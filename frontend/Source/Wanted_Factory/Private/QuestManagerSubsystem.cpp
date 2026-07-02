@@ -563,6 +563,7 @@ void UQuestManagerSubsystem::Deinitialize()
 {
 	if (AgentClient)
 	{
+		AgentClient->OnConnected.RemoveAll(this);
 		AgentClient->OnAgentResponseReceived.RemoveAll(this);
 		AgentClient->OnAgentErrorReceived.RemoveAll(this);
 	}
@@ -573,6 +574,7 @@ void UQuestManagerSubsystem::Deinitialize()
 	}
 
 	PendingSubQuestRequestIds.Empty();
+	bPendingAutoSubQuestRequest = false;
 	AgentClient = nullptr;
 	WarehouseSubsystem = nullptr;
 
@@ -713,6 +715,24 @@ FString UQuestManagerSubsystem::RequestSubQuests()
 FString UQuestManagerSubsystem::RequestProductionSubQuests(const FString& Question)
 {
 	return SendSubQuestRequest(FactoryAgentJsonUtils::WriteJsonObject(CreateProductionPayload(Question)));
+}
+
+void UQuestManagerSubsystem::RequestSubQuestsWhenConnected()
+{
+	if (!AgentClient || !SubQuests.IsEmpty() || !PendingSubQuestRequestIds.IsEmpty())
+	{
+		return;
+	}
+
+	if (AgentClient->IsConnected())
+	{
+		bPendingAutoSubQuestRequest = false;
+		RequestSubQuests();
+		return;
+	}
+
+	bPendingAutoSubQuestRequest = true;
+	ConnectQuestAgent();
 }
 
 void UQuestManagerSubsystem::StartTutorialQuestTest()
@@ -961,6 +981,7 @@ void UQuestManagerSubsystem::RevealPendingTutorialStartDialogue()
 	if (CurrentTutorialQuestId == TEXT("TUT_COMM_001"))
 	{
 		bFullQuestWindowUnlocked = true;
+		RequestSubQuestsWhenConnected();
 	}
 
 	bPendingTutorialStartDialogueReveal = false;
@@ -1029,6 +1050,8 @@ void UQuestManagerSubsystem::BindAgentClient()
 		return;
 	}
 
+	AgentClient->OnConnected.RemoveDynamic(this, &UQuestManagerSubsystem::HandleAgentConnected);
+	AgentClient->OnConnected.AddDynamic(this, &UQuestManagerSubsystem::HandleAgentConnected);
 	AgentClient->OnAgentResponseReceived.AddDynamic(this, &UQuestManagerSubsystem::HandleAgentResponse);
 	AgentClient->OnAgentErrorReceived.AddDynamic(this, &UQuestManagerSubsystem::HandleAgentError);
 }
@@ -1391,6 +1414,11 @@ bool UQuestManagerSubsystem::AdvanceTutorialQuestStep(bool bFromManualTest)
 
 	LogTutorialDialogue(CurrentStep->QuestId, TEXT("on_complete"));
 
+	if (CurrentStep->QuestId == TEXT("TUT_COMM_007"))
+	{
+		RequestSubQuestsWhenConnected();
+	}
+
 	if (CurrentStep->NextQuestId.IsEmpty())
 	{
 		CurrentTutorialQuestId.Empty();
@@ -1419,6 +1447,12 @@ bool UQuestManagerSubsystem::AdvanceTutorialQuestStep(bool bFromManualTest)
 	}
 
 	CurrentTutorialQuestId = CurrentStep->NextQuestId;
+	if (CurrentTutorialQuestId == TEXT("TUT_COMM_001"))
+	{
+		bFullQuestWindowUnlocked = true;
+		RequestSubQuestsWhenConnected();
+	}
+
 	bPendingTutorialStartDialogueReveal = true;
 	BroadcastCurrentTutorialQuestStep();
 	if (!TutorialRewards.IsEmpty())
@@ -1546,6 +1580,17 @@ void UQuestManagerSubsystem::HandleWarehouseItemAdded(FName ItemID, int32 AddedC
 	}
 
 	RefreshMainQuestCompletion();
+}
+
+void UQuestManagerSubsystem::HandleAgentConnected()
+{
+	if (!bPendingAutoSubQuestRequest)
+	{
+		return;
+	}
+
+	bPendingAutoSubQuestRequest = false;
+	RequestSubQuests();
 }
 
 void UQuestManagerSubsystem::HandleAgentResponse(
