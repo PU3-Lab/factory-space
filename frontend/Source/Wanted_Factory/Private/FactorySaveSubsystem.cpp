@@ -5,6 +5,7 @@
 #include "EngineUtils.h"
 #include "FactoryManagerSubsystem.h"
 #include "FactoryAgentClientSubsystem.h"
+#include "MaterialGenerationRegistrySubsystem.h"
 #include "FactorySaveGame.h"
 #include "Engine/Engine.h"
 #include "GameFramework/Character.h"
@@ -161,6 +162,7 @@ void UFactorySaveSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 	Collection.InitializeDependency(UFactoryAgentClientSubsystem::StaticClass());
+	Collection.InitializeDependency(UMaterialGenerationRegistrySubsystem::StaticClass());
 	FCoreDelegates::OnPreExit.AddUObject(this, &UFactorySaveSubsystem::HandlePreExitSave);
 	FWorldDelegates::OnWorldBeginTearDown.AddUObject(this, &UFactorySaveSubsystem::HandleWorldBeginTearDown);
 }
@@ -253,6 +255,11 @@ bool UFactorySaveSubsystem::SaveCurrentGame()
 	SaveGame->TimeState = PlanetManager->GetTimeState();
 	SaveGame->WeatherState = PlanetManager->GetWeatherState();
 	SaveGame->EventState = PlanetManager->GetEventState();
+	if (UMaterialGenerationRegistrySubsystem* MaterialRegistry =
+		GetGameInstance()->GetSubsystem<UMaterialGenerationRegistrySubsystem>())
+	{
+		MaterialRegistry->ExportSaveData(SaveGame->DynamicMaterials, SaveGame->DynamicRecipes);
+	}
 
 	// [게임진입] 선택 캐릭터 저장(OJJ 합의). Continue 시 LoadCurrentGame이 SetSelectedCharacter로 복원한다.
 	if (UOJJ_CharacterSelectionSubsystem* CharacterSelection = GetGameInstance()->GetSubsystem<UOJJ_CharacterSelectionSubsystem>())
@@ -456,6 +463,11 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 		SaveGame->LastTutorialDialogueLines,
 		SaveGame->TutorialProgressCounts);
 	PlanetManager->RestoreSaveState(SaveGame->TimeState, SaveGame->WeatherState, SaveGame->EventState);
+	if (UMaterialGenerationRegistrySubsystem* MaterialRegistry =
+		GetGameInstance()->GetSubsystem<UMaterialGenerationRegistrySubsystem>())
+	{
+		MaterialRegistry->ImportSaveData(SaveGame->DynamicMaterials, SaveGame->DynamicRecipes);
+	}
 
 	DestroyActorsOfType<APowerLine>(World);
 	DestroyActorsOfType<APipe>(World);
