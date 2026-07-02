@@ -309,6 +309,7 @@ private:
 	bool bTutorialQuestTestActive = false;
 	bool bPendingTutorialStartDialogueReveal = false;
 	bool bFullQuestWindowUnlocked = false;
+	bool bPendingAutoSubQuestRequest = false;
 	FString LastTutorialDialogueQuestId;
 	FString LastTutorialDialogueTriggerType;
 
@@ -331,6 +332,7 @@ private:
 	void ApplyMainQuestObjectiveEvent(EQuestObjectiveType ObjectiveType, FName TargetId, int32 DeltaCount);
 	FString SendSubQuestRequest(const FString& PayloadJson);
 	void RefreshSubQuestCompletion(bool bForceBroadcast = false);
+	void RequestSubQuestsWhenConnected();
 	bool IsQuestCompletedByWarehouse(const FQuestState& Quest) const;
 	bool AdvanceTutorialQuestStep(bool bFromManualTest);
 	void BroadcastCurrentTutorialQuestStep();
@@ -346,6 +348,9 @@ private:
 		const FString& Agent,
 		const FString& PayloadJson,
 		const FString& RawMessage);
+
+	UFUNCTION()
+	void HandleAgentConnected();
 
 	UFUNCTION()
 	void HandleAgentError(

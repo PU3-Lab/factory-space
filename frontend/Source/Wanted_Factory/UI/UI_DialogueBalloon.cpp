@@ -23,6 +23,8 @@ void UUI_DialogueBalloon::NativeConstruct()
     {
         ET_OperatorInput->OnTextCommitted.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnTextCommitted);
         ET_OperatorInput->OnTextCommitted.AddDynamic(this, &UUI_DialogueBalloon::HandleOnTextCommitted);
+        ET_OperatorInput->SetText(FText::GetEmpty());
+        ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
     }
 
     if (UGameInstance* GI = GetGameInstance())
