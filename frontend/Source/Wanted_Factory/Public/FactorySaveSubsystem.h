@@ -39,6 +39,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Factory Save")
 	bool HasLoadedInitialState() const { return bHasLoadedInitialState; }
 
+	// [엔딩] 게임 클리어 여부 — BuildController가 통신탑 설치 시 엔딩 재발동 방지용으로 읽는다.
+	UFUNCTION(BlueprintPure, Category = "Factory Save")
+	bool IsGameCleared() const { return bGameCleared; }
+
+	// [엔딩] 클리어 확정 — 런타임 플래그 셋 + 즉시 저장(영속화). 이미 클리어면 no-op(중복 저장 방지).
+	UFUNCTION(BlueprintCallable, Category = "Factory Save")
+	void MarkGameCleared();
+
 private:
 	UPROPERTY()
 	FString SaveSlotName = TEXT("FactorySpace_Autosave");
@@ -59,6 +67,8 @@ private:
 	int32 NextProcessOptimizerFactoryRevision = 1;
 	int32 RemainingAutoSaveWarningBlinks = 0;
 	bool bHasLoadedInitialState = false;
+	// [엔딩] 클리어 런타임 캐시 — Load에서 복원, Save에서 기록, ResetToNewGame에서 초기화.
+	bool bGameCleared = false;
 	bool bIsRestoring = false;
 	bool bIsResettingToNewGame = false;
 	bool bHasHandledShutdownSave = false;
