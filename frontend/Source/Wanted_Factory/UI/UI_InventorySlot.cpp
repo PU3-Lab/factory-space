@@ -6,6 +6,7 @@
 #include "ItemDragDropOperation.h"
 #include "OJJ_Player.h"
 #include "UI/UI_Inventory.h" 
+#include "UI/UI_BaseCampInteract.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -149,9 +150,27 @@ bool UUI_InventorySlot::NativeOnDrop(const FGeometry& MyGeometry, const FDragDro
       if (WarehouseSubsystem)
       {
          // 1. 내 가방 장부에 아이템 +1개 스펙 추가
-         WarehouseSubsystem->AddItem(DroppedItemID, 1);
+         UUI_BaseCampInteract* BaseCampSource = Cast<UUI_BaseCampInteract>(ItemDragOp->Payload);
+         if (BaseCampSource && !BaseCampSource->TakeInputItemForInventoryDrop(DroppedItemID))
+         {
+            return false;
+         }
+
+         if (!WarehouseSubsystem->AddItem(DroppedItemID, 1))
+         {
+            if (BaseCampSource)
+            {
+               BaseCampSource->ReturnInputItemFromFailedDrop(DroppedItemID);
+            }
+            return false;
+         }
             
          // 2. 플레이어 본체가 들고 있는 인벤토리 공식 인스턴스를 소환합니다.
+         if (BaseCampSource)
+         {
+            BaseCampSource->RefreshCampInventoryAfterInventoryDrop();
+         }
+
          APlayerController* PC = GetOwningPlayer();
          if (PC)
          {

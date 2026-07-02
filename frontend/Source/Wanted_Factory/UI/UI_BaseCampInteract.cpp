@@ -20,8 +20,18 @@
 #include "ItemDragDropOperation.h"
 #include "UI/UIInteractDisplayHelpers.h"
 #include "Blueprint/DragDropOperation.h" 
+#include "Blueprint/SlateBlueprintLibrary.h"
+#include "InputCoreTypes.h"
 
 using namespace UIInteractHelpers;
+
+static bool IsInputIconDragCandidate(UImage* Icon, FName ItemID, const TMap<FName, int32>& InputInventory, FVector2D ScreenPosition)
+{
+    return Icon
+        && !ItemID.IsNone()
+        && InputInventory.FindRef(ItemID) > 0
+        && USlateBlueprintLibrary::IsUnderLocation(Icon->GetCachedGeometry(), ScreenPosition);
+}
 
 void UUI_BaseCampInteract::SetTargetMachine(AMachineBase* InMachine)
 {
@@ -31,6 +41,8 @@ void UUI_BaseCampInteract::SetTargetMachine(AMachineBase* InMachine)
     LastInputVisualItemID_2 = NAME_None;
     LastInputVisualItemID_3 = NAME_None;
     LastOutputVisualItemID = NAME_None;
+    DraggingInputItemID = NAME_None;
+    DraggingInputIcon = nullptr;
 }
 
 void UUI_BaseCampInteract::NativeConstruct()
@@ -119,13 +131,13 @@ void UUI_BaseCampInteract::UpdateInputSlotUI(int32 SlotIndex, FName ItemName, in
     UImage* TargetIMG_Icon = (SlotIndex == 1) ? IMG_InputIcon_1 : ((SlotIndex == 2) ? IMG_InputIcon_2 : IMG_InputIcon_3);
     FName& LastVisualID = (SlotIndex == 1) ? LastInputVisualItemID_1 : ((SlotIndex == 2) ? LastInputVisualItemID_2 : LastInputVisualItemID_3);
 
-    const FName DisplayItemName = ItemName.IsNone() ? LastVisualID : ItemName;
-    if (!ItemName.IsNone()) LastVisualID = ItemName;
+    const FName DisplayItemName = (CurrentAmount > 0) ? ItemName : NAME_None;
+    LastVisualID = DisplayItemName;
 
     if (TargetTXT_Name && TargetTXT_Count && TargetPB_Buffer)
     {
-        TargetTXT_Name->SetText(GetResourceDisplayText(ResourceDataTable, DisplayItemName));
-        TargetTXT_Count->SetText(FText::FromString(FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount)));
+        TargetTXT_Name->SetText(DisplayItemName.IsNone() ? FText::GetEmpty() : GetResourceDisplayText(ResourceDataTable, DisplayItemName));
+        TargetTXT_Count->SetText(CurrentAmount > 0 ? FText::FromString(FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount)) : FText::GetEmpty());
         TargetPB_Buffer->SetPercent((MaxAmount > 0) ? (float)CurrentAmount / MaxAmount : 0.0f);
     }
 
@@ -146,7 +158,7 @@ void UUI_BaseCampInteract::UpdateInputSlotUI(int32 SlotIndex, FName ItemName, in
             {
                 UTexture2D* Tex = RowData->ImgAsset.IsValid() ? RowData->ImgAsset.Get() : RowData->ImgAsset.LoadSynchronous();
                 if (Tex) TargetIMG_Icon->SetBrushFromTexture(Tex);
-                TargetIMG_Icon->SetColorAndOpacity(CurrentAmount <= 0 ? FLinearColor(1.f, 1.f, 1.f, 0.15f) : FLinearColor::White);
+                TargetIMG_Icon->SetColorAndOpacity(FLinearColor::White);
             }
         }
     }
@@ -189,6 +201,7 @@ bool UUI_BaseCampInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDrag
 {
     UItemDragDropOperation* ItemDragOp = Cast<UItemDragDropOperation>(InOperation);
     if (!ItemDragOp || !TargetBaseCamp) return false;
+    if (ItemDragOp->Payload == this) return false;
 
     FName DroppedItemID = ItemDragOp->DraggedItemID;
     if (DroppedItemID.IsNone()) return false;
@@ -218,6 +231,113 @@ bool UUI_BaseCampInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDrag
 }
 
 // (나머지 OnStatusTabClicked, OnUpgradeTabClicked, OnMaterialTabClicked, SwitchSubPaneMode, RefreshFactoryStatus, RefreshAllUpgradeNodes, RefreshCampInventoryGrid 코드는 기존 구현과 완전히 동일하므로 유지)
+FReply UUI_BaseCampInteract::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    FReply Reply = Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+    if (!TargetBaseCamp || InMouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+    {
+        return Reply;
+    }
+
+    DraggingInputItemID = NAME_None;
+    DraggingInputIcon = nullptr;
+
+    const FVector2D ClickPosition = InMouseEvent.GetScreenSpacePosition();
+    const TMap<FName, int32>& InputInventory = TargetBaseCamp->GetInputInventory();
+
+    if (IsInputIconDragCandidate(IMG_InputIcon_1, LastInputVisualItemID_1, InputInventory, ClickPosition))
+    {
+        DraggingInputItemID = LastInputVisualItemID_1;
+        DraggingInputIcon = IMG_InputIcon_1;
+    }
+    else if (IsInputIconDragCandidate(IMG_InputIcon_2, LastInputVisualItemID_2, InputInventory, ClickPosition))
+    {
+        DraggingInputItemID = LastInputVisualItemID_2;
+        DraggingInputIcon = IMG_InputIcon_2;
+    }
+    else if (IsInputIconDragCandidate(IMG_InputIcon_3, LastInputVisualItemID_3, InputInventory, ClickPosition))
+    {
+        DraggingInputItemID = LastInputVisualItemID_3;
+        DraggingInputIcon = IMG_InputIcon_3;
+    }
+
+    if (DraggingInputItemID.IsNone())
+    {
+        return Reply;
+    }
+
+    return FReply::Handled().DetectDrag(TakeWidget(), EKeys::LeftMouseButton);
+}
+
+void UUI_BaseCampInteract::NativeOnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& InPointerEvent, UDragDropOperation*& OutOperation)
+{
+    Super::NativeOnDragDetected(MyGeometry, InPointerEvent, OutOperation);
+
+    if (DraggingInputItemID.IsNone())
+    {
+        return;
+    }
+
+    UItemDragDropOperation* DragOp = NewObject<UItemDragDropOperation>(this);
+    if (!DragOp)
+    {
+        return;
+    }
+
+    DragOp->DraggedItemID = DraggingInputItemID;
+    DragOp->Payload = this;
+    DragOp->Pivot = EDragPivot::TopLeft;
+    DragOp->Offset = FVector2D::ZeroVector;
+
+    if (DraggingInputIcon)
+    {
+        UImage* DragVisualImage = NewObject<UImage>(GetOwningPlayer(), UImage::StaticClass());
+        if (DragVisualImage)
+        {
+            FSlateBrush DragBrush = DraggingInputIcon->GetBrush();
+            DragBrush.SetImageSize(FVector2D(64.f, 64.f));
+            DragVisualImage->SetBrush(DragBrush);
+            DragVisualImage->SetDesiredSizeOverride(FVector2D(64.f, 64.f));
+            DragOp->DefaultDragVisual = DragVisualImage;
+        }
+    }
+
+    OutOperation = DragOp;
+}
+
+bool UUI_BaseCampInteract::TakeInputItemForInventoryDrop(FName ItemID)
+{
+    if (!TargetBaseCamp)
+    {
+        return false;
+    }
+
+    const bool bTaken = TargetBaseCamp->TakeInputItem(ItemID, 1);
+    if (bTaken)
+    {
+        DraggingInputItemID = NAME_None;
+        DraggingInputIcon = nullptr;
+    }
+
+    return bTaken;
+}
+
+void UUI_BaseCampInteract::RefreshCampInventoryAfterInventoryDrop()
+{
+    RefreshCampInventoryGrid();
+}
+
+void UUI_BaseCampInteract::ReturnInputItemFromFailedDrop(FName ItemID)
+{
+    if (!TargetBaseCamp || ItemID.IsNone())
+    {
+        return;
+    }
+
+    TargetBaseCamp->AddItem(ItemID, 1);
+    RefreshCampInventoryGrid();
+}
+
 void UUI_BaseCampInteract::OnStatusTabClicked() { SwitchSubPaneMode(EBaseCampSubMode::FactoryStatus); }
 void UUI_BaseCampInteract::OnUpgradeTabClicked() { SwitchSubPaneMode(EBaseCampSubMode::LevelUpgrade); }
 void UUI_BaseCampInteract::OnMaterialTabClicked() { SwitchSubPaneMode(EBaseCampSubMode::newMaterial); }
