@@ -12,6 +12,7 @@
 #include "Engine/Texture2D.h"
 #include "FactoryManagerSubsystem.h"
 #include "GameFramework/PlayerController.h"
+#include "MaterialGenerationRegistrySubsystem.h"
 #include "Machines/MachineSubsystem.h"
 #include "Materials/Material.h"
 #include "NiagaraComponent.h"
@@ -559,6 +560,25 @@ void AMachineBase::TryStartProcess()
 	}
 
 	bool bHasBlockedCraftableRecipe = false;
+	if (UMaterialGenerationRegistrySubsystem* MaterialRegistry =
+		GetGameInstance() ? GetGameInstance()->GetSubsystem<UMaterialGenerationRegistrySubsystem>() : nullptr)
+	{
+		FRecipeTable RuntimeRecipe;
+		if (MaterialRegistry->FindFirstRuntimeRecipe(MachineType, InputInventory, RuntimeRecipe))
+		{
+			if (!CanAddToOutputBuffer(RuntimeRecipe))
+			{
+				bHasBlockedCraftableRecipe = true;
+			}
+			else
+			{
+				CurrentRecipe = RuntimeRecipe;
+				ProcessTime = CurrentRecipe.CraftingTime;
+				StartProcess();
+				return;
+			}
+		}
+	}
 
 	for (const TPair<FName, int32>& InputPair : InputInventory)
 	{
