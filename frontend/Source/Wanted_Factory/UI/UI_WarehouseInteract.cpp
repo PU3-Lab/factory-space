@@ -281,17 +281,6 @@ void UUI_WarehouseInteract::NativeOnDragDetected(const FGeometry& InGeometry, co
 
     DragOp->DraggedItemID = ManualDroppedOutputItemID;
     
-    if (IMG_OutputIcon)
-    {
-        UImage* DragVisualImage = NewObject<UImage>(GetOwningPlayer(), UImage::StaticClass());
-        if (DragVisualImage)
-        {
-            DragVisualImage->SetBrush(IMG_OutputIcon->GetBrush());
-            DragVisualImage->SetDesiredSizeOverride(FVector2D(64.f, 64.f));
-            DragOp->DefaultDragVisual = DragVisualImage;
-        }
-    }
-    
     CancelMachineProcess();
 
     OutOperation = DragOp;
