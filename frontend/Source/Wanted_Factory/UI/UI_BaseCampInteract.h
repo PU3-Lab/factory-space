@@ -82,8 +82,6 @@ protected:
 
     UPROPERTY(meta = (BindWidget)) UImage* IMG_OutputIcon;
     UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_OutputName;
-    UPROPERTY(meta = (BindWidget)) UProgressBar* PB_OutputBuffer;
-    UPROPERTY(meta = (BindWidget)) UTextBlock* TXT_OutputCount;
 
     // --- 우측하단 가방 그리드 관련 ---
     UPROPERTY(meta = (BindWidget)) UUniformGridPanel* GDP_CampInventoryGrid;
@@ -102,7 +100,7 @@ protected:
 
     void RefreshCampInventoryGrid();
     void UpdateInputSlotUI(int32 SlotIndex, FName ItemName, int32 CurrentAmount, int32 MaxAmount);
-    void UpdateOutputUI(FName ItemName, int32 CurrentAmount, int32 MaxAmount);
+    void UpdateOutputUI(FName ItemName, int32 CurrentAmount);
     
     UFUNCTION() void OnStatusTabClicked();
     UFUNCTION() void OnUpgradeTabClicked();
