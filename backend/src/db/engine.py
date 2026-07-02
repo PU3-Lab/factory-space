@@ -11,8 +11,14 @@ from sqlalchemy.orm import Session, sessionmaker
 
 
 def get_database_url() -> str:
-    """Return the configured sync database URL, substituting psycopg driver for Postgres if needed."""
-    url = os.environ.get("DATABASE_URL") or os.environ.get("FACTORY_DATABASE_URL")
+    """Return the application database URL used by core backend features.
+
+    ``DATABASE_URL`` is reserved for the main app database, such as SQLite used
+    by material generation and quest data during local development. Operator
+    guide RAG uses a separate ``FACTORY_RAG_DATABASE_URL`` so pgvector storage
+    does not accidentally replace the application database.
+    """
+    url = os.environ.get("DATABASE_URL")
     if not url:
         return "sqlite:///./factory_space.db"
 

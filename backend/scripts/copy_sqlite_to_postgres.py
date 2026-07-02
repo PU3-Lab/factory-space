@@ -21,7 +21,6 @@ SRC_PATH = BACKEND_ROOT / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from agents.operator_guide.rag_schema import manual_rag_documents  # noqa: E402
 from db.models import Base  # noqa: E402
 
 DEFAULT_DATABASE_URL = (
@@ -36,7 +35,6 @@ COPY_TABLES = [
     "generated_material_discoveries",
     "quest_instances",
     "quest_progress",
-    "manual_rag_documents",
 ]
 
 DELETE_TABLES = [
@@ -45,11 +43,10 @@ DELETE_TABLES = [
     "generated_material_discoveries",
     "generated_experiments",
     "generated_materials",
-    "manual_rag_documents",
     "recipes",
 ]
 
-SEQUENCE_TABLES = ["recipes", "manual_rag_documents"]
+SEQUENCE_TABLES = ["recipes"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -64,9 +61,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--database-url",
         default=(
-            os.environ.get("FACTORY_DATABASE_URL")
-            or os.environ.get("DATABASE_URL")
-            or DEFAULT_DATABASE_URL
+            os.environ.get("DATABASE_URL") or DEFAULT_DATABASE_URL
         ),
         help="Target PostgreSQL SQLAlchemy URL.",
     )
@@ -74,7 +69,7 @@ def parse_args() -> argparse.Namespace:
         "--write-env",
         action="append",
         default=[],
-        help="Env file path to upsert DATABASE_URL and FACTORY_DATABASE_URL into.",
+        help="Env file path to upsert DATABASE_URL into.",
     )
     parser.add_argument(
         "--reset",
@@ -105,7 +100,6 @@ def load_source_tables(source_url: str) -> tuple[object, dict[str, Table]]:
 
 def target_tables() -> dict[str, Table]:
     tables = {table.name: table for table in Base.metadata.sorted_tables}
-    tables["manual_rag_documents"] = manual_rag_documents
     missing_tables = [name for name in COPY_TABLES if name not in tables]
     if missing_tables:
         joined = ", ".join(missing_tables)
@@ -190,7 +184,6 @@ def reset_sequences(connection: Connection) -> None:
 def env_lines_with_database_url(lines: list[str], database_url: str) -> list[str]:
     replacements = {
         "DATABASE_URL": f"DATABASE_URL={database_url}",
-        "FACTORY_DATABASE_URL": f"FACTORY_DATABASE_URL={database_url}",
     }
     seen = set()
     updated = []
