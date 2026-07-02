@@ -304,11 +304,14 @@ def build_rag_runtime() -> RagRuntime:
     )  # noqa: I001
     from agents.operator_guide.rag_embedding import create_embedding_provider
     from agents.operator_guide.rag_retriever import ManualRagRetriever
-    from agents.operator_guide.rag_store import SqlAlchemyManualRagStore
-    from db.engine import engine
+    from agents.operator_guide.rag_store import create_manual_rag_store_from_env
 
     embedding_provider = create_embedding_provider()
-    search_store = SqlAlchemyManualRagStore(engine)
+    search_store = create_manual_rag_store_from_env()
+    if search_store is None:
+        raise RuntimeError(
+            "FACTORY_RAG_DATABASE_URL is required for operator_guide RAG evaluation."
+        )
     retriever = ManualRagRetriever(
         embedding_provider=embedding_provider,
         search_store=search_store,
