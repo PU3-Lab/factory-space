@@ -1,5 +1,6 @@
 #include "UI/UI_DialogueBalloon.h"
 #include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
 #include "Components/TextBlock.h"
 #include "Components/Widget.h"
 #include "Components/EditableText.h"
@@ -11,6 +12,7 @@
 #include "FactoryAgentClientSubsystem.h" 
 #include "FactoryAgentJsonUtils.h"       
 #include "Dom/JsonObject.h"
+#include "InputCoreTypes.h"
 
 void UUI_DialogueBalloon::NativeConstruct()
 {
@@ -18,11 +20,18 @@ void UUI_DialogueBalloon::NativeConstruct()
 
     SetIsFocusable(true);
     SetVisibility(ESlateVisibility::Visible);
+
+    if (B_OperatorInput)
+    {
+        B_OperatorInput->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    }
     
     if (ET_OperatorInput)
     {
         ET_OperatorInput->OnTextCommitted.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnTextCommitted);
         ET_OperatorInput->OnTextCommitted.AddDynamic(this, &UUI_DialogueBalloon::HandleOnTextCommitted);
+        ET_OperatorInput->SetText(FText::GetEmpty());
+        ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
     }
 
     if (UGameInstance* GI = GetGameInstance())
@@ -85,7 +94,7 @@ void UUI_DialogueBalloon::HandleOnTextCommitted(const FText& Text, ETextCommit::
     const FString QuestionStr = Text.ToString().TrimStartAndEnd();
     
     // 엔터를 치면 내용 유무 상관없이 인풋창은 즉시 초기화 및 증발
-    ET_OperatorInput->SetText(FText::GetEmpty());
+    ET_OperatorInput->SetText(FText::FromString(QuestionStr));
     ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
 
     // 포커스를 완벽하게 꺼내 캐릭터 조작 모드로 강제 복구
@@ -222,6 +231,20 @@ void UUI_DialogueBalloon::ShowExternalDialogue(const FString& DialogueText)
     bHasExternalDialogue = !DialogueText.TrimStartAndEnd().IsEmpty();
     ExternalDialogueText = bHasExternalDialogue ? DialogueText : FString();
     DisplayCurrentLine();
+
+    if (bHasExternalDialogue)
+    {
+        SetKeyboardFocus();
+
+        if (APlayerController* PC = GetOwningPlayer())
+        {
+            FInputModeGameAndUI InputModeData;
+            InputModeData.SetWidgetToFocus(GetCachedWidget());
+            InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+            PC->SetInputMode(InputModeData);
+            PC->bShowMouseCursor = false;
+        }
+    }
 }
 
 void UUI_DialogueBalloon::ClearExternalDialogue()
@@ -237,6 +260,7 @@ void UUI_DialogueBalloon::DisplayCurrentLine()
     // 위젯 본체 루트는 절대로 Collapsed 시키지 않고 항시 살려둡니다.
     // 그래야 하단의 / 인풋 Border 창이 언제든 독립적으로 튀어나올 수 있습니다.
     SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    if (B_OperatorInput) B_OperatorInput->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
     if (bHasExternalDialogue)
     {
@@ -252,8 +276,8 @@ void UUI_DialogueBalloon::DisplayCurrentLine()
         // 퀘스트가 끝나 대사가 비어있다면, 인풋 창은 내버려 두고 
         // 말풍선 배경(Image_229)과 글자가 담긴 'Size Box 세트'만 깔끔하게 투명 청소합니다
         if (SB_DialogueData)   SB_DialogueData->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-        if (DialogueContainer) DialogueContainer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-        if (TXT_Dialogue)      TXT_Dialogue->SetText(FText::FromString(TEXT(" ")));
+        if (DialogueContainer) DialogueContainer->SetVisibility(ESlateVisibility::Hidden);
+        if (TXT_Dialogue)      TXT_Dialogue->SetText(FText::GetEmpty());
         UpdateContinuePromptVisibility();
         return;
     }
@@ -343,6 +367,35 @@ FReply UUI_DialogueBalloon::NativeOnPreviewMouseButtonDown(const FGeometry& InGe
     return FReply::Handled();
 }
 
+FReply UUI_DialogueBalloon::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+    FReply Reply = Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+    if (InKeyEvent.GetKey() != EKeys::Enter)
+    {
+        return Reply;
+    }
+
+    if (ET_OperatorInput && ET_OperatorInput->GetVisibility() == ESlateVisibility::Visible)
+    {
+        return Reply;
+    }
+
+    if (!bHasExternalDialogue)
+    {
+        return Reply;
+    }
+
+    ClearExternalDialogue();
+
+    if (APlayerController* PC = GetOwningPlayer())
+    {
+        PC->SetInputMode(FInputModeGameOnly());
+        PC->bShowMouseCursor = false;
+    }
+
+    return FReply::Handled();
+}
+
 void UUI_DialogueBalloon::ToggleAIGuide(APlayerController* PC)
 {
     if (!PC || !ET_OperatorInput) return;
@@ -351,7 +404,6 @@ void UUI_DialogueBalloon::ToggleAIGuide(APlayerController* PC)
     if (bHasExternalDialogue)
     {
         ClearExternalDialogue();
-        ET_OperatorInput->SetText(FText::GetEmpty());
         ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
         
         PC->SetInputMode(FInputModeGameOnly());
@@ -375,12 +427,10 @@ void UUI_DialogueBalloon::ToggleAIGuide(APlayerController* PC)
         ET_OperatorInput->SetFocus();
         
         // / 키 입력 로직이 텍스트 필드를 오염시켜 힌트텍스트를 지우던 버그를 강제 세척합니다.
-        ET_OperatorInput->SetText(FText::GetEmpty());
     }
     else
     {
         // 이미 켜져 있는 상태에서 다시 누르면 취소하고 탈출
-        ET_OperatorInput->SetText(FText::GetEmpty());
         ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
         PC->SetInputMode(FInputModeGameOnly());
         PC->bShowMouseCursor = false;

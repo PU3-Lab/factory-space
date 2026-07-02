@@ -481,6 +481,9 @@ public:
 	// 임시 테스트 용 : 아이템 투입
 	UFUNCTION(BlueprintCallable, Category = "Machine | Inventory")
 	virtual bool AddItem(FName ItemID, int32 Count);
+
+	UFUNCTION(BlueprintCallable, Category = "Machine | Inventory")
+	bool TakeInputItem(FName ItemID, int32 Count);
 	
 	// 자동 레시피 탐색
 	UFUNCTION(BlueprintCallable, Category = "Machine | Process")

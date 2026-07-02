@@ -5,6 +5,7 @@
 #include "EngineUtils.h"
 #include "FactoryManagerSubsystem.h"
 #include "FactoryAgentClientSubsystem.h"
+#include "MaterialGenerationRegistrySubsystem.h"
 #include "FactorySaveGame.h"
 #include "Engine/Engine.h"
 #include "GameFramework/Character.h"
@@ -161,6 +162,7 @@ void UFactorySaveSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 	Collection.InitializeDependency(UFactoryAgentClientSubsystem::StaticClass());
+	Collection.InitializeDependency(UMaterialGenerationRegistrySubsystem::StaticClass());
 	FCoreDelegates::OnPreExit.AddUObject(this, &UFactorySaveSubsystem::HandlePreExitSave);
 	FWorldDelegates::OnWorldBeginTearDown.AddUObject(this, &UFactorySaveSubsystem::HandleWorldBeginTearDown);
 }
@@ -253,6 +255,11 @@ bool UFactorySaveSubsystem::SaveCurrentGame()
 	SaveGame->TimeState = PlanetManager->GetTimeState();
 	SaveGame->WeatherState = PlanetManager->GetWeatherState();
 	SaveGame->EventState = PlanetManager->GetEventState();
+	if (UMaterialGenerationRegistrySubsystem* MaterialRegistry =
+		GetGameInstance()->GetSubsystem<UMaterialGenerationRegistrySubsystem>())
+	{
+		MaterialRegistry->ExportSaveData(SaveGame->DynamicMaterials, SaveGame->DynamicRecipes);
+	}
 
 	// [엔딩] 클리어 플래그 영속화 — 런타임 캐시가 단일 진실원(MarkGameCleared가 셋).
 	SaveGame->bGameCleared = bGameCleared;
@@ -462,6 +469,11 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 		SaveGame->LastTutorialDialogueLines,
 		SaveGame->TutorialProgressCounts);
 	PlanetManager->RestoreSaveState(SaveGame->TimeState, SaveGame->WeatherState, SaveGame->EventState);
+	if (UMaterialGenerationRegistrySubsystem* MaterialRegistry =
+		GetGameInstance()->GetSubsystem<UMaterialGenerationRegistrySubsystem>())
+	{
+		MaterialRegistry->ImportSaveData(SaveGame->DynamicMaterials, SaveGame->DynamicRecipes);
+	}
 
 	DestroyActorsOfType<APowerLine>(World);
 	DestroyActorsOfType<APipe>(World);

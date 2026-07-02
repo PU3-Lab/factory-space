@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import os
+
 from sqlalchemy import Engine, Select, create_engine, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 
@@ -202,6 +204,34 @@ def create_manual_rag_store(database_url: str) -> SqlAlchemyManualRagStore:
     """DB URL로 PostgreSQL 기반 RAG 저장소를 만든다."""
 
     return SqlAlchemyManualRagStore(create_engine(database_url))
+
+
+def get_manual_rag_database_url() -> str | None:
+    """operator_guide RAG 전용 PostgreSQL/pgvector DB 주소를 가져옵니다.
+
+    초보자용 설명:
+        일반 게임 데이터 DB는 `DATABASE_URL`을 사용하고, 매뉴얼 검색용 RAG 문서는
+        `FACTORY_RAG_DATABASE_URL`을 사용합니다. 예전 설정과의 호환을 위해
+        `FACTORY_DATABASE_URL`도 fallback으로만 읽습니다.
+    """
+
+    return os.environ.get("FACTORY_RAG_DATABASE_URL") or os.environ.get(
+        "FACTORY_DATABASE_URL"
+    )
+
+
+def create_manual_rag_store_from_env() -> SqlAlchemyManualRagStore | None:
+    """환경변수에 설정된 RAG DB 주소로 RAG 저장소를 생성합니다.
+
+    초보자용 설명:
+        이 함수는 operator_guide가 매뉴얼 문서를 검색할 때 사용할 PostgreSQL + pgvector
+        저장소만 만듭니다. 주소가 없으면 CSV-only 모드로 떨어질 수 있도록 `None`을 반환합니다.
+    """
+
+    database_url = get_manual_rag_database_url()
+    if database_url is None:
+        return None
+    return create_manual_rag_store(database_url)
 
 
 def _record_to_values(record: ManualRagIngestionRecord) -> dict[str, object]:

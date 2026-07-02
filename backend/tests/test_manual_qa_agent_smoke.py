@@ -142,6 +142,57 @@ def test_manual_qa_agent_smoke_contract(case: dict[str, Any]) -> None:
     assert set(case["expected_action_ids"]) <= action_ids
 
 
+@pytest.mark.parametrize(
+    ("question", "expected_question_type", "expected_source_ids"),
+    [
+        ("분쇄기가 뭐야?", "equipment_question", {"equipment_grinder"}),
+        ("철근은 어디에 써?", "resource_question", {"resource_iron_bar"}),
+        (
+            "통신탑 어떻게 만들어?",
+            "resource_question",
+            {
+                "resource_TeleCommunicationTower",
+                "recipe_make_telecommunication_tower",
+            },
+        ),
+        (
+            "통신탑 어떻게 지어야 해?",
+            "resource_question",
+            {
+                "resource_TeleCommunicationTower",
+                "recipe_make_telecommunication_tower",
+            },
+        ),
+        (
+            "통신탑 건설 재료 알려줘",
+            "recipe_question",
+            {"recipe_make_telecommunication_tower"},
+        ),
+        (
+            "제련기가 작동을 안 해.",
+            "troubleshooting_question",
+            {"equipment_smelter", "issue_machine_stopped"},
+        ),
+        (
+            "철광석이 안 들어와.",
+            "troubleshooting_question",
+            {"resource_iron_ore", "issue_no_input"},
+        ),
+    ],
+)
+def test_manual_qa_sprint20_representative_regression_questions(
+    question: str,
+    expected_question_type: str,
+    expected_source_ids: set[str],
+) -> None:
+    response = answer_manual_qa(question)
+
+    assert response["question_type"] == expected_question_type
+    source_ids = {source["doc_id"] for source in response["sources"]}
+    assert expected_source_ids <= source_ids
+    assert response["final_answer"]
+
+
 def test_manual_qa_agent_unknown_question_does_not_hallucinate() -> None:
     response = answer_manual_qa("우주 엘리베이터는 어떻게 업그레이드해?")
 
@@ -191,6 +242,57 @@ def test_manual_qa_fallback_explains_telecommunication_tower_recipe() -> None:
     assert "구리선 20개" in response["final_answer"]
     assert "주석판 20개" in response["final_answer"]
     assert "resource_" not in response["final_answer"]
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "통신탑 어떻게 지어야 해?",
+        "통신탑은 어떻게 지으라고?",
+        "통신탑은 어떻게 짓는 거야?",
+        "통신탑 건설 방법 알려줘",
+        "통신탑 건축 방법 알려줘",
+    ],
+)
+def test_manual_qa_recognizes_construction_phrases_as_production_questions(
+    question: str,
+) -> None:
+    response = answer_manual_qa(question)
+
+    assert response["question_type"] == "resource_question"
+    source_ids = {source["doc_id"] for source in response["sources"]}
+    assert {
+        "resource_TeleCommunicationTower",
+        "recipe_make_telecommunication_tower",
+    } <= source_ids
+    assert "합성기" in response["final_answer"]
+    assert "철근 20개" in response["final_answer"]
+    assert "구리선 20개" in response["final_answer"]
+    assert "주석판 20개" in response["final_answer"]
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "통신탑 만드는 법 알려줘",
+        "통신탑 만들기 방법 알려줘",
+        "통신탑 레시피 알려줘",
+        "통신탑 조립 방법 알려줘",
+        "통신탑 건설 재료 알려줘",
+    ],
+)
+def test_manual_qa_recipe_synonyms_return_telecommunication_tower_recipe(
+    question: str,
+) -> None:
+    response = answer_manual_qa(question)
+
+    assert response["question_type"] in {"resource_question", "recipe_question"}
+    source_ids = {source["doc_id"] for source in response["sources"]}
+    assert "recipe_make_telecommunication_tower" in source_ids
+    assert "합성기" in response["final_answer"]
+    assert "철근 20개" in response["final_answer"]
+    assert "구리선 20개" in response["final_answer"]
+    assert "주석판 20개" in response["final_answer"]
 
 
 def test_manual_qa_answers_use_formal_tone() -> None:

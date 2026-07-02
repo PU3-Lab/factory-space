@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
+#include "MaterialGenerationRuntimeTypes.h"
 #include "PlanetEventManagerSubsystem.h"
 #include "QuestManagerSubsystem.h"
 #include "Recipe/RecipeTable.h"
@@ -241,4 +242,10 @@ public:
 
 	UPROPERTY()
 	TArray<FFactorySavedLadderData> Ladders;
+
+	UPROPERTY()
+	TArray<FFactoryDynamicMaterialRecord> DynamicMaterials;
+
+	UPROPERTY()
+	TArray<FFactoryDynamicRecipeRecord> DynamicRecipes;
 };

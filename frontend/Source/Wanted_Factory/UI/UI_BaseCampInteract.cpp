@@ -12,15 +12,26 @@
 #include "UI_UpgradeNode.h"
 #include "UI/UI_InventorySlot.h"
 #include "PlayerWarehouseSubsystem.h"
+#include "FactoryAgentClientSubsystem.h"
 #include "MachineBase.h"
 #include "FactoryManagerSubsystem.h"
 #include "UI_FactoryStatusRow.h"
 #include "Resource/ResourceData.h"
 #include "ItemDragDropOperation.h"
-#include "UI/UIInteractDisplayHelpers.h" // 🌟 기존 오리지널 텍스트 변환 헬퍼 인클루드
+#include "UI/UIInteractDisplayHelpers.h"
 #include "Blueprint/DragDropOperation.h" 
+#include "Blueprint/SlateBlueprintLibrary.h"
+#include "InputCoreTypes.h"
 
 using namespace UIInteractHelpers;
+
+static bool IsInputIconDragCandidate(UImage* Icon, FName ItemID, const TMap<FName, int32>& InputInventory, FVector2D ScreenPosition)
+{
+    return Icon
+        && !ItemID.IsNone()
+        && InputInventory.FindRef(ItemID) > 0
+        && USlateBlueprintLibrary::IsUnderLocation(Icon->GetCachedGeometry(), ScreenPosition);
+}
 
 void UUI_BaseCampInteract::SetTargetMachine(AMachineBase* InMachine)
 {
@@ -30,6 +41,8 @@ void UUI_BaseCampInteract::SetTargetMachine(AMachineBase* InMachine)
     LastInputVisualItemID_2 = NAME_None;
     LastInputVisualItemID_3 = NAME_None;
     LastOutputVisualItemID = NAME_None;
+    DraggingInputItemID = NAME_None;
+    DraggingInputIcon = nullptr;
 }
 
 void UUI_BaseCampInteract::NativeConstruct()
@@ -52,6 +65,12 @@ void UUI_BaseCampInteract::NativeConstruct()
     {
         BTN_Tab_newMaterial->OnClicked.RemoveDynamic(this, &UUI_BaseCampInteract::OnMaterialTabClicked);
         BTN_Tab_newMaterial->OnClicked.AddDynamic(this, &UUI_BaseCampInteract::OnMaterialTabClicked);
+    }
+
+    if (BTN_RequestMaterialGeneration)
+    {
+        BTN_RequestMaterialGeneration->OnClicked.RemoveDynamic(this, &UUI_BaseCampInteract::OnRequestMaterialGenerationClicked);
+        BTN_RequestMaterialGeneration->OnClicked.AddDynamic(this, &UUI_BaseCampInteract::OnRequestMaterialGenerationClicked);
     }
 
     // 초기 화면 상태 지정
@@ -101,7 +120,7 @@ void UUI_BaseCampInteract::NativeTick(const FGeometry& MyGeometry, float InDelta
     FName OutputName = Recipe.OutputItem1;
     if (!ManualDroppedOutputItemID.IsNone()) OutputName = ManualDroppedOutputItemID;
     int32 OutputAmount = TargetBaseCamp->GetOutputBuffer().FindRef(OutputName);
-    UpdateOutputUI(OutputName, OutputAmount, TargetBaseCamp->GetMaxOutput());
+    UpdateOutputUI(OutputName, OutputAmount);
 }
 
 void UUI_BaseCampInteract::UpdateInputSlotUI(int32 SlotIndex, FName ItemName, int32 CurrentAmount, int32 MaxAmount)
@@ -112,13 +131,13 @@ void UUI_BaseCampInteract::UpdateInputSlotUI(int32 SlotIndex, FName ItemName, in
     UImage* TargetIMG_Icon = (SlotIndex == 1) ? IMG_InputIcon_1 : ((SlotIndex == 2) ? IMG_InputIcon_2 : IMG_InputIcon_3);
     FName& LastVisualID = (SlotIndex == 1) ? LastInputVisualItemID_1 : ((SlotIndex == 2) ? LastInputVisualItemID_2 : LastInputVisualItemID_3);
 
-    const FName DisplayItemName = ItemName.IsNone() ? LastVisualID : ItemName;
-    if (!ItemName.IsNone()) LastVisualID = ItemName;
+    const FName DisplayItemName = (CurrentAmount > 0) ? ItemName : NAME_None;
+    LastVisualID = DisplayItemName;
 
     if (TargetTXT_Name && TargetTXT_Count && TargetPB_Buffer)
     {
-        TargetTXT_Name->SetText(GetResourceDisplayText(ResourceDataTable, DisplayItemName));
-        TargetTXT_Count->SetText(FText::FromString(FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount)));
+        TargetTXT_Name->SetText(DisplayItemName.IsNone() ? FText::GetEmpty() : GetResourceDisplayText(ResourceDataTable, DisplayItemName));
+        TargetTXT_Count->SetText(CurrentAmount > 0 ? FText::FromString(FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount)) : FText::GetEmpty());
         TargetPB_Buffer->SetPercent((MaxAmount > 0) ? (float)CurrentAmount / MaxAmount : 0.0f);
     }
 
@@ -139,22 +158,20 @@ void UUI_BaseCampInteract::UpdateInputSlotUI(int32 SlotIndex, FName ItemName, in
             {
                 UTexture2D* Tex = RowData->ImgAsset.IsValid() ? RowData->ImgAsset.Get() : RowData->ImgAsset.LoadSynchronous();
                 if (Tex) TargetIMG_Icon->SetBrushFromTexture(Tex);
-                TargetIMG_Icon->SetColorAndOpacity(CurrentAmount <= 0 ? FLinearColor(1.f, 1.f, 1.f, 0.15f) : FLinearColor::White);
+                TargetIMG_Icon->SetColorAndOpacity(FLinearColor::White);
             }
         }
     }
 }
 
-void UUI_BaseCampInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount, int32 MaxAmount)
+void UUI_BaseCampInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount)
 {
     const FName DisplayItemName = ItemName.IsNone() ? LastOutputVisualItemID : ItemName;
     if (!ItemName.IsNone()) LastOutputVisualItemID = ItemName;
 
-    if (TXT_OutputName && TXT_OutputCount && PB_OutputBuffer)
+    if (TXT_OutputName)
     {
         TXT_OutputName->SetText(GetResourceDisplayText(ResourceDataTable, DisplayItemName));
-        TXT_OutputCount->SetText(FText::FromString(FString::Printf(TEXT("%d / %d"), CurrentAmount, MaxAmount)));
-        PB_OutputBuffer->SetPercent((MaxAmount > 0) ? (float)CurrentAmount / MaxAmount : 0.0f);
     }
 
     if (IMG_OutputIcon)
@@ -184,6 +201,7 @@ bool UUI_BaseCampInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDrag
 {
     UItemDragDropOperation* ItemDragOp = Cast<UItemDragDropOperation>(InOperation);
     if (!ItemDragOp || !TargetBaseCamp) return false;
+    if (ItemDragOp->Payload == this) return false;
 
     FName DroppedItemID = ItemDragOp->DraggedItemID;
     if (DroppedItemID.IsNone()) return false;
@@ -213,9 +231,162 @@ bool UUI_BaseCampInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDrag
 }
 
 // (나머지 OnStatusTabClicked, OnUpgradeTabClicked, OnMaterialTabClicked, SwitchSubPaneMode, RefreshFactoryStatus, RefreshAllUpgradeNodes, RefreshCampInventoryGrid 코드는 기존 구현과 완전히 동일하므로 유지)
+FReply UUI_BaseCampInteract::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    FReply Reply = Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+    if (!TargetBaseCamp || InMouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+    {
+        return Reply;
+    }
+
+    DraggingInputItemID = NAME_None;
+    DraggingInputIcon = nullptr;
+
+    const FVector2D ClickPosition = InMouseEvent.GetScreenSpacePosition();
+    const TMap<FName, int32>& InputInventory = TargetBaseCamp->GetInputInventory();
+
+    if (IsInputIconDragCandidate(IMG_InputIcon_1, LastInputVisualItemID_1, InputInventory, ClickPosition))
+    {
+        DraggingInputItemID = LastInputVisualItemID_1;
+        DraggingInputIcon = IMG_InputIcon_1;
+    }
+    else if (IsInputIconDragCandidate(IMG_InputIcon_2, LastInputVisualItemID_2, InputInventory, ClickPosition))
+    {
+        DraggingInputItemID = LastInputVisualItemID_2;
+        DraggingInputIcon = IMG_InputIcon_2;
+    }
+    else if (IsInputIconDragCandidate(IMG_InputIcon_3, LastInputVisualItemID_3, InputInventory, ClickPosition))
+    {
+        DraggingInputItemID = LastInputVisualItemID_3;
+        DraggingInputIcon = IMG_InputIcon_3;
+    }
+
+    if (DraggingInputItemID.IsNone())
+    {
+        return Reply;
+    }
+
+    return FReply::Handled().DetectDrag(TakeWidget(), EKeys::LeftMouseButton);
+}
+
+void UUI_BaseCampInteract::NativeOnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& InPointerEvent, UDragDropOperation*& OutOperation)
+{
+    Super::NativeOnDragDetected(MyGeometry, InPointerEvent, OutOperation);
+
+    if (DraggingInputItemID.IsNone())
+    {
+        return;
+    }
+
+    UItemDragDropOperation* DragOp = NewObject<UItemDragDropOperation>(this);
+    if (!DragOp)
+    {
+        return;
+    }
+
+    DragOp->DraggedItemID = DraggingInputItemID;
+    DragOp->Payload = this;
+
+    OutOperation = DragOp;
+}
+
+bool UUI_BaseCampInteract::TakeInputItemForInventoryDrop(FName ItemID)
+{
+    if (!TargetBaseCamp)
+    {
+        return false;
+    }
+
+    const bool bTaken = TargetBaseCamp->TakeInputItem(ItemID, 1);
+    if (bTaken)
+    {
+        DraggingInputItemID = NAME_None;
+        DraggingInputIcon = nullptr;
+    }
+
+    return bTaken;
+}
+
+void UUI_BaseCampInteract::RefreshCampInventoryAfterInventoryDrop()
+{
+    RefreshCampInventoryGrid();
+}
+
+void UUI_BaseCampInteract::ReturnInputItemFromFailedDrop(FName ItemID)
+{
+    if (!TargetBaseCamp || ItemID.IsNone())
+    {
+        return;
+    }
+
+    TargetBaseCamp->AddItem(ItemID, 1);
+    RefreshCampInventoryGrid();
+}
+
 void UUI_BaseCampInteract::OnStatusTabClicked() { SwitchSubPaneMode(EBaseCampSubMode::FactoryStatus); }
 void UUI_BaseCampInteract::OnUpgradeTabClicked() { SwitchSubPaneMode(EBaseCampSubMode::LevelUpgrade); }
 void UUI_BaseCampInteract::OnMaterialTabClicked() { SwitchSubPaneMode(EBaseCampSubMode::newMaterial); }
+void UUI_BaseCampInteract::OnRequestMaterialGenerationClicked() { RequestMaterialGeneration(); }
+
+bool UUI_BaseCampInteract::RequestMaterialGeneration()
+{
+    if (!TargetBaseCamp)
+    {
+        return false;
+    }
+
+    UGameInstance* GameInstance = GetGameInstance();
+    UFactoryAgentClientSubsystem* AgentClient = GameInstance
+        ? GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>()
+        : nullptr;
+    if (!AgentClient)
+    {
+        return false;
+    }
+
+    TArray<FFactoryMaterialRequestInput> Inputs;
+    Inputs.Reserve(3);
+
+    TArray<TPair<FName, int32>> SortedInputs = TargetBaseCamp->GetInputInventory().Array();
+    SortedInputs.Sort([](const TPair<FName, int32>& Left, const TPair<FName, int32>& Right)
+    {
+        if (Left.Key != Right.Key)
+        {
+            return Left.Key.LexicalLess(Right.Key);
+        }
+
+        return Left.Value < Right.Value;
+    });
+
+    for (const TPair<FName, int32>& InputPair : SortedInputs)
+    {
+        if (InputPair.Key.IsNone() || InputPair.Value <= 0)
+        {
+            continue;
+        }
+
+        FFactoryMaterialRequestInput& Input = Inputs.AddDefaulted_GetRef();
+        Input.ItemId = InputPair.Key;
+        Input.Quantity = InputPair.Value;
+
+        if (Inputs.Num() >= 3)
+        {
+            break;
+        }
+    }
+
+    if (Inputs.Num() == 0)
+    {
+        return false;
+    }
+
+    if (AgentClient->GetConnectionState() == EFactoryAgentConnectionState::Disconnected)
+    {
+        AgentClient->ConnectToDefaultServer();
+    }
+
+    return AgentClient->SendMaterialGenerationRequest(Inputs, TEXT(""), true, TEXT("basecamp-ui-001"));
+}
 
 void UUI_BaseCampInteract::SwitchSubPaneMode(EBaseCampSubMode NewMode)
 {
@@ -246,7 +417,10 @@ void UUI_BaseCampInteract::RefreshFactoryStatus()
 
     // 전력 데이터 반영
     FFactoryPowerOverview PowerOverview = FactoryManager->GetFactoryPowerOverview();
-    FString PowerString = FString::Printf(TEXT("%.1fW / %.1fW"), PowerOverview.CurrentDemandPower, PowerOverview.CurrentAvailablePower);
+    FString PowerString = FString::Printf(
+        TEXT("소모량 %.1fW / 총 전력량 %.1fW"),
+        PowerOverview.CurrentDemandPower,
+        PowerOverview.CurrentAvailablePower);
     TXT_PowerStatus->SetText(FText::FromString(PowerString));
 
     // 프로그레스 바 퍼센트 계산 (0.0f ~ 1.0f)
@@ -322,8 +496,8 @@ void UUI_BaseCampInteract::RefreshCampInventoryGrid()
         if (Item.Value > 0) ItemIDs.Add(Item.Key);
     }
     
-    int32 MaxColumns = 5;  
-    int32 TotalSlots = 30; 
+    int32 MaxColumns = 4;
+    int32 TotalSlots = 24;
 
     for (int32 i = 0; i < TotalSlots; ++i)
     {

@@ -21,6 +21,21 @@ struct FFactoryMaterialRequestInput
 };
 
 USTRUCT(BlueprintType)
+struct FFactoryMaterialProcessConditions
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Factory Agent|Material Generation")
+	FString Temperature = TEXT("default");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Factory Agent|Material Generation")
+	FString Pressure = TEXT("default");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Factory Agent|Material Generation")
+	FString Catalyst;
+};
+
+USTRUCT(BlueprintType)
 struct FFactoryMaterialResponseOutput
 {
 	GENERATED_BODY()
@@ -30,6 +45,33 @@ struct FFactoryMaterialResponseOutput
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
 	int32 Quantity = 0;
+};
+
+USTRUCT()
+struct FFactoryPendingMaterialGenerationRequest
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FString RequestId;
+
+	UPROPERTY()
+	FString SessionId;
+
+	UPROPERTY()
+	FString ClientId;
+
+	UPROPERTY()
+	TArray<FFactoryMaterialRequestInput> Inputs;
+
+	UPROPERTY()
+	FFactoryMaterialProcessConditions ProcessConditions;
+
+	UPROPERTY()
+	bool bGenerateVisualAsset = false;
+
+	UPROPERTY()
+	int32 ContextTemperature = 0;
 };
 
 USTRUCT(BlueprintType)
@@ -59,6 +101,9 @@ struct FFactoryMaterialGenerationResponse
 	FString Name;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString State;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
 	FString GenerationStatus;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
@@ -77,13 +122,40 @@ struct FFactoryMaterialGenerationResponse
 	FString FallbackIcon;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString RowName;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString Form;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString Substance;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString MaterialType;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString Shape;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString DisplayName;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString VisualColor;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
 	FString Message;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString FailureReason;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
 	bool bCached = false;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
 	TArray<FFactoryMaterialResponseOutput> Outputs;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
+	FString MetadataJson;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Factory Agent|Material Generation")
 	FString RawPayloadJson;
@@ -184,6 +256,30 @@ public:
 		const FString& ClientId);
 
 	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
+	bool SendMaterialGenerationRequestAdvanced(
+		const TArray<FFactoryMaterialRequestInput>& Inputs,
+		const FFactoryMaterialProcessConditions& ProcessConditions,
+		bool bGenerateVisualAsset,
+		const FString& RequestId,
+		const FString& SessionId,
+		const FString& ClientId,
+		int32 ContextTemperature);
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
+	FString BuildMaterialGenerationRequestJson(
+		const TArray<FFactoryMaterialRequestInput>& Inputs,
+		const FFactoryMaterialProcessConditions& ProcessConditions,
+		bool bGenerateVisualAsset,
+		const FString& RequestId,
+		const FString& SessionId,
+		const FString& ClientId,
+		int32 ContextTemperature) const;
+
+	bool ConsumePendingMaterialGenerationRequest(
+		const FString& RequestId,
+		FFactoryPendingMaterialGenerationRequest& OutRequest);
+
+	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
 	bool SendProcessOptimizerStateUpdate(int32 FactoryRevision, const FString& SessionId, const FString& ClientId);
 
 	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
@@ -205,6 +301,7 @@ public:
 private:
 	TSharedPtr<IWebSocket> Socket;
 	EFactoryAgentConnectionState ConnectionState = EFactoryAgentConnectionState::Disconnected;
+	TMap<FString, FFactoryPendingMaterialGenerationRequest> PendingMaterialGenerationRequests;
 
 	FString SendAgentRequestInternal(
 		const FString& Agent,
@@ -224,4 +321,12 @@ private:
 		const FString& Agent,
 		const TSharedPtr<FJsonObject>& PayloadObject,
 		FFactoryMaterialGenerationResponse& OutResponse) const;
+	TSharedPtr<FJsonObject> BuildMaterialGenerationRequestObject(
+		const TArray<FFactoryMaterialRequestInput>& Inputs,
+		const FFactoryMaterialProcessConditions& ProcessConditions,
+		bool bGenerateVisualAsset,
+		const FString& RequestId,
+		const FString& SessionId,
+		const FString& ClientId,
+		int32 ContextTemperature) const;
 };
