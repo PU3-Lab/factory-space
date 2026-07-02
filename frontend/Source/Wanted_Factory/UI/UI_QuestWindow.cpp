@@ -10,8 +10,7 @@ namespace
 {
     bool ShouldShowSubQuestZone(const FTutorialQuestStep& Step)
     {
-        return Step.QuestId.StartsWith(TEXT("TUT_COMM_"))
-            || Step.QuestId.StartsWith(TEXT("TUT_SIGNAL_"));
+        return Step.QuestId.StartsWith(TEXT("TUT_COMM_"));
     }
 
     FString BuildSubQuestProgressText(const FQuestState& Quest)
