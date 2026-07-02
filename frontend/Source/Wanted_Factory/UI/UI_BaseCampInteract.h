@@ -12,6 +12,7 @@ class UButton;
 class UImage;
 class UTextBlock;
 class UProgressBar;
+class UFactoryAgentClientSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBaseCampInteractClosedSignature);
 
@@ -41,6 +42,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "BaseCamp UI")
     bool RequestMaterialGeneration();
 
+    UFUNCTION(BlueprintCallable, Category = "BaseCamp UI")
+    bool RequestProcessOptimization();
+
     void RefreshAllUpgradeNodes();
     bool TakeInputItemForInventoryDrop(FName ItemID);
     void RefreshCampInventoryAfterInventoryDrop();
@@ -59,6 +63,7 @@ protected:
     UPROPERTY(meta = (BindWidget)) class UButton* BTN_Tab_LevelUpgrade;
     UPROPERTY(meta = (BindWidget)) class UButton* BTN_Tab_newMaterial;
     UPROPERTY(meta = (BindWidgetOptional)) class UButton* BTN_RequestMaterialGeneration;
+    UPROPERTY(meta = (BindWidgetOptional)) class UButton* BTN_RequestOptimization;
     UPROPERTY(meta = (BindWidget)) class UWidgetSwitcher* WS_SubPaneSwitcher;
 
     // --- 공장 상태창 탭 관련 ---
@@ -120,9 +125,13 @@ protected:
     UFUNCTION() void OnUpgradeTabClicked();
     UFUNCTION() void OnMaterialTabClicked();
     UFUNCTION() void OnRequestMaterialGenerationClicked();
+    UFUNCTION() void OnRequestOptimizationClicked();
+    UFUNCTION() void HandleMaterialGenerationResponse(const FFactoryMaterialGenerationResponse& Response);
     void SwitchSubPaneMode(EBaseCampSubMode NewMode);
 
 private:
     UPROPERTY()
     AMachineBase* TargetBaseCamp;
+
+    FName LatestMaterialGenerationOutputItemID = NAME_None;
 };
