@@ -177,6 +177,16 @@ void AOJJ_Player::BeginPlay()
 		}
 	}
 
+	// [미니맵] MainHUD와 별도 뷰포트 위젯(무접점) — 앵커/위치는 WBP_Minimap 디자이너 소관.
+	if (PC && MinimapWidgetClass)
+	{
+		MinimapWidgetInstance = CreateWidget<UUserWidget>(PC, MinimapWidgetClass);
+		if (MinimapWidgetInstance)
+		{
+			MinimapWidgetInstance->AddToViewport();
+		}
+	}
+
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
@@ -1163,6 +1173,9 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
 	PlayerInputComponent->BindKey(EKeys::Slash, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
+	// [미니맵] N = 미니맵 토글. ⚠️ M은 SendOperatorGuideRequest(AI 오퍼레이터, 위 1161행)에 선점 — 겹치면
+	// 토글마다 AI 요청이 발사되므로 미사용 키 N 채택(M 전환은 Chan과 키 이관 합의 후).
+	PlayerInputComponent->BindKey(EKeys::N, IE_Pressed, this, &AOJJ_Player::ToggleMinimap);
 	PlayerInputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &AOJJ_Player::TriggerTutorialDialogueReveal);
 	// [옛 빌드 입력 경로 전수 정리] O(성형)/P(합성)/T(통신) 직행 BindKey는 카테고리 숫자키 슬롯이 완전 대체하여 제거.
 	// 콘솔 SetBuildMode tower(통신탑)는 계속 동작.
@@ -2153,6 +2166,11 @@ void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
        {
           MainHUDWidgetInstance->SetVisibility(ESlateVisibility::Collapsed);
        }
+       // [미니맵] HUD와 함께 숨김(빌드 화면 정리). 복원은 해제 경로에서 bMinimapHiddenByUser 판단.
+       if (MinimapWidgetInstance)
+       {
+          MinimapWidgetInstance->SetVisibility(ESlateVisibility::Collapsed);
+       }
        if (PC && BuildModeWidgetClass && !BuildModeWidgetInstance)
        {
           BuildModeWidgetInstance = CreateWidget<UUserWidget>(PC, BuildModeWidgetClass);
@@ -2203,6 +2221,30 @@ void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
           // 드래그 씹힘 방지
           MainHUDWidgetInstance->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
        }
+       // [미니맵] 사용자가 N으로 꺼둔 상태가 아니면 HUD와 함께 복원(사용자 의사 존중).
+       if (MinimapWidgetInstance && !bMinimapHiddenByUser)
+       {
+          MinimapWidgetInstance->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+       }
+    }
+}
+
+void AOJJ_Player::ToggleMinimap()
+{
+    if (!MinimapWidgetInstance)
+    {
+       return;
+    }
+
+    // 플래그가 단일 진실원 — 빌드모드(위젯 강제 Collapsed) 중에도 사용자 의사는 여기 누적되고,
+    // 실제 표시는 빌드모드가 아닐 때만 반영(이탈 복원 로직과 동일 기준).
+    bMinimapHiddenByUser = !bMinimapHiddenByUser;
+
+    const bool bInBuildMode = BuildController && BuildController->IsInBuildMode();
+    if (!bInBuildMode)
+    {
+       MinimapWidgetInstance->SetVisibility(
+          bMinimapHiddenByUser ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
     }
 }
 

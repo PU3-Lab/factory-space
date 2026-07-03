@@ -135,6 +135,22 @@ protected:
 	UPROPERTY()
 	UUserWidget* MainHUDWidgetInstance;
 
+	// [미니맵] WBP_Minimap(UUI_Minimap 자식) 클래스. BP_OJJ_Player에서 할당 — 미할당이면 미니맵 없이 진행(안전 스킵).
+	// MainHUD와 별도 뷰포트 위젯(무접점) — 화면 좌상단 앵커/날짜 HUD 아래 오프셋은 WBP 디자이너 소관, C++은 AddToViewport만.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
+	TSubclassOf<UUserWidget> MinimapWidgetClass;
+	UPROPERTY()
+	UUserWidget* MinimapWidgetInstance;
+
+	// [미니맵] N키로 사용자가 직접 꺼둔 상태. 빌드모드 이탈 복원에서 이 플래그면 다시 안 켠다(사용자 의사 존중).
+	// ⚠️ 토글이 M키가 아닌 이유: M은 SendOperatorGuideRequest(AI 오퍼레이터 요청, Chan 기능)에 선점 —
+	//    겹쳐 바인딩하면 미니맵 토글마다 AI 요청이 발사된다. M으로 바꾸려면 Chan과 키 이관 합의 필요.
+	bool bMinimapHiddenByUser = false;
+
+	// [미니맵] N키 핸들러 — Visible/Collapsed 토글 + bMinimapHiddenByUser 갱신.
+	// 빌드모드 중엔 플래그만 갱신(실제 표시는 빌드모드 이탈 복원 로직이 플래그를 보고 판단).
+	void ToggleMinimap();
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Resource Nameplate", meta = (ClampMin = "0.0"))
 	float ResourceNameplateTraceDistance = 2000.0f;
 
