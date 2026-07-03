@@ -235,6 +235,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Factory Manager")
 	TArray<FMachineNode> GetMachineNodes();
 
+	UFUNCTION(BlueprintPure, Category = "Factory Manager")
+	AMachineBase* FindMachineByAgentTargetId(const FString& MachineId) const;
+
 	UFUNCTION(BlueprintCallable, Category = "Factory Manager")
 	TArray<FConnectionEdge> GetConnectionEdges();
 

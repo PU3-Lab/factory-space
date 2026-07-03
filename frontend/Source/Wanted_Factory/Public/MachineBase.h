@@ -610,6 +610,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Machine | Durability")
 	float GetCurrentDurability() const { return CurrentDurability; }
+
+	UFUNCTION(BlueprintPure, Category = "Machine | Durability")
+	float GetLowDurabilityWarningThreshold() const { return LowDurabilityWarningThreshold; }
 	bool RefundBufferedItemsToWarehouse();
 	void GetSaveState(
 		TMap<FName, int32>& OutInputInventory,

@@ -1,4 +1,4 @@
-#include "UI/UI_DialogueBalloon.h"
+﻿#include "UI/UI_DialogueBalloon.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
@@ -6,13 +6,19 @@
 #include "Components/EditableText.h"
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
+#include "DrawDebugHelpers.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "Engine/Texture2D.h"
 #include "Input/Reply.h"
+#include "FactoryManagerSubsystem.h"
 #include "FactoryAgentClientSubsystem.h" 
 #include "FactoryAgentJsonUtils.h"       
+#include "MachineBase.h"
+#include "Machines/PowerGridNode.h"
 #include "Dom/JsonObject.h"
 #include "InputCoreTypes.h"
+#include "Wanted_Factory.h"
 
 void UUI_DialogueBalloon::NativeConstruct()
 {
@@ -68,11 +74,13 @@ void UUI_DialogueBalloon::NativeTick(const FGeometry& MyGeometry, float InDeltaT
 {
     Super::NativeTick(MyGeometry, InDeltaTime);
     UpdateContinuePromptBlink(InDeltaTime);
+    UpdateTrackedProcessOptimizerIssues();
+    RefreshTrackedProcessOptimizerHighlights();
 }
 
 void UUI_DialogueBalloon::NativeDestruct()
 {
-    // [메모리 누수 방지] 해제 시점에 모든 델리게이트 언바인딩 마감
+    // [硫붾え由??꾩닔 諛⑹?] ?댁젣 ?쒖젏??紐⑤뱺 ?몃━寃뚯씠???몃컮?몃뵫 留덇컧
     if (UGameInstance* GI = GetGameInstance())
     {
         UFactoryAgentClientSubsystem* AgentClient = GI->GetSubsystem<UFactoryAgentClientSubsystem>();
@@ -89,26 +97,26 @@ void UUI_DialogueBalloon::NativeDestruct()
     Super::NativeDestruct();
 }
 
-//  플레이어가 엔터키를 쳤을 때 서버로 질문 전송
+//  ?뚮젅?댁뼱媛 ?뷀꽣?ㅻ? 爾ㅼ쓣 ???쒕쾭濡?吏덈Ц ?꾩넚
 void UUI_DialogueBalloon::HandleOnTextCommitted(const FText& Text, ETextCommit::Type CommitType)
 {
-    // 엔터키 커밋일 때만 로직 가동
+    // ?뷀꽣??而ㅻ컠???뚮쭔 濡쒖쭅 媛??
     if (CommitType != ETextCommit::OnEnter) return;
     
     const FString QuestionStr = Text.ToString().TrimStartAndEnd();
     
-    // 엔터를 치면 내용 유무 상관없이 인풋창은 즉시 초기화 및 증발
+    // ?뷀꽣瑜?移섎㈃ ?댁슜 ?좊Т ?곴??놁씠 ?명뭼李쎌? 利됱떆 珥덇린??諛?利앸컻
     ET_OperatorInput->SetText(FText::FromString(QuestionStr));
     ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
 
-    // 포커스를 완벽하게 꺼내 캐릭터 조작 모드로 강제 복구
+    // ?ъ빱?ㅻ? ?꾨꼍?섍쾶 爰쇰궡 罹먮┃??議곗옉 紐⑤뱶濡?媛뺤젣 蹂듦뎄
     if (APlayerController* PC = GetOwningPlayer())
     {
         PC->SetInputMode(FInputModeGameOnly());
         PC->bShowMouseCursor = false;
     }
 
-    // 만약 아무것도 안 치고 엔터만 눌렀다면 가이드 요청 없이 닫기만 하고 마무리
+    // 留뚯빟 ?꾨Т寃껊룄 ??移섍퀬 ?뷀꽣留??뚮??ㅻ㈃ 媛?대뱶 ?붿껌 ?놁씠 ?リ린留??섍퀬 留덈Т由?
     if (QuestionStr.IsEmpty()) return;
 
     UGameInstance* GI = GetGameInstance();
@@ -124,7 +132,7 @@ void UUI_DialogueBalloon::HandleOnTextCommitted(const FText& Text, ETextCommit::
     ShowExternalDialogue(TEXT("분석 중...")); 
 }
 
-//AI 오퍼레이터의 정답 JSON 패킷 수신 처리
+//AI ?ㅽ띁?덉씠?곗쓽 ?뺣떟 JSON ?⑦궥 ?섏떊 泥섎━
 void UUI_DialogueBalloon::HandleOnOperatorGuideResponse(const FString& RequestId, const FString& Agent, const FString& PayloadJson, const FString& RawMessage)
 {
     if (Agent != TEXT("operator_guide")) return;
@@ -137,24 +145,24 @@ void UUI_DialogueBalloon::HandleOnOperatorGuideResponse(const FString& RequestId
             PayloadObject->TryGetStringField(TEXT("answer"), Answer) || 
             PayloadObject->TryGetStringField(TEXT("text"), Answer))
         {
-            // AI의 최종 답변을 TXT_Dialogue 자리에 선명하게 밀어 넣습니다
+            // AI??理쒖쥌 ?듬???TXT_Dialogue ?먮━???좊챸?섍쾶 諛???ｌ뒿?덈떎
             ShowExternalDialogue(Answer);
         }
     }
 }
 
-// 통신 에러 발생 시 처리
+// ?듭떊 ?먮윭 諛쒖깮 ??泥섎━
 void UUI_DialogueBalloon::HandleOnOperatorGuideError(const FString& RequestId, const FString& Agent, const FString& ErrorCode, const FString& ErrorMessage, const FString& RawMessage)
 {
     if (Agent != TEXT("operator_guide")) return;
     
     FString CombinedMessage = ErrorCode.IsEmpty() ? ErrorMessage : FString::Printf(TEXT("%s: %s"), *ErrorCode, *ErrorMessage);
     
-    // 에러 메시지도 텍스트 박스에 깔끔하게 출력
+    // ?먮윭 硫붿떆吏???띿뒪??諛뺤뒪??源붾걫?섍쾶 異쒕젰
     ShowExternalDialogue(CombinedMessage);
 }
 
-// --- 이하 기존 UI_DialogueBalloon 함수들 동일 유지 ---
+// --- ?댄븯 湲곗〈 UI_DialogueBalloon ?⑥닔???숈씪 ?좎? ---
 
 void UUI_DialogueBalloon::HandleOnOperatorGuideProgress(const FString& RequestId, const FString& Agent, const FString& Stage, const FString& Message, const FString& RawMessage)
 {
@@ -194,26 +202,262 @@ void UUI_DialogueBalloon::HandleOnProcessOptimizerResponse(
         return;
     }
 
+    bProcessOptimizerRequestInFlight = false;
+
+    const bool bIsAnalyzeResponse =
+        RequestId.StartsWith(TEXT("optimizer-analyze-")) ||
+        PayloadObject->HasField(TEXT("suggestions"));
+    const bool bIsStateUpdateResponse =
+        RequestId.StartsWith(TEXT("optimizer-state-")) ||
+        PayloadObject->HasField(TEXT("optimization_alert"));
+
+    if (bIsStateUpdateResponse && !bIsAnalyzeResponse)
+    {
+        LOG_LC(TEXT("Process optimizer state update response ignored by dialogue UI. request_id=%s"), *RequestId);
+        return;
+    }
+
     const TArray<TSharedPtr<FJsonValue>>* SuggestionValues = nullptr;
+    TArray<FTrackedProcessOptimizerIssue> NewIssues;
     if (PayloadObject->TryGetArrayField(TEXT("suggestions"), SuggestionValues) &&
         SuggestionValues != nullptr &&
-        SuggestionValues->Num() > 0 &&
-        (*SuggestionValues)[0].IsValid() &&
-        (*SuggestionValues)[0]->Type == EJson::Object)
+        SuggestionValues->Num() > 0)
     {
-        const TSharedPtr<FJsonObject> SuggestionObject = (*SuggestionValues)[0]->AsObject();
-        const FString RecommendedAction =
-            FactoryAgentJsonUtils::GetStringField(SuggestionObject, TEXT("recommended_action")).TrimStartAndEnd();
-        if (!RecommendedAction.IsEmpty())
+        for (const TSharedPtr<FJsonValue>& SuggestionValue : *SuggestionValues)
         {
-            ShowExternalDialogue(RecommendedAction);
-            return;
+            if (!SuggestionValue.IsValid() || SuggestionValue->Type != EJson::Object)
+            {
+                continue;
+            }
+
+            const TSharedPtr<FJsonObject> SuggestionObject = SuggestionValue->AsObject();
+            if (!SuggestionObject.IsValid())
+            {
+                continue;
+            }
+
+            const TSharedPtr<FJsonObject>* TargetObject = nullptr;
+            if (!SuggestionObject->TryGetObjectField(TEXT("target"), TargetObject) ||
+                TargetObject == nullptr ||
+                !TargetObject->IsValid())
+            {
+                continue;
+            }
+
+            const FString TargetId =
+                FactoryAgentJsonUtils::GetStringField(*TargetObject, TEXT("id")).TrimStartAndEnd();
+            if (TargetId.IsEmpty())
+            {
+                continue;
+            }
+
+            FTrackedProcessOptimizerIssue Issue;
+            Issue.TargetId = TargetId;
+            Issue.IssueType = ClassifyProcessOptimizerIssue(SuggestionObject);
+            NewIssues.Add(Issue);
         }
     }
 
-    ShowExternalDialogue(TEXT("공장에 문제가 없습니다."));
+    if (NewIssues.Num() > 0)
+    {
+        SetTrackedProcessOptimizerIssues(NewIssues);
+        ShowExternalDialogue(TEXT("발견한 문제를 강조 표시했습니다"));
+        return;
+    }
+
+    TrackedProcessOptimizerIssues.Reset();
+    if (UWorld* World = GetWorld())
+    {
+        FlushPersistentDebugLines(World);
+    }
+
+    ShowExternalDialogue(TEXT("문제가 발견되지 않았습니다"));
+}
+void UUI_DialogueBalloon::SetTrackedProcessOptimizerIssues(const TArray<FTrackedProcessOptimizerIssue>& NewIssues)
+{
+    TrackedProcessOptimizerIssues.Reset();
+    bCanAnnounceProcessOptimizerResolution = false;
+    if (NewIssues.Num() == 0)
+    {
+        return;
+    }
+
+    UGameInstance* GI = GetGameInstance();
+    UFactoryManagerSubsystem* FactoryManager = GI ? GI->GetSubsystem<UFactoryManagerSubsystem>() : nullptr;
+    if (!FactoryManager)
+    {
+        return;
+    }
+
+    for (const FTrackedProcessOptimizerIssue& NewIssue : NewIssues)
+    {
+        FTrackedProcessOptimizerIssue ResolvedIssue = NewIssue;
+        AMachineBase* Machine = FactoryManager->FindMachineByAgentTargetId(NewIssue.TargetId);
+        if (!Machine)
+        {
+            LOG_LC(TEXT("Process optimizer target was not found in world: %s"), *NewIssue.TargetId);
+            continue;
+        }
+
+        ResolvedIssue.Machine = Machine;
+        ResolvedIssue.InitialDurability = Machine->GetCurrentDurability();
+        TrackedProcessOptimizerIssues.Add(ResolvedIssue);
+        bCanAnnounceProcessOptimizerResolution = true;
+
+        LOG_LC(
+            TEXT("Process optimizer target tracked: id=%s actor=%s issue_type=%d location=(X=%.2f,Y=%.2f,Z=%.2f)"),
+            *ResolvedIssue.TargetId,
+            *Machine->GetName(),
+            static_cast<int32>(ResolvedIssue.IssueType),
+            Machine->GetActorLocation().X,
+            Machine->GetActorLocation().Y,
+            Machine->GetActorLocation().Z);
+    }
 }
 
+void UUI_DialogueBalloon::RefreshTrackedProcessOptimizerHighlights()
+{
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return;
+    }
+
+    for (const FTrackedProcessOptimizerIssue& Issue : TrackedProcessOptimizerIssues)
+    {
+        const AMachineBase* Machine = Issue.Machine.Get();
+        if (!Machine)
+        {
+            continue;
+        }
+
+        const FVector MachineLocation = Machine->GetActorLocation();
+        const FColor HighlightColor =
+            Issue.IssueType == ETrackedProcessOptimizerIssueType::Power ? FColor::Cyan : FColor::Yellow;
+
+        DrawDebugSphere(World, MachineLocation, 180.0f, 24, HighlightColor, false, 0.15f, 0, 4.0f);
+        DrawDebugBox(World, MachineLocation, FVector(120.0f, 120.0f, 120.0f), HighlightColor, false, 0.15f, 0, 3.0f);
+    }
+}
+
+void UUI_DialogueBalloon::UpdateTrackedProcessOptimizerIssues()
+{
+    if (TrackedProcessOptimizerIssues.Num() == 0)
+    {
+        return;
+    }
+
+    const int32 RemovedCount = TrackedProcessOptimizerIssues.RemoveAll(
+        [this](const FTrackedProcessOptimizerIssue& Issue)
+        {
+            const bool bResolved = IsTrackedProcessOptimizerIssueResolved(Issue);
+            if (bResolved)
+            {
+                LOG_LC(
+                    TEXT("Process optimizer target resolved in game: id=%s issue_type=%d"),
+                    *Issue.TargetId,
+                    static_cast<int32>(Issue.IssueType));
+            }
+
+            return bResolved;
+        });
+
+    if (RemovedCount > 0 &&
+        TrackedProcessOptimizerIssues.Num() == 0 &&
+        !bProcessOptimizerRequestInFlight &&
+        bCanAnnounceProcessOptimizerResolution)
+    {
+        bCanAnnounceProcessOptimizerResolution = false;
+        ShowExternalDialogue(TEXT("문제의 해결을 확인했습니다"));
+    }
+}
+
+bool UUI_DialogueBalloon::IsTrackedProcessOptimizerIssueResolved(const FTrackedProcessOptimizerIssue& Issue) const
+{
+    const AMachineBase* Machine = Issue.Machine.Get();
+    if (!Machine)
+    {
+        return true;
+    }
+
+    switch (Issue.IssueType)
+    {
+    case ETrackedProcessOptimizerIssueType::Durability:
+        return !Machine->isBroken() &&
+            Machine->GetCurrentDurability() > Issue.InitialDurability &&
+            Machine->GetCurrentDurability() > Machine->GetLowDurabilityWarningThreshold();
+
+    case ETrackedProcessOptimizerIssueType::Power:
+        if (const APowerGridNode* PowerGridNode = Cast<APowerGridNode>(Machine))
+        {
+            UGameInstance* GI = GetGameInstance();
+            const UFactoryManagerSubsystem* FactoryManager = GI ? GI->GetSubsystem<UFactoryManagerSubsystem>() : nullptr;
+            return FactoryManager && FactoryManager->IsPowerGridNodeEnergized(PowerGridNode);
+        }
+
+        return Machine->NeedsPower() && Machine->HasEnoughPower();
+
+    case ETrackedProcessOptimizerIssueType::Unknown:
+    default:
+        return false;
+    }
+}
+
+ETrackedProcessOptimizerIssueType UUI_DialogueBalloon::ClassifyProcessOptimizerIssue(const TSharedPtr<FJsonObject>& SuggestionObject) const
+{
+    if (!SuggestionObject.IsValid())
+    {
+        return ETrackedProcessOptimizerIssueType::Unknown;
+    }
+
+    const TSharedPtr<FJsonObject>* TargetObject = nullptr;
+    FString TargetId;
+    if (SuggestionObject->TryGetObjectField(TEXT("target"), TargetObject) &&
+        TargetObject != nullptr &&
+        TargetObject->IsValid())
+    {
+        TargetId = FactoryAgentJsonUtils::GetStringField(*TargetObject, TEXT("id")).ToLower();
+    }
+
+    const FString CombinedText = (
+        FactoryAgentJsonUtils::GetStringField(SuggestionObject, TEXT("problem")) + TEXT(" ") +
+        FactoryAgentJsonUtils::GetStringField(SuggestionObject, TEXT("reason")) + TEXT(" ") +
+        FactoryAgentJsonUtils::GetStringField(SuggestionObject, TEXT("recommended_action")))
+        .ToLower();
+
+    if (CombinedText.Contains(TEXT("durability")) ||
+        CombinedText.Contains(TEXT("maintenance")) ||
+        CombinedText.Contains(TEXT("broken")) ||
+        CombinedText.Contains(TEXT("repair")) ||
+        CombinedText.Contains(TEXT("fix")) ||
+        CombinedText.Contains(TEXT("inspect")) ||
+        CombinedText.Contains(TEXT("고장")) ||
+        CombinedText.Contains(TEXT("수리")) ||
+        CombinedText.Contains(TEXT("점검")))
+    {
+        return ETrackedProcessOptimizerIssueType::Durability;
+    }
+
+    if (TargetId.Contains(TEXT("powerplant")) &&
+        (CombinedText.Contains(TEXT("broken")) ||
+         CombinedText.Contains(TEXT("repair")) ||
+         CombinedText.Contains(TEXT("inspect"))))
+    {
+        return ETrackedProcessOptimizerIssueType::Durability;
+    }
+
+    if (CombinedText.Contains(TEXT("no_power")) ||
+        CombinedText.Contains(TEXT("power shortage")) ||
+        CombinedText.Contains(TEXT("power loss")) ||
+        CombinedText.Contains(TEXT("전력")) ||
+        CombinedText.Contains(TEXT("전원")) ||
+        CombinedText.Contains(TEXT("정전")))
+    {
+        return ETrackedProcessOptimizerIssueType::Power;
+    }
+
+    return ETrackedProcessOptimizerIssueType::Unknown;
+}
 void UUI_DialogueBalloon::RefreshDialogueUI()
 {
     if (bHasExternalDialogue)
@@ -307,10 +551,36 @@ void UUI_DialogueBalloon::ClearExternalDialogue()
     RefreshDialogueUI();
 }
 
+void UUI_DialogueBalloon::ResetProcessOptimizerTracking()
+{
+    TrackedProcessOptimizerIssues.Reset();
+    bProcessOptimizerRequestInFlight = false;
+    bCanAnnounceProcessOptimizerResolution = false;
+
+    if (UWorld* World = GetWorld())
+    {
+        FlushPersistentDebugLines(World);
+    }
+}
+
+void UUI_DialogueBalloon::BeginProcessOptimizerRequest()
+{
+    TrackedProcessOptimizerIssues.Reset();
+    bProcessOptimizerRequestInFlight = true;
+    bCanAnnounceProcessOptimizerResolution = false;
+
+    if (UWorld* World = GetWorld())
+    {
+        FlushPersistentDebugLines(World);
+    }
+
+    ShowExternalDialogue(TEXT("공장 상태를 확인하는 중입니다"));
+}
+
 void UUI_DialogueBalloon::DisplayCurrentLine()
 {
-    // 위젯 본체 루트는 절대로 Collapsed 시키지 않고 항시 살려둡니다.
-    // 그래야 하단의 / 인풋 Border 창이 언제든 독립적으로 튀어나올 수 있습니다.
+    // ?꾩젽 蹂몄껜 猷⑦듃???덈?濡?Collapsed ?쒗궎吏 ?딄퀬 ??떆 ?대젮?〓땲??
+    // 洹몃옒???섎떒??/ ?명뭼 Border 李쎌씠 ?몄젣???낅┰?곸쑝濡???대굹?????덉뒿?덈떎.
     SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     if (B_OperatorInput) B_OperatorInput->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
@@ -325,8 +595,8 @@ void UUI_DialogueBalloon::DisplayCurrentLine()
 
     if (CachedLines.IsEmpty())
     {
-        // 퀘스트가 끝나 대사가 비어있다면, 인풋 창은 내버려 두고 
-        // 말풍선 배경(Image_229)과 글자가 담긴 'Size Box 세트'만 깔끔하게 투명 청소합니다
+        // ?섏뒪?멸? ?앸굹 ??ш? 鍮꾩뼱?덈떎硫? ?명뭼 李쎌? ?대쾭???먭퀬 
+        // 留먰뭾??諛곌꼍(Image_229)怨?湲?먭? ?닿릿 'Size Box ?명듃'留?源붾걫?섍쾶 ?щ챸 泥?냼?⑸땲??
         if (SB_DialogueData)   SB_DialogueData->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         if (DialogueContainer) DialogueContainer->SetVisibility(ESlateVisibility::Hidden);
         if (TXT_Dialogue)      TXT_Dialogue->SetText(FText::GetEmpty());
@@ -334,7 +604,7 @@ void UUI_DialogueBalloon::DisplayCurrentLine()
         return;
     }
 
-    // 일반 대사가 존재할 때는 주머니 세트를 다시 이쁘게 노출합니다.
+    // ?쇰컲 ??ш? 議댁옱???뚮뒗 二쇰㉧???명듃瑜??ㅼ떆 ?댁걯寃??몄텧?⑸땲??
     if (SB_DialogueData)   SB_DialogueData->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     if (DialogueContainer) DialogueContainer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
@@ -354,7 +624,7 @@ void UUI_DialogueBalloon::UpdateContinuePromptVisibility()
     const bool bShouldShowPrompt = !bHasExternalDialogue
         && !CachedLines.IsEmpty()
         && CachedTriggerType == TEXT("on_complete")
-        && (!CachedLines.Last().Dialogue.Contains(TEXT(". 을 눌러서 창 닫기")));
+        && (!CachedLines.Last().Dialogue.Contains(TEXT(". ???뚮윭??李??リ린")));
 
     bShowRightClickPrompt = bShouldShowPrompt;
     if (!IMG_RightClickPrompt)
@@ -409,7 +679,7 @@ FReply UUI_DialogueBalloon::NativeOnPreviewMouseButtonDown(const FGeometry& InGe
 
     if (bHasExternalDialogue)
     {
-        // AI 답변이 노출된 상태에서 화면을 좌클릭하면 기존 대화 로그로 부드럽게 복귀합니다
+        // AI ?듬????몄텧???곹깭?먯꽌 ?붾㈃??醫뚰겢由?븯硫?湲곗〈 ???濡쒓렇濡?遺?쒕읇寃?蹂듦??⑸땲??
         ClearExternalDialogue(); 
         return FReply::Handled();
     }
@@ -452,7 +722,7 @@ void UUI_DialogueBalloon::ToggleAIGuide(APlayerController* PC)
 {
     if (!PC || !ET_OperatorInput) return;
 
-    // 1. 이미 AI 답변이 출력 중인 상태라면 원래 대사로 롤백
+    // 1. ?대? AI ?듬???異쒕젰 以묒씤 ?곹깭?쇰㈃ ?먮옒 ??щ줈 濡ㅻ갚
     if (bHasExternalDialogue)
     {
         ClearExternalDialogue();
@@ -463,13 +733,13 @@ void UUI_DialogueBalloon::ToggleAIGuide(APlayerController* PC)
         return;
     }
 
-    // 2. 일반 상태에서 / 키를 처음 눌렀을 때 (1타 활성화 보장)
+    // 2. ?쇰컲 ?곹깭?먯꽌 / ?ㅻ? 泥섏쓬 ?뚮?????(1? ?쒖꽦??蹂댁옣)
     if (ET_OperatorInput->GetVisibility() != ESlateVisibility::Visible)
     {
         SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         ET_OperatorInput->SetVisibility(ESlateVisibility::Visible);
         
-        // 슬레이트 창 자체에 입력창 위젯 포커스를 다이렉트로 강제 주입합니다.
+        // ?щ젅?댄듃 李??먯껜???낅젰李??꾩젽 ?ъ빱?ㅻ? ?ㅼ씠?됲듃濡?媛뺤젣 二쇱엯?⑸땲??
         FInputModeGameAndUI InputModeData;
         InputModeData.SetWidgetToFocus(ET_OperatorInput->GetCachedWidget());
         InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
@@ -478,13 +748,14 @@ void UUI_DialogueBalloon::ToggleAIGuide(APlayerController* PC)
         PC->bShowMouseCursor = true;
         ET_OperatorInput->SetFocus();
         
-        // / 키 입력 로직이 텍스트 필드를 오염시켜 힌트텍스트를 지우던 버그를 강제 세척합니다.
+        // / ???낅젰 濡쒖쭅???띿뒪???꾨뱶瑜??ㅼ뿼?쒖폒 ?뚰듃?띿뒪?몃? 吏?곕뜕 踰꾧렇瑜?媛뺤젣 ?몄쿃?⑸땲??
     }
     else
     {
-        // 이미 켜져 있는 상태에서 다시 누르면 취소하고 탈출
+        // ?대? 耳쒖졇 ?덈뒗 ?곹깭?먯꽌 ?ㅼ떆 ?꾨Ⅴ硫?痍⑥냼?섍퀬 ?덉텧
         ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
         PC->SetInputMode(FInputModeGameOnly());
         PC->bShowMouseCursor = false;
     }
 }
+

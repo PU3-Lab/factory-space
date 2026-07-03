@@ -89,33 +89,6 @@ FString SanitizeObjectName(FString ObjectName)
 	{
 	}
 
-	int32 NumericSuffixSeparatorIndex = INDEX_NONE;
-	if (ObjectName.FindLastChar(TEXT('_'), NumericSuffixSeparatorIndex))
-	{
-		const FString InstanceSuffix = ObjectName.Mid(NumericSuffixSeparatorIndex + 1);
-		if (!InstanceSuffix.IsEmpty() && InstanceSuffix.IsNumeric())
-		{
-			FString BaseName = ObjectName.Left(NumericSuffixSeparatorIndex);
-			if (BaseName.EndsWith(TEXT("_C"), ESearchCase::CaseSensitive))
-			{
-				BaseName.LeftChopInline(2, EAllowShrinking::No);
-			}
-
-			ObjectName = BaseName + TEXT("_") + InstanceSuffix;
-		}
-	}
-
-	ObjectName.ReplaceInline(TEXT("_C_"), TEXT("_"), ESearchCase::CaseSensitive);
-	if (ObjectName.EndsWith(TEXT("_C"), ESearchCase::CaseSensitive))
-	{
-		ObjectName.LeftChopInline(2, EAllowShrinking::No);
-	}
-
-	while (ObjectName.Contains(TEXT("__")))
-	{
-		ObjectName.ReplaceInline(TEXT("__"), TEXT("_"), ESearchCase::CaseSensitive);
-	}
-
 	ObjectName.TrimStartAndEndInline();
 
 	return ObjectName;

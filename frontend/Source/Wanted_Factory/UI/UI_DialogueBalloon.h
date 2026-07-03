@@ -7,6 +7,23 @@
 #include "UI_DialogueBalloon.generated.h"
 
 class UBorder;
+class AMachineBase;
+class FJsonObject;
+
+enum class ETrackedProcessOptimizerIssueType : uint8
+{
+	Unknown,
+	Durability,
+	Power
+};
+
+struct FTrackedProcessOptimizerIssue
+{
+	FString TargetId;
+	ETrackedProcessOptimizerIssueType IssueType = ETrackedProcessOptimizerIssueType::Unknown;
+	TWeakObjectPtr<AMachineBase> Machine;
+	float InitialDurability = 0.0f;
+};
 
 UCLASS()
 class WANTED_FACTORY_API UUI_DialogueBalloon : public UUserWidget
@@ -34,6 +51,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Quest|UI")
 	void ClearExternalDialogue();
+
+	UFUNCTION(BlueprintCallable, Category = "Quest|UI")
+	void ResetProcessOptimizerTracking();
+
+	UFUNCTION(BlueprintCallable, Category = "Quest|UI")
+	void BeginProcessOptimizerRequest();
 	
 	UPROPERTY(meta = (BindWidget))
 	class UEditableText* ET_OperatorInput;
@@ -70,6 +93,12 @@ private:
 
 	UFUNCTION()
 	void HandleOnProcessOptimizerResponse(const FString& RequestId, const FString& Agent, const FString& PayloadJson, const FString& RawMessage);
+
+	void SetTrackedProcessOptimizerIssues(const TArray<FTrackedProcessOptimizerIssue>& NewIssues);
+	void RefreshTrackedProcessOptimizerHighlights();
+	void UpdateTrackedProcessOptimizerIssues();
+	bool IsTrackedProcessOptimizerIssueResolved(const FTrackedProcessOptimizerIssue& Issue) const;
+	ETrackedProcessOptimizerIssueType ClassifyProcessOptimizerIssue(const TSharedPtr<FJsonObject>& SuggestionObject) const;
 	
 	UPROPERTY()
 	class UQuestManagerSubsystem* QuestSubsystem;
@@ -80,4 +109,7 @@ private:
 	FString ExternalDialogueText;
 	bool bShowRightClickPrompt = false;
 	float RightClickPromptBlinkTime = 0.0f;
+	TArray<FTrackedProcessOptimizerIssue> TrackedProcessOptimizerIssues;
+	bool bProcessOptimizerRequestInFlight = false;
+	bool bCanAnnounceProcessOptimizerResolution = false;
 };
