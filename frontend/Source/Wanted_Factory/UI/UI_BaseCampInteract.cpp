@@ -553,7 +553,7 @@ void UUI_BaseCampInteract::RefreshCampInventoryGrid()
     }
     
     int32 MaxColumns = 4;
-    int32 TotalSlots = 24;
+    int32 TotalSlots = 20;
 
     for (int32 i = 0; i < TotalSlots; ++i)
     {
