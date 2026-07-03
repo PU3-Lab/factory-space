@@ -1202,7 +1202,7 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 	// [빌드 작업등] L = 빌드모드 작업등 토글. 핸들러(ToggleWorkLight)가 IsInBuildMode 가드 — 빌드 밖 무동작.
 	// TPS=NightSpotLight 재활용, TopDown=BuildCamera 하향광. 실제 점등은 UpdateNightSpotLightVisibility가 매 틱 분배.
-	PlayerInputComponent->BindKey(EKeys::L, IE_Pressed, this, &AOJJ_Player::ToggleWorkLight);
+	PlayerInputComponent->BindKey(EKeys::L, IE_Pressed, this, &AOJJ_Player::RestoreBackupGame);
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -3197,6 +3197,28 @@ void AOJJ_Player::GenerateFactoryStateLog()
 	}
 
 	UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] GenerateFactoryStateLog failed: FactoryAgentClientSubsystem not found."));
+}
+
+void AOJJ_Player::GenerateFactoryAnalyzeRequest()
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>())
+		{
+			FString SavedFilePath;
+			if (AgentClient->SaveProcessOptimizerAnalyzeRequestJsonToDesktop(0, TEXT(""), TEXT(""), SavedFilePath))
+			{
+				UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] Factory analyze request preview saved to: %s"), *SavedFilePath);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] GenerateFactoryAnalyzeRequest failed: Could not save preview file."));
+			}
+			return;
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] GenerateFactoryAnalyzeRequest failed: FactoryAgentClientSubsystem not found."));
 }
 
 void AOJJ_Player::TutorialAdvance()

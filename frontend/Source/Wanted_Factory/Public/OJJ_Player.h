@@ -891,6 +891,9 @@ public:
 	UFUNCTION(Exec)
 	void GenerateFactoryStateLog();
 
+	UFUNCTION(Exec)
+	void GenerateFactoryAnalyzeRequest();
+
 	UFUNCTION(Exec, Category = "Cheats")
     void Cheat_ResetMachines();
 
