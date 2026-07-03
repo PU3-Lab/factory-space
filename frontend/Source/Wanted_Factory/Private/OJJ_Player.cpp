@@ -2777,7 +2777,7 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
        {
           WHWidget->SetTargetMachine(Machine);
           WarehouseInteractWidgetInstance = WHWidget;
-          WHWidget->AddToViewport();
+          WHWidget->AddToViewport(21);
           WHWidget->OnClosed.AddDynamic(this, &AOJJ_Player::RestoreGameInputMode);
        }
     }
@@ -2861,7 +2861,7 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
         if (InventoryWidgetInstance)
         {
            InventoryWidgetInstance->AdjustInventoryLayout(true); 
-           InventoryWidgetInstance->AddToViewport(-1); 
+           InventoryWidgetInstance->AddToViewport(20);
            InventoryWidgetInstance->RefreshInventoryWindow();
            bIsInventoryOpen = true;
 
@@ -3132,7 +3132,7 @@ void AOJJ_Player::TriggerInventoryToggle()
 
 		// 중복되던 슬롯 필터 및 뷰포트 추가 로직 하나로 깔끔하게 압축
 		InventoryWidgetInstance->SetItemFormFilter(InventoryFormFilter);
-		InventoryWidgetInstance->AddToViewport(-1); 
+		InventoryWidgetInstance->AddToViewport(20);
 		InventoryWidgetInstance->RefreshInventoryWindow();
 		bIsInventoryOpen = true;
        
