@@ -42,6 +42,7 @@ void UUI_DialogueBalloon::NativeConstruct()
         if (AgentClient)
         {
             AgentClient->OnAgentResponseReceived.AddDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideResponse);
+            AgentClient->OnAgentResponseReceived.AddDynamic(this, &UUI_DialogueBalloon::HandleOnProcessOptimizerResponse);
             AgentClient->OnAgentErrorReceived.AddDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideError);
             AgentClient->OnAgentProgressReceived.AddDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideProgress);
             AgentClient->OnMaterialGenerationResponseReceived.AddDynamic(this, &UUI_DialogueBalloon::HandleOnMaterialGenerationResponse);
@@ -78,6 +79,7 @@ void UUI_DialogueBalloon::NativeDestruct()
         if (AgentClient)
         {
             AgentClient->OnAgentResponseReceived.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideResponse);
+            AgentClient->OnAgentResponseReceived.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnProcessOptimizerResponse);
             AgentClient->OnAgentErrorReceived.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideError);
             AgentClient->OnAgentProgressReceived.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideProgress);
             AgentClient->OnMaterialGenerationResponseReceived.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnMaterialGenerationResponse);
@@ -173,6 +175,43 @@ void UUI_DialogueBalloon::HandleOnMaterialGenerationResponse(const FFactoryMater
     }
 
     ShowExternalDialogue(DialogueMessage);
+}
+
+void UUI_DialogueBalloon::HandleOnProcessOptimizerResponse(
+    const FString& RequestId,
+    const FString& Agent,
+    const FString& PayloadJson,
+    const FString& RawMessage)
+{
+    if (Agent != TEXT("process_optimizer"))
+    {
+        return;
+    }
+
+    TSharedPtr<FJsonObject> PayloadObject;
+    if (!FactoryAgentJsonUtils::ParseJsonObject(PayloadJson, PayloadObject) || !PayloadObject.IsValid())
+    {
+        return;
+    }
+
+    const TArray<TSharedPtr<FJsonValue>>* SuggestionValues = nullptr;
+    if (PayloadObject->TryGetArrayField(TEXT("suggestions"), SuggestionValues) &&
+        SuggestionValues != nullptr &&
+        SuggestionValues->Num() > 0 &&
+        (*SuggestionValues)[0].IsValid() &&
+        (*SuggestionValues)[0]->Type == EJson::Object)
+    {
+        const TSharedPtr<FJsonObject> SuggestionObject = (*SuggestionValues)[0]->AsObject();
+        const FString RecommendedAction =
+            FactoryAgentJsonUtils::GetStringField(SuggestionObject, TEXT("recommended_action")).TrimStartAndEnd();
+        if (!RecommendedAction.IsEmpty())
+        {
+            ShowExternalDialogue(RecommendedAction);
+            return;
+        }
+    }
+
+    ShowExternalDialogue(TEXT("공장에 문제가 없습니다."));
 }
 
 void UUI_DialogueBalloon::RefreshDialogueUI()

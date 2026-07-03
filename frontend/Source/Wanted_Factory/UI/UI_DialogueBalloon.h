@@ -67,6 +67,9 @@ private:
 
 	UFUNCTION()
 	void HandleOnMaterialGenerationResponse(const FFactoryMaterialGenerationResponse& Response);
+
+	UFUNCTION()
+	void HandleOnProcessOptimizerResponse(const FString& RequestId, const FString& Agent, const FString& PayloadJson, const FString& RawMessage);
 	
 	UPROPERTY()
 	class UQuestManagerSubsystem* QuestSubsystem;
