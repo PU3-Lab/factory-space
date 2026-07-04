@@ -730,6 +730,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
 	FVector GetGridCenter() const;
 
+	// [미니맵] 셀 한 변 월드 크기(uu). CellSize는 protected라 외부(미니맵 UV 변환 등)는 이 getter 경유.
+	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
+	float GetCellSize() const { return CellSize; }
+
+	// [미니맵] placement 그리드 칸 수(X×Y). 756² 등 레벨 인스턴스 값 그대로 반환.
+	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
+	FIntPoint GetGridSizeXY() const { return GridSize; }
+
+	// [미니맵] placement extent의 월드 XY 범위. center-anchored 기준 — GetGridCenter ± GridSize*CellSize/2.
+	// 월드 좌표→미니맵 UV 정규화((World-Min)/(Max-Min))에 사용.
+	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
+	void GetGridWorldBounds(FVector2D& OutMin, FVector2D& OutMax) const;
+
 	// 머신 raw 치수(GetMachineSize)를 정수화(CeilToInt+Max 1)하고 90° 회전 step을 적용한
 	// 유효 footprint 치수. step 짝수(0,2)→(X,Y), 홀수(1,3)→(Y,X). footprint/호버/배치/시각 보정이
 	// 이 함수 하나로 회전·정수화 규칙을 공유 → 경로 간 어긋남 방지. step 0이면 기존 정수화와 동일.

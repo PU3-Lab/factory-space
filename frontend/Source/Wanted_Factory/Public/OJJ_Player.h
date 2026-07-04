@@ -24,6 +24,8 @@ class UUI_SynthesizerInteract;
 class AResourceBase;
 class UAnimMontage;
 class UAnimSequenceBase;
+class UAudioComponent;
+class USoundBase;
 class UOJJ_CharacterAppearanceData;
 struct FInputActionValue;
 
@@ -134,6 +136,22 @@ protected:
 	TSubclassOf<UUserWidget> MainHUDWidgetClass;
 	UPROPERTY()
 	UUserWidget* MainHUDWidgetInstance;
+
+	// [미니맵] WBP_Minimap(UUI_Minimap 자식) 클래스. BP_OJJ_Player에서 할당 — 미할당이면 미니맵 없이 진행(안전 스킵).
+	// MainHUD와 별도 뷰포트 위젯(무접점) — 화면 좌상단 앵커/날짜 HUD 아래 오프셋은 WBP 디자이너 소관, C++은 AddToViewport만.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
+	TSubclassOf<UUserWidget> MinimapWidgetClass;
+	UPROPERTY()
+	UUserWidget* MinimapWidgetInstance;
+
+	// [미니맵] N키로 사용자가 직접 꺼둔 상태. 빌드모드 이탈 복원에서 이 플래그면 다시 안 켠다(사용자 의사 존중).
+	// ⚠️ 토글이 M키가 아닌 이유: M은 SendOperatorGuideRequest(AI 오퍼레이터 요청, Chan 기능)에 선점 —
+	//    겹쳐 바인딩하면 미니맵 토글마다 AI 요청이 발사된다. M으로 바꾸려면 Chan과 키 이관 합의 필요.
+	bool bMinimapHiddenByUser = false;
+
+	// [미니맵] N키 핸들러 — Visible/Collapsed 토글 + bMinimapHiddenByUser 갱신.
+	// 빌드모드 중엔 플래그만 갱신(실제 표시는 빌드모드 이탈 복원 로직이 플래그를 보고 판단).
+	void ToggleMinimap();
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Resource Nameplate", meta = (ClampMin = "0.0"))
 	float ResourceNameplateTraceDistance = 2000.0f;
@@ -539,6 +557,32 @@ protected:
 	// [수영] WaterBody 질의용 그리드 캐시(OJJ_QueryWaterBodyAt). 최초 1회 GetActorOfClass.
 	TWeakObjectPtr<class AOJJ_Grid> OJJ_CachedGridForSwim;
 
+	// [수영 사운드] 수영 중 루핑 재생 사운드(Cue). 미지정이면 무동작(에셋 나중 지정 대비).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Swim")
+	TObjectPtr<USoundBase> SwimLoopSound;
+
+	// [수영 사운드] 상주 컴포넌트 — MachineBase OperatingSound 패턴(생성자 부착 + 상태 토글 Play/Stop).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OJJ|Swim")
+	TObjectPtr<UAudioComponent> SwimLoopSoundComponent;
+
+	// [수영 사운드] 현재 재생 플래그 — 중복 Play/Stop 방지(RefreshOperatingSound의 bOperatingSoundActive 미러).
+	bool bSwimSoundActive = false;
+
+	// [수영 사운드] 진입/이탈 토글 — 컴포넌트/사운드 미지정 시 무동작.
+	void OJJ_SetSwimSoundActive(bool bActive);
+
+	// [착지 발소리] Landed에서 표면 판별 재생(OJJ_FootstepStatics — 걸음 노티파이와 공용 로직).
+	// 미지정 표면은 무동작. 깊은 물 다이빙(수영 진입 수심)은 수영 루프와 이중음이라 스킵.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
+	TObjectPtr<USoundBase> LandSandSound;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
+	TObjectPtr<USoundBase> LandMetalSound;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
+	TObjectPtr<USoundBase> LandWetSound;
+	// 착지는 걸음보다 임팩트가 커야 해서 기본 볼륨을 살짝 높임.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound", meta = (ClampMin = "0.0"))
+	float LandVolumeMultiplier = 1.2f;
+
 	// [수영] 매 틱 물 진입/이탈 감지 → MOVE_Swimming 토글 + 수면 클램프. 등반/빌드(MOVE_Flying) 중엔 건너뜀.
 	void OJJ_UpdateSwimming(float DeltaSeconds);
 
@@ -890,6 +934,9 @@ public:
 
 	UFUNCTION(Exec)
 	void GenerateFactoryStateLog();
+
+	UFUNCTION(Exec)
+	void GenerateFactoryAnalyzeRequest();
 
 	UFUNCTION(Exec, Category = "Cheats")
     void Cheat_ResetMachines();

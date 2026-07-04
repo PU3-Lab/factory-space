@@ -307,6 +307,13 @@ public:
 		const FString& ClientId,
 		FString& OutSavedFilePath);
 
+	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Request")
+	bool SaveProcessOptimizerAnalyzeRequestJsonToDesktop(
+		int32 FactoryRevision,
+		const FString& SessionId,
+		const FString& ClientId,
+		FString& OutSavedFilePath);
+
 	UFUNCTION(BlueprintCallable, Category = "Factory Agent|Messages")
 	bool SendRawMessage(const FString& RawMessage);
 

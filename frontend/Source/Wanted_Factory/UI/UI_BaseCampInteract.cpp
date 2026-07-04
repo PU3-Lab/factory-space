@@ -1,4 +1,4 @@
-#include "UI/UI_BaseCampInteract.h"
+﻿#include "UI/UI_BaseCampInteract.h"
 #include "Components/Button.h"
 #include "Components/WidgetSwitcher.h"
 #include "Components/ScrollBox.h"
@@ -8,6 +8,7 @@
 #include "Components/Border.h"
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Blueprint/WidgetTree.h"
 #include "UI_UpgradeNode.h"
 #include "UI/UI_InventorySlot.h"
@@ -16,6 +17,7 @@
 #include "FactorySaveSubsystem.h"
 #include "MachineBase.h"
 #include "FactoryManagerSubsystem.h"
+#include "UI/UI_DialogueBalloon.h"
 #include "UI_FactoryStatusRow.h"
 #include "Resource/ResourceData.h"
 #include "ItemDragDropOperation.h"
@@ -94,7 +96,7 @@ void UUI_BaseCampInteract::NativeConstruct()
         }
     }
 
-    // 초기 화면 상태 지정
+    // 珥덇린 ?붾㈃ ?곹깭 吏??
     SwitchSubPaneMode(EBaseCampSubMode::LevelUpgrade);
     RefreshAllUpgradeNodes();
 }
@@ -115,16 +117,16 @@ void UUI_BaseCampInteract::NativeDestruct()
     Super::NativeDestruct();
 }
 
-// 🌟 [신설] 실시간 합성기 데이터 미러링 틱 연동
+// ?뙚 [?좎꽕] ?ㅼ떆媛??⑹꽦湲??곗씠??誘몃윭留????곕룞
 void UUI_BaseCampInteract::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
     Super::NativeTick(MyGeometry, InDeltaTime);
     if (!TargetBaseCamp || !WS_SubPaneSwitcher) return;
 
-    // 최적화: 유저가 3번째 '신물질 합성(Index 2)' 탭을 보고 있을 때만 실시간 UI를 연산합니다.
+    // 理쒖쟻?? ?좎?媛 3踰덉㎏ '?좊Ъ吏??⑹꽦(Index 2)' ??쓣 蹂닿퀬 ?덉쓣 ?뚮쭔 ?ㅼ떆媛?UI瑜??곗궛?⑸땲??
     if (WS_SubPaneSwitcher->GetActiveWidgetIndex() != 2) return;
 
-    // 오리지널 합성기 틱 로직을 그대로 거점 기계 컴포넌트에 매핑합니다.
+    // ?ㅻ━吏???⑹꽦湲???濡쒖쭅??洹몃?濡?嫄곗젏 湲곌퀎 而댄룷?뚰듃??留ㅽ븨?⑸땲??
     FRecipeTable Recipe = TargetBaseCamp->GetCurrentRecipe();
     TArray<FName> ExpectedInputs = { Recipe.InputItem1, Recipe.InputItem2, Recipe.InputItem3 };
     const TMap<FName, int32>& InputInv = TargetBaseCamp->GetInputInventory();
@@ -182,7 +184,7 @@ void UUI_BaseCampInteract::UpdateInputSlotUI(int32 SlotIndex, FName ItemName, in
 
     if (TargetIMG_Icon)
     {
-        // 🌟 이 조건문 덕분에 아이템이 없으면 하얀 네모가 뜨지 않고 완벽하게 투명(Hidden)해집니다!
+        // ?뙚 ??議곌굔臾??뺣텇???꾩씠?쒖씠 ?놁쑝硫??섏? ?ㅻえ媛 ?⑥? ?딄퀬 ?꾨꼍?섍쾶 ?щ챸(Hidden)?댁쭛?덈떎!
         if (DisplayItemName.IsNone())
         {
             TargetIMG_Icon->SetVisibility(ESlateVisibility::Hidden);
@@ -225,7 +227,7 @@ void UUI_BaseCampInteract::UpdateOutputUI(FName ItemName, int32 CurrentAmount)
     }
 }
 
-// 인벤토리 슬롯에서 드래그해서 신물질 기계로 떨어뜨릴 때의 핵심 처리 핸들러
+// ?몃깽?좊━ ?щ’?먯꽌 ?쒕옒洹명빐???좊Ъ吏?湲곌퀎濡??⑥뼱?⑤┫ ?뚯쓽 ?듭떖 泥섎━ ?몃뱾??
 bool UUI_BaseCampInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
     UItemDragDropOperation* ItemDragOp = Cast<UItemDragDropOperation>(InOperation);
@@ -235,14 +237,14 @@ bool UUI_BaseCampInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDrag
     FName DroppedItemID = ItemDragOp->DraggedItemID;
     if (DroppedItemID.IsNone()) return false;
 
-    // 1. 기계의 해당 아이템 입력 슬롯 수량이 이미 꽉 찼는지 검사
+    // 1. 湲곌퀎???대떦 ?꾩씠???낅젰 ?щ’ ?섎웾???대? 苑?李쇰뒗吏 寃??
     int32 CurrentInputAmount = TargetBaseCamp->GetInputInventory().FindRef(DroppedItemID);
     if (CurrentInputAmount >= TargetBaseCamp->GetMaxInput()) return false;
     
     UGameInstance* GI = GetGameInstance();
     UPlayerWarehouseSubsystem* WarehouseSubsystem = GI ? GI->GetSubsystem<UPlayerWarehouseSubsystem>() : nullptr;
     
-    // 2. 창고에서 1개 꺼내기 시도
+    // 2. 李쎄퀬?먯꽌 1媛?爰쇰궡湲??쒕룄
     if (WarehouseSubsystem && WarehouseSubsystem->TakeItem(DroppedItemID, 1)) 
     {
         if (!TargetBaseCamp->AddItem(DroppedItemID, 1))
@@ -259,7 +261,7 @@ bool UUI_BaseCampInteract::NativeOnDrop(const FGeometry& MyGeometry, const FDrag
     return Super::NativeOnDrop(MyGeometry, InDragDropEvent, InOperation);
 }
 
-// (나머지 OnStatusTabClicked, OnUpgradeTabClicked, OnMaterialTabClicked, SwitchSubPaneMode, RefreshFactoryStatus, RefreshAllUpgradeNodes, RefreshCampInventoryGrid 코드는 기존 구현과 완전히 동일하므로 유지)
+// (?섎㉧吏 OnStatusTabClicked, OnUpgradeTabClicked, OnMaterialTabClicked, SwitchSubPaneMode, RefreshFactoryStatus, RefreshAllUpgradeNodes, RefreshCampInventoryGrid 肄붾뱶??湲곗〈 援ы쁽怨??꾩쟾???숈씪?섎?濡??좎?)
 FReply UUI_BaseCampInteract::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
     FReply Reply = Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
@@ -451,7 +453,31 @@ bool UUI_BaseCampInteract::RequestProcessOptimization()
         return false;
     }
 
-    return SaveSubsystem->SendManualProcessOptimizerAnalyzeRequest();
+    const bool bRequestSent = SaveSubsystem->SendManualProcessOptimizerAnalyzeRequest();
+    if (!bRequestSent)
+    {
+        return false;
+    }
+
+    TArray<UUserWidget*> FoundWidgets;
+    UWidgetBlueprintLibrary::GetAllWidgetsOfClass(
+        this,
+        FoundWidgets,
+        UUI_DialogueBalloon::StaticClass(),
+        false);
+
+    if (FoundWidgets.Num() > 0)
+    {
+        for (UUserWidget* FoundWidget : FoundWidgets)
+        {
+            if (UUI_DialogueBalloon* DialogueBalloon = Cast<UUI_DialogueBalloon>(FoundWidget))
+            {
+                DialogueBalloon->BeginProcessOptimizerRequest();
+            }
+        }
+    }
+
+    return true;
 }
 
 void UUI_BaseCampInteract::SwitchSubPaneMode(EBaseCampSubMode NewMode)
@@ -472,7 +498,7 @@ void UUI_BaseCampInteract::SwitchSubPaneMode(EBaseCampSubMode NewMode)
 
 void UUI_BaseCampInteract::RefreshFactoryStatus()
 {
-    // PB_PowerStatus가 유효한지 검사하는 방어선 구축
+    // PB_PowerStatus媛 ?좏슚?쒖? 寃?ы븯??諛⑹뼱??援ъ텞
     if (!TXT_PowerStatus || !PB_PowerStatus || !SB_ResourceList) return;
 
     SB_ResourceList->ClearChildren();
@@ -481,27 +507,27 @@ void UUI_BaseCampInteract::RefreshFactoryStatus()
     UFactoryManagerSubsystem* FactoryManager = GI ? GI->GetSubsystem<UFactoryManagerSubsystem>() : nullptr;
     if (!FactoryManager) return;
 
-    // 전력 데이터 반영
+    // ?꾨젰 ?곗씠??諛섏쁺
     FFactoryPowerOverview PowerOverview = FactoryManager->GetFactoryPowerOverview();
     FString PowerString = FString::Printf(
-        TEXT("소모량 %.1fW / 총 전력량 %.1fW"),
+        TEXT("소모 전력 %.1fW / 총 전력 %.1fW"),
         PowerOverview.CurrentDemandPower,
         PowerOverview.CurrentAvailablePower);
     TXT_PowerStatus->SetText(FText::FromString(PowerString));
 
-    // 프로그레스 바 퍼센트 계산 (0.0f ~ 1.0f)
+    // ?꾨줈洹몃젅??諛??쇱꽱??怨꾩궛 (0.0f ~ 1.0f)
     float PowerPercent = 0.0f;
     
-    // 최대 전력이 0일 때 나누기 오류(Division by Zero)가 나는 것을 방지합니다.
+    // 理쒕? ?꾨젰??0?????섎늻湲??ㅻ쪟(Division by Zero)媛 ?섎뒗 寃껋쓣 諛⑹??⑸땲??
     if (PowerOverview.CurrentAvailablePower > 0.0f)
     {
         PowerPercent = PowerOverview.CurrentDemandPower / PowerOverview.CurrentAvailablePower;
     }
 
-    // 전력 소모가 공급을 초과했을 때 게이지가 터져 나가지 않도록 0.0 ~ 1.0 사이로 안전하게 락을 겁니다.
+    // ?꾨젰 ?뚮え媛 怨듦툒??珥덇낵?덉쓣 ??寃뚯씠吏媛 ?곗졇 ?섍?吏 ?딅룄濡?0.0 ~ 1.0 ?ъ씠濡??덉쟾?섍쾶 ?쎌쓣 寃곷땲??
     PowerPercent = FMath::Clamp(PowerPercent, 0.0f, 1.0f);
 
-    // 계산된 비율을 프로그레스 바에 장착!
+    // 怨꾩궛??鍮꾩쑉???꾨줈洹몃젅??諛붿뿉 ?μ갑!
     PB_PowerStatus->SetPercent(PowerPercent);
 
     TArray<FFactoryItemProductionStat> ProductionStats = FactoryManager->GetItemProductionStats();
@@ -582,3 +608,4 @@ void UUI_BaseCampInteract::RefreshCampInventoryGrid()
         }
     }
 }
+

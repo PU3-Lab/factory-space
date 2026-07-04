@@ -24,6 +24,7 @@
 #include "Styling/CoreStyle.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Components/AudioComponent.h"
 #include "Components/SpotLightComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -40,6 +41,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "OJJ_BuildController.h"
 #include "OJJ_BuildCamera.h"
+#include "OJJ_FootstepStatics.h"
 #include "OJJ_Ladder.h"
 #include "Components/CapsuleComponent.h"
 #include "OJJ_Grid.h"
@@ -109,6 +111,11 @@ AOJJ_Player::AOJJ_Player()
 	NightSpotLight->bUseInverseSquaredFalloff = false;
 	NightSpotLight->LightFalloffExponent = 2.5f;
 	NightSpotLight->SetVisibility(false);
+
+	// [수영 사운드] 상주 컴포넌트 — MachineBase OperatingSound 패턴(수동 Play/Stop, 자동재생 금지).
+	SwimLoopSoundComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("SwimLoopSound"));
+	SwimLoopSoundComponent->SetupAttachment(RootComponent);
+	SwimLoopSoundComponent->bAutoActivate = false;
 }
 
 void AOJJ_Player::BeginPlay()
@@ -174,6 +181,16 @@ void AOJJ_Player::BeginPlay()
 		if (MainHUDWidgetInstance)
 		{
 			MainHUDWidgetInstance->AddToViewport();
+		}
+	}
+
+	// [미니맵] MainHUD와 별도 뷰포트 위젯(무접점) — 앵커/위치는 WBP_Minimap 디자이너 소관.
+	if (PC && MinimapWidgetClass)
+	{
+		MinimapWidgetInstance = CreateWidget<UUserWidget>(PC, MinimapWidgetClass);
+		if (MinimapWidgetInstance)
+		{
+			MinimapWidgetInstance->AddToViewport();
 		}
 	}
 
@@ -1163,6 +1180,9 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AOJJ_Player::TriggerHUDQuestWindowToggle);
 	PlayerInputComponent->BindKey(EKeys::Slash, IE_Pressed, this, &AOJJ_Player::TriggerHUDAIGuideToggle);
 	PlayerInputComponent->BindKey(EKeys::I, IE_Pressed, this, &AOJJ_Player::TriggerInventoryToggle);
+	// [미니맵] N = 미니맵 토글. ⚠️ M은 SendOperatorGuideRequest(AI 오퍼레이터, 위 1161행)에 선점 — 겹치면
+	// 토글마다 AI 요청이 발사되므로 미사용 키 N 채택(M 전환은 Chan과 키 이관 합의 후).
+	PlayerInputComponent->BindKey(EKeys::N, IE_Pressed, this, &AOJJ_Player::ToggleMinimap);
 	PlayerInputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &AOJJ_Player::TriggerTutorialDialogueReveal);
 	// [옛 빌드 입력 경로 전수 정리] O(성형)/P(합성)/T(통신) 직행 BindKey는 카테고리 숫자키 슬롯이 완전 대체하여 제거.
 	// 콘솔 SetBuildMode tower(통신탑)는 계속 동작.
@@ -1202,7 +1222,7 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 	// [빌드 작업등] L = 빌드모드 작업등 토글. 핸들러(ToggleWorkLight)가 IsInBuildMode 가드 — 빌드 밖 무동작.
 	// TPS=NightSpotLight 재활용, TopDown=BuildCamera 하향광. 실제 점등은 UpdateNightSpotLightVisibility가 매 틱 분배.
-	PlayerInputComponent->BindKey(EKeys::L, IE_Pressed, this, &AOJJ_Player::ToggleWorkLight);
+	PlayerInputComponent->BindKey(EKeys::L, IE_Pressed, this, &AOJJ_Player::RestoreBackupGame);
 }
 
 void AOJJ_Player::Move(const FInputActionValue& Value)
@@ -1975,6 +1995,29 @@ void AOJJ_Player::Landed(const FHitResult& Hit)
 
 	// [#357] 착지 즉시 점프 슬롯 애니를 끊어 locomotion 복귀(통짜 시퀀스가 착지까지 나가 서서 미끄러지는 잔상 제거).
 	StopJumpMontage();
+
+	// [착지 발소리] 표면 판별 재생(걸음 노티파이와 공용 유틸). 깊은 물 다이빙(수영 진입 수심 이상)은
+	// 이번 틱 수영 진입 + 수영 루프와 겹쳐 이중음 — 스킵. 얕은 물 철벅은 유틸의 Wet 경로가 정상 처리.
+	const FVector Loc = GetActorLocation();
+	const float FeetZ = Loc.Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const FVector FootLocation(Loc.X, Loc.Y, FeetZ);
+	bool bDeepWater = bSwimming;
+	if (!bDeepWater)
+	{
+		if (const AOJJ_Grid* Grid =
+				Cast<AOJJ_Grid>(UGameplayStatics::GetActorOfClass(GetWorld(), AOJJ_Grid::StaticClass())))
+		{
+			float WaterSurfaceZ = 0.0f;
+			// 착지 순간 발 = 바닥이라 (수면 − 발Z) ≈ 그 지점 수심 — 수영 진입 판정(SwimEnterWaterDepth)과 동일 기준.
+			bDeepWater = Grid->OJJ_QueryWaterBodyAt(FootLocation, WaterSurfaceZ)
+				&& (WaterSurfaceZ - FeetZ) >= SwimEnterWaterDepth;
+		}
+	}
+	if (!bDeepWater)
+	{
+		OJJ_FootstepStatics::PlaySurfaceFootstep(GetWorld(), FootLocation,
+			LandSandSound, LandMetalSound, LandWetSound, LandVolumeMultiplier);
+	}
 }
 
 void AOJJ_Player::StopJumpMontage()
@@ -2153,6 +2196,11 @@ void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
        {
           MainHUDWidgetInstance->SetVisibility(ESlateVisibility::Collapsed);
        }
+       // [미니맵] HUD와 함께 숨김(빌드 화면 정리). 복원은 해제 경로에서 bMinimapHiddenByUser 판단.
+       if (MinimapWidgetInstance)
+       {
+          MinimapWidgetInstance->SetVisibility(ESlateVisibility::Collapsed);
+       }
        if (PC && BuildModeWidgetClass && !BuildModeWidgetInstance)
        {
           BuildModeWidgetInstance = CreateWidget<UUserWidget>(PC, BuildModeWidgetClass);
@@ -2203,6 +2251,30 @@ void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
           // 드래그 씹힘 방지
           MainHUDWidgetInstance->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
        }
+       // [미니맵] 사용자가 N으로 꺼둔 상태가 아니면 HUD와 함께 복원(사용자 의사 존중).
+       if (MinimapWidgetInstance && !bMinimapHiddenByUser)
+       {
+          MinimapWidgetInstance->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+       }
+    }
+}
+
+void AOJJ_Player::ToggleMinimap()
+{
+    if (!MinimapWidgetInstance)
+    {
+       return;
+    }
+
+    // 플래그가 단일 진실원 — 빌드모드(위젯 강제 Collapsed) 중에도 사용자 의사는 여기 누적되고,
+    // 실제 표시는 빌드모드가 아닐 때만 반영(이탈 복원 로직과 동일 기준).
+    bMinimapHiddenByUser = !bMinimapHiddenByUser;
+
+    const bool bInBuildMode = BuildController && BuildController->IsInBuildMode();
+    if (!bInBuildMode)
+    {
+       MinimapWidgetInstance->SetVisibility(
+          bMinimapHiddenByUser ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
     }
 }
 
@@ -3199,6 +3271,28 @@ void AOJJ_Player::GenerateFactoryStateLog()
 	UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] GenerateFactoryStateLog failed: FactoryAgentClientSubsystem not found."));
 }
 
+void AOJJ_Player::GenerateFactoryAnalyzeRequest()
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryAgentClientSubsystem* AgentClient = GameInstance->GetSubsystem<UFactoryAgentClientSubsystem>())
+		{
+			FString SavedFilePath;
+			if (AgentClient->SaveProcessOptimizerAnalyzeRequestJsonToDesktop(0, TEXT(""), TEXT(""), SavedFilePath))
+			{
+				UE_LOG(LogTemp, Log, TEXT("[OJJ_Player] Factory analyze request preview saved to: %s"), *SavedFilePath);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] GenerateFactoryAnalyzeRequest failed: Could not save preview file."));
+			}
+			return;
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] GenerateFactoryAnalyzeRequest failed: FactoryAgentClientSubsystem not found."));
+}
+
 void AOJJ_Player::TutorialAdvance()
 {
 	if (UGameInstance* GameInstance = GetGameInstance())
@@ -3658,6 +3752,29 @@ void AOJJ_Player::UpdateInventoryRealtime()
 	}
 }
 
+void AOJJ_Player::OJJ_SetSwimSoundActive(bool bActive)
+{
+	// MachineBase RefreshOperatingSound 패턴 — 미지정 무동작 + 상태 변화 시에만 Play/Stop.
+	if (!SwimLoopSoundComponent || !SwimLoopSound)
+	{
+		return;
+	}
+	if (bActive == bSwimSoundActive)
+	{
+		return;
+	}
+	bSwimSoundActive = bActive;
+	if (bActive)
+	{
+		SwimLoopSoundComponent->SetSound(SwimLoopSound);
+		SwimLoopSoundComponent->Play();
+	}
+	else
+	{
+		SwimLoopSoundComponent->Stop();
+	}
+}
+
 void AOJJ_Player::OJJ_UpdateSwimming(float DeltaSeconds)
 {
 	UCharacterMovementComponent* Move = GetCharacterMovement();
@@ -3681,6 +3798,7 @@ void AOJJ_Player::OJJ_UpdateSwimming(float DeltaSeconds)
 			Move->RotationRate = FRotator(0.f, DefaultRotationRateYaw, 0.f);  // 진입 시 낮춘 회전속도 원복(걷기 정상화)
 			Move->MaxFlySpeed = DefaultMaxFlySpeed;                            // 수영 속도 원복(엔진 기본 600)
 			bSwimming = false;
+			OJJ_SetSwimSoundActive(false);
 		}
 		bSwimMoving = false;
 		SwimOutOfWaterTime = 0.0f;
@@ -3755,6 +3873,7 @@ void AOJJ_Player::OJJ_UpdateSwimming(float DeltaSeconds)
 				Move->RotationRate = FRotator(0.f, SwimRotationRateYaw, 0.f);
 				Move->MaxFlySpeed = SwimMaxFlySpeed;
 				bSwimming = true;
+				OJJ_SetSwimSoundActive(true);
 			}
 		}
 		else
