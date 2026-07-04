@@ -96,7 +96,7 @@ void UUI_DialogueBalloon::HandleOnTextCommitted(const FText& Text, ETextCommit::
     const FString QuestionStr = Text.ToString().TrimStartAndEnd();
     
     // 엔터를 치면 내용 유무 상관없이 인풋창은 즉시 초기화 및 증발
-    ET_OperatorInput->SetText(FText::FromString(QuestionStr));
+    ET_OperatorInput->SetText(FText::GetEmpty());
     ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
 
     // 포커스를 완벽하게 꺼내 캐릭터 조작 모드로 강제 복구
