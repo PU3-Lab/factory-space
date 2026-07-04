@@ -11,6 +11,7 @@ class WANTED_FACTORY_API UUI_SimpleQuestWindow : public UUserWidget
 
 protected:
 	// 메인 퀘스트 이름과 현재 진행해야 할 목표 텍스트 바인딩
+	UPROPERTY(meta = (BindWidgetOptional)) class UTextBlock* TXT_MainQuestPrefix;
 	UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_MainQuestTitle;
 	UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_MainQuestObjective;
 

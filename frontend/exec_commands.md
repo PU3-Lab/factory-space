@@ -16,6 +16,23 @@
 - 명령어: `TutorialAdvance`
 - 구현 위치: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
 
+## wf.quest.jump
+
+- 목적: 특정 튜토리얼 퀘스트 Step ID로 즉시 점프해 해당 단계의 UI와 대사를 바로 확인합니다.
+- 인자:
+  - `QuestId`: 이동할 튜토리얼 Step ID
+- 명령어: `wf.quest.jump <QuestId>`
+- 예시: `wf.quest.jump TUT_COMM_008`
+- 비고: 점프 후 해당 Step의 `on_start` 대사를 함께 출력합니다.
+- 구현 위치: `frontend/Source/Wanted_Factory/Private/QuestManagerSubsystem.cpp`
+
+## wf.quest.jump_commtower
+
+- 목적: 통신탑 튜토리얼 진입 단계인 `TUT_COMM_001`로 즉시 점프합니다.
+- 명령어: `wf.quest.jump_commtower`
+- 비고: `wf.quest.jump TUT_COMM_001`의 단축 명령어입니다.
+- 구현 위치: `frontend/Source/Wanted_Factory/Private/QuestManagerSubsystem.cpp`
+
 ## SetMachineLevel
 
 - 목적: 특정 머신 타입의 레벨을 지정한 값으로 바로 설정합니다.
