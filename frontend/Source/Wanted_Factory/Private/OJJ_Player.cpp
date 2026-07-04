@@ -24,6 +24,7 @@
 #include "Styling/CoreStyle.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Components/AudioComponent.h"
 #include "Components/SpotLightComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -40,6 +41,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "OJJ_BuildController.h"
 #include "OJJ_BuildCamera.h"
+#include "OJJ_FootstepStatics.h"
 #include "OJJ_Ladder.h"
 #include "Components/CapsuleComponent.h"
 #include "OJJ_Grid.h"
@@ -109,6 +111,11 @@ AOJJ_Player::AOJJ_Player()
 	NightSpotLight->bUseInverseSquaredFalloff = false;
 	NightSpotLight->LightFalloffExponent = 2.5f;
 	NightSpotLight->SetVisibility(false);
+
+	// [수영 사운드] 상주 컴포넌트 — MachineBase OperatingSound 패턴(수동 Play/Stop, 자동재생 금지).
+	SwimLoopSoundComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("SwimLoopSound"));
+	SwimLoopSoundComponent->SetupAttachment(RootComponent);
+	SwimLoopSoundComponent->bAutoActivate = false;
 }
 
 void AOJJ_Player::BeginPlay()
@@ -1988,6 +1995,29 @@ void AOJJ_Player::Landed(const FHitResult& Hit)
 
 	// [#357] 착지 즉시 점프 슬롯 애니를 끊어 locomotion 복귀(통짜 시퀀스가 착지까지 나가 서서 미끄러지는 잔상 제거).
 	StopJumpMontage();
+
+	// [착지 발소리] 표면 판별 재생(걸음 노티파이와 공용 유틸). 깊은 물 다이빙(수영 진입 수심 이상)은
+	// 이번 틱 수영 진입 + 수영 루프와 겹쳐 이중음 — 스킵. 얕은 물 철벅은 유틸의 Wet 경로가 정상 처리.
+	const FVector Loc = GetActorLocation();
+	const float FeetZ = Loc.Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const FVector FootLocation(Loc.X, Loc.Y, FeetZ);
+	bool bDeepWater = bSwimming;
+	if (!bDeepWater)
+	{
+		if (const AOJJ_Grid* Grid =
+				Cast<AOJJ_Grid>(UGameplayStatics::GetActorOfClass(GetWorld(), AOJJ_Grid::StaticClass())))
+		{
+			float WaterSurfaceZ = 0.0f;
+			// 착지 순간 발 = 바닥이라 (수면 − 발Z) ≈ 그 지점 수심 — 수영 진입 판정(SwimEnterWaterDepth)과 동일 기준.
+			bDeepWater = Grid->OJJ_QueryWaterBodyAt(FootLocation, WaterSurfaceZ)
+				&& (WaterSurfaceZ - FeetZ) >= SwimEnterWaterDepth;
+		}
+	}
+	if (!bDeepWater)
+	{
+		OJJ_FootstepStatics::PlaySurfaceFootstep(GetWorld(), FootLocation,
+			LandSandSound, LandMetalSound, LandWetSound, LandVolumeMultiplier);
+	}
 }
 
 void AOJJ_Player::StopJumpMontage()
@@ -3722,6 +3752,29 @@ void AOJJ_Player::UpdateInventoryRealtime()
 	}
 }
 
+void AOJJ_Player::OJJ_SetSwimSoundActive(bool bActive)
+{
+	// MachineBase RefreshOperatingSound 패턴 — 미지정 무동작 + 상태 변화 시에만 Play/Stop.
+	if (!SwimLoopSoundComponent || !SwimLoopSound)
+	{
+		return;
+	}
+	if (bActive == bSwimSoundActive)
+	{
+		return;
+	}
+	bSwimSoundActive = bActive;
+	if (bActive)
+	{
+		SwimLoopSoundComponent->SetSound(SwimLoopSound);
+		SwimLoopSoundComponent->Play();
+	}
+	else
+	{
+		SwimLoopSoundComponent->Stop();
+	}
+}
+
 void AOJJ_Player::OJJ_UpdateSwimming(float DeltaSeconds)
 {
 	UCharacterMovementComponent* Move = GetCharacterMovement();
@@ -3745,6 +3798,7 @@ void AOJJ_Player::OJJ_UpdateSwimming(float DeltaSeconds)
 			Move->RotationRate = FRotator(0.f, DefaultRotationRateYaw, 0.f);  // 진입 시 낮춘 회전속도 원복(걷기 정상화)
 			Move->MaxFlySpeed = DefaultMaxFlySpeed;                            // 수영 속도 원복(엔진 기본 600)
 			bSwimming = false;
+			OJJ_SetSwimSoundActive(false);
 		}
 		bSwimMoving = false;
 		SwimOutOfWaterTime = 0.0f;
@@ -3819,6 +3873,7 @@ void AOJJ_Player::OJJ_UpdateSwimming(float DeltaSeconds)
 				Move->RotationRate = FRotator(0.f, SwimRotationRateYaw, 0.f);
 				Move->MaxFlySpeed = SwimMaxFlySpeed;
 				bSwimming = true;
+				OJJ_SetSwimSoundActive(true);
 			}
 		}
 		else
