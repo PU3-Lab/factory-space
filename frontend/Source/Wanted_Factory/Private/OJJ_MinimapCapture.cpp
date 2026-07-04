@@ -29,6 +29,11 @@ AOJJ_MinimapCapture::AOJJ_MinimapCapture()
 	CaptureComponent->ShowFlags.SetVolumetricFog(false);
 	CaptureComponent->ShowFlags.SetAtmosphere(false);
 	CaptureComponent->ShowFlags.SetParticles(false);
+	// 물 표면 스페큘러 글린트가 저해상 RT에서 흰 점으로 앨리어싱 → 광택 계열 전부 끔.
+	CaptureComponent->ShowFlags.SetBloom(false);
+	CaptureComponent->ShowFlags.SetSpecular(false);
+	CaptureComponent->ShowFlags.SetScreenSpaceReflections(false);
+	CaptureComponent->ShowFlags.SetLensFlares(false);
 }
 
 void AOJJ_MinimapCapture::BeginPlay()

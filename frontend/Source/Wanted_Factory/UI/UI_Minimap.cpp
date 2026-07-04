@@ -18,9 +18,9 @@ namespace
 	const FName ParamWindowCenter(TEXT("WindowCenter"));
 	const FName ParamWindowSize(TEXT("WindowSize"));
 
-	// 에이전트 디버그 하이라이트(UI_DialogueBalloon) 색 계승 — 전력=Cyan, 고장/막힘=Yellow.
-	const FLinearColor PowerIssueColor = FLinearColor(0.0f, 1.0f, 1.0f, 1.0f);
-	const FLinearColor FaultIssueColor = FLinearColor(1.0f, 1.0f, 0.0f, 1.0f);
+	// 전력=Yellow, 고장/막힘=Red — 디버그 하이라이트와 다른 미니맵 고유 체계.
+	const FLinearColor PowerIssueColor = FLinearColor(1.0f, 1.0f, 0.0f, 1.0f);
+	const FLinearColor FaultIssueColor = FLinearColor(1.0f, 0.0f, 0.0f, 1.0f);
 }
 
 void UUI_Minimap::NativeConstruct()
@@ -159,7 +159,8 @@ void UUI_Minimap::RefreshProblemMarkers()
 
 		FMinimapProblemMarker Marker;
 		Marker.Machine = Machine;
-		Marker.Color = bPowerIssue ? PowerIssueColor : FaultIssueColor;
+		// 고장은 수리 전엔 전력 넣어도 안 돌아가므로 선행 과제 — 고장 색 우선.
+		Marker.Color = bFaultIssue ? FaultIssueColor : PowerIssueColor;
 		ProblemMarkers.Add(Marker);
 	}
 }
