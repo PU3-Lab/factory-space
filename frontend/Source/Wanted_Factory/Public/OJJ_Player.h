@@ -24,6 +24,8 @@ class UUI_SynthesizerInteract;
 class AResourceBase;
 class UAnimMontage;
 class UAnimSequenceBase;
+class UAudioComponent;
+class USoundBase;
 class UOJJ_CharacterAppearanceData;
 struct FInputActionValue;
 
@@ -554,6 +556,32 @@ protected:
 
 	// [수영] WaterBody 질의용 그리드 캐시(OJJ_QueryWaterBodyAt). 최초 1회 GetActorOfClass.
 	TWeakObjectPtr<class AOJJ_Grid> OJJ_CachedGridForSwim;
+
+	// [수영 사운드] 수영 중 루핑 재생 사운드(Cue). 미지정이면 무동작(에셋 나중 지정 대비).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OJJ|Swim")
+	TObjectPtr<USoundBase> SwimLoopSound;
+
+	// [수영 사운드] 상주 컴포넌트 — MachineBase OperatingSound 패턴(생성자 부착 + 상태 토글 Play/Stop).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OJJ|Swim")
+	TObjectPtr<UAudioComponent> SwimLoopSoundComponent;
+
+	// [수영 사운드] 현재 재생 플래그 — 중복 Play/Stop 방지(RefreshOperatingSound의 bOperatingSoundActive 미러).
+	bool bSwimSoundActive = false;
+
+	// [수영 사운드] 진입/이탈 토글 — 컴포넌트/사운드 미지정 시 무동작.
+	void OJJ_SetSwimSoundActive(bool bActive);
+
+	// [착지 발소리] Landed에서 표면 판별 재생(OJJ_FootstepStatics — 걸음 노티파이와 공용 로직).
+	// 미지정 표면은 무동작. 깊은 물 다이빙(수영 진입 수심)은 수영 루프와 이중음이라 스킵.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
+	TObjectPtr<USoundBase> LandSandSound;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
+	TObjectPtr<USoundBase> LandMetalSound;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
+	TObjectPtr<USoundBase> LandWetSound;
+	// 착지는 걸음보다 임팩트가 커야 해서 기본 볼륨을 살짝 높임.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound", meta = (ClampMin = "0.0"))
+	float LandVolumeMultiplier = 1.2f;
 
 	// [수영] 매 틱 물 진입/이탈 감지 → MOVE_Swimming 토글 + 수면 클램프. 등반/빌드(MOVE_Flying) 중엔 건너뜀.
 	void OJJ_UpdateSwimming(float DeltaSeconds);
