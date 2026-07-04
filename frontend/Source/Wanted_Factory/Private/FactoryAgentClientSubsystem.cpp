@@ -89,33 +89,6 @@ FString SanitizeObjectName(FString ObjectName)
 	{
 	}
 
-	int32 NumericSuffixSeparatorIndex = INDEX_NONE;
-	if (ObjectName.FindLastChar(TEXT('_'), NumericSuffixSeparatorIndex))
-	{
-		const FString InstanceSuffix = ObjectName.Mid(NumericSuffixSeparatorIndex + 1);
-		if (!InstanceSuffix.IsEmpty() && InstanceSuffix.IsNumeric())
-		{
-			FString BaseName = ObjectName.Left(NumericSuffixSeparatorIndex);
-			if (BaseName.EndsWith(TEXT("_C"), ESearchCase::CaseSensitive))
-			{
-				BaseName.LeftChopInline(2, EAllowShrinking::No);
-			}
-
-			ObjectName = BaseName + TEXT("_") + InstanceSuffix;
-		}
-	}
-
-	ObjectName.ReplaceInline(TEXT("_C_"), TEXT("_"), ESearchCase::CaseSensitive);
-	if (ObjectName.EndsWith(TEXT("_C"), ESearchCase::CaseSensitive))
-	{
-		ObjectName.LeftChopInline(2, EAllowShrinking::No);
-	}
-
-	while (ObjectName.Contains(TEXT("__")))
-	{
-		ObjectName.ReplaceInline(TEXT("__"), TEXT("_"), ESearchCase::CaseSensitive);
-	}
-
 	ObjectName.TrimStartAndEndInline();
 
 	return ObjectName;
@@ -383,8 +356,6 @@ TSharedPtr<FJsonObject> BuildDurabilityObject(const AMachineBase* Machine)
 		DurabilityObject->SetNumberField(TEXT("current"), 0.0);
 		DurabilityObject->SetNumberField(TEXT("max"), 0.0);
 		DurabilityObject->SetNumberField(TEXT("ratio"), 0.0);
-		DurabilityObject->SetBoolField(TEXT("is_broken"), false);
-		DurabilityObject->SetBoolField(TEXT("is_infinite"), false);
 		return DurabilityObject;
 	}
 
@@ -395,8 +366,6 @@ TSharedPtr<FJsonObject> BuildDurabilityObject(const AMachineBase* Machine)
 	DurabilityObject->SetNumberField(
 		TEXT("ratio"),
 		MaxDurability > 0.0 ? CurrentDurability / MaxDurability : 0.0);
-	DurabilityObject->SetBoolField(TEXT("is_broken"), Machine->isBroken());
-	DurabilityObject->SetBoolField(TEXT("is_infinite"), Machine->IsInfiniteDurability());
 	return DurabilityObject;
 }
 }
@@ -700,6 +669,44 @@ bool UFactoryAgentClientSubsystem::SaveProcessOptimizerStateUpdateJsonToDesktop(
 	return true;
 }
 
+bool UFactoryAgentClientSubsystem::SaveProcessOptimizerAnalyzeRequestJsonToDesktop(
+	int32 FactoryRevision,
+	const FString& SessionId,
+	const FString& ClientId,
+	FString& OutSavedFilePath)
+{
+	const FString PreviewJson = BuildProcessOptimizerAnalyzeRequestJson(FactoryRevision, SessionId, ClientId);
+	TSharedPtr<FJsonObject> PreviewObject;
+	const FString JsonToSave = FactoryAgentJsonUtils::ParseJsonObject(PreviewJson, PreviewObject)
+		? FactoryAgentJsonUtils::WritePrettyJsonObject(PreviewObject)
+		: PreviewJson;
+	const FString UserProfilePath = FPlatformMisc::GetEnvironmentVariable(TEXT("USERPROFILE"));
+	const FString DesktopDirectory = UserProfilePath.IsEmpty()
+		? FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir())
+		: FPaths::Combine(UserProfilePath, TEXT("Desktop"));
+
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	if (!PlatformFile.DirectoryExists(*DesktopDirectory) && !PlatformFile.CreateDirectoryTree(*DesktopDirectory))
+	{
+		OutSavedFilePath.Reset();
+		LOG_LC_W(TEXT("Failed to create directory for optimizer analyze preview: %s"), *DesktopDirectory);
+		return false;
+	}
+
+	const FString FileName = FString::Printf(TEXT("process_optimizer_analyze_request_%03d.json"), FMath::Max(0, FactoryRevision));
+	const FString SavedFilePath = FPaths::Combine(DesktopDirectory, FileName);
+	if (!FFileHelper::SaveStringToFile(JsonToSave, *SavedFilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+	{
+		OutSavedFilePath.Reset();
+		LOG_LC_W(TEXT("Failed to save optimizer analyze preview file: %s"), *SavedFilePath);
+		return false;
+	}
+
+	OutSavedFilePath = SavedFilePath;
+	LOG_LC(TEXT("Process optimizer analyze preview saved: %s"), *SavedFilePath);
+	return true;
+}
+
 FString UFactoryAgentClientSubsystem::BuildProcessOptimizerStateUpdateJson(
 	int32 FactoryRevision,
 	const FString& SessionId,
@@ -916,6 +923,8 @@ FString UFactoryAgentClientSubsystem::BuildProcessOptimizerRequestJson(
 		MachineObject->SetStringField(TEXT("status"), MachineStatus);
 		MachineObject->SetStringField(TEXT("equipment_status"), MachineStatus);
 		MachineObject->SetObjectField(TEXT("durability"), BuildDurabilityObject(Machine).ToSharedRef());
+		MachineObject->SetStringField(TEXT("condition"), Machine->isBroken() ? TEXT("broken") : TEXT("normal"));
+		MachineObject->SetBoolField(TEXT("maintenance_required"), Machine->isBroken());
 		MachineObject->SetArrayField(
 			TEXT("connected_power_node_ids"),
 			MakeStringArray(MachineToNearbyNodeIds.FindRef(MachineId)));
@@ -1008,6 +1017,8 @@ FString UFactoryAgentClientSubsystem::BuildProcessOptimizerRequestJson(
 		GeneratorObject->SetStringField(TEXT("id"), GeneratorId);
 		GeneratorObject->SetStringField(TEXT("equipment_status"), GeneratorStatus);
 		GeneratorObject->SetObjectField(TEXT("durability"), BuildDurabilityObject(PowerPlant).ToSharedRef());
+		GeneratorObject->SetStringField(TEXT("condition"), PowerPlant->isBroken() ? TEXT("broken") : TEXT("normal"));
+		GeneratorObject->SetBoolField(TEXT("maintenance_required"), PowerPlant->isBroken());
 		GeneratorObject->SetNumberField(TEXT("produced"), PowerPlant->GetCurrentPowerOutput());
 		GeneratorObject->SetBoolField(TEXT("connected"), ConnectedNodeIds.Num() > 0);
 		GeneratorObject->SetArrayField(TEXT("connected_power_node_ids"), MakeStringArray(ConnectedNodeIds));
@@ -1037,6 +1048,7 @@ FString UFactoryAgentClientSubsystem::BuildProcessOptimizerRequestJson(
 	const TSharedPtr<FJsonObject> PayloadObject = MakeShared<FJsonObject>();
 	PayloadObject->SetStringField(TEXT("operation"), Operation);
 	PayloadObject->SetStringField(TEXT("request_source"), RequestSource);
+	PayloadObject->SetBoolField(TEXT("subquest_mode"), RequestSource.Equals(TEXT("periodic"), ESearchCase::IgnoreCase));
 	PayloadObject->SetStringField(TEXT("goal"), TEXT("balance"));
 	PayloadObject->SetNumberField(TEXT("factoryRevision"), SafeFactoryRevision);
 	PayloadObject->SetObjectField(TEXT("factory_state"), FactoryStateObject.ToSharedRef());

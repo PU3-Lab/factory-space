@@ -12,6 +12,42 @@
 
 namespace
 {
+	FString SanitizeAgentTargetId(FString ObjectName)
+	{
+		if (ObjectName.IsEmpty())
+		{
+			return ObjectName;
+		}
+
+		int32 ArrowIndex = INDEX_NONE;
+		if (ObjectName.FindLastChar(TEXT('>'), ArrowIndex))
+		{
+			ObjectName = ObjectName.Mid(ArrowIndex + 1);
+		}
+
+		int32 LastSeparatorIndex = INDEX_NONE;
+		for (const TCHAR Separator : { TEXT('/'), TEXT('\\'), TEXT(':'), TEXT('.') })
+		{
+			int32 SeparatorIndex = INDEX_NONE;
+			if (ObjectName.FindLastChar(Separator, SeparatorIndex))
+			{
+				LastSeparatorIndex = FMath::Max(LastSeparatorIndex, SeparatorIndex);
+			}
+		}
+
+		if (LastSeparatorIndex != INDEX_NONE)
+		{
+			ObjectName = ObjectName.Mid(LastSeparatorIndex + 1);
+		}
+
+		while (ObjectName.RemoveFromStart(TEXT("BP_")))
+		{
+		}
+
+		ObjectName.TrimStartAndEndInline();
+		return ObjectName;
+	}
+
 	bool IsPowerRelevantMachine(const AMachineBase* Machine)
 	{
 		return Machine &&
@@ -505,6 +541,35 @@ TArray<FMachineNode> UFactoryManagerSubsystem::GetMachineNodes()
 	TArray<FMachineNode> Result;
 	Machines.GenerateValueArray(Result);
 	return Result;
+}
+
+AMachineBase* UFactoryManagerSubsystem::FindMachineByAgentTargetId(const FString& MachineId) const
+{
+	const FString SanitizedTargetId = SanitizeAgentTargetId(MachineId);
+	if (SanitizedTargetId.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	const_cast<UFactoryManagerSubsystem*>(this)->EnsureCachedData();
+
+	for (const TPair<FName, FMachineNode>& MachinePair : Machines)
+	{
+		const FMachineNode& MachineNode = MachinePair.Value;
+		AMachineBase* Machine = MachineNode.MachineActor.Get();
+		if (!Machine)
+		{
+			continue;
+		}
+
+		if (SanitizeAgentTargetId(Machine->GetName()) == SanitizedTargetId ||
+			SanitizeAgentTargetId(MachineNode.ID.ToString()) == SanitizedTargetId)
+		{
+			return Machine;
+		}
+	}
+
+	return nullptr;
 }
 
 TArray<FConnectionEdge> UFactoryManagerSubsystem::GetConnectionEdges()

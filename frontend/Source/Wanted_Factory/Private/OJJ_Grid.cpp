@@ -1095,6 +1095,15 @@ FVector AOJJ_Grid::GetGridCenter() const
 	return GetActorLocation();
 }
 
+void AOJJ_Grid::GetGridWorldBounds(FVector2D& OutMin, FVector2D& OutMax) const
+{
+	const FVector Center = GetGridCenter();
+	const float HalfExtentX = GridSize.X * CellSize * 0.5f;
+	const float HalfExtentY = GridSize.Y * CellSize * 0.5f;
+	OutMin = FVector2D(Center.X - HalfExtentX, Center.Y - HalfExtentY);
+	OutMax = FVector2D(Center.X + HalfExtentX, Center.Y + HalfExtentY);
+}
+
 FIntPoint AOJJ_Grid::EffectiveSize(FVector2D RawSize, int32 RotationSteps)
 {
 	// CalculateFootprint / GetMachinePlacementLocation과 동일한 정수화 규칙(CeilToInt + Max 1).
