@@ -118,6 +118,8 @@ void UUI_DialogueBalloon::HandleOnTextCommitted(const FText& Text, ETextCommit::
 
     // 留뚯빟 ?꾨Т寃껊룄 ??移섍퀬 ?뷀꽣留??뚮??ㅻ㈃ 媛?대뱶 ?붿껌 ?놁씠 ?リ린留??섍퀬 留덈Т由?
     if (QuestionStr.IsEmpty()) return;
+    LastSubmittedOperatorGuideQuestion = QuestionStr;
+    bShowLastSubmittedOperatorGuideQuestion = true;
 
     UGameInstance* GI = GetGameInstance();
     UFactoryAgentClientSubsystem* AgentClient = GI ? GI->GetSubsystem<UFactoryAgentClientSubsystem>() : nullptr;
@@ -145,7 +147,6 @@ void UUI_DialogueBalloon::HandleOnOperatorGuideResponse(const FString& RequestId
             PayloadObject->TryGetStringField(TEXT("answer"), Answer) || 
             PayloadObject->TryGetStringField(TEXT("text"), Answer))
         {
-            // AI??理쒖쥌 ?듬???TXT_Dialogue ?먮━???좊챸?섍쾶 諛???ｌ뒿?덈떎
             ShowExternalDialogue(Answer);
         }
     }
@@ -158,7 +159,6 @@ void UUI_DialogueBalloon::HandleOnOperatorGuideError(const FString& RequestId, c
     
     FString CombinedMessage = ErrorCode.IsEmpty() ? ErrorMessage : FString::Printf(TEXT("%s: %s"), *ErrorCode, *ErrorMessage);
     
-    // ?먮윭 硫붿떆吏???띿뒪??諛뺤뒪??源붾걫?섍쾶 異쒕젰
     ShowExternalDialogue(CombinedMessage);
 }
 
@@ -182,6 +182,7 @@ void UUI_DialogueBalloon::HandleOnMaterialGenerationResponse(const FFactoryMater
         return;
     }
 
+    bShowLastSubmittedOperatorGuideQuestion = false;
     ShowExternalDialogue(DialogueMessage);
 }
 
@@ -548,6 +549,7 @@ void UUI_DialogueBalloon::ClearExternalDialogue()
     if (!bHasExternalDialogue && ExternalDialogueText.IsEmpty()) return;
     bHasExternalDialogue = false;
     ExternalDialogueText.Empty();
+    bShowLastSubmittedOperatorGuideQuestion = false;
     RefreshDialogueUI();
 }
 
@@ -556,6 +558,7 @@ void UUI_DialogueBalloon::ResetProcessOptimizerTracking()
     TrackedProcessOptimizerIssues.Reset();
     bProcessOptimizerRequestInFlight = false;
     bCanAnnounceProcessOptimizerResolution = false;
+    bShowLastSubmittedOperatorGuideQuestion = false;
 
     if (UWorld* World = GetWorld())
     {
@@ -568,6 +571,7 @@ void UUI_DialogueBalloon::BeginProcessOptimizerRequest()
     TrackedProcessOptimizerIssues.Reset();
     bProcessOptimizerRequestInFlight = true;
     bCanAnnounceProcessOptimizerResolution = false;
+    bShowLastSubmittedOperatorGuideQuestion = false;
 
     if (UWorld* World = GetWorld())
     {
@@ -588,6 +592,13 @@ void UUI_DialogueBalloon::DisplayCurrentLine()
     {
         if (SB_DialogueData)   SB_DialogueData->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         if (DialogueContainer) DialogueContainer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        if (TXT_Question)
+        {
+            TXT_Question->SetText(
+                bShowLastSubmittedOperatorGuideQuestion && !LastSubmittedOperatorGuideQuestion.TrimStartAndEnd().IsEmpty()
+                    ? FText::FromString(FString::Printf(TEXT("> %s"), *LastSubmittedOperatorGuideQuestion))
+                    : FText::GetEmpty());
+        }
         if (TXT_Dialogue)      TXT_Dialogue->SetText(FText::FromString(ExternalDialogueText));
         UpdateContinuePromptVisibility();
         return;
@@ -599,6 +610,7 @@ void UUI_DialogueBalloon::DisplayCurrentLine()
         // 留먰뭾??諛곌꼍(Image_229)怨?湲?먭? ?닿릿 'Size Box ?명듃'留?源붾걫?섍쾶 ?щ챸 泥?냼?⑸땲??
         if (SB_DialogueData)   SB_DialogueData->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         if (DialogueContainer) DialogueContainer->SetVisibility(ESlateVisibility::Hidden);
+        if (TXT_Question)      TXT_Question->SetText(FText::GetEmpty());
         if (TXT_Dialogue)      TXT_Dialogue->SetText(FText::GetEmpty());
         UpdateContinuePromptVisibility();
         return;
@@ -607,6 +619,7 @@ void UUI_DialogueBalloon::DisplayCurrentLine()
     // ?쇰컲 ??ш? 議댁옱???뚮뒗 二쇰㉧???명듃瑜??ㅼ떆 ?댁걯寃??몄텧?⑸땲??
     if (SB_DialogueData)   SB_DialogueData->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     if (DialogueContainer) DialogueContainer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    if (TXT_Question)      TXT_Question->SetText(FText::GetEmpty());
 
     FString CombinedDialogue;
     for (int32 LineIndex = 0; LineIndex < CachedLines.Num(); ++LineIndex)
@@ -746,6 +759,7 @@ void UUI_DialogueBalloon::ToggleAIGuide(APlayerController* PC)
         PC->SetInputMode(InputModeData);
         
         PC->bShowMouseCursor = true;
+        ET_OperatorInput->SetText(FText::GetEmpty());
         ET_OperatorInput->SetFocus();
         
         // / ???낅젰 濡쒖쭅???띿뒪???꾨뱶瑜??ㅼ뿼?쒖폒 ?뚰듃?띿뒪?몃? 吏?곕뜕 踰꾧렇瑜?媛뺤젣 ?몄쿃?⑸땲??

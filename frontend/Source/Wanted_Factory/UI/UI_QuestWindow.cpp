@@ -5,6 +5,7 @@
 #include "Engine/GameInstance.h"
 #include "UI_QuestNotify.h"
 #include "Components/Border.h"
+#include "Components/CheckBox.h"
 #include "UIInteractDisplayHelpers.h"
 
 namespace
@@ -28,26 +29,14 @@ namespace
         TArray<FString> ObjectiveTexts;
         for (const FQuestObjective& Objective : Quest.Objectives)
         {
-            ObjectiveTexts.Add(FString::Printf(TEXT("<SkyBlue>%d</><Default>/</><Blue>%d</>"), Objective.CurrentCount, Objective.Quantity));
+            ObjectiveTexts.Add(FString::Printf(TEXT("%d / %d"), Objective.CurrentCount, Objective.Quantity));
         }
 
         const FString ProgressText = ObjectiveTexts.IsEmpty()
-            ? TEXT("<SkyBlue>0</><Default>/</><Blue>0</>")
-            : FString::Join(ObjectiveTexts, TEXT("<Default>, </>"));
+            ? TEXT("0 / 0")
+            : FString::Join(ObjectiveTexts, TEXT(", "));
 
-        FString Line1 = FString::Printf(TEXT("<Default>- %s (</>%s<Default>)</>"), *Quest.Title.ToString(), *ProgressText);
-        FString Line2;
-
-        if (Quest.Status == EQuestStatus::Completed)
-        {
-            Line2 = TEXT("<Completed>    [Completed]</>");
-        }
-        else
-        {
-            Line2 = TEXT("<InProgress>    [In Progress]</>");
-        }
-
-        return FString::Printf(TEXT("%s\n%s"), *Line1, *Line2);
+        return FString::Printf(TEXT("- [일일] %s\n진행도 : (%s)"), *Quest.Title.ToString(), *ProgressText);
     }
 
     FString ResolveRewardDisplayName(const UObject* WorldContextObject, FName RewardItemId)
@@ -292,10 +281,12 @@ void UUI_QuestWindow::ShowSubQuestCompletedNotify(const FQuestState& Quest)
 void UUI_QuestWindow::UpdateSubQuestTexts(const TArray<FQuestState>& Quests)
 {
     TArray<URichTextBlock*> SubBoxes = { TXT_SubQuest_1, TXT_SubQuest_2, TXT_SubQuest_3, TXT_SubQuest_4, TXT_SubQuest_5 };
+    TArray<UCheckBox*> SubCheckBoxes = { CB_SubQuest_1, CB_SubQuest_2, CB_SubQuest_3, CB_SubQuest_4, CB_SubQuest_5 };
 
     for (int32 i = 0; i < SubBoxes.Num(); ++i)
     {
         URichTextBlock* Box = SubBoxes[i];
+        UCheckBox* CheckBox = SubCheckBoxes[i];
         if (!Box) continue;
 
         UWidget* RowWrapper = Box->GetParent();
@@ -303,6 +294,17 @@ void UUI_QuestWindow::UpdateSubQuestTexts(const TArray<FQuestState>& Quests)
         if (i < Quests.Num())
         {
             Box->SetText(FText::FromString(BuildSubQuestProgressText(Quests[i])));
+            
+            // 체크박스
+            if (CheckBox)
+            {
+                // 해당 퀘스트의 Status 상태가 Completed라면 Checked, 아니라면 Unchecked 
+                ECheckBoxState NewState = (Quests[i].Status == EQuestStatus::Completed) 
+                    ? ECheckBoxState::Checked 
+                    : ECheckBoxState::Unchecked;
+                
+                CheckBox->SetCheckedState(NewState);
+            }
             
             if (RowWrapper)
             {
