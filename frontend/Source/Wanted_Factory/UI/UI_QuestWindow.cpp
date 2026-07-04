@@ -26,6 +26,7 @@ namespace
 
     FString BuildSubQuestProgressText(const FQuestState& Quest)
     {
+        const bool bIsCompleted = Quest.Status == EQuestStatus::Completed;
         TArray<FString> ObjectiveTexts;
         for (const FQuestObjective& Objective : Quest.Objectives)
         {
@@ -36,7 +37,20 @@ namespace
             ? TEXT("0 / 0")
             : FString::Join(ObjectiveTexts, TEXT(", "));
 
-        return FString::Printf(TEXT("- [일일] %s\n진행도 : (%s)"), *Quest.Title.ToString(), *ProgressText);
+        if (bIsCompleted)
+        {
+            return FString::Printf(
+                TEXT("<Completed>[일일] %s</>\n<Completed>진행도 : %s</>"),
+                *Quest.Title.ToString(),
+                *ProgressText
+            );
+        }
+
+        return FString::Printf(
+            TEXT("<Daily>[일일]</> %s\n진행도 : %s"),
+            *Quest.Title.ToString(),
+            *ProgressText
+        );
     }
 
     FString ResolveRewardDisplayName(const UObject* WorldContextObject, FName RewardItemId)
@@ -151,13 +165,25 @@ void UUI_QuestWindow::UpdateMainQuestUI(const FQuestState& MainQuest)
 
     if (MainQuest.Status != EQuestStatus::Active)
     {
+        if (TXT_MainQuestPrefix)
+        {
+            TXT_MainQuestPrefix->SetText(FText::GetEmpty());
+        }
         TXT_MainQuestTitle->SetText(FText::FromString(TEXT("No active main quest")));
         TXT_MainQuestDesc->SetText(FText::GetEmpty());
         return;
     }
 
-    FText BracketedTitle = FText::Format(FText::FromString(TEXT("[메인] {0}")), MainQuest.Title);
-    TXT_MainQuestTitle->SetText(BracketedTitle);
+    if (TXT_MainQuestPrefix)
+    {
+        TXT_MainQuestPrefix->SetText(FText::FromString(TEXT("[메인]")));
+        TXT_MainQuestTitle->SetText(MainQuest.Title);
+    }
+    else
+    {
+        FText BracketedTitle = FText::Format(FText::FromString(TEXT("[메인] {0}")), MainQuest.Title);
+        TXT_MainQuestTitle->SetText(BracketedTitle);
+    }
 
     TXT_MainQuestDesc->SetText(MainQuest.Description);
 }
@@ -313,6 +339,11 @@ void UUI_QuestWindow::UpdateSubQuestTexts(const TArray<FQuestState>& Quests)
         }
         else
         {
+            if (CheckBox)
+            {
+                CheckBox->SetCheckedState(ECheckBoxState::Unchecked);
+            }
+
             if (RowWrapper)
             {
                 RowWrapper->SetVisibility(ESlateVisibility::Collapsed);
@@ -339,8 +370,16 @@ void UUI_QuestWindow::DisplayTutorialStep(const FTutorialQuestStep& Step)
     UGameInstance* GI = GetGameInstance();
     UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
 
-    FText BracketedTitle = FText::Format(FText::FromString(TEXT("[메인] {0}")), FText::FromString(Step.Title));
-    TXT_MainQuestTitle->SetText(BracketedTitle);
+    if (TXT_MainQuestPrefix)
+    {
+        TXT_MainQuestPrefix->SetText(FText::FromString(TEXT("[메인]")));
+        TXT_MainQuestTitle->SetText(FText::FromString(Step.Title));
+    }
+    else
+    {
+        FText BracketedTitle = FText::Format(FText::FromString(TEXT("[메인] {0}")), FText::FromString(Step.Title));
+        TXT_MainQuestTitle->SetText(BracketedTitle);
+    }
     
     TXT_MainQuestDesc->SetText(FText::FromString(
         QuestManager
@@ -373,12 +412,18 @@ void UUI_QuestWindow::UpdateQuestZoneVisibility()
 
     if (bShouldShowMainContents)
     {
+        if (TXT_MainQuestPrefix) TXT_MainQuestPrefix->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         if (TXT_MainQuestTitle) TXT_MainQuestTitle->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         if (TXT_MainQuestDesc)  TXT_MainQuestDesc->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     }
     else
     {
         // 메인 퀘스트가 완전히 끝났을 때: 타이틀/설명을 비우고 숨긴 뒤 플레이스홀더만 노출
+        if (TXT_MainQuestPrefix)
+        {
+            TXT_MainQuestPrefix->SetText(FText::GetEmpty());
+            TXT_MainQuestPrefix->SetVisibility(ESlateVisibility::Collapsed);
+        }
         if (TXT_MainQuestTitle) 
         {
             TXT_MainQuestTitle->SetText(FText::GetEmpty());
