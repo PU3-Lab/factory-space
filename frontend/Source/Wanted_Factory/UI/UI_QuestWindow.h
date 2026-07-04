@@ -34,7 +34,7 @@ protected:
 
     // --- 텍스트 컴포넌트 바인딩 ---
     UPROPERTY(meta = (BindWidgetOptional)) class UTextBlock* TXT_MainQuestPrefix;
-    UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_MainQuestTitle;
+    UPROPERTY(meta = (BindWidget)) class URichTextBlock* TXT_MainQuestTitle;
     UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_MainQuestDesc;
     UPROPERTY(meta = (BindWidget)) class URichTextBlock* TXT_SubQuest_1;
     UPROPERTY(meta = (BindWidget)) class URichTextBlock* TXT_SubQuest_2;

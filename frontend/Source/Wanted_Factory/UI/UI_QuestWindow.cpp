@@ -169,7 +169,7 @@ void UUI_QuestWindow::UpdateMainQuestUI(const FQuestState& MainQuest)
         {
             TXT_MainQuestPrefix->SetText(FText::GetEmpty());
         }
-        TXT_MainQuestTitle->SetText(FText::FromString(TEXT("No active main quest")));
+        TXT_MainQuestTitle->SetText(FText::FromString(TEXT("<Completed>진행중인 메인퀘스트가 없습니다</>")));
         TXT_MainQuestDesc->SetText(FText::GetEmpty());
         return;
     }
@@ -418,7 +418,7 @@ void UUI_QuestWindow::UpdateQuestZoneVisibility()
     }
     else
     {
-        // 메인 퀘스트가 완전히 끝났을 때: 타이틀/설명을 비우고 숨긴 뒤 플레이스홀더만 노출
+        // 메인 퀘스트가 완전히 끝났을 때도 영역은 유지하고 빈 상태 문구를 노출합니다.
         if (TXT_MainQuestPrefix)
         {
             TXT_MainQuestPrefix->SetText(FText::GetEmpty());
@@ -426,8 +426,8 @@ void UUI_QuestWindow::UpdateQuestZoneVisibility()
         }
         if (TXT_MainQuestTitle) 
         {
-            TXT_MainQuestTitle->SetText(FText::GetEmpty());
-            TXT_MainQuestTitle->SetVisibility(ESlateVisibility::Collapsed);
+            TXT_MainQuestTitle->SetText(FText::FromString(TEXT("<Completed>진행중인 메인퀘스트가 없습니다.</>")));
+            TXT_MainQuestTitle->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         }
         if (TXT_MainQuestDesc)  
         {

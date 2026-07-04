@@ -3,6 +3,7 @@
 #include "Engine/DataTable.h"
 #include "FactoryAgentJsonUtils.h"
 #include "FactoryAgentClientSubsystem.h"
+#include "HAL/IConsoleManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "PlayerWarehouseSubsystem.h"
@@ -11,6 +12,7 @@
 #include "Dom/JsonObject.h"
 
 #include "Algo/Sort.h"
+#include "Engine/GameInstance.h"
 
 namespace
 {
@@ -48,10 +50,58 @@ constexpr TCHAR TutorialEventSelectLadderMode[] = TEXT("SelectLadderMode");
 constexpr TCHAR TutorialEventPlaceFlatFoundation[] = TEXT("PlaceFlatFoundation");
 constexpr TCHAR TutorialEventPlaceRampFoundation[] = TEXT("PlaceRampFoundation");
 constexpr TCHAR TutorialEventPlaceLadder[] = TEXT("PlaceLadder");
-constexpr TCHAR TutorialEventSelectBaseCampMode[] = TEXT("SelectBaseCampMode");
+	constexpr TCHAR TutorialEventSelectBaseCampMode[] = TEXT("SelectBaseCampMode");
 
-enum class ETutorialRequirementType : uint8
-{
+	static FAutoConsoleCommandWithWorldAndArgs GJumpTutorialQuestStepCommand(
+		TEXT("wf.quest.jump"),
+		TEXT("Jump to a tutorial quest step. Example: wf.quest.jump TUT_COMM_008"),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (!World)
+			{
+				return;
+			}
+
+			if (Args.Num() < 1)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[QuestTutorialJump] Missing quest id. Example: wf.quest.jump TUT_COMM_008"));
+				return;
+			}
+
+			UGameInstance* GameInstance = World->GetGameInstance();
+			UQuestManagerSubsystem* QuestManager = GameInstance ? GameInstance->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+			if (!QuestManager)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[QuestTutorialJump] QuestManagerSubsystem is unavailable."));
+				return;
+			}
+
+			QuestManager->JumpToTutorialQuestStepForTest(Args[0]);
+		}));
+
+	static FAutoConsoleCommandWithWorld GJumpCommTowerTutorialQuestCommand(
+		TEXT("wf.quest.jump_commtower"),
+		TEXT("Jump to the communication tower tutorial entry step (TUT_COMM_001)."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+		{
+			if (!World)
+			{
+				return;
+			}
+
+			UGameInstance* GameInstance = World->GetGameInstance();
+			UQuestManagerSubsystem* QuestManager = GameInstance ? GameInstance->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+			if (!QuestManager)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[QuestTutorialJump] QuestManagerSubsystem is unavailable."));
+				return;
+			}
+
+			QuestManager->JumpToTutorialQuestStepForTest(TEXT("TUT_COMM_001"));
+		}));
+
+	enum class ETutorialRequirementType : uint8
+	{
 	Unsupported,
 	EventCount,
 	WarehouseCount,
@@ -762,6 +812,35 @@ bool UQuestManagerSubsystem::CompleteCurrentTutorialQuestForTest()
 	return AdvanceTutorialQuestStep(true);
 }
 
+bool UQuestManagerSubsystem::JumpToTutorialQuestStepForTest(const FString& QuestId)
+{
+	if (TutorialQuestSteps.IsEmpty())
+	{
+		LOG_LC_W(TEXT("Tutorial quest jump failed because no tutorial quest steps were loaded."));
+		return false;
+	}
+
+	const FString TrimmedQuestId = QuestId.TrimStartAndEnd();
+	const int32* TargetStepIndex = TutorialQuestStepIndexById.Find(TrimmedQuestId);
+	if (!TargetStepIndex || !TutorialQuestSteps.IsValidIndex(*TargetStepIndex))
+	{
+		LOG_LC_W(TEXT("Tutorial quest jump failed because step [%s] does not exist."), *TrimmedQuestId);
+		return false;
+	}
+
+	bTutorialQuestTestActive = true;
+	CurrentTutorialQuestId = TrimmedQuestId;
+	bPendingTutorialStartDialogueReveal = false;
+	TutorialProgressCounts.Reset();
+
+	const int32* UnlockStepIndex = TutorialQuestStepIndexById.Find(TEXT("TUT_COMM_002"));
+	bFullQuestWindowUnlocked = UnlockStepIndex && *TargetStepIndex >= *UnlockStepIndex;
+
+	BroadcastCurrentTutorialQuestStep();
+	LogTutorialDialogue(CurrentTutorialQuestId, TEXT("on_start"));
+	return true;
+}
+
 bool UQuestManagerSubsystem::AdvanceTutorialManualStep()
 {
 	if (!bTutorialQuestTestActive || bPendingTutorialStartDialogueReveal)
@@ -952,7 +1031,7 @@ void UQuestManagerSubsystem::RestoreTutorialSaveState(
 	LastTutorialDialogueLines = InLastTutorialDialogueLines;
 	TutorialProgressCounts = InTutorialProgressCounts;
 	
-	const int32* UnlockStepIndex = TutorialQuestStepIndexById.Find(TEXT("TUT_COMM_001"));
+	const int32* UnlockStepIndex = TutorialQuestStepIndexById.Find(TEXT("TUT_COMM_002"));
 	const int32* CurrentStepIndex = TutorialQuestStepIndexById.Find(CurrentTutorialQuestId);
 	bFullQuestWindowUnlocked = UnlockStepIndex
 		&& CurrentStepIndex
@@ -978,7 +1057,7 @@ void UQuestManagerSubsystem::RevealPendingTutorialStartDialogue()
 		return;
 	}
 
-	if (CurrentTutorialQuestId == TEXT("TUT_COMM_001"))
+	if (CurrentTutorialQuestId == TEXT("TUT_COMM_002"))
 	{
 		bFullQuestWindowUnlocked = true;
 		RequestSubQuestsWhenConnected();
@@ -1447,7 +1526,7 @@ bool UQuestManagerSubsystem::AdvanceTutorialQuestStep(bool bFromManualTest)
 	}
 
 	CurrentTutorialQuestId = CurrentStep->NextQuestId;
-	if (CurrentTutorialQuestId == TEXT("TUT_COMM_001"))
+	if (CurrentTutorialQuestId == TEXT("TUT_COMM_002"))
 	{
 		bFullQuestWindowUnlocked = true;
 		RequestSubQuestsWhenConnected();
