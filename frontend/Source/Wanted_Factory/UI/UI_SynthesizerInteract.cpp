@@ -126,11 +126,11 @@ void UUI_SynthesizerInteract::NativeTick(const FGeometry& MyGeometry, float InDe
     }
 
     // 진행도 바 연산
-    float MaxTime = TargetMachine->GetProcessTime();
+    const float MaxTime = TargetMachine->GetEffectiveProcessTime(TargetMachine->GetProcessTime());
     if (State == EMachineState::Working && MaxTime > 0.0f)
     {
-        float RemainTime = GetWorld()->GetTimerManager().GetTimerRemaining(TargetMachine->GetProcessTimer());
-        UpdateCraftingProgress(1.0f - (RemainTime / MaxTime));
+        const float RemainTime = GetWorld()->GetTimerManager().GetTimerRemaining(TargetMachine->GetProcessTimer());
+        UpdateCraftingProgress(FMath::Clamp(1.0f - (RemainTime / MaxTime), 0.0f, 1.0f));
     }
     else
     {

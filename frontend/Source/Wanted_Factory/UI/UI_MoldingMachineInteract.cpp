@@ -153,7 +153,7 @@ void UUI_MoldingMachineInteract::NativeTick(const FGeometry& MyGeometry, float I
 	}
 
 	const EMachineState CurrentState = TargetMoldingMachine->GetMachineState();
-	const float MaxTime = TargetMoldingMachine->GetProcessTime();
+	const float MaxTime = TargetMoldingMachine->GetEffectiveProcessTime(TargetMoldingMachine->GetProcessTime());
 
 	if (CurrentState == EMachineState::Working && MaxTime > 0.0f)
 	{
