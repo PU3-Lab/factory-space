@@ -226,11 +226,11 @@ void UUI_MachineInteract::NativeTick(const FGeometry& MyGeometry, float InDeltaT
     }
 
     // 중앙 생산 진행도(프로그래스 바) 갱신
-    float MaxTime = TargetMachine->GetProcessTime();
+    const float MaxTime = TargetMachine->GetEffectiveProcessTime(TargetMachine->GetProcessTime());
     if (State == EMachineState::Working && MaxTime > 0.0f)
     {
-        float RemainTime = GetWorld()->GetTimerManager().GetTimerRemaining(TargetMachine->GetProcessTimer());
-        float Progress = 1.0f - (RemainTime / MaxTime);
+        const float RemainTime = GetWorld()->GetTimerManager().GetTimerRemaining(TargetMachine->GetProcessTimer());
+        const float Progress = FMath::Clamp(1.0f - (RemainTime / MaxTime), 0.0f, 1.0f);
         UpdateCraftingProgress(Progress);
     }
     else
