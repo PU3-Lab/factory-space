@@ -3,6 +3,7 @@
 #include "Engine/DataTable.h"
 #include "FactoryAgentJsonUtils.h"
 #include "FactoryAgentClientSubsystem.h"
+#include "FactoryManagerSubsystem.h"
 #include "HAL/IConsoleManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -599,12 +600,15 @@ void UQuestManagerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	Super::Initialize(Collection);
 
 	Collection.InitializeDependency(UFactoryAgentClientSubsystem::StaticClass());
+	Collection.InitializeDependency(UFactoryManagerSubsystem::StaticClass());
 	Collection.InitializeDependency(UPlayerWarehouseSubsystem::StaticClass());
 	AgentClient = GetGameInstance()->GetSubsystem<UFactoryAgentClientSubsystem>();
+	FactoryManagerSubsystem = GetGameInstance()->GetSubsystem<UFactoryManagerSubsystem>();
 	WarehouseSubsystem = GetGameInstance()->GetSubsystem<UPlayerWarehouseSubsystem>();
 	LoadMainQuestSequence();
 	LoadTutorialQuestTestData();
 	BindAgentClient();
+	BindFactoryManager();
 	BindWarehouse();
 	ActivateCurrentMainQuest();
 }
@@ -623,9 +627,15 @@ void UQuestManagerSubsystem::Deinitialize()
 		WarehouseSubsystem->OnItemAdded.RemoveAll(this);
 	}
 
+	if (FactoryManagerSubsystem)
+	{
+		FactoryManagerSubsystem->OnItemProduced.RemoveAll(this);
+	}
+
 	PendingSubQuestRequestIds.Empty();
 	bPendingAutoSubQuestRequest = false;
 	AgentClient = nullptr;
+	FactoryManagerSubsystem = nullptr;
 	WarehouseSubsystem = nullptr;
 
 	Super::Deinitialize();
@@ -1146,6 +1156,17 @@ void UQuestManagerSubsystem::BindWarehouse()
 	WarehouseSubsystem->OnItemAdded.AddDynamic(this, &UQuestManagerSubsystem::HandleWarehouseItemAdded);
 }
 
+void UQuestManagerSubsystem::BindFactoryManager()
+{
+	if (!FactoryManagerSubsystem)
+	{
+		LOG_LC_W(TEXT("Quest manager could not bind FactoryManagerSubsystem."));
+		return;
+	}
+
+	FactoryManagerSubsystem->OnItemProduced.AddDynamic(this, &UQuestManagerSubsystem::HandleFactoryItemProduced);
+}
+
 void UQuestManagerSubsystem::LoadTutorialQuestTestData()
 {
 	TutorialQuestSteps.Empty();
@@ -1632,7 +1653,7 @@ void UQuestManagerSubsystem::HandleWarehouseItemAdded(FName ItemID, int32 AddedC
 	bool bSubQuestProgressUpdated = false;
 	for (FQuestState& Quest : SubQuests)
 	{
-		if (Quest.Status != EQuestStatus::Active)
+		if (Quest.Status != EQuestStatus::Active || Quest.QuestType == TEXT("production"))
 		{
 			continue;
 		}
@@ -1659,6 +1680,43 @@ void UQuestManagerSubsystem::HandleWarehouseItemAdded(FName ItemID, int32 AddedC
 	}
 
 	RefreshMainQuestCompletion();
+}
+
+void UQuestManagerSubsystem::HandleFactoryItemProduced(FName ItemID, int32 ProducedCount)
+{
+	if (ItemID.IsNone() || ProducedCount <= 0)
+	{
+		return;
+	}
+
+	bool bSubQuestProgressUpdated = false;
+	for (FQuestState& Quest : SubQuests)
+	{
+		if (Quest.Status != EQuestStatus::Active || Quest.QuestType != TEXT("production"))
+		{
+			continue;
+		}
+
+		for (FQuestObjective& Objective : Quest.Objectives)
+		{
+			if (Objective.TargetId != ItemID)
+			{
+				continue;
+			}
+
+			const int32 NewCount = FMath::Min(Objective.Quantity, Objective.CurrentCount + ProducedCount);
+			if (NewCount != Objective.CurrentCount)
+			{
+				Objective.CurrentCount = NewCount;
+				bSubQuestProgressUpdated = true;
+			}
+		}
+	}
+
+	if (bSubQuestProgressUpdated)
+	{
+		RefreshSubQuestCompletion(true);
+	}
 }
 
 void UQuestManagerSubsystem::HandleAgentConnected()

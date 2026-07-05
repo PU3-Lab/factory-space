@@ -8,6 +8,7 @@
 #include "QuestManagerSubsystem.generated.h"
 
 class UFactoryAgentClientSubsystem;
+class UFactoryManagerSubsystem;
 class UPlayerWarehouseSubsystem;
 class UDataTable;
 
@@ -300,6 +301,9 @@ private:
 	TObjectPtr<UPlayerWarehouseSubsystem> WarehouseSubsystem;
 
 	UPROPERTY()
+	TObjectPtr<UFactoryManagerSubsystem> FactoryManagerSubsystem;
+
+	UPROPERTY()
 	TArray<FTutorialQuestStep> TutorialQuestSteps;
 
 	UPROPERTY()
@@ -324,6 +328,7 @@ private:
 
 	void ActivateCurrentMainQuest();
 	void BindAgentClient();
+	void BindFactoryManager();
 	void BindWarehouse();
 	void LoadMainQuestSequence();
 	void LoadTutorialQuestTestData();
@@ -344,6 +349,9 @@ private:
 
 	UFUNCTION()
 	void HandleWarehouseItemAdded(FName ItemID, int32 AddedCount, int32 NewTotalCount);
+
+	UFUNCTION()
+	void HandleFactoryItemProduced(FName ItemID, int32 ProducedCount);
 
 	UFUNCTION()
 	void HandleAgentResponse(
