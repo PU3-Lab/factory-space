@@ -111,6 +111,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Machine | Interact")
 	virtual bool CanPlayerInteract() const { return true; }
 
+	UFUNCTION(BlueprintCallable, Category = "Machine | AI Highlight")
+	void ShowAIWarningHighlight();
+
+	UFUNCTION(BlueprintCallable, Category = "Machine | AI Highlight")
+	void HideAIWarningHighlight();
+
+	UFUNCTION(BlueprintPure, Category = "Machine | AI Highlight")
+	bool IsAIWarningHighlightVisible() const { return bAIWarningHighlightVisible; }
+
 	virtual void ApplyMachineData(const FMachineTableRow& MachineData);
 
 protected:
@@ -180,6 +189,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Components")
 	UWidgetComponent* StateIndicatorIconWidgetComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Components")
+	UBillboardComponent* AIWarningHighlightComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine | Components")
 	UPointLightComponent* StateIndicatorLightComponent;
@@ -321,6 +333,21 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "1.0"))
 	float StateIndicatorIconDrawSize = 256.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | AI Highlight", meta = (ClampMin = "0.0", Units = "cm"))
+	float AIWarningHighlightDismissDistance = 300.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | AI Highlight")
+	FVector AIWarningHighlightOffset = FVector(0.0f, 0.0f, 1000.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | AI Highlight")
+	FVector AIWarningHighlightScale = FVector(1.95f, 1.95f, 1.95f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | AI Highlight")
+	TObjectPtr<UTexture2D> AIWarningHighlightIcon;
+
+	UPROPERTY(Transient)
+	bool bAIWarningHighlightVisible = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "1.0"))
 	float DurabilityWarningIconBrightness = 10.0f;
@@ -560,6 +587,8 @@ public:
 	void UpdateDebugTextFacingPlayer();
 
 	void UpdateStateIndicatorFacingPlayer();
+
+	void UpdateAIWarningHighlight();
 
 	bool IsOutputBufferFull() const;
 	
