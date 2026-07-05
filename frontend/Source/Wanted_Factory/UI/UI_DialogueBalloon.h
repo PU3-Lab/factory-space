@@ -96,8 +96,9 @@ private:
 	void HandleOnProcessOptimizerResponse(const FString& RequestId, const FString& Agent, const FString& PayloadJson, const FString& RawMessage);
 
 	void SetTrackedProcessOptimizerIssues(const TArray<FTrackedProcessOptimizerIssue>& NewIssues);
-	void RefreshTrackedProcessOptimizerHighlights();
 	void UpdateTrackedProcessOptimizerIssues();
+	void HighlightOperatorGuideTargets(const TSharedPtr<FJsonObject>& PayloadObject, const FString& Answer);
+	void ClearOperatorGuideHighlights();
 	bool IsTrackedProcessOptimizerIssueResolved(const FTrackedProcessOptimizerIssue& Issue) const;
 	ETrackedProcessOptimizerIssueType ClassifyProcessOptimizerIssue(const TSharedPtr<FJsonObject>& SuggestionObject) const;
 	
@@ -113,6 +114,7 @@ private:
 	bool bShowRightClickPrompt = false;
 	float RightClickPromptBlinkTime = 0.0f;
 	TArray<FTrackedProcessOptimizerIssue> TrackedProcessOptimizerIssues;
+	TArray<TWeakObjectPtr<AMachineBase>> OperatorGuideHighlightedMachines;
 	bool bProcessOptimizerRequestInFlight = false;
 	bool bCanAnnounceProcessOptimizerResolution = false;
 };

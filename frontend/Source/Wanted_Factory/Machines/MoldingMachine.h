@@ -21,6 +21,7 @@ public:
 	virtual void AddOutputItem(FName ItemID, int32 Count) override;
 	virtual bool CanAddToOutputBuffer(const FRecipeTable& Recipe) const override;
 	virtual bool CanReceiveConveyorItem(FName ItemID, int32 Count = 1) const override;
+	virtual bool ShouldUseConveyorOccluder() const override { return false; }
 	void SetMoldingShape(const FString& NewShape) { CurrentShape = NewShape; }
 	FString GetMoldingShape() const { return CurrentShape; }
 	

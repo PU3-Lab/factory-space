@@ -15,4 +15,5 @@ public:
 	ASynthesizer();
 
 	virtual void ApplyMachineData(const FMachineTableRow& MachineData) override;
+	virtual bool ShouldUseConveyorOccluder() const override { return false; }
 };

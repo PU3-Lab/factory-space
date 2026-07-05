@@ -1183,18 +1183,22 @@ void AConveyor::StartDepartingVisual(int32 VisualId, FName ItemId, int32 SlotInd
 	DepartingVisual.AbsorbDuration = FMath::Max(0.0f, ItemAbsorbDuration);
 	DepartingVisuals.Add(DepartingVisual);
 
-	FConveyorOccluderWindow& Window = OutputOccluderWindows.AddDefaulted_GetRef();
-	Window.RaiseAtWorldTime =
-		DepartingVisual.StartWorldTime + FMath::Max(0.0f, OutputOccluderOpenDelay);
-	Window.RaisedUntilWorldTime =
-		Window.RaiseAtWorldTime
-		+ FMath::Max(0.01f, OutputOccluderRaiseDuration)
-		+ FMath::Max(0.0f, OutputOccluderHoldDuration);
+	if (!TargetMachine.IsValid() || TargetMachine->ShouldUseConveyorOccluder())
+	{
+		FConveyorOccluderWindow& Window = OutputOccluderWindows.AddDefaulted_GetRef();
+		Window.RaiseAtWorldTime =
+			DepartingVisual.StartWorldTime + FMath::Max(0.0f, OutputOccluderOpenDelay);
+		Window.RaisedUntilWorldTime =
+			Window.RaiseAtWorldTime
+			+ FMath::Max(0.01f, OutputOccluderRaiseDuration)
+			+ FMath::Max(0.0f, OutputOccluderHoldDuration);
+	}
 }
 
 bool AConveyor::ShouldRaiseOutputOccluder() const
 {
-	if (!bEnableOutputOccluder)
+	if (!bEnableOutputOccluder
+		|| (TargetMachine.IsValid() && !TargetMachine->ShouldUseConveyorOccluder()))
 	{
 		return false;
 	}
@@ -1225,8 +1229,11 @@ void AConveyor::UpdateOutputOccluder(float DeltaTime, bool bSnapToHidden)
 	}
 
 	const bool bHasOutputCell = OccupiedGridCells.Num() > 0;
-	OutputOccluder->SetVisibility(bEnableOutputOccluder && bHasOutputCell);
-	if (!bEnableOutputOccluder || !bHasOutputCell)
+	const bool bTargetAllowsOccluder =
+		!TargetMachine.IsValid() || TargetMachine->ShouldUseConveyorOccluder();
+	OutputOccluder->SetVisibility(
+		bEnableOutputOccluder && bHasOutputCell && bTargetAllowsOccluder);
+	if (!bEnableOutputOccluder || !bHasOutputCell || !bTargetAllowsOccluder)
 	{
 		OutputOccluderAlpha = 0.0f;
 		OutputOccluderWindows.Reset();
@@ -1276,7 +1283,10 @@ void AConveyor::UpdateOutputOccluder(float DeltaTime, bool bSnapToHidden)
 
 void AConveyor::StartInputOccluderCycle()
 {
-	if (!bEnableInputOccluder || OccupiedGridCells.Num() < 2 || !GetWorld())
+	if (!bEnableInputOccluder
+		|| OccupiedGridCells.Num() < 2
+		|| !GetWorld()
+		|| (SourceMachine.IsValid() && !SourceMachine->ShouldUseConveyorOccluder()))
 	{
 		return;
 	}
@@ -1292,7 +1302,8 @@ void AConveyor::StartInputOccluderCycle()
 
 bool AConveyor::ShouldRaiseInputOccluder() const
 {
-	if (!bEnableInputOccluder)
+	if (!bEnableInputOccluder
+		|| (SourceMachine.IsValid() && !SourceMachine->ShouldUseConveyorOccluder()))
 	{
 		return false;
 	}
@@ -1323,8 +1334,11 @@ void AConveyor::UpdateInputOccluder(float DeltaTime, bool bSnapToHidden)
 	}
 
 	const bool bHasInputBoundary = OccupiedGridCells.Num() >= 2;
-	InputOccluder->SetVisibility(bEnableInputOccluder && bHasInputBoundary);
-	if (!bEnableInputOccluder || !bHasInputBoundary)
+	const bool bSourceAllowsOccluder =
+		!SourceMachine.IsValid() || SourceMachine->ShouldUseConveyorOccluder();
+	InputOccluder->SetVisibility(
+		bEnableInputOccluder && bHasInputBoundary && bSourceAllowsOccluder);
+	if (!bEnableInputOccluder || !bHasInputBoundary || !bSourceAllowsOccluder)
 	{
 		InputOccluderAlpha = 0.0f;
 		InputOccluderWindows.Reset();

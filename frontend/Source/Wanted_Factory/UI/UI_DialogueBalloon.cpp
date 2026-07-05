@@ -6,7 +6,6 @@
 #include "Components/EditableText.h"
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
-#include "DrawDebugHelpers.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Engine/Texture2D.h"
@@ -75,7 +74,6 @@ void UUI_DialogueBalloon::NativeTick(const FGeometry& MyGeometry, float InDeltaT
     Super::NativeTick(MyGeometry, InDeltaTime);
     UpdateContinuePromptBlink(InDeltaTime);
     UpdateTrackedProcessOptimizerIssues();
-    RefreshTrackedProcessOptimizerHighlights();
 }
 
 void UUI_DialogueBalloon::NativeDestruct()
@@ -91,6 +89,15 @@ void UUI_DialogueBalloon::NativeDestruct()
             AgentClient->OnAgentErrorReceived.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideError);
             AgentClient->OnAgentProgressReceived.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnOperatorGuideProgress);
             AgentClient->OnMaterialGenerationResponseReceived.RemoveDynamic(this, &UUI_DialogueBalloon::HandleOnMaterialGenerationResponse);
+        }
+    }
+
+    ClearOperatorGuideHighlights();
+    for (const FTrackedProcessOptimizerIssue& Issue : TrackedProcessOptimizerIssues)
+    {
+        if (AMachineBase* Machine = Issue.Machine.Get())
+        {
+            Machine->HideAIWarningHighlight();
         }
     }
 
@@ -147,6 +154,7 @@ void UUI_DialogueBalloon::HandleOnOperatorGuideResponse(const FString& RequestId
             PayloadObject->TryGetStringField(TEXT("answer"), Answer) || 
             PayloadObject->TryGetStringField(TEXT("text"), Answer))
         {
+            HighlightOperatorGuideTargets(PayloadObject, Answer);
             ShowExternalDialogue(Answer);
         }
     }
@@ -214,7 +222,77 @@ void UUI_DialogueBalloon::HandleOnProcessOptimizerResponse(
 
     if (bIsStateUpdateResponse && !bIsAnalyzeResponse)
     {
-        LOG_LC(TEXT("Process optimizer state update response ignored by dialogue UI. request_id=%s"), *RequestId);
+        const TSharedPtr<FJsonObject>* AlertObject = nullptr;
+        if (!PayloadObject->TryGetObjectField(TEXT("optimization_alert"), AlertObject) ||
+            AlertObject == nullptr ||
+            !AlertObject->IsValid())
+        {
+            LOG_LC_W(TEXT("Process optimizer state update has no optimization_alert. request_id=%s"), *RequestId);
+            return;
+        }
+
+        bool bAlertNeeded = false;
+        (*AlertObject)->TryGetBoolField(TEXT("needed"), bAlertNeeded);
+        if (!bAlertNeeded)
+        {
+            SetTrackedProcessOptimizerIssues(TArray<FTrackedProcessOptimizerIssue>());
+            LOG_LC(TEXT("Process optimizer state highlight cleared. request_id=%s"), *RequestId);
+            return;
+        }
+
+        const TSharedPtr<FJsonObject>* TargetObject = nullptr;
+        if (!(*AlertObject)->TryGetObjectField(TEXT("target"), TargetObject) ||
+            TargetObject == nullptr ||
+            !TargetObject->IsValid())
+        {
+            LOG_LC_W(TEXT("Process optimizer alert has no target object. request_id=%s"), *RequestId);
+            return;
+        }
+
+        const FString TargetId =
+            FactoryAgentJsonUtils::GetStringField(*TargetObject, TEXT("id")).TrimStartAndEnd();
+        if (TargetId.IsEmpty())
+        {
+            LOG_LC_W(TEXT("Process optimizer alert target has no id. request_id=%s"), *RequestId);
+            return;
+        }
+
+        const bool bAlreadyTrackingTarget = TrackedProcessOptimizerIssues.ContainsByPredicate(
+            [&TargetId](const FTrackedProcessOptimizerIssue& Issue)
+            {
+                return Issue.TargetId.Equals(TargetId, ESearchCase::IgnoreCase);
+            });
+        if (bAlreadyTrackingTarget)
+        {
+            // Do not recreate a highlight that the player already dismissed by approaching the machine.
+            LOG_LC(
+                TEXT("Process optimizer state target already tracked: request_id=%s target_id=%s"),
+                *RequestId,
+                *TargetId);
+            return;
+        }
+
+        FTrackedProcessOptimizerIssue AlertIssue;
+        AlertIssue.TargetId = TargetId;
+        AlertIssue.IssueType = ClassifyProcessOptimizerIssue(*AlertObject);
+        SetTrackedProcessOptimizerIssues({ AlertIssue });
+
+        // Periodic state updates should highlight the target without replacing the player's dialogue.
+        bCanAnnounceProcessOptimizerResolution = false;
+        if (TrackedProcessOptimizerIssues.Num() > 0)
+        {
+            LOG_LC(
+                TEXT("Process optimizer state target highlighted: request_id=%s target_id=%s"),
+                *RequestId,
+                *TargetId);
+        }
+        else
+        {
+            LOG_LC_W(
+                TEXT("Process optimizer state target actor was not found: request_id=%s target_id=%s"),
+                *RequestId,
+                *TargetId);
+        }
         return;
     }
 
@@ -266,7 +344,7 @@ void UUI_DialogueBalloon::HandleOnProcessOptimizerResponse(
         return;
     }
 
-    TrackedProcessOptimizerIssues.Reset();
+    SetTrackedProcessOptimizerIssues(TArray<FTrackedProcessOptimizerIssue>());
     if (UWorld* World = GetWorld())
     {
         FlushPersistentDebugLines(World);
@@ -276,6 +354,13 @@ void UUI_DialogueBalloon::HandleOnProcessOptimizerResponse(
 }
 void UUI_DialogueBalloon::SetTrackedProcessOptimizerIssues(const TArray<FTrackedProcessOptimizerIssue>& NewIssues)
 {
+    for (const FTrackedProcessOptimizerIssue& ExistingIssue : TrackedProcessOptimizerIssues)
+    {
+        if (AMachineBase* Machine = ExistingIssue.Machine.Get())
+        {
+            Machine->HideAIWarningHighlight();
+        }
+    }
     TrackedProcessOptimizerIssues.Reset();
     bCanAnnounceProcessOptimizerResolution = false;
     if (NewIssues.Num() == 0)
@@ -303,6 +388,7 @@ void UUI_DialogueBalloon::SetTrackedProcessOptimizerIssues(const TArray<FTracked
         ResolvedIssue.Machine = Machine;
         ResolvedIssue.InitialDurability = Machine->GetCurrentDurability();
         TrackedProcessOptimizerIssues.Add(ResolvedIssue);
+        Machine->ShowAIWarningHighlight();
         bCanAnnounceProcessOptimizerResolution = true;
 
         LOG_LC(
@@ -313,31 +399,6 @@ void UUI_DialogueBalloon::SetTrackedProcessOptimizerIssues(const TArray<FTracked
             Machine->GetActorLocation().X,
             Machine->GetActorLocation().Y,
             Machine->GetActorLocation().Z);
-    }
-}
-
-void UUI_DialogueBalloon::RefreshTrackedProcessOptimizerHighlights()
-{
-    UWorld* World = GetWorld();
-    if (!World)
-    {
-        return;
-    }
-
-    for (const FTrackedProcessOptimizerIssue& Issue : TrackedProcessOptimizerIssues)
-    {
-        const AMachineBase* Machine = Issue.Machine.Get();
-        if (!Machine)
-        {
-            continue;
-        }
-
-        const FVector MachineLocation = Machine->GetActorLocation();
-        const FColor HighlightColor =
-            Issue.IssueType == ETrackedProcessOptimizerIssueType::Power ? FColor::Cyan : FColor::Yellow;
-
-        DrawDebugSphere(World, MachineLocation, 180.0f, 24, HighlightColor, false, 0.15f, 0, 4.0f);
-        DrawDebugBox(World, MachineLocation, FVector(120.0f, 120.0f, 120.0f), HighlightColor, false, 0.15f, 0, 3.0f);
     }
 }
 
@@ -354,6 +415,10 @@ void UUI_DialogueBalloon::UpdateTrackedProcessOptimizerIssues()
             const bool bResolved = IsTrackedProcessOptimizerIssueResolved(Issue);
             if (bResolved)
             {
+                if (AMachineBase* Machine = Issue.Machine.Get())
+                {
+                    Machine->HideAIWarningHighlight();
+                }
                 LOG_LC(
                     TEXT("Process optimizer target resolved in game: id=%s issue_type=%d"),
                     *Issue.TargetId,
@@ -370,6 +435,114 @@ void UUI_DialogueBalloon::UpdateTrackedProcessOptimizerIssues()
     {
         bCanAnnounceProcessOptimizerResolution = false;
         ShowExternalDialogue(TEXT("문제의 해결을 확인했습니다"));
+    }
+}
+
+void UUI_DialogueBalloon::ClearOperatorGuideHighlights()
+{
+    for (const TWeakObjectPtr<AMachineBase>& WeakMachine : OperatorGuideHighlightedMachines)
+    {
+        if (AMachineBase* Machine = WeakMachine.Get())
+        {
+            Machine->HideAIWarningHighlight();
+        }
+    }
+    OperatorGuideHighlightedMachines.Reset();
+}
+
+void UUI_DialogueBalloon::HighlightOperatorGuideTargets(
+    const TSharedPtr<FJsonObject>& PayloadObject,
+    const FString& Answer)
+{
+    ClearOperatorGuideHighlights();
+
+    UGameInstance* GI = GetGameInstance();
+    UFactoryManagerSubsystem* FactoryManager = GI ? GI->GetSubsystem<UFactoryManagerSubsystem>() : nullptr;
+    if (!FactoryManager || !PayloadObject.IsValid())
+    {
+        return;
+    }
+
+    TArray<FString> TargetIds;
+    const TCHAR* SingleIdFields[] = { TEXT("machine_id"), TEXT("target_id"), TEXT("equipment_id") };
+    for (const TCHAR* FieldName : SingleIdFields)
+    {
+        FString TargetId;
+        if (PayloadObject->TryGetStringField(FieldName, TargetId))
+        {
+            TargetIds.AddUnique(TargetId.TrimStartAndEnd());
+        }
+    }
+
+    const TSharedPtr<FJsonObject>* TargetObject = nullptr;
+    if (PayloadObject->TryGetObjectField(TEXT("target"), TargetObject) && TargetObject && TargetObject->IsValid())
+    {
+        const FString TargetId = FactoryAgentJsonUtils::GetStringField(*TargetObject, TEXT("id")).TrimStartAndEnd();
+        if (!TargetId.IsEmpty())
+        {
+            TargetIds.AddUnique(TargetId);
+        }
+    }
+
+    const TCHAR* ArrayFields[] = { TEXT("machine_ids"), TEXT("target_ids"), TEXT("equipment_ids"), TEXT("targets") };
+    for (const TCHAR* FieldName : ArrayFields)
+    {
+        const TArray<TSharedPtr<FJsonValue>>* Values = nullptr;
+        if (!PayloadObject->TryGetArrayField(FieldName, Values) || !Values)
+        {
+            continue;
+        }
+
+        for (const TSharedPtr<FJsonValue>& Value : *Values)
+        {
+            if (!Value.IsValid())
+            {
+                continue;
+            }
+            if (Value->Type == EJson::String)
+            {
+                TargetIds.AddUnique(Value->AsString().TrimStartAndEnd());
+            }
+            else if (Value->Type == EJson::Object)
+            {
+                const FString TargetId =
+                    FactoryAgentJsonUtils::GetStringField(Value->AsObject(), TEXT("id")).TrimStartAndEnd();
+                if (!TargetId.IsEmpty())
+                {
+                    TargetIds.AddUnique(TargetId);
+                }
+            }
+        }
+    }
+
+    const TArray<FMachineNode> MachineNodes = FactoryManager->GetMachineNodes();
+    for (const FMachineNode& MachineNode : MachineNodes)
+    {
+        AMachineBase* Machine = MachineNode.MachineActor.Get();
+        if (!Machine)
+        {
+            continue;
+        }
+
+        const FString ActorId = Machine->GetName();
+        const FString NodeId = MachineNode.ID.IsNone() ? FString() : MachineNode.ID.ToString();
+        const bool bExplicitTarget = TargetIds.ContainsByPredicate(
+            [FactoryManager, Machine](const FString& TargetId)
+            {
+                return FactoryManager->FindMachineByAgentTargetId(TargetId) == Machine;
+            });
+        const bool bMentionedInAnswer =
+            (!ActorId.IsEmpty() && Answer.Contains(ActorId, ESearchCase::IgnoreCase)) ||
+            (!NodeId.IsEmpty() && Answer.Contains(NodeId, ESearchCase::IgnoreCase));
+
+        if (bExplicitTarget || bMentionedInAnswer)
+        {
+            Machine->ShowAIWarningHighlight();
+            if (Machine->IsAIWarningHighlightVisible())
+            {
+                OperatorGuideHighlightedMachines.AddUnique(Machine);
+            }
+        }
     }
 }
 
@@ -555,6 +728,13 @@ void UUI_DialogueBalloon::ClearExternalDialogue()
 
 void UUI_DialogueBalloon::ResetProcessOptimizerTracking()
 {
+    for (const FTrackedProcessOptimizerIssue& Issue : TrackedProcessOptimizerIssues)
+    {
+        if (AMachineBase* Machine = Issue.Machine.Get())
+        {
+            Machine->HideAIWarningHighlight();
+        }
+    }
     TrackedProcessOptimizerIssues.Reset();
     bProcessOptimizerRequestInFlight = false;
     bCanAnnounceProcessOptimizerResolution = false;
@@ -568,6 +748,13 @@ void UUI_DialogueBalloon::ResetProcessOptimizerTracking()
 
 void UUI_DialogueBalloon::BeginProcessOptimizerRequest()
 {
+    for (const FTrackedProcessOptimizerIssue& Issue : TrackedProcessOptimizerIssues)
+    {
+        if (AMachineBase* Machine = Issue.Machine.Get())
+        {
+            Machine->HideAIWarningHighlight();
+        }
+    }
     TrackedProcessOptimizerIssues.Reset();
     bProcessOptimizerRequestInFlight = true;
     bCanAnnounceProcessOptimizerResolution = false;
