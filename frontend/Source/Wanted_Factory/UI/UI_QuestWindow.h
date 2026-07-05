@@ -5,6 +5,8 @@
 #include "QuestManagerSubsystem.h"
 #include "UI_QuestWindow.generated.h"
 
+class UCheckBox;
+
 UCLASS()
 class WANTED_FACTORY_API UUI_QuestWindow : public UUserWidget
 {
@@ -31,13 +33,20 @@ protected:
     UPROPERTY(meta = (BindWidget)) class UBorder* B_QuestBg;
 
     // --- 텍스트 컴포넌트 바인딩 ---
-    UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_MainQuestTitle;
+    UPROPERTY(meta = (BindWidgetOptional)) class UTextBlock* TXT_MainQuestPrefix;
+    UPROPERTY(meta = (BindWidget)) class URichTextBlock* TXT_MainQuestTitle;
     UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_MainQuestDesc;
     UPROPERTY(meta = (BindWidget)) class URichTextBlock* TXT_SubQuest_1;
     UPROPERTY(meta = (BindWidget)) class URichTextBlock* TXT_SubQuest_2;
     UPROPERTY(meta = (BindWidget)) class URichTextBlock* TXT_SubQuest_3;
     UPROPERTY(meta = (BindWidget)) class URichTextBlock* TXT_SubQuest_4;
     UPROPERTY(meta = (BindWidget)) class URichTextBlock* TXT_SubQuest_5;
+    
+    UPROPERTY(meta = (BindWidget)) class UCheckBox* CB_SubQuest_1;
+    UPROPERTY(meta = (BindWidget)) class UCheckBox* CB_SubQuest_2;
+    UPROPERTY(meta = (BindWidget)) class UCheckBox* CB_SubQuest_3;
+    UPROPERTY(meta = (BindWidget)) class UCheckBox* CB_SubQuest_4;
+    UPROPERTY(meta = (BindWidget)) class UCheckBox* CB_SubQuest_5;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Quest")
     bool bIsQuestWindowOpen = true;

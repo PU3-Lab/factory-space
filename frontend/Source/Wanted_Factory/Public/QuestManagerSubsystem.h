@@ -244,6 +244,9 @@ public:
 	bool CompleteCurrentTutorialQuestForTest();
 
 	UFUNCTION(BlueprintCallable, Category = "Quest|Tutorial")
+	bool JumpToTutorialQuestStepForTest(const FString& QuestId);
+
+	UFUNCTION(BlueprintCallable, Category = "Quest|Tutorial")
 	void LogCurrentTutorialQuestTestState() const;
 
 	UFUNCTION(BlueprintPure, Category = "Quest|Tutorial")

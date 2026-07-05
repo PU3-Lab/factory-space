@@ -32,6 +32,7 @@ class WANTED_FACTORY_API UUI_DialogueBalloon : public UUserWidget
 
 protected:
 	UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_Dialogue;
+	UPROPERTY(meta = (BindWidget)) class UTextBlock* TXT_Question;
 	UPROPERTY(meta = (BindWidget)) class UWidget* DialogueContainer;
 	UPROPERTY(meta = (BindWidget)) class USizeBox* SB_DialogueData;
 	UPROPERTY(meta = (BindWidgetOptional)) class UImage* IMG_RightClickPrompt;
@@ -107,6 +108,8 @@ private:
 	FString CachedTriggerType;
 	bool bHasExternalDialogue = false;
 	FString ExternalDialogueText;
+	FString LastSubmittedOperatorGuideQuestion;
+	bool bShowLastSubmittedOperatorGuideQuestion = false;
 	bool bShowRightClickPrompt = false;
 	float RightClickPromptBlinkTime = 0.0f;
 	TArray<FTrackedProcessOptimizerIssue> TrackedProcessOptimizerIssues;
