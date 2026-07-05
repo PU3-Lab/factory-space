@@ -837,6 +837,14 @@ void AMachineBase::AddOutputItem(FName ItemID, int32 Count)
 	int32& BufferCount = OutputBuffer.FindOrAdd(ItemID);
 	BufferCount += Count;
 
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
+		{
+			FactoryManager->RecordObservedItemProduction(ItemID, Count);
+		}
+	}
+
 	// LOG_SSR_W(TEXT("Output Buffer Added : %s x %d / %d"),
 	// 	*ItemID.ToString(),
 	// 	BufferCount,

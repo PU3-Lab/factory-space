@@ -709,6 +709,7 @@ void UFactoryManagerSubsystem::RecordObservedItemProduction(FName ItemID, int32 
 	Sample.TimestampSeconds = CurrentTimeSeconds;
 	Sample.Count = Count;
 	ObservedItemSamples.FindOrAdd(ItemID).Add(Sample);
+	OnItemProduced.Broadcast(ItemID, Count);
 }
 
 TArray<FFactorySectorSnapshot> UFactoryManagerSubsystem::GetSectorSnapshots()

@@ -11,6 +11,8 @@ class AConveyor;
 class APowerLine;
 class APowerGridNode;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnFactoryItemProduced, FName, ItemID, int32, ProducedCount);
+
 USTRUCT(BlueprintType)
 struct FMachineNode
 {
@@ -170,6 +172,9 @@ class WANTED_FACTORY_API UFactoryManagerSubsystem : public UGameInstanceSubsyste
 	GENERATED_BODY()
 
 public:
+	UPROPERTY(BlueprintAssignable, Category = "Factory Manager|Production")
+	FOnFactoryItemProduced OnItemProduced;
+
 	virtual void Deinitialize() override;
 
 	UFUNCTION(BlueprintCallable, Category = "Factory Manager")
