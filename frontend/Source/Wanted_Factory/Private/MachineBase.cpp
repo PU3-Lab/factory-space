@@ -181,6 +181,14 @@ AMachineBase::AMachineBase()
 	StateIndicatorIconWidgetComponent->SetRelativeLocation(StateIndicatorOffset);
 	StateIndicatorIconWidgetComponent->SetRelativeScale3D(StateIndicatorScale);
 
+	AIWarningHighlightComponent = CreateDefaultSubobject<UBillboardComponent>(TEXT("AIWarningHighlight"));
+	AIWarningHighlightComponent->SetupAttachment(Root);
+	AIWarningHighlightComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	AIWarningHighlightComponent->SetVisibility(false);
+	AIWarningHighlightComponent->SetHiddenInGame(true);
+	AIWarningHighlightComponent->SetRelativeLocation(AIWarningHighlightOffset);
+	AIWarningHighlightComponent->SetRelativeScale3D(AIWarningHighlightScale);
+
 	StateIndicatorLightComponent = CreateDefaultSubobject<UPointLightComponent>(TEXT("StateIndicatorLight"));
 	StateIndicatorLightComponent->SetupAttachment(Root);
 	StateIndicatorLightComponent->SetCastShadows(false);
@@ -245,6 +253,13 @@ AMachineBase::AMachineBase()
 	if (MaxBufferWarningIconAsset.Succeeded())
 	{
 		MaxBufferWarningIcon = MaxBufferWarningIconAsset.Object;
+	}
+	ConstructorHelpers::FObjectFinder<UTexture2D> AIWarningHighlightIconAsset(
+		TEXT("/Game/Assets/UIImg/Warning/Highlight_Warning_Outline.Highlight_Warning_Outline"));
+	if (AIWarningHighlightIconAsset.Succeeded())
+	{
+		AIWarningHighlightIcon = AIWarningHighlightIconAsset.Object;
+		AIWarningHighlightComponent->SetSprite(AIWarningHighlightIcon);
 	}
 	ConstructorHelpers::FObjectFinder<UMaterial> MaterialAsset(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	if (MaterialAsset.Succeeded())
@@ -428,6 +443,7 @@ void AMachineBase::OnConstruction(const FTransform& Transform)
 	UpdateStateIndicator();
 	UpdateDebugTextFacingPlayer();
 	UpdateStateIndicatorFacingPlayer();
+	UpdateAIWarningHighlight();
 }
 
 // Called every frame
@@ -460,6 +476,7 @@ void AMachineBase::Tick(float DeltaTime)
 
 	UpdateStateIndicator();
 	UpdateStateIndicatorFacingPlayer();
+	UpdateAIWarningHighlight();
 	RefreshOperatingSmoke();
 	RefreshOperatingSound();
 }
@@ -1256,6 +1273,54 @@ void AMachineBase::UpdateStateIndicatorFacingPlayer()
 	}
 
 	StateIndicatorIconWidgetComponent->SetWorldRotation(ToCamera.Rotation());
+}
+
+void AMachineBase::ShowAIWarningHighlight()
+{
+	if (!AIWarningHighlightComponent || !AIWarningHighlightIcon)
+	{
+		return;
+	}
+
+	bAIWarningHighlightVisible = true;
+	AIWarningHighlightComponent->SetSprite(AIWarningHighlightIcon);
+	AIWarningHighlightComponent->SetRelativeLocation(AIWarningHighlightOffset);
+	AIWarningHighlightComponent->SetRelativeScale3D(AIWarningHighlightScale);
+	AIWarningHighlightComponent->SetVisibility(true);
+	AIWarningHighlightComponent->SetHiddenInGame(false);
+
+	UpdateAIWarningHighlight();
+}
+
+void AMachineBase::HideAIWarningHighlight()
+{
+	bAIWarningHighlightVisible = false;
+	if (AIWarningHighlightComponent)
+	{
+		AIWarningHighlightComponent->SetVisibility(false);
+		AIWarningHighlightComponent->SetHiddenInGame(true);
+	}
+}
+
+void AMachineBase::UpdateAIWarningHighlight()
+{
+	if (!bAIWarningHighlightVisible || !AIWarningHighlightComponent)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
+	APawn* PlayerPawn = PlayerController ? PlayerController->GetPawn() : nullptr;
+	if (PlayerPawn &&
+		FVector::DistSquared(PlayerPawn->GetActorLocation(), GetActorLocation()) <=
+			FMath::Square(AIWarningHighlightDismissDistance))
+	{
+		HideAIWarningHighlight();
+		return;
+	}
+
+	// UBillboardComponent always faces the active camera.
 }
 
 bool AMachineBase::TransferOutputToMachine(AMachineBase* TargetMachine, FName ItemID, int32 Count)

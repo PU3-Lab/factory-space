@@ -493,6 +493,34 @@ bool UFactoryAgentClientSubsystem::SendOperatorGuideQuestion(const FString& Ques
 	const TSharedPtr<FJsonObject> PayloadObject = MakeShared<FJsonObject>();
 	PayloadObject->SetStringField(TEXT("question"), TrimmedQuestion);
 
+	// Operator questions such as "which generator is broken?" require the live factory
+	// snapshot; without it the agent can only return generic troubleshooting advice.
+	TSharedPtr<FJsonObject> SnapshotRequestObject;
+	const FString SnapshotRequestJson = BuildProcessOptimizerRequestJson(
+		0,
+		OperatorGuideSessionId,
+		ClientId,
+		TEXT("analyze"),
+		TEXT("operator_guide"),
+		TEXT("operator-guide-context"));
+	if (FactoryAgentJsonUtils::ParseJsonObject(SnapshotRequestJson, SnapshotRequestObject) &&
+		SnapshotRequestObject.IsValid())
+	{
+		const TSharedPtr<FJsonObject>* SnapshotPayloadObject = nullptr;
+		if (SnapshotRequestObject->TryGetObjectField(TEXT("payload"), SnapshotPayloadObject) &&
+			SnapshotPayloadObject != nullptr &&
+			SnapshotPayloadObject->IsValid())
+		{
+			const TSharedPtr<FJsonObject>* FactoryStateObject = nullptr;
+			if ((*SnapshotPayloadObject)->TryGetObjectField(TEXT("factory_state"), FactoryStateObject) &&
+				FactoryStateObject != nullptr &&
+				FactoryStateObject->IsValid())
+			{
+				PayloadObject->SetObjectField(TEXT("factory_state"), *FactoryStateObject);
+			}
+		}
+	}
+
 	const TSharedPtr<FJsonObject> ContextObject = MakeShared<FJsonObject>();
 	ContextObject->SetStringField(TEXT("language"), TEXT("ko"));
 	ContextObject->SetStringField(TEXT("mode"), TEXT("gameplay"));
