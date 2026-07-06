@@ -2,6 +2,7 @@
 
 #include "PowerLine.h"
 
+#include "Components/AudioComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "FactoryManagerSubsystem.h"
 #include "MachineBase.h"
@@ -23,6 +24,10 @@ APowerLine::APowerLine()
 	LineMesh->SetupAttachment(Root);
 	LineMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	LineSegments.Add(LineMesh);
+
+	HumAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("HumAudio"));
+	HumAudioComponent->SetupAttachment(Root);
+	HumAudioComponent->bAutoActivate = false;
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
 	if (CylinderMesh.Succeeded())
@@ -115,6 +120,7 @@ void APowerLine::UpdateLineVisual()
 		{
 			LineMesh->SetVisibility(false);
 		}
+		RefreshHumSound(false);
 		return;
 	}
 
@@ -144,6 +150,7 @@ void APowerLine::UpdateLineVisual()
 	if (Length <= UE_KINDA_SMALL_NUMBER)
 	{
 		HideUnusedLineSegments(0);
+		RefreshHumSound(false);
 		return;
 	}
 
@@ -171,6 +178,13 @@ void APowerLine::UpdateLineVisual()
 	}
 
 	HideUnusedLineSegments(SegmentCount);
+
+	// 험 사운드: 라인 중앙(sag 최저점)에서 재생, 통전 상태에 맞춰 페이드 in/out.
+	if (HumAudioComponent)
+	{
+		HumAudioComponent->SetWorldLocation(GetSagPoint(SourceLocation, TargetLocation, 0.5f, SagDepth));
+	}
+	RefreshHumSound(bElectricallyConnected);
 }
 
 bool APowerLine::IsElectricallyConnected() const
@@ -189,6 +203,30 @@ bool APowerLine::IsElectricallyConnected() const
 	}
 
 	return false;
+}
+
+void APowerLine::RefreshHumSound(bool bElectricallyConnected)
+{
+	if (!HumAudioComponent || !HumSound)
+	{
+		return;
+	}
+
+	if (bHumActive == bElectricallyConnected)
+	{
+		return;
+	}
+
+	bHumActive = bElectricallyConnected;
+	if (bHumActive)
+	{
+		HumAudioComponent->SetSound(HumSound);
+		HumAudioComponent->FadeIn(HumFadeTime);
+	}
+	else
+	{
+		HumAudioComponent->FadeOut(HumFadeTime, 0.0f);
+	}
 }
 
 float APowerLine::GetCurrentConnectedEmissiveStrength() const

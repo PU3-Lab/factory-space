@@ -339,6 +339,37 @@ void UUI_DialogueBalloon::HandleOnProcessOptimizerResponse(
         }
     }
 
+    // The optimizer currently limits its suggestion list and may prioritize broken
+    // machines over valid no-power machines. Merge live frontend power failures so
+    // the optimization highlight still represents the complete current factory state.
+    if (UGameInstance* GI = GetGameInstance())
+    {
+        if (UFactoryManagerSubsystem* FactoryManager = GI->GetSubsystem<UFactoryManagerSubsystem>())
+        {
+            for (const FMachineNode& MachineNode : FactoryManager->GetMachineNodes())
+            {
+                AMachineBase* Machine = MachineNode.MachineActor.Get();
+                if (!Machine || !Machine->NeedsPower() || Machine->HasEnoughPower())
+                {
+                    continue;
+                }
+
+                FString TargetId = Machine->GetName();
+                while (TargetId.RemoveFromStart(TEXT("BP_")))
+                {
+                }
+
+                if (!TargetId.IsEmpty())
+                {
+                    FTrackedProcessOptimizerIssue PowerIssue;
+                    PowerIssue.TargetId = TargetId;
+                    PowerIssue.IssueType = EAIWarningHighlightType::Power;
+                    NewIssues.Add(PowerIssue);
+                }
+            }
+        }
+    }
+
     if (NewIssues.Num() > 0)
     {
         SetTrackedProcessOptimizerIssues(NewIssues);
@@ -412,8 +443,37 @@ void UUI_DialogueBalloon::SetTrackedProcessOptimizerIssues(const TArray<FTracked
         return;
     }
 
+    TMap<FString, FTrackedProcessOptimizerIssue> MergedIssues;
     for (const FTrackedProcessOptimizerIssue& NewIssue : NewIssues)
     {
+        const FString NormalizedTargetId = NewIssue.TargetId.ToLower();
+        FTrackedProcessOptimizerIssue* ExistingIssue = MergedIssues.Find(NormalizedTargetId);
+        if (!ExistingIssue)
+        {
+            MergedIssues.Add(NormalizedTargetId, NewIssue);
+            continue;
+        }
+
+        const bool bHasDurability =
+            ExistingIssue->IssueType == EAIWarningHighlightType::Durability ||
+            ExistingIssue->IssueType == EAIWarningHighlightType::Both ||
+            NewIssue.IssueType == EAIWarningHighlightType::Durability ||
+            NewIssue.IssueType == EAIWarningHighlightType::Both;
+        const bool bHasPower =
+            ExistingIssue->IssueType == EAIWarningHighlightType::Power ||
+            ExistingIssue->IssueType == EAIWarningHighlightType::Both ||
+            NewIssue.IssueType == EAIWarningHighlightType::Power ||
+            NewIssue.IssueType == EAIWarningHighlightType::Both;
+        ExistingIssue->IssueType =
+            bHasDurability && bHasPower ? EAIWarningHighlightType::Both :
+            bHasDurability ? EAIWarningHighlightType::Durability :
+            bHasPower ? EAIWarningHighlightType::Power :
+            EAIWarningHighlightType::Unknown;
+    }
+
+    for (const TPair<FString, FTrackedProcessOptimizerIssue>& MergedPair : MergedIssues)
+    {
+        const FTrackedProcessOptimizerIssue& NewIssue = MergedPair.Value;
         FTrackedProcessOptimizerIssue ResolvedIssue = NewIssue;
         AMachineBase* Machine = FactoryManager->FindMachineByAgentTargetId(NewIssue.TargetId);
         if (!Machine)
@@ -424,8 +484,14 @@ void UUI_DialogueBalloon::SetTrackedProcessOptimizerIssues(const TArray<FTracked
 
         ResolvedIssue.Machine = Machine;
         ResolvedIssue.InitialDurability = Machine->GetCurrentDurability();
+        ResolvedIssue.bTracksDurability =
+            ResolvedIssue.IssueType == EAIWarningHighlightType::Durability ||
+            ResolvedIssue.IssueType == EAIWarningHighlightType::Both;
+        ResolvedIssue.bTracksPower =
+            ResolvedIssue.IssueType == EAIWarningHighlightType::Power ||
+            ResolvedIssue.IssueType == EAIWarningHighlightType::Both;
         TrackedProcessOptimizerIssues.Add(ResolvedIssue);
-        Machine->ShowAIWarningHighlight();
+        Machine->ShowAIWarningHighlight(ResolvedIssue.IssueType, false);
         bCanAnnounceProcessOptimizerResolution = true;
 
         LOG_LC(
@@ -446,24 +512,69 @@ void UUI_DialogueBalloon::UpdateTrackedProcessOptimizerIssues()
         return;
     }
 
-    const int32 RemovedCount = TrackedProcessOptimizerIssues.RemoveAll(
-        [this](const FTrackedProcessOptimizerIssue& Issue)
+    int32 RemovedCount = 0;
+    for (int32 IssueIndex = TrackedProcessOptimizerIssues.Num() - 1; IssueIndex >= 0; --IssueIndex)
+    {
+        FTrackedProcessOptimizerIssue& Issue = TrackedProcessOptimizerIssues[IssueIndex];
+        AMachineBase* Machine = Issue.Machine.Get();
+        if (!Machine)
         {
-            const bool bResolved = IsTrackedProcessOptimizerIssueResolved(Issue);
-            if (bResolved)
-            {
-                if (AMachineBase* Machine = Issue.Machine.Get())
-                {
-                    Machine->HideAIWarningHighlight();
-                }
-                LOG_LC(
-                    TEXT("Process optimizer target resolved in game: id=%s issue_type=%d"),
-                    *Issue.TargetId,
-                    static_cast<int32>(Issue.IssueType));
-            }
+            TrackedProcessOptimizerIssues.RemoveAtSwap(IssueIndex);
+            ++RemovedCount;
+            continue;
+        }
 
-            return bResolved;
-        });
+        const bool bDurabilityStillActive =
+            Issue.bTracksDurability &&
+            (Machine->isBroken() ||
+             Machine->GetCurrentDurability() <= Machine->GetLowDurabilityWarningThreshold());
+
+        bool bPowerStillActive = false;
+        if (Issue.bTracksPower)
+        {
+            if (const APowerGridNode* PowerGridNode = Cast<APowerGridNode>(Machine))
+            {
+                UGameInstance* GI = GetGameInstance();
+                const UFactoryManagerSubsystem* FactoryManager =
+                    GI ? GI->GetSubsystem<UFactoryManagerSubsystem>() : nullptr;
+                bPowerStillActive =
+                    !FactoryManager || !FactoryManager->IsPowerGridNodeEnergized(PowerGridNode);
+            }
+            else
+            {
+                bPowerStillActive = Machine->NeedsPower() && !Machine->HasEnoughPower();
+            }
+        }
+
+        const EAIWarningHighlightType NewHighlightType =
+            bDurabilityStillActive && bPowerStillActive ? EAIWarningHighlightType::Both :
+            bDurabilityStillActive ? EAIWarningHighlightType::Durability :
+            bPowerStillActive ? EAIWarningHighlightType::Power :
+            EAIWarningHighlightType::Unknown;
+
+        if (NewHighlightType == EAIWarningHighlightType::Unknown)
+        {
+            Machine->HideAIWarningHighlight();
+            LOG_LC(
+                TEXT("Process optimizer target resolved in game: id=%s issue_type=%d"),
+                *Issue.TargetId,
+                static_cast<int32>(Issue.IssueType));
+            TrackedProcessOptimizerIssues.RemoveAtSwap(IssueIndex);
+            ++RemovedCount;
+            continue;
+        }
+
+        if (Issue.IssueType != NewHighlightType)
+        {
+            LOG_LC(
+                TEXT("Process optimizer highlight type changed: id=%s old_type=%d new_type=%d"),
+                *Issue.TargetId,
+                static_cast<int32>(Issue.IssueType),
+                static_cast<int32>(NewHighlightType));
+            Issue.IssueType = NewHighlightType;
+            Machine->ShowAIWarningHighlight(NewHighlightType, false);
+        }
+    }
 
     if (RemovedCount > 0 &&
         TrackedProcessOptimizerIssues.Num() == 0 &&
@@ -583,42 +694,11 @@ void UUI_DialogueBalloon::HighlightOperatorGuideTargets(
     }
 }
 
-bool UUI_DialogueBalloon::IsTrackedProcessOptimizerIssueResolved(const FTrackedProcessOptimizerIssue& Issue) const
-{
-    const AMachineBase* Machine = Issue.Machine.Get();
-    if (!Machine)
-    {
-        return true;
-    }
-
-    switch (Issue.IssueType)
-    {
-    case ETrackedProcessOptimizerIssueType::Durability:
-        return !Machine->isBroken() &&
-            Machine->GetCurrentDurability() > Issue.InitialDurability &&
-            Machine->GetCurrentDurability() > Machine->GetLowDurabilityWarningThreshold();
-
-    case ETrackedProcessOptimizerIssueType::Power:
-        if (const APowerGridNode* PowerGridNode = Cast<APowerGridNode>(Machine))
-        {
-            UGameInstance* GI = GetGameInstance();
-            const UFactoryManagerSubsystem* FactoryManager = GI ? GI->GetSubsystem<UFactoryManagerSubsystem>() : nullptr;
-            return FactoryManager && FactoryManager->IsPowerGridNodeEnergized(PowerGridNode);
-        }
-
-        return Machine->NeedsPower() && Machine->HasEnoughPower();
-
-    case ETrackedProcessOptimizerIssueType::Unknown:
-    default:
-        return false;
-    }
-}
-
-ETrackedProcessOptimizerIssueType UUI_DialogueBalloon::ClassifyProcessOptimizerIssue(const TSharedPtr<FJsonObject>& SuggestionObject) const
+EAIWarningHighlightType UUI_DialogueBalloon::ClassifyProcessOptimizerIssue(const TSharedPtr<FJsonObject>& SuggestionObject) const
 {
     if (!SuggestionObject.IsValid())
     {
-        return ETrackedProcessOptimizerIssueType::Unknown;
+        return EAIWarningHighlightType::Unknown;
     }
 
     const TSharedPtr<FJsonObject>* TargetObject = nullptr;
@@ -636,38 +716,42 @@ ETrackedProcessOptimizerIssueType UUI_DialogueBalloon::ClassifyProcessOptimizerI
         FactoryAgentJsonUtils::GetStringField(SuggestionObject, TEXT("recommended_action")))
         .ToLower();
 
-    if (CombinedText.Contains(TEXT("durability")) ||
+    const bool bDurabilityIssue =
+        CombinedText.Contains(TEXT("durability")) ||
         CombinedText.Contains(TEXT("maintenance")) ||
         CombinedText.Contains(TEXT("broken")) ||
         CombinedText.Contains(TEXT("repair")) ||
         CombinedText.Contains(TEXT("fix")) ||
-        CombinedText.Contains(TEXT("inspect")) ||
         CombinedText.Contains(TEXT("고장")) ||
-        CombinedText.Contains(TEXT("수리")) ||
-        CombinedText.Contains(TEXT("점검")))
-    {
-        return ETrackedProcessOptimizerIssueType::Durability;
-    }
+        CombinedText.Contains(TEXT("수리"));
 
-    if (TargetId.Contains(TEXT("powerplant")) &&
+    const bool bBrokenPowerPlant =
+        TargetId.Contains(TEXT("powerplant")) &&
         (CombinedText.Contains(TEXT("broken")) ||
-         CombinedText.Contains(TEXT("repair")) ||
-         CombinedText.Contains(TEXT("inspect"))))
-    {
-        return ETrackedProcessOptimizerIssueType::Durability;
-    }
+         CombinedText.Contains(TEXT("repair")));
 
-    if (CombinedText.Contains(TEXT("no_power")) ||
+    const bool bPowerIssue =
+        CombinedText.Contains(TEXT("no_power")) ||
         CombinedText.Contains(TEXT("power shortage")) ||
         CombinedText.Contains(TEXT("power loss")) ||
         CombinedText.Contains(TEXT("전력")) ||
         CombinedText.Contains(TEXT("전원")) ||
-        CombinedText.Contains(TEXT("정전")))
-    {
-        return ETrackedProcessOptimizerIssueType::Power;
-    }
+        CombinedText.Contains(TEXT("정전"));
 
-    return ETrackedProcessOptimizerIssueType::Unknown;
+    const bool bFinalDurabilityIssue = bDurabilityIssue || bBrokenPowerPlant;
+    if (bFinalDurabilityIssue && bPowerIssue)
+    {
+        return EAIWarningHighlightType::Both;
+    }
+    if (bFinalDurabilityIssue)
+    {
+        return EAIWarningHighlightType::Durability;
+    }
+    if (bPowerIssue)
+    {
+        return EAIWarningHighlightType::Power;
+    }
+    return EAIWarningHighlightType::Unknown;
 }
 void UUI_DialogueBalloon::RefreshDialogueUI()
 {

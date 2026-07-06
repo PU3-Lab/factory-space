@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "FactoryAgentClientSubsystem.h"
+#include "MachineBase.h"
 #include "QuestManagerSubsystem.h"
 #include "UI_DialogueBalloon.generated.h"
 
@@ -10,17 +11,12 @@ class UBorder;
 class AMachineBase;
 class FJsonObject;
 
-enum class ETrackedProcessOptimizerIssueType : uint8
-{
-	Unknown,
-	Durability,
-	Power
-};
-
 struct FTrackedProcessOptimizerIssue
 {
 	FString TargetId;
-	ETrackedProcessOptimizerIssueType IssueType = ETrackedProcessOptimizerIssueType::Unknown;
+	EAIWarningHighlightType IssueType = EAIWarningHighlightType::Unknown;
+	bool bTracksDurability = false;
+	bool bTracksPower = false;
 	TWeakObjectPtr<AMachineBase> Machine;
 	float InitialDurability = 0.0f;
 };
@@ -99,8 +95,7 @@ private:
 	void UpdateTrackedProcessOptimizerIssues();
 	void HighlightOperatorGuideTargets(const TSharedPtr<FJsonObject>& PayloadObject, const FString& Answer);
 	void ClearOperatorGuideHighlights();
-	bool IsTrackedProcessOptimizerIssueResolved(const FTrackedProcessOptimizerIssue& Issue) const;
-	ETrackedProcessOptimizerIssueType ClassifyProcessOptimizerIssue(const TSharedPtr<FJsonObject>& SuggestionObject) const;
+	EAIWarningHighlightType ClassifyProcessOptimizerIssue(const TSharedPtr<FJsonObject>& SuggestionObject) const;
 	void PlayTTSFromPayload(const TSharedPtr<FJsonObject>& PayloadObject);
 	
 	UPROPERTY()

@@ -261,6 +261,24 @@ AMachineBase::AMachineBase()
 		AIWarningHighlightIcon = AIWarningHighlightIconAsset.Object;
 		AIWarningHighlightComponent->SetSprite(AIWarningHighlightIcon);
 	}
+	ConstructorHelpers::FObjectFinder<UTexture2D> ElectricityHighlightWarningIconAsset(
+		TEXT("/Game/Assets/UIImg/Warning/Electricity_Highlight_Warning.Electricity_Highlight_Warning"));
+	if (ElectricityHighlightWarningIconAsset.Succeeded())
+	{
+		ElectricityHighlightWarningIcon = ElectricityHighlightWarningIconAsset.Object;
+	}
+	ConstructorHelpers::FObjectFinder<UTexture2D> DurabilityHighlightWarningIconAsset(
+		TEXT("/Game/Assets/UIImg/Warning/Durability_Highlight_Warning.Durability_Highlight_Warning"));
+	if (DurabilityHighlightWarningIconAsset.Succeeded())
+	{
+		DurabilityHighlightWarningIcon = DurabilityHighlightWarningIconAsset.Object;
+	}
+	ConstructorHelpers::FObjectFinder<UTexture2D> BothHighlightWarningIconAsset(
+		TEXT("/Game/Assets/UIImg/Warning/Both_Highlight_Warning.Both_Highlight_Warning"));
+	if (BothHighlightWarningIconAsset.Succeeded())
+	{
+		BothHighlightWarningIcon = BothHighlightWarningIconAsset.Object;
+	}
 	ConstructorHelpers::FObjectFinder<UMaterial> MaterialAsset(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	if (MaterialAsset.Succeeded())
 	{
@@ -1283,15 +1301,39 @@ void AMachineBase::UpdateStateIndicatorFacingPlayer()
 	StateIndicatorIconWidgetComponent->SetWorldRotation(ToCamera.Rotation());
 }
 
-void AMachineBase::ShowAIWarningHighlight()
+void AMachineBase::ShowAIWarningHighlight(
+	EAIWarningHighlightType HighlightType,
+	bool bDismissWhenPlayerApproaches)
 {
-	if (!AIWarningHighlightComponent || !AIWarningHighlightIcon)
+	if (!AIWarningHighlightComponent)
+	{
+		return;
+	}
+
+	UTexture2D* SelectedIcon = AIWarningHighlightIcon;
+	switch (HighlightType)
+	{
+	case EAIWarningHighlightType::Power:
+		SelectedIcon = ElectricityHighlightWarningIcon;
+		break;
+	case EAIWarningHighlightType::Durability:
+		SelectedIcon = DurabilityHighlightWarningIcon;
+		break;
+	case EAIWarningHighlightType::Both:
+		SelectedIcon = BothHighlightWarningIcon;
+		break;
+	case EAIWarningHighlightType::Unknown:
+	default:
+		break;
+	}
+	if (!SelectedIcon)
 	{
 		return;
 	}
 
 	bAIWarningHighlightVisible = true;
-	AIWarningHighlightComponent->SetSprite(AIWarningHighlightIcon);
+	bDismissAIWarningHighlightOnApproach = bDismissWhenPlayerApproaches;
+	AIWarningHighlightComponent->SetSprite(SelectedIcon);
 	AIWarningHighlightComponent->SetRelativeLocation(AIWarningHighlightOffset);
 	AIWarningHighlightComponent->SetRelativeScale3D(AIWarningHighlightScale);
 	AIWarningHighlightComponent->SetVisibility(true);
@@ -1320,7 +1362,8 @@ void AMachineBase::UpdateAIWarningHighlight()
 	UWorld* World = GetWorld();
 	APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
 	APawn* PlayerPawn = PlayerController ? PlayerController->GetPawn() : nullptr;
-	if (PlayerPawn &&
+	if (bDismissAIWarningHighlightOnApproach &&
+		PlayerPawn &&
 		FVector::DistSquared(PlayerPawn->GetActorLocation(), GetActorLocation()) <=
 			FMath::Square(AIWarningHighlightDismissDistance))
 	{

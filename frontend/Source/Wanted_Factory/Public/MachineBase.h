@@ -31,6 +31,15 @@ namespace EfficiencyKeys
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnMachineDurabilityChanged, float, CurrentDurability, float, MaxDurability);
 
 UENUM(BlueprintType)
+enum class EAIWarningHighlightType : uint8
+{
+	Unknown,
+	Durability,
+	Power,
+	Both
+};
+
+UENUM(BlueprintType)
 enum class EMachineState : uint8
 {
 	Idle, // 기본
@@ -112,7 +121,9 @@ public:
 	virtual bool CanPlayerInteract() const { return true; }
 
 	UFUNCTION(BlueprintCallable, Category = "Machine | AI Highlight")
-	void ShowAIWarningHighlight();
+	void ShowAIWarningHighlight(
+		EAIWarningHighlightType HighlightType = EAIWarningHighlightType::Unknown,
+		bool bDismissWhenPlayerApproaches = true);
 
 	UFUNCTION(BlueprintCallable, Category = "Machine | AI Highlight")
 	void HideAIWarningHighlight();
@@ -338,16 +349,28 @@ protected:
 	float AIWarningHighlightDismissDistance = 300.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | AI Highlight")
-	FVector AIWarningHighlightOffset = FVector(0.0f, 0.0f, 1000.0f);
+	FVector AIWarningHighlightOffset = FVector(0.0f, 0.0f, 500.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | AI Highlight")
-	FVector AIWarningHighlightScale = FVector(1.95f, 1.95f, 1.95f);
+	FVector AIWarningHighlightScale = FVector(1.3f, 1.3f, 1.3f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | AI Highlight")
 	TObjectPtr<UTexture2D> AIWarningHighlightIcon;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | AI Highlight")
+	TObjectPtr<UTexture2D> ElectricityHighlightWarningIcon;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | AI Highlight")
+	TObjectPtr<UTexture2D> DurabilityHighlightWarningIcon;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Machine | AI Highlight")
+	TObjectPtr<UTexture2D> BothHighlightWarningIcon;
+
 	UPROPERTY(Transient)
 	bool bAIWarningHighlightVisible = false;
+
+	UPROPERTY(Transient)
+	bool bDismissAIWarningHighlightOnApproach = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "1.0"))
 	float DurabilityWarningIconBrightness = 10.0f;
@@ -578,8 +601,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Machine | Operating Smoke")
 	void RefreshOperatingSmoke();
 
+	// virtual: 파생 머신이 공용 험을 끄고 전용 사운드로 대체할 수 있게(채굴기 — CanPlayOperatingSmoke와 동형).
 	UFUNCTION(BlueprintPure, Category = "Machine | Operating Sound")
-	bool CanPlayOperatingSound() const;
+	virtual bool CanPlayOperatingSound() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Machine | Operating Sound")
 	void RefreshOperatingSound();

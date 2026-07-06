@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "PlayerWarehouseSubsystem.h"
+// EPlanetEventType — 폭풍 앰비언트 델리게이트 핸들러 UFUNCTION 시그니처용(UI_MainHUD와 동일 방식).
+#include "PlanetEventManagerSubsystem.h"
 #include "OJJ_Player.generated.h"
 
 class USpringArmComponent;
@@ -26,6 +28,8 @@ class UAnimMontage;
 class UAnimSequenceBase;
 class UAudioComponent;
 class USoundBase;
+class USoundClass;
+class USoundMix;
 class UOJJ_CharacterAppearanceData;
 struct FInputActionValue;
 
@@ -583,6 +587,52 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound", meta = (ClampMin = "0.0"))
 	float LandVolumeMultiplier = 1.2f;
 
+	// [폭풍 앰비언트] 모래/자기폭풍 전역 2D 루프 — PlanetEventManager 시작/종료 델리게이트 훅으로
+	// FadeIn/Out(2.5s). 이벤트는 동시 1개(서브시스템 가드)지만 종료 페이드 꼬리와 다음 시작이 겹칠 수
+	// 있어 종류별 컴포넌트 분리. 사운드 미지정 시 무동작. SoundClass 미지정 → Master 소속이라 엔딩
+	// 시네마틱 뮤트(SM_CinematicMute)에 자동 포함 — 별도 처리 불필요.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sound")
+	TObjectPtr<UAudioComponent> SandstormAudioComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sound")
+	TObjectPtr<UAudioComponent> MagneticStormAudioComponent;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
+	TObjectPtr<USoundBase> SandstormSound;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
+	TObjectPtr<USoundBase> MagneticStormSound;
+
+	// 폭풍 앰비언트 델리게이트 핸들러(다이나믹 — 시그니처는 FOnPlanetEventStarted/Ended와 일치 필수).
+	UFUNCTION()
+	void OJJ_HandlePlanetEventStartedForStormAudio(EPlanetEventType EventType, float Severity);
+
+	UFUNCTION()
+	void OJJ_HandlePlanetEventEndedForStormAudio(EPlanetEventType EventType);
+
+	// 폭풍 종류→컴포넌트/사운드 매핑(None·미지정은 nullptr → 무동작).
+	UAudioComponent* OJJ_GetStormAudioComponent(EPlanetEventType EventType) const;
+	USoundBase* OJJ_GetStormSound(EPlanetEventType EventType) const;
+
+	// [폭풍 덕킹] 차폐장(실드 돔) 내부에서 자기폭풍 사운드 음량 배율(0.8s에 걸쳐 전환). 모래폭풍은
+	// 미적용 — 차폐장은 자기폭풍 전용(OJJ_ProtectionTower.h ⚠️ 주석: SandStorm은 막지 않음).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ShieldedStormVolume = 0.25f;
+
+	// 실드 내/외 판정 저빈도(0.25s) 폴링 타이머 — 차폐장은 오버랩/진입 이벤트가 없어(거리 판정 전용,
+	// 이찬 합의 구조) 폴링이 유일한 감지 수단. 자기폭풍 활성 중에만 무장, 종료 시 정지.
+	FTimerHandle StormShieldCheckTimerHandle;
+
+	// 현재 덕킹 상태 캐시 — 전환 시에만 AdjustVolume(중복 호출 방지, 수영 루프 플래그 패턴).
+	bool bStormAudioShielded = false;
+
+	// 타이머 콜백: 자기폭풍 사운드 재생 중일 때만 실드 내/외 전환을 감지해 볼륨 조정.
+	void OJJ_UpdateStormShieldDucking();
+
+	// 플레이어 위치가 활성 차폐장 반경 안인지 — 이벤트 매니저 IsMachineShieldedFromMagneticStorm과
+	// 동일 술어(3D DistSquared ≤ Radius²)를 차폐장(우리 소유) 공개 getter로 재현(매니저 내부 무접근).
+	bool OJJ_IsPlayerShieldedFromMagneticStorm() const;
+
 	// [수영] 매 틱 물 진입/이탈 감지 → MOVE_Swimming 토글 + 수면 클램프. 등반/빌드(MOVE_Flying) 중엔 건너뜀.
 	void OJJ_UpdateSwimming(float DeltaSeconds);
 
@@ -753,6 +803,17 @@ protected:
 	// 미지정이면 영상 단계를 스킵하고 바로 복귀(안전 — 로그만 남김).
 	UPROPERTY(EditDefaultsOnly, Category = "Ending")
 	TSubclassOf<UUserWidget> EndingVideoWidgetClass;
+
+	// [엔딩 사운드 덕킹] 시네마틱 동안 게임 사운드(Master) 볼륨 0 덕킹용 SoundMix. 시퀀스 시작 시 Push,
+	// FinishEndingSequence(전 종료 경로 수렴점)에서 Pop. 미지정 시 무동작.
+	UPROPERTY(EditAnywhere, Category = "Ending|Sound")
+	TObjectPtr<USoundMix> CinematicMuteMix;
+
+	// 엔딩 영상 오디오가 옮겨탈 별도 루트 SoundClass(Master 계열 아님 → Mix 영향권 밖 = 영상 소리 유지).
+	// 오디오 출력은 L_Planet 레벨 배치 MediaSound 액터(#502)의 MediaSoundComponent — 코드 스폰이 아니라
+	// 시퀀스 시작 시 월드에서 찾아 주입한다(액터 재배치/머지 유실 후 재추가돼도 클래스 지정 누락 없음).
+	UPROPERTY(EditAnywhere, Category = "Ending|Sound")
+	TObjectPtr<USoundClass> CinematicSoundClass;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> EndingVideoWidgetInstance;

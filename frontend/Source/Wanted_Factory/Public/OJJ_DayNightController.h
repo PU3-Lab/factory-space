@@ -168,7 +168,7 @@ protected:
 	FVector SandStormNiagaraOffset = FVector(40.0f, 0.0f, 60.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
-	FVector SandStormParticleNiagaraOffset = FVector(40.0f, 0.0f, 60.0f);
+	FVector SandStormParticleNiagaraOffset = FVector(-1000.0f, 0.0f, 60.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
 	bool bSpawnPlanetEventNiagaraInWorld = false;
@@ -189,7 +189,7 @@ protected:
 	FVector SandStormNiagaraWorldScale = FVector(25.0f, 25.0f, 10.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
-	FVector SandStormParticleNiagaraWorldScale = FVector(25.0f, 25.0f, 10.0f);
+	FVector SandStormParticleNiagaraWorldScale = FVector(20.0f, 40.0f, 10.0f);
 
 	// 반투명 카드 기반 모래 구름과 입자가 서로 가리지 않도록, 입자 레이어를 더 높은 우선순위로 그린다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Visual")
