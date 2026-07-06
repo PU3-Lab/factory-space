@@ -7,6 +7,8 @@
 #include "PlayerWarehouseSubsystem.h"
 // EPlanetEventType — 폭풍 앰비언트 델리게이트 핸들러 UFUNCTION 시그니처용(UI_MainHUD와 동일 방식).
 #include "PlanetEventManagerSubsystem.h"
+// FTutorialQuestDialogueLine — 엔딩 트리거(메인퀘 전체완료 감지) 델리게이트 핸들러 UFUNCTION 시그니처용.
+#include "QuestManagerSubsystem.h"
 #include "OJJ_Player.generated.h"
 
 class USpringArmComponent;
@@ -1002,13 +1004,21 @@ public:
 	UFUNCTION(Exec, Category = "Cheats")
     void Cheat_ResetMachines();
 
-	// [엔딩] 통신탑 설치 확정 시 BuildController가 호출하는 엔딩 시퀀스 진입점(로컬 화면 전용).
-	// 재진입 가드 포함 — 연출 중 중복 호출 무시. 클리어 여부(1회성) 체크는 호출부(BuildController) 책임.
+	// [엔딩] 엔딩 시퀀스 진입점(로컬 화면 전용). 재진입 가드 포함 — 연출 중 중복 호출 무시.
+	// 클리어 여부(1회성) 체크는 호출부(HandleTutorialDialogueLogged) 책임.
 	void PlayEndingSequence(AActor* TowerActor);
 
 	// [엔딩 PIE 검증용] 월드의 첫 통신탑을 찾아 엔딩 연출을 강제 재생(클리어 플래그 무시). 콘솔: `PlayEnding`
 	UFUNCTION(Exec)
 	void PlayEnding();
+
+	// [엔딩 트리거] 메인퀘스트(튜토리얼 라인) '전체 완료' 감지 — QuestManager OnTutorialDialogueLogged 구독.
+	// 마지막 스텝(NextQuestId 공란) on_complete + 라이브 완료(현재 스텝 일치)일 때만 엔딩 재생.
+	// ⚠️ 세이브 복원(RestoreTutorialSaveState)도 같은 델리게이트를 재브로드캐스트하지만, 그 시점엔
+	//    CurrentTutorialQuestId가 비어(완료 시 소거 후 저장) 현재 스텝 조회가 실패 → 로드 직후 오발동 없음.
+	UFUNCTION()
+	void HandleTutorialDialogueLogged(
+		const FString& QuestId, const FString& TriggerType, const TArray<FTutorialQuestDialogueLine>& Lines);
 protected:
 	void SetDemolishModeShortcut();
 	// [#184] C키 — 사다리 빌드 서브모드 진입(빌드모드 중에만, SetDemolishModeShortcut 패턴). 공용키 개편서 H로 이동.
