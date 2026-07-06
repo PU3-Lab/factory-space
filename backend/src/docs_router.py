@@ -1203,6 +1203,14 @@ function toggleConn() {
     updateMetrics(e.data);
     updateAnalysis(e.data);
     renderMaterialResult(e.data);
+
+    // 에이전트 응답에 tts 오디오가 포함되어 있으면 브라우저에서 자동 재생
+    if (parsed && parsed.payload && parsed.payload.tts && parsed.payload.tts.status === 'ready' && parsed.payload.tts.audio_url) {
+      var audio = new Audio(parsed.payload.tts.audio_url);
+      audio.play().catch(function(err) {
+        console.warn("TTS 재생 실패 (사용자 상호작용 필요):", err);
+      });
+    }
   };
 }
 
