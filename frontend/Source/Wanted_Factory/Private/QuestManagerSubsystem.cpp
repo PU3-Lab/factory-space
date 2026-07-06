@@ -52,6 +52,7 @@ constexpr TCHAR TutorialEventPlaceFlatFoundation[] = TEXT("PlaceFlatFoundation")
 constexpr TCHAR TutorialEventPlaceRampFoundation[] = TEXT("PlaceRampFoundation");
 constexpr TCHAR TutorialEventPlaceLadder[] = TEXT("PlaceLadder");
 	constexpr TCHAR TutorialEventSelectBaseCampMode[] = TEXT("SelectBaseCampMode");
+constexpr TCHAR TutorialEventInteractTeleCommunicationTower[] = TEXT("InteractTeleCommunicationTower");
 
 	static FAutoConsoleCommandWithWorldAndArgs GJumpTutorialQuestStepCommand(
 		TEXT("wf.quest.jump"),
@@ -568,6 +569,10 @@ FTutorialRequirement GetTutorialRequirement(const FString& QuestId)
 	else if (QuestId == TEXT("TUT_COMM_008"))
 	{
 		SetEventRequirement(TutorialEventCableConnected);
+	}
+	else if (QuestId == TEXT("TUT_COMM_009"))
+	{
+		SetEventRequirement(TutorialEventInteractTeleCommunicationTower, TEXT("TeleCommunicationTower"));
 	}
 
 	return Requirement;
