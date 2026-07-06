@@ -919,14 +919,6 @@ bool AMachineBase::TakeOutputItem(FName ItemID, int32 Count)
 		OutputBuffer.Remove(ItemID);
 	}
 
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
-		{
-			FactoryManager->RecordObservedItemProduction(ItemID, Count);
-		}
-	}
-
 	if (MachineState == EMachineState::Blocked)
 	{
 		MachineState = EMachineState::Idle;
