@@ -178,12 +178,20 @@ class AgentPipeline:
         llm: LLMAdapter | None = None,
         llm_settings: LLMSettings | None = None,
         llm_adapter_factory: Callable[[LLMModelSlot], LLMAdapter] = create_llm_adapter,
+        tts_service: Any = None,  # noqa: ANN401
     ) -> None:
         self.router = router or create_default_agent_router()
         self.cache = cache or ResponseCache()
         self.llm = llm
         self.llm_settings = llm_settings
         self.llm_adapter_factory = llm_adapter_factory
+        
+        if tts_service is None:
+            from tts.service import TTSService
+            self.tts_service = TTSService.from_env()
+        else:
+            self.tts_service = tts_service
+            
         self.graph = self._build_graph()
 
     def run(
@@ -207,6 +215,92 @@ class AgentPipeline:
             config={"configurable": {"on_progress": on_progress}},
         )
         return state["responseEnvelope"]
+
+    def _attach_tts(self, agent: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """에이전트 응답 페이로드에 TTS 메타데이터를 결합합니다.
+        
+        초보자용 설명:
+            응답을 최종 반환하기 직전, 대상 에이전트(operator_guide, process_optimizer)가 맞고
+            기존에 생성된 tts 메타데이터가 없는 경우, 오디오 합성 서비스(TTSService)를 실행하여
+            결과 정보(audio_url, cached 여부 등)를 페이로드에 'tts' 필드로 추가합니다.
+        """
+        if agent not in {"operator_guide", "process_optimizer"}:
+            return payload
+
+        # process_optimizer의 경우 highlight-only(state_update 등) 응답에는 TTS를 생성하지 않음 (오류/불일치 방지)
+        if agent == "process_optimizer" and payload.get("status") != "preview":
+            return payload
+
+        # 4차/5차 재리뷰 보강: tts.text만 포함된 경우는 입력 힌트로 취급하여 합성을 수행하고,
+        # 완성된 메타데이터(ready + audio_url 또는 failed/disabled 단말 상태)는 그대로 유지
+        has_completed_tts = False
+        if "tts" in payload and isinstance(payload["tts"], dict):
+            tts_data = payload["tts"]
+            status = tts_data.get("status")
+            if status == "ready" and tts_data.get("audio_url"):
+                has_completed_tts = True
+            elif status in {"failed", "disabled"}:
+                has_completed_tts = True
+
+        if has_completed_tts:
+            return payload
+
+        new_payload = dict(payload)
+
+        from tts.schemas import TTSRequest
+        try:
+            req = TTSRequest(agent=agent, payload=payload)
+            tts_meta = self.tts_service.synthesize_for_payload(req)
+            if hasattr(tts_meta, "model_dump"):
+                new_payload["tts"] = tts_meta.model_dump(mode="json")
+            else:
+                new_payload["tts"] = tts_meta
+        except Exception:
+            provider_name = "edge_tts"
+            if hasattr(self.tts_service, "settings") and hasattr(self.tts_service.settings, "provider"):
+                provider_name = self.tts_service.settings.provider
+            new_payload["tts"] = {
+                "status": "failed",
+                "provider": provider_name,
+                "error_code": "TTS_PROVIDER_ERROR",
+            }
+
+        return new_payload
+
+    def _prepare_process_optimizer_tts_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """process_optimizer 응답을 가공하여 display_message와 TTS 텍스트를 정렬합니다.
+        
+        초보자용 설명:
+            화면에 표시할 요약 텍스트인 display_message가 설정되어 있지 않고,
+            최적화 경보가 발견되지 않았다면 기본 메시지("문제가 발견되지 않았습니다.")를 채워줍니다.
+        """
+        new_payload = dict(payload)
+        
+        if new_payload.get("status") != "preview":
+            return new_payload
+            
+        if "display_message" in new_payload:
+            return new_payload
+            
+        tts_dict = new_payload.get("tts")
+        if isinstance(tts_dict, dict) and tts_dict.get("text"):
+            return new_payload
+            
+        opt_alert = new_payload.get("optimization_alert")
+        is_alert_needed = False
+        if isinstance(opt_alert, dict):
+            is_alert_needed = bool(opt_alert.get("needed"))
+            
+        if not is_alert_needed:
+            new_payload["display_message"] = "문제가 발견되지 않았습니다."
+        else:
+            problem = opt_alert.get("problem") or ""
+            action = opt_alert.get("recommended_action") or ""
+            parts = [p.strip() for p in (problem, action) if p.strip()]
+            if parts:
+                new_payload["display_message"] = " ".join(parts)
+                
+        return new_payload
 
     def _build_graph(self) -> CompiledStateGraph:
         """Build and compile the LangGraph agent pipeline."""
@@ -766,13 +860,29 @@ class AgentPipeline:
             }
             if state.get("middlewareLogs"):
                 metadata["middlewareLogs"] = state["middlewareLogs"]
+
+            raw_payload = state.get("responsePayload") or {}
+            
+            # 4차 재리뷰 보강: 만약 요청 payload에 tts 입력 힌트(tts.text)가 있다면 응답 payload에 전파
+            req_payload = getattr(envelope, "payload", {}) if hasattr(envelope, "payload") else {}
+            if isinstance(req_payload, dict) and "tts" in req_payload:
+                req_tts = req_payload["tts"]
+                if isinstance(req_tts, dict) and "text" in req_tts:
+                    # 응답 payload에 이미 완성된 tts가 없는 경우에만 입력 힌트 복사
+                    if "tts" not in raw_payload:
+                        raw_payload = {**raw_payload, "tts": req_tts}
+
+            if state.get("selectedAgent") == "process_optimizer":
+                raw_payload = self._prepare_process_optimizer_tts_payload(raw_payload)
+            payload_with_tts = self._attach_tts(state["selectedAgent"], raw_payload)
+
             response = AgentResponseEnvelope(
                 request_id=envelope.request_id,
                 session_id=envelope.session_id,
                 client_id=envelope.client_id,
                 agent=state["selectedAgent"],
                 payload={
-                    **state["responsePayload"],
+                    **payload_with_tts,
                     "metadata": metadata,
                 },
                 streams=state.get("streams", []),
