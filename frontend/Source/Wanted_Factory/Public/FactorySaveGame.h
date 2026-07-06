@@ -198,6 +198,9 @@ public:
 	FString CurrentTutorialQuestId;
 
 	UPROPERTY()
+	FString PendingTutorialNextQuestId;
+
+	UPROPERTY()
 	bool bPendingTutorialStartDialogueReveal = false;
 
 	UPROPERTY()

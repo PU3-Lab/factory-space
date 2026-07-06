@@ -187,6 +187,23 @@ void UUI_BuildModeMain::RefreshSimpleQuestWindow()
     }
 
     FTutorialQuestStep CurrentStep;
+    if (QuestManager->HasPendingTutorialStartDialogue())
+    {
+        FString LoggedQuestId;
+        FString LoggedTriggerType;
+        TArray<FTutorialQuestDialogueLine> LoggedLines;
+        QuestManager->GetLastTutorialDialogueLog(LoggedQuestId, LoggedTriggerType, LoggedLines);
+
+        if (LoggedTriggerType == TEXT("on_complete")
+            && QuestManager->GetTutorialQuestStepById(LoggedQuestId, CurrentStep))
+        {
+            WBP_SimpleQuestWindow->UpdateSimpleQuest(
+                FText::FromString(CurrentStep.Title),
+                FText::FromString(QuestManager->GetTutorialStepDisplayDescription(CurrentStep)));
+        }
+        return;
+    }
+
     if (!QuestManager->GetCurrentTutorialQuestStep(CurrentStep))
     {
         return;
