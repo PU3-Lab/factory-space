@@ -35,7 +35,11 @@ public class Wanted_Factory : ModuleRules
 			"ProceduralMeshComponent",
 			// ① 물 셀 인식 — AWaterBody/UWaterBodyComponent 질의(TryQueryWaterInfoClosestToWorldLocation).
 			// 베이크 분류·수면Z가 WaterBodyRiver를 직접 인식(런타임 의존 — 베이크가 BeginPlay서도 돈다).
-			"Water"
+			"Water",
+			// 엔딩 시네마틱 사운드 덕킹 — 레벨 배치 MediaSound 액터(UMediaSoundComponent)에 별도 SoundClass 주입.
+			"MediaAssets",
+			// 위 주입의 Stop→Start 재시작(USynthComponent — SoundClass가 Start 시점에 소비되어 재시작 필요).
+			"AudioMixer"
 		});
 
 		if (Target.bBuildEditor)

@@ -601,8 +601,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Machine | Operating Smoke")
 	void RefreshOperatingSmoke();
 
+	// virtual: 파생 머신이 공용 험을 끄고 전용 사운드로 대체할 수 있게(채굴기 — CanPlayOperatingSmoke와 동형).
 	UFUNCTION(BlueprintPure, Category = "Machine | Operating Sound")
-	bool CanPlayOperatingSound() const;
+	virtual bool CanPlayOperatingSound() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Machine | Operating Sound")
 	void RefreshOperatingSound();

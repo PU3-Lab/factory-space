@@ -8,6 +8,8 @@
 #include "MinerMachine.generated.h"
 
 class AOJJ_Grid;
+class UAudioComponent;
+class USoundBase;
 
 UCLASS()
 class WANTED_FACTORY_API AMinerMachine : public AMachineBase
@@ -18,6 +20,10 @@ public:
 	// Sets default values for this actor's properties
 	AMinerMachine();
 	virtual void Tick(float DeltaTime) override;
+
+	// 채굴기는 공용 OperatingSound(험)를 쓰지 않는다 — 험은 전선 쪽으로 이관 예정, 채굴기는
+	// 전용 MiningLoopSound(가동 시 페이드 재생)만 사용. BP에 험 설정이 남아 있어도 재생 차단.
+	virtual bool CanPlayOperatingSound() const override { return false; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -51,6 +57,13 @@ protected:
 	// 채굴 주기
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Mining")
 	float MineInterval = 2.0f;
+
+	// [채굴 루프 사운드] 가동 중에만 페이드 재생되는 전용 루프 — 공용 OperatingSound 험 대체.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Mining|Sound")
+	TObjectPtr<UAudioComponent> MiningLoopSoundComponent;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Mining|Sound")
+	TObjectPtr<USoundBase> MiningLoopSound;
 
 	FTimerHandle MineTimerHandle;
 
@@ -86,4 +99,10 @@ public:
 	// 채굴 정지
 	UFUNCTION(BlueprintCallable, Category="Mining")
 	void StopMining();
+
+private:
+	// 채굴 루프 사운드 페이드 in/out — 상태 전환 시에만 호출(StartMining/StopMining 훅, Tick 폴링 없음).
+	void OJJ_SetMiningLoopSoundActive(bool bActive);
+
+	bool bMiningLoopSoundActive = false;
 };
