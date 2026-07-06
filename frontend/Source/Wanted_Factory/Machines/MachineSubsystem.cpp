@@ -2,6 +2,7 @@
 
 #include "EngineUtils.h"
 #include "MachineBase.h"
+#include "OJJ_Grid.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "PlayerWarehouseSubsystem.h"
@@ -316,12 +317,28 @@ void UMachineSubsystem::ApplyMachineDataToExistingMachines(FName MachineType, co
 		return;
 	}
 
+	TArray<AOJJ_Grid*> Grids;
+	for (TActorIterator<AOJJ_Grid> GridIt(World); GridIt; ++GridIt)
+	{
+		Grids.Add(*GridIt);
+	}
+
 	for (TActorIterator<AMachineBase> MachineIt(World); MachineIt; ++MachineIt)
 	{
 		AMachineBase* Machine = *MachineIt;
 		if (Machine && Machine->GetMachineType() == MachineType)
 		{
 			Machine->ApplyMachineData(MachineData);
+
+			// [LevelUp Z 재안착] 메시 교체·재스케일로 피벗 보정량이 달라지므로 등록된 그리드의 배치 산식을
+			// 재적용해 바닥을 다시 안착. 미등록 머신(그리드 밖 특수 배치)은 그대로 둔다.
+			for (AOJJ_Grid* Grid : Grids)
+			{
+				if (Grid && Grid->OJJ_ReSettleMachinePlacement(Machine))
+				{
+					break;
+				}
+			}
 		}
 	}
 }

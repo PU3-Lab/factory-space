@@ -8,8 +8,10 @@
 
 class AMachineBase;
 class APowerGridNode;
+class UAudioComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class USoundBase;
 
 UCLASS()
 class WANTED_FACTORY_API APowerLine : public AActor
@@ -53,6 +55,15 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Power Line")
 	TArray<TObjectPtr<UStaticMeshComponent>> LineSegments;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Power Line")
+	TObjectPtr<UAudioComponent> HumAudioComponent;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Sound")
+	TObjectPtr<USoundBase> HumSound;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line|Sound", meta = (ClampMin = "0.0"))
+	float HumFadeTime = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Line", meta = (ClampMin = "0.0"))
 	float EndpointHeightOffset = 20.0f;
@@ -116,6 +127,7 @@ protected:
 
 private:
 	bool IsElectricallyConnected() const;
+	void RefreshHumSound(bool bElectricallyConnected);
 	float GetCurrentConnectedEmissiveStrength() const;
 	FVector GetSagPoint(const FVector& SourceLocation, const FVector& TargetLocation, float Alpha, float SagDepth) const;
 	UStaticMeshComponent* GetOrCreateLineSegment(int32 SegmentIndex);
@@ -136,4 +148,7 @@ private:
 
 	UPROPERTY(Transient)
 	float PulsePhaseOffset = 0.0f;
+
+	UPROPERTY(Transient)
+	bool bHumActive = false;
 };

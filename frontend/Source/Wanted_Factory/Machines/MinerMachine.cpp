@@ -3,11 +3,15 @@
 
 #include "MinerMachine.h"
 
+#include "Components/AudioComponent.h"
+#include "Sound/SoundBase.h"
 #include "Wanted_Factory.h"
 #include "OJJ_Grid.h"
 
 namespace
 {
+	// 채굴 루프 사운드 페이드 시간(초) — 가동 시작 FadeIn / 정지 FadeOut 공용.
+	constexpr float MiningLoopFadeSeconds = 0.3f;
 	bool IsMineableOreResource(const AResourceBase* Resource)
 	{
 		if (!Resource)
@@ -43,6 +47,11 @@ AMinerMachine::AMinerMachine()
 	// 인접 광맥 Claim·F키 라벨이 모두 어긋난다. CSV 행 이름과 일치시켜야 함("MinerMachine").
 	MachineType = TEXT("MinerMachine");
 	bNeedPower = true;
+
+	// [채굴 루프 사운드] 상주 컴포넌트 — MachineBase OperatingSound 패턴(수동 재생, 자동재생 금지).
+	MiningLoopSoundComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("MiningLoopSound"));
+	MiningLoopSoundComponent->SetupAttachment(MeshComponent);
+	MiningLoopSoundComponent->bAutoActivate = false;
 }
 
 // Called when the game starts or when spawned
@@ -283,6 +292,7 @@ void AMinerMachine::StartMining()
 
 	MachineState = EMachineState::Working;
 	UpdateStateIndicator();
+	OJJ_SetMiningLoopSoundActive(true);
 
 	// LOG_SSR_W(TEXT("Mining started."));
 	// UE_LOG(LogTemp, Warning, TEXT("Mining started."));
@@ -297,8 +307,36 @@ void AMinerMachine::StopMining()
 		MachineState = EMachineState::Idle;
 	}
 	UpdateStateIndicator();
-	
+	// 정지 경로 전부 여기로 수렴(Tick !CanMine — 무전력/고장/버퍼풀, 광맥 고갈, 철거 OnRemovedFromGrid,
+	// 소멸 EndPlay) → 페이드아웃도 이 한 곳이면 충분.
+	OJJ_SetMiningLoopSoundActive(false);
+
 	// LOG_SSR_W(TEXT("Mining stopped."));
+}
+
+void AMinerMachine::OJJ_SetMiningLoopSoundActive(bool bActive)
+{
+	// MachineBase RefreshOperatingSound 패턴 — 사운드 미지정이면 무동작, 상태 변화 시에만 페이드.
+	if (!MiningLoopSoundComponent || !MiningLoopSound)
+	{
+		return;
+	}
+
+	if (bMiningLoopSoundActive == bActive)
+	{
+		return;
+	}
+
+	bMiningLoopSoundActive = bActive;
+	if (bActive)
+	{
+		MiningLoopSoundComponent->SetSound(MiningLoopSound);
+		MiningLoopSoundComponent->FadeIn(MiningLoopFadeSeconds);
+	}
+	else
+	{
+		MiningLoopSoundComponent->FadeOut(MiningLoopFadeSeconds, 0.0f);
+	}
 }
 
 void AMinerMachine::MineResource()
