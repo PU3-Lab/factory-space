@@ -188,6 +188,7 @@ public:
 	void GetTutorialSaveState(
 		bool& bOutTutorialQuestTestActive,
 		FString& OutCurrentTutorialQuestId,
+		FString& OutPendingTutorialNextQuestId,
 		bool& bOutPendingTutorialStartDialogueReveal,
 		FString& OutLastTutorialDialogueQuestId,
 		FString& OutLastTutorialDialogueTriggerType,
@@ -196,6 +197,7 @@ public:
 	void RestoreTutorialSaveState(
 		bool bInTutorialQuestTestActive,
 		const FString& InCurrentTutorialQuestId,
+		const FString& InPendingTutorialNextQuestId,
 		bool bInPendingTutorialStartDialogueReveal,
 		const FString& InLastTutorialDialogueQuestId,
 		const FString& InLastTutorialDialogueTriggerType,
@@ -313,6 +315,7 @@ private:
 	TMap<FString, int32> TutorialQuestStepIndexById;
 	TMap<FString, TArray<FTutorialQuestDialogueLine>> TutorialDialogueByQuestId;
 	FString CurrentTutorialQuestId;
+	FString PendingTutorialNextQuestId;
 	bool bTutorialQuestTestActive = false;
 	bool bPendingTutorialStartDialogueReveal = false;
 	bool bFullQuestWindowUnlocked = false;
