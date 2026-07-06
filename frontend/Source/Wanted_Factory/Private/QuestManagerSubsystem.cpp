@@ -805,6 +805,7 @@ void UQuestManagerSubsystem::StartTutorialQuestTest()
 
 	bTutorialQuestTestActive = true;
 	CurrentTutorialQuestId = TutorialQuestSteps[0].QuestId;
+	PendingTutorialNextQuestId.Empty();
 	bPendingTutorialStartDialogueReveal = false;
 	TutorialProgressCounts.Reset();
 	BroadcastCurrentTutorialQuestStep();
@@ -840,6 +841,7 @@ bool UQuestManagerSubsystem::JumpToTutorialQuestStepForTest(const FString& Quest
 
 	bTutorialQuestTestActive = true;
 	CurrentTutorialQuestId = TrimmedQuestId;
+	PendingTutorialNextQuestId.Empty();
 	bPendingTutorialStartDialogueReveal = false;
 	TutorialProgressCounts.Reset();
 
@@ -1009,6 +1011,7 @@ void UQuestManagerSubsystem::GetLastTutorialDialogueLog(
 void UQuestManagerSubsystem::GetTutorialSaveState(
 	bool& bOutTutorialQuestTestActive,
 	FString& OutCurrentTutorialQuestId,
+	FString& OutPendingTutorialNextQuestId,
 	bool& bOutPendingTutorialStartDialogueReveal,
 	FString& OutLastTutorialDialogueQuestId,
 	FString& OutLastTutorialDialogueTriggerType,
@@ -1017,6 +1020,7 @@ void UQuestManagerSubsystem::GetTutorialSaveState(
 {
 	bOutTutorialQuestTestActive = bTutorialQuestTestActive;
 	OutCurrentTutorialQuestId = CurrentTutorialQuestId;
+	OutPendingTutorialNextQuestId = PendingTutorialNextQuestId;
 	bOutPendingTutorialStartDialogueReveal = bPendingTutorialStartDialogueReveal;
 	OutLastTutorialDialogueQuestId = LastTutorialDialogueQuestId;
 	OutLastTutorialDialogueTriggerType = LastTutorialDialogueTriggerType;
@@ -1027,6 +1031,7 @@ void UQuestManagerSubsystem::GetTutorialSaveState(
 void UQuestManagerSubsystem::RestoreTutorialSaveState(
 	bool bInTutorialQuestTestActive,
 	const FString& InCurrentTutorialQuestId,
+	const FString& InPendingTutorialNextQuestId,
 	bool bInPendingTutorialStartDialogueReveal,
 	const FString& InLastTutorialDialogueQuestId,
 	const FString& InLastTutorialDialogueTriggerType,
@@ -1035,6 +1040,7 @@ void UQuestManagerSubsystem::RestoreTutorialSaveState(
 {
 	bTutorialQuestTestActive = bInTutorialQuestTestActive;
 	CurrentTutorialQuestId = InCurrentTutorialQuestId;
+	PendingTutorialNextQuestId = InPendingTutorialNextQuestId;
 	bPendingTutorialStartDialogueReveal = bInPendingTutorialStartDialogueReveal;
 	LastTutorialDialogueQuestId = InLastTutorialDialogueQuestId;
 	LastTutorialDialogueTriggerType = InLastTutorialDialogueTriggerType;
@@ -1062,10 +1068,13 @@ bool UQuestManagerSubsystem::HasPendingTutorialStartDialogue() const
 
 void UQuestManagerSubsystem::RevealPendingTutorialStartDialogue()
 {
-	if (!bPendingTutorialStartDialogueReveal || CurrentTutorialQuestId.IsEmpty())
+	if (!bPendingTutorialStartDialogueReveal || PendingTutorialNextQuestId.IsEmpty())
 	{
 		return;
 	}
+
+	CurrentTutorialQuestId = PendingTutorialNextQuestId;
+	PendingTutorialNextQuestId.Empty();
 
 	if (CurrentTutorialQuestId == TEXT("TUT_COMM_002"))
 	{
@@ -1174,6 +1183,7 @@ void UQuestManagerSubsystem::LoadTutorialQuestTestData()
 	TutorialQuestStepIndexById.Empty();
 	TutorialDialogueByQuestId.Empty();
 	CurrentTutorialQuestId.Empty();
+	PendingTutorialNextQuestId.Empty();
 	bTutorialQuestTestActive = false;
 	bPendingTutorialStartDialogueReveal = false;
 	LastTutorialDialogueQuestId.Empty();
@@ -1522,6 +1532,7 @@ bool UQuestManagerSubsystem::AdvanceTutorialQuestStep(bool bFromManualTest)
 	if (CurrentStep->NextQuestId.IsEmpty())
 	{
 		CurrentTutorialQuestId.Empty();
+		PendingTutorialNextQuestId.Empty();
 		bTutorialQuestTestActive = false;
 		bPendingTutorialStartDialogueReveal = false;
 		if (!TutorialRewards.IsEmpty())
@@ -1541,18 +1552,13 @@ bool UQuestManagerSubsystem::AdvanceTutorialQuestStep(bool bFromManualTest)
 			*CurrentStep->NextQuestId,
 			*CurrentStep->QuestId);
 		CurrentTutorialQuestId.Empty();
+		PendingTutorialNextQuestId.Empty();
 		bTutorialQuestTestActive = false;
 		bPendingTutorialStartDialogueReveal = false;
 		return false;
 	}
 
-	CurrentTutorialQuestId = CurrentStep->NextQuestId;
-	if (CurrentTutorialQuestId == TEXT("TUT_COMM_002"))
-	{
-		bFullQuestWindowUnlocked = true;
-		RequestSubQuestsWhenConnected();
-	}
-
+	PendingTutorialNextQuestId = CurrentStep->NextQuestId;
 	bPendingTutorialStartDialogueReveal = true;
 	BroadcastCurrentTutorialQuestStep();
 	if (!TutorialRewards.IsEmpty())

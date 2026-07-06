@@ -247,6 +247,7 @@ bool UFactorySaveSubsystem::SaveCurrentGame()
 	QuestManager->GetTutorialSaveState(
 		SaveGame->bTutorialQuestTestActive,
 		SaveGame->CurrentTutorialQuestId,
+		SaveGame->PendingTutorialNextQuestId,
 		SaveGame->bPendingTutorialStartDialogueReveal,
 		SaveGame->LastTutorialDialogueQuestId,
 		SaveGame->LastTutorialDialogueTriggerType,
@@ -463,6 +464,7 @@ bool UFactorySaveSubsystem::LoadCurrentGame()
 	QuestManager->RestoreTutorialSaveState(
 		SaveGame->bTutorialQuestTestActive,
 		SaveGame->CurrentTutorialQuestId,
+		SaveGame->PendingTutorialNextQuestId,
 		SaveGame->bPendingTutorialStartDialogueReveal,
 		SaveGame->LastTutorialDialogueQuestId,
 		SaveGame->LastTutorialDialogueTriggerType,
