@@ -232,6 +232,10 @@ void AOJJ_Player::BeginPlay()
 		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
 		{
 			QuestManager->StartTutorialQuestTest();
+			// [엔딩 트리거] 메인퀘 전체 완료 감지 구독 — HandlePlayerReady(세이브 복원)보다 앞이지만
+			// 복원 재브로드캐스트는 핸들러의 라이브 완료 필터가 걸러낸다(헤더 주석 참조).
+			QuestManager->OnTutorialDialogueLogged.AddUniqueDynamic(
+				this, &AOJJ_Player::HandleTutorialDialogueLogged);
 		}
 
 		if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
@@ -1021,6 +1025,62 @@ void AOJJ_Player::PlayEnding()
 	UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] PlayEnding — 월드에 통신탑이 없어 재생 불가. 먼저 설치하세요."));
 }
 
+void AOJJ_Player::HandleTutorialDialogueLogged(
+	const FString& QuestId, const FString& TriggerType, const TArray<FTutorialQuestDialogueLine>& Lines)
+{
+	// [엔딩 트리거] 메인퀘스트(튜토리얼 라인) 전체 완료 → 엔딩 1회 재생. '마지막 스텝' 판정은 ID 하드코딩이
+	// 아니라 NextQuestId 공란(체인 종단) — CSV에 스텝이 추가/재배열돼도 그대로 따라간다.
+	if (TriggerType != TEXT("on_complete"))
+	{
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	UQuestManagerSubsystem* QuestManager =
+		GameInstance ? GameInstance->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+	if (!QuestManager)
+	{
+		return;
+	}
+
+	FTutorialQuestStep CompletedStep;
+	if (!QuestManager->GetTutorialQuestStepById(QuestId, CompletedStep) || !CompletedStep.NextQuestId.IsEmpty())
+	{
+		return; // 마지막 스텝의 완료가 아님
+	}
+
+	// 라이브 완료 필터 — AdvanceTutorialQuestStep은 현재 스텝을 소거하기 '전에' 브로드캐스트하므로
+	// 이 시점엔 현재 스텝==QuestId. 세이브 복원(RestoreTutorialSaveState)의 재브로드캐스트는 완료 시
+	// 소거된 상태로 저장된 CurrentTutorialQuestId가 비어 있어 여기서 걸러진다(로드 직후 오발동 금지).
+	FTutorialQuestStep CurrentStep;
+	if (!QuestManager->GetCurrentTutorialQuestStep(CurrentStep) || CurrentStep.QuestId != QuestId)
+	{
+		return;
+	}
+
+	// [1회 가드] 클리어 플래그(세이브 영속, FinishEndingSequence가 셋) — 클리어 후 튜토리얼 리셋으로
+	// 재완료해도 엔딩은 다시 틀지 않는다.
+	if (const UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+	{
+		if (SaveSubsystem->IsGameCleared())
+		{
+			return;
+		}
+	}
+
+	// 통신탑은 앞선 스텝(제작/설치/전력 연결)에서 이미 월드에 존재 — 컷1 카메라 대상. 없으면 경고 후 스킵.
+	for (TActorIterator<ATeleCommunicationTower> It(GetWorld()); It; ++It)
+	{
+		if (ATeleCommunicationTower* Tower = *It)
+		{
+			PlayEndingSequence(Tower);
+			return;
+		}
+	}
+	UE_LOG(LogTemp, Warning,
+		TEXT("[OJJ_Player] 메인퀘스트 전체 완료 감지 — 월드에 통신탑이 없어 엔딩 재생 스킵."));
+}
+
 void AOJJ_Player::SetCharacter(const FString& CharacterName)
 {
 	// [게임진입 테스트] 이름 기반 콘솔 스왑 — enum 리플렉션으로 매칭해 enum 확장 시 자동 대응(인덱스 하드코딩 회피).
@@ -1107,6 +1167,13 @@ void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
+		// [엔딩 트리거] 퀘스트 델리게이트 해제 — 서브시스템은 GameInstance 수명이라 폰 파괴 후 stale 바인딩 방지.
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->OnTutorialDialogueLogged.RemoveDynamic(
+				this, &AOJJ_Player::HandleTutorialDialogueLogged);
+		}
+
 		if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
 		{
 			SaveSubsystem->SaveCurrentGame();
