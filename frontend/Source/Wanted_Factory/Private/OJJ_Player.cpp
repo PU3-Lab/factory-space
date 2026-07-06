@@ -19,6 +19,7 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Camera/CameraActor.h"
 #include "Machines/TeleCommunicationTower.h"
+#include "OJJ_ProtectionTower.h"
 #include "Engine/GameViewportClient.h"
 #include "Widgets/Images/SImage.h"
 #include "Styling/CoreStyle.h"
@@ -117,6 +118,17 @@ AOJJ_Player::AOJJ_Player()
 	SwimLoopSoundComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("SwimLoopSound"));
 	SwimLoopSoundComponent->SetupAttachment(RootComponent);
 	SwimLoopSoundComponent->bAutoActivate = false;
+
+	// [폭풍 앰비언트] 전역 2D 루프 상주 컴포넌트(수영 루프와 동일 패턴, 무공간화=2D).
+	SandstormAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("SandstormAudio"));
+	SandstormAudioComponent->SetupAttachment(RootComponent);
+	SandstormAudioComponent->bAutoActivate = false;
+	SandstormAudioComponent->bAllowSpatialization = false;
+
+	MagneticStormAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("MagneticStormAudio"));
+	MagneticStormAudioComponent->SetupAttachment(RootComponent);
+	MagneticStormAudioComponent->bAutoActivate = false;
+	MagneticStormAudioComponent->bAllowSpatialization = false;
 }
 
 void AOJJ_Player::BeginPlay()
@@ -127,6 +139,26 @@ void AOJJ_Player::BeginPlay()
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		Movement->MaxWalkSpeed = WalkSpeed;
+	}
+
+	// [폭풍 앰비언트] 행성 이벤트 시작/종료 델리게이트 훅(Tick 폴링 없음 — 자동 롤/수동/세이브 복원
+	// 전 경로가 브로드캐스트). 바인딩 시점에 이미 폭풍 활성이면(복원이 플레이어 스폰보다 먼저 브로드
+	// 캐스트한 경우) 즉시 페이드인으로 동기화.
+	if (UWorld* World = GetWorld())
+	{
+		if (UPlanetEventManagerSubsystem* PlanetEventManager = World->GetSubsystem<UPlanetEventManagerSubsystem>())
+		{
+			PlanetEventManager->OnPlanetEventStarted.AddDynamic(
+				this, &AOJJ_Player::OJJ_HandlePlanetEventStartedForStormAudio);
+			PlanetEventManager->OnPlanetEventEnded.AddDynamic(
+				this, &AOJJ_Player::OJJ_HandlePlanetEventEndedForStormAudio);
+
+			const FPlanetEventState ActiveEvent = PlanetEventManager->GetEventState();
+			if (ActiveEvent.Type != EPlanetEventType::None)
+			{
+				OJJ_HandlePlanetEventStartedForStormAudio(ActiveEvent.Type, ActiveEvent.Severity);
+			}
+		}
 	}
 
 	// 로컬 플레이어 컨트롤러의 EnhancedInput 서브시스템에 매핑 컨텍스트 등록
@@ -1042,6 +1074,22 @@ void AOJJ_Player::SetCharacter(const FString& CharacterName)
 
 void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	// [폭풍 덕킹] 실드 판정 타이머 정리 — 폭풍 활성 중 폰 파괴/언포제스 대비(다른 정리들과 대칭).
+	GetWorldTimerManager().ClearTimer(StormShieldCheckTimerHandle);
+
+	// [폭풍 앰비언트] 델리게이트 해제 — 폰 파괴/언포제스 후 stale 바인딩 방지(월드 종료 시엔 서브시스템도
+	// 함께 소멸하므로 null이면 스킵).
+	if (UWorld* World = GetWorld())
+	{
+		if (UPlanetEventManagerSubsystem* PlanetEventManager = World->GetSubsystem<UPlanetEventManagerSubsystem>())
+		{
+			PlanetEventManager->OnPlanetEventStarted.RemoveDynamic(
+				this, &AOJJ_Player::OJJ_HandlePlanetEventStartedForStormAudio);
+			PlanetEventManager->OnPlanetEventEnded.RemoveDynamic(
+				this, &AOJJ_Player::OJJ_HandlePlanetEventEndedForStormAudio);
+		}
+	}
+
 	// [#405] 1인칭 빌드 중 폰 파괴/언포제스 시 메시 숨김(OwnerNoSee) 잔류 방지(동일 폰 재사용 대비).
 	ResetFirstPersonBuild();
 
@@ -3782,6 +3830,117 @@ void AOJJ_Player::UpdateInventoryRealtime()
 	else
 	{
 		GetWorldTimerManager().ClearTimer(InventoryRefreshTimerHandle);
+	}
+}
+
+void AOJJ_Player::OJJ_HandlePlanetEventStartedForStormAudio(EPlanetEventType EventType, float Severity)
+{
+	// 종류에 맞는 컴포넌트/사운드가 모두 지정된 경우에만 페이드인(수영 루프와 동일한 무동작 가드).
+	UAudioComponent* StormComponent = OJJ_GetStormAudioComponent(EventType);
+	USoundBase* StormSound = OJJ_GetStormSound(EventType);
+	if (!StormComponent || !StormSound)
+	{
+		return;
+	}
+
+	StormComponent->SetSound(StormSound);
+	StormComponent->FadeIn(2.5f);
+
+	// [폭풍 덕킹] 자기폭풍만: 실드 내/외 판정 타이머 무장 + 즉시 1회 동기화(실드 안에서 폭풍이
+	// 시작되는 경우 페이드인 자체가 덕킹 볼륨으로 향하도록).
+	if (EventType == EPlanetEventType::MagneticStorm)
+	{
+		bStormAudioShielded = false;
+		GetWorldTimerManager().SetTimer(
+			StormShieldCheckTimerHandle, this, &AOJJ_Player::OJJ_UpdateStormShieldDucking, 0.25f, true);
+		OJJ_UpdateStormShieldDucking();
+	}
+}
+
+void AOJJ_Player::OJJ_HandlePlanetEventEndedForStormAudio(EPlanetEventType EventType)
+{
+	if (UAudioComponent* StormComponent = OJJ_GetStormAudioComponent(EventType))
+	{
+		StormComponent->FadeOut(2.5f, 0.0f);
+	}
+
+	// [폭풍 덕킹] 판정 타이머 정지(자기폭풍 전용). 볼륨 배율은 다음 시작의 FadeIn(→1.0)이 리셋.
+	if (EventType == EPlanetEventType::MagneticStorm)
+	{
+		GetWorldTimerManager().ClearTimer(StormShieldCheckTimerHandle);
+		bStormAudioShielded = false;
+	}
+}
+
+void AOJJ_Player::OJJ_UpdateStormShieldDucking()
+{
+	// 자기폭풍 사운드가 실제 재생 중일 때만(사운드 미지정/정지 상태 무동작).
+	if (!MagneticStormAudioComponent || !MagneticStormAudioComponent->IsPlaying())
+	{
+		return;
+	}
+
+	const bool bShielded = OJJ_IsPlayerShieldedFromMagneticStorm();
+	if (bShielded == bStormAudioShielded)
+	{
+		return;
+	}
+
+	bStormAudioShielded = bShielded;
+	MagneticStormAudioComponent->AdjustVolume(0.8f, bShielded ? ShieldedStormVolume : 1.0f);
+}
+
+bool AOJJ_Player::OJJ_IsPlayerShieldedFromMagneticStorm() const
+{
+	// 이벤트 매니저 IsMachineShieldedFromMagneticStorm(머신 전용 API)과 동일 술어를 플레이어 위치로
+	// 재현 — 차폐장(OJJ_ProtectionTower, 우리 소유)의 공개 getter만 사용, 매니저 내부 리스트 무접근.
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	const FVector PlayerLocation = GetActorLocation();
+	for (TActorIterator<AOJJ_ProtectionTower> It(World); It; ++It)
+	{
+		const AOJJ_ProtectionTower* Shield = *It;
+		if (!Shield || !Shield->IsShieldActive())
+		{
+			continue;
+		}
+
+		const float Radius = Shield->GetShieldRadius();
+		if (FVector::DistSquared(PlayerLocation, Shield->GetActorLocation()) <= FMath::Square(Radius))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+UAudioComponent* AOJJ_Player::OJJ_GetStormAudioComponent(EPlanetEventType EventType) const
+{
+	switch (EventType)
+	{
+	case EPlanetEventType::SandStorm:
+		return SandstormAudioComponent;
+	case EPlanetEventType::MagneticStorm:
+		return MagneticStormAudioComponent;
+	default:
+		return nullptr;
+	}
+}
+
+USoundBase* AOJJ_Player::OJJ_GetStormSound(EPlanetEventType EventType) const
+{
+	switch (EventType)
+	{
+	case EPlanetEventType::SandStorm:
+		return SandstormSound;
+	case EPlanetEventType::MagneticStorm:
+		return MagneticStormSound;
+	default:
+		return nullptr;
 	}
 }
 

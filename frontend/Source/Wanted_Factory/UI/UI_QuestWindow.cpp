@@ -40,14 +40,14 @@ namespace
         if (bIsCompleted)
         {
             return FString::Printf(
-                TEXT("<Completed>[일일] %s</>\n<Completed>진행도 : %s</>"),
+                TEXT("<Daily>[일일]</>  <Completed>%s</>\n<Completed>진행도 : %s</>"),
                 *Quest.Title.ToString(),
                 *ProgressText
             );
         }
 
         return FString::Printf(
-            TEXT("<Daily>[일일]</> %s\n진행도 : %s"),
+            TEXT("<Daily>[일일]</>  %s\n진행도 : %s"),
             *Quest.Title.ToString(),
             *ProgressText
         );
@@ -83,6 +83,16 @@ namespace
             RewardTexts.Add(FString::Printf(TEXT("%s x%d"), *ResolveRewardDisplayName(WorldContextObject, Reward.ItemId), Reward.Quantity));
         }
         return RewardTexts.IsEmpty() ? TEXT("No reward") : FString::Join(RewardTexts, TEXT(", "));
+    }
+
+    FSlateColor GetMainQuestNormalDescColor()
+    {
+        return FSlateColor(FLinearColor::White);
+    }
+
+    FSlateColor GetMainQuestCompletedDescColor()
+    {
+        return FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f, 1.0f));
     }
 }
 
@@ -167,15 +177,20 @@ void UUI_QuestWindow::UpdateMainQuestUI(const FQuestState& MainQuest)
     {
         if (TXT_MainQuestPrefix)
         {
-            TXT_MainQuestPrefix->SetText(FText::GetEmpty());
+            TXT_MainQuestPrefix->SetText(FText::FromString(TEXT("[메인]")));
+            TXT_MainQuestPrefix->SetVisibility(ESlateVisibility::Hidden);
         }
-        TXT_MainQuestTitle->SetText(FText::FromString(TEXT("<Completed>진행중인 메인퀘스트가 없습니다</>")));
-        TXT_MainQuestDesc->SetText(FText::GetEmpty());
+        TXT_MainQuestTitle->SetText(FText::GetEmpty());
+        TXT_MainQuestTitle->SetVisibility(ESlateVisibility::Hidden);
+        TXT_MainQuestDesc->SetText(FText::FromString(TEXT("진행중인 메인퀘스트가 없습니다")));
+        TXT_MainQuestDesc->SetColorAndOpacity(GetMainQuestCompletedDescColor());
+        TXT_MainQuestDesc->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         return;
     }
 
     if (TXT_MainQuestPrefix)
     {
+        TXT_MainQuestPrefix->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         TXT_MainQuestPrefix->SetText(FText::FromString(TEXT("[메인]")));
         TXT_MainQuestTitle->SetText(MainQuest.Title);
     }
@@ -185,6 +200,9 @@ void UUI_QuestWindow::UpdateMainQuestUI(const FQuestState& MainQuest)
         TXT_MainQuestTitle->SetText(BracketedTitle);
     }
 
+    TXT_MainQuestTitle->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    TXT_MainQuestDesc->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    TXT_MainQuestDesc->SetColorAndOpacity(GetMainQuestNormalDescColor());
     TXT_MainQuestDesc->SetText(MainQuest.Description);
 }
 
@@ -381,6 +399,7 @@ void UUI_QuestWindow::DisplayTutorialStep(const FTutorialQuestStep& Step)
         TXT_MainQuestTitle->SetText(BracketedTitle);
     }
     
+    TXT_MainQuestDesc->SetColorAndOpacity(GetMainQuestNormalDescColor());
     TXT_MainQuestDesc->SetText(FText::FromString(
         QuestManager
             ? QuestManager->GetTutorialStepDisplayDescription(Step)
@@ -421,18 +440,19 @@ void UUI_QuestWindow::UpdateQuestZoneVisibility()
         // 메인 퀘스트가 완전히 끝났을 때도 영역은 유지하고 빈 상태 문구를 노출합니다.
         if (TXT_MainQuestPrefix)
         {
-            TXT_MainQuestPrefix->SetText(FText::GetEmpty());
-            TXT_MainQuestPrefix->SetVisibility(ESlateVisibility::Collapsed);
+            TXT_MainQuestPrefix->SetText(FText::FromString(TEXT("[메인]")));
+            TXT_MainQuestPrefix->SetVisibility(ESlateVisibility::Hidden);
         }
         if (TXT_MainQuestTitle) 
         {
-            TXT_MainQuestTitle->SetText(FText::FromString(TEXT("<Completed>진행중인 메인퀘스트가 없습니다.</>")));
-            TXT_MainQuestTitle->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+            TXT_MainQuestTitle->SetText(FText::GetEmpty());
+            TXT_MainQuestTitle->SetVisibility(ESlateVisibility::Hidden);
         }
         if (TXT_MainQuestDesc)  
         {
-            TXT_MainQuestDesc->SetText(FText::GetEmpty());
-            TXT_MainQuestDesc->SetVisibility(ESlateVisibility::Collapsed);
+            TXT_MainQuestDesc->SetText(FText::FromString(TEXT("진행중인 메인퀘스트가 없습니다")));
+            TXT_MainQuestDesc->SetColorAndOpacity(GetMainQuestCompletedDescColor());
+            TXT_MainQuestDesc->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         }
     }
 
