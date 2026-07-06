@@ -1020,6 +1020,7 @@ protected:
 	void TriggerPlanetEventNoneShortcut();
 	void TriggerPlanetEventMagneticShortcut();
 	void TriggerPlanetEventSandShortcut();
+	void GiveIronIngotShortcut();
 	void TimeSetMorningShortcut();
 	// [#405 일부] C키 — TPS 빌드모드에서만 1인칭↔3인칭 토글(레거시 BindKey + IsInBuildMode·TPS 가드).
 	// 1인칭=SpringArm ArmLength 0 + GetMesh() OwnerNoSee(자기 뷰에서만 몸 숨김, 멀티 안전).
@@ -1062,6 +1063,7 @@ protected:
 	//  - TopDown : 빌드캠 뷰타겟, 캐릭터 숨김, IMC_Build (마우스 커서 + Look 차단)
 	//  - TPS     : 뷰타겟=플레이어(3인칭 유지), 캐릭터 보임, IMC_BuildTPS (Look 허용 + 이동 허용)
 	void ApplyBuildModeView(EBuildViewMode NewMode);
+	void SetDialogueBalloonBuildModeVisibility(bool bVisible);
 
 	// 빌드 뷰 모드별 입력 컨텍스트 적용 헬퍼. 후보 IMC(Player/Build/BuildTPS)를 전부 제거 후 목표만 추가
 	// → 모드 전환 시 누락/중복 원천 차단. ⚠️ 목표 IMC가 미할당이면 기존 컨텍스트를 제거하지 않는다(입력 먹통=못 빠져나옴 방지).

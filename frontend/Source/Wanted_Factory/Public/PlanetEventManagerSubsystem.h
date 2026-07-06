@@ -125,6 +125,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Event", meta = (ClampMin = "1.0"))
 	float EventDurationSeconds = 120.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Event")
+	bool bEnableAutomaticPlanetEvents = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Planet Event|Magnetic Storm", meta = (ClampMin = "0.01", ClampMax = "1.0"))
 	float MagneticStormLowSeverityEfficiency = 0.8f;
 

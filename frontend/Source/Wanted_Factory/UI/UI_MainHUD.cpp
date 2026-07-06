@@ -199,6 +199,22 @@ void UUI_MainHUD::ToggleQuestWindow()
     }
 }
 
+void UUI_MainHUD::OpenQuestWindow()
+{
+    UGameInstance* GI = GetGameInstance();
+    UQuestManagerSubsystem* QuestManager = GI ? GI->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+
+    if (!QuestManager || !QuestManager->IsFullQuestWindowUnlocked())
+    {
+        return;
+    }
+
+    if (WBP_QuestWindow)
+    {
+        WBP_QuestWindow->OpenQuestWindow();
+    }
+}
+
 void UUI_MainHUD::ShowSaveIndicator(float DisplaySeconds)
 {
     UWidget* SaveIndicator = ResolveSaveIndicatorWidget();

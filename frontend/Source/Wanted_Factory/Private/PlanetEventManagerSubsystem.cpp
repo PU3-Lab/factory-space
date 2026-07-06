@@ -285,7 +285,7 @@ void UPlanetEventManagerSubsystem::RestoreSaveState(
 	WeatherState = InWeatherState;
 	WeatherStartState = InWeatherState;
 	WeatherTargetState = InWeatherState;
-	EventState = InEventState;
+	EventState = bEnableAutomaticPlanetEvents ? InEventState : FPlanetEventState();
 	WeatherBlendElapsedSeconds = 0.0f;
 	LastSimulationUpdateWorldTimeSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 
@@ -426,6 +426,11 @@ void UPlanetEventManagerSubsystem::AdvanceWeather(float DeltaSeconds)
 
 void UPlanetEventManagerSubsystem::RollEvent()
 {
+	if (!bEnableAutomaticPlanetEvents)
+	{
+		return;
+	}
+
 	if (EventState.Type != EPlanetEventType::None)
 	{
 		return;

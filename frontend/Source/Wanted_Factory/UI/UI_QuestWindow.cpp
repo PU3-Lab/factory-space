@@ -166,6 +166,18 @@ void UUI_QuestWindow::ToggleQuestWindow()
     }
 }
 
+void UUI_QuestWindow::OpenQuestWindow()
+{
+    if (!B_QuestBg || bIsQuestWindowOpen)
+    {
+        return;
+    }
+
+    B_QuestBg->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    bIsQuestWindowOpen = true;
+    K2_PlayQuestAnimation(true);
+}
+
 void UUI_QuestWindow::UpdateMainQuestUI(const FQuestState& MainQuest)
 {
     if (!TXT_MainQuestTitle || !TXT_MainQuestDesc)

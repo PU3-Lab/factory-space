@@ -1297,6 +1297,7 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::P, IE_Pressed, this, &AOJJ_Player::TriggerPlanetEventNoneShortcut);
 	PlayerInputComponent->BindKey(EKeys::LeftBracket, IE_Pressed, this, &AOJJ_Player::TriggerPlanetEventMagneticShortcut);
 	PlayerInputComponent->BindKey(EKeys::RightBracket, IE_Pressed, this, &AOJJ_Player::TriggerPlanetEventSandShortcut);
+	PlayerInputComponent->BindKey(EKeys::Semicolon, IE_Pressed, this, &AOJJ_Player::GiveIronIngotShortcut);
 	PlayerInputComponent->BindKey(EKeys::O, IE_Pressed, this, &AOJJ_Player::TimeSetMorningShortcut);
 	PlayerInputComponent->BindKey(EKeys::Right, IE_Pressed, this, &AOJJ_Player::CycleCategoryNext);
 	PlayerInputComponent->BindKey(EKeys::Left,  IE_Pressed, this, &AOJJ_Player::CycleCategoryPrev);
@@ -2294,6 +2295,7 @@ void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
        {
           BuildModeWidgetInstance->SetVisibility(ESlateVisibility::Visible);
        }
+       SetDialogueBalloonBuildModeVisibility(false);
     }
     else
     {
@@ -2331,12 +2333,17 @@ void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
        {
           // 드래그 씹힘 방지
           MainHUDWidgetInstance->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+          if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
+          {
+             MainHUD->OpenQuestWindow();
+          }
        }
        // [미니맵] 사용자가 N으로 꺼둔 상태가 아니면 HUD와 함께 복원(사용자 의사 존중).
        if (MinimapWidgetInstance && !bMinimapHiddenByUser)
        {
           MinimapWidgetInstance->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
        }
+       SetDialogueBalloonBuildModeVisibility(true);
     }
 }
 
@@ -2565,9 +2572,44 @@ void AOJJ_Player::TriggerPlanetEventSandShortcut()
 	TriggerPlanetEvent(TEXT("sand"));
 }
 
+void AOJJ_Player::GiveIronIngotShortcut()
+{
+	Give(TEXT("iron_ingot"), 100);
+}
+
 void AOJJ_Player::TimeSetMorningShortcut()
 {
 	TimeSet(540);
+}
+
+void AOJJ_Player::SetDialogueBalloonBuildModeVisibility(bool bVisible)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	TArray<UUserWidget*> FoundWidgets;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, FoundWidgets, UUI_DialogueBalloon::StaticClass(), false);
+	for (UUserWidget* FoundWidget : FoundWidgets)
+	{
+		UUI_DialogueBalloon* DialogueBalloon = Cast<UUI_DialogueBalloon>(FoundWidget);
+		if (!DialogueBalloon)
+		{
+			continue;
+		}
+
+		if (bVisible)
+		{
+			DialogueBalloon->RefreshDialogueUI();
+			DialogueBalloon->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		}
+		else
+		{
+			DialogueBalloon->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
 }
 
 void AOJJ_Player::ToggleBuildFPVShortcut()
