@@ -16,6 +16,16 @@
 - 명령어: `TutorialAdvance`
 - 구현 위치: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
 
+## TutorialSkip
+
+- 목적: 특정 튜토리얼 Step ID로 즉시 점프합니다. `TutorialAdvance`가 현재 단계를 바로 완료시키는 명령이라면 `TutorialSkip`은 원하는 단계로 바로 이동시키는 exec입니다.
+- 인자:
+  - `QuestId`: 이동할 튜토리얼 Step ID
+- 명령어: `TutorialSkip <QuestId>`
+- 예시: `TutorialSkip TUT_COMM_008`
+- 비고: 점프 후 해당 Step의 `on_start` 대화가 함께 출력됩니다.
+- 구현 위치: `frontend/Source/Wanted_Factory/Private/OJJ_Player.cpp`
+
 ## wf.quest.jump
 
 - 목적: 특정 튜토리얼 퀘스트 Step ID로 즉시 점프해 해당 단계의 UI와 대사를 바로 확인합니다.

@@ -869,8 +869,16 @@ protected:
 	// [위젯 페이드인 실행] EndingFadeInDelay 지연 타이머 콜백 — 지연 중 엔딩이 끝났으면 no-op(가드).
 	void StartEndingWidgetFadeIn();
 
+	// [엔딩 UI 숨김] 시네마틱 시작 전 현재 뷰포트 위젯들의 가시성을 저장한 뒤 전부 숨긴다.
+	void HideUIForEnding();
+
+	// [엔딩 UI 복구] 시네마틱 시작 전에 저장한 가시성 상태로 위젯들을 복구한다.
+	void RestoreUIAfterEnding();
+
 	FTimerHandle EndingStageTimerHandle;  // 단계 전환 공용(컷1 종료→페이드, 페이드 종료→영상)
 	FTimerHandle EndingSafetyTimerHandle; // soft-lock 최종 방어선(ForceFinishEnding)
+	TArray<TWeakObjectPtr<UUserWidget>> HiddenUIWidgetsForEnding;
+	TArray<ESlateVisibility> HiddenUIWidgetVisibilitiesForEnding;
 
 	// 컷1 종료 콜백 — 푸시인 정지 + 페이드아웃 시작 + 페이드 완료 시 ShowEndingVideo 예약.
 	void StartEndingFadeOut();
@@ -961,6 +969,9 @@ public:
 
 	UFUNCTION(Exec)
 	void TutorialLog();
+
+	UFUNCTION(Exec)
+	void TutorialSkip(const FString& QuestId);
 
 	UFUNCTION(Exec)
 	void SetMachineLevel(const FString& MachineTypeName, int32 NewLevel);
