@@ -48,6 +48,9 @@ class TTSSettings(NamedTuple):
     max_chars: int = 600
     timeout_seconds: float = 2.0
 
+    # 안드로이드 기계음 후처리(링 변조 + 로우패스 + loudnorm) 사용 여부
+    robotic_effect_enabled: bool = False
+
     # 비활성화된 경우의 원인 추적용
     disabled_reason: str | None = None
 
@@ -143,13 +146,19 @@ class TTSSettings(NamedTuple):
             timeout_seconds = 2.0
         timeout_seconds = max(0.5, min(timeout_seconds, 8.0))
 
-        # 7. edge-tts 목소리 설정
+        # 7. 안드로이드 기계음 후처리 사용 여부 (기본값 False)
+        robotic_effect_val = os.environ.get("FACTORY_TTS_ROBOTIC_EFFECT_ENABLED")
+        robotic_effect_enabled = (
+            _parse_bool(robotic_effect_val) if robotic_effect_val is not None else False
+        )
+
+        # 8. edge-tts 목소리 설정
         edge_voice = os.environ.get("EDGE_TTS_VOICE") or "ko-KR-SunHiNeural"
         edge_rate = os.environ.get("EDGE_TTS_RATE") or "+0%"
         edge_volume = os.environ.get("EDGE_TTS_VOLUME") or "+0%"
         edge_pitch = os.environ.get("EDGE_TTS_PITCH") or "+0Hz"
 
-        # 8. ElevenLabs 목소리 및 모델 설정
+        # 9. ElevenLabs 목소리 및 모델 설정
         eleven_voice = os.environ.get("ELEVENLABS_VOICE_ID") or "JBFqnCBsd6RMkjVDRZzb"
         eleven_model = os.environ.get("ELEVENLABS_MODEL_ID") or "eleven_multilingual_v2"
         eleven_format = os.environ.get("ELEVENLABS_OUTPUT_FORMAT") or "mp3_44100_128"
@@ -198,6 +207,7 @@ class TTSSettings(NamedTuple):
             eleven_use_speaker_boost=eleven_use_speaker_boost,
             max_chars=max_chars,
             timeout_seconds=timeout_seconds,
+            robotic_effect_enabled=robotic_effect_enabled,
             disabled_reason=disabled_reason,
         )
 

@@ -6,6 +6,7 @@ from pathlib import Path
 import edge_tts
 import pytest
 
+from tts.audio_postprocess import AudioPostprocessError
 from tts.edge_tts_client import EdgeTTSClient
 from tts.schemas import TTSRequest
 from tts.service import TTSService
@@ -99,6 +100,28 @@ def test_tts_settings_parses_elevenlabs_voice_settings(
     assert settings.eleven_use_speaker_boost is True
 
 
+def test_tts_settings_robotic_effect_defaults_to_disabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("FACTORY_TTS_ROBOTIC_EFFECT_ENABLED", raising=False)
+    monkeypatch.setenv("FACTORY_TTS_STORAGE_PATH", str(tmp_path))
+
+    settings = TTSSettings.from_env()
+
+    assert settings.robotic_effect_enabled is False
+
+
+def test_tts_settings_robotic_effect_enabled_via_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("FACTORY_TTS_ROBOTIC_EFFECT_ENABLED", "true")
+    monkeypatch.setenv("FACTORY_TTS_STORAGE_PATH", str(tmp_path))
+
+    settings = TTSSettings.from_env()
+
+    assert settings.robotic_effect_enabled is True
+
+
 def test_tts_service_returns_disabled_status(tmp_path: Path) -> None:
     settings = TTSSettings(
         api_key=None,
@@ -190,6 +213,98 @@ def test_tts_service_cache_key_changes_by_elevenlabs_voice_settings(
     assert second.cached is False
     assert first_provider.calls == ["같은 문장입니다."]
     assert second_provider.calls == ["같은 문장입니다."]
+
+
+def test_tts_service_applies_robotic_effect_when_enabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def fake_effect(audio_bytes: bytes, *, timeout_seconds: float = 5.0) -> bytes:
+        return audio_bytes + b"-robotic"
+
+    monkeypatch.setattr("tts.service.apply_robotic_effect", fake_effect)
+
+    settings = TTSSettings(
+        api_key=None,
+        enabled=True,
+        provider="edge_tts",
+        storage_path=tmp_path,
+        robotic_effect_enabled=True,
+    )
+    service = TTSService(settings=settings, provider=FakeProvider())
+    request = TTSRequest(
+        agent="operator_guide", payload={"final_answer": "로봇 음성 테스트."}
+    )
+
+    result = service.synthesize_for_payload(request)
+
+    assert result.status == "ready"
+    stored_bytes = (
+        tmp_path / "operator_guide" / f"{result.text_hash}.mp3"
+    ).read_bytes()
+    assert stored_bytes == b"mp3-bytes-robotic"
+
+
+def test_tts_service_falls_back_to_original_audio_when_postprocess_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def fake_effect_raises(
+        audio_bytes: bytes, *, timeout_seconds: float = 5.0
+    ) -> bytes:
+        raise AudioPostprocessError("ffmpeg 실패")
+
+    monkeypatch.setattr("tts.service.apply_robotic_effect", fake_effect_raises)
+
+    settings = TTSSettings(
+        api_key=None,
+        enabled=True,
+        provider="edge_tts",
+        storage_path=tmp_path,
+        robotic_effect_enabled=True,
+    )
+    service = TTSService(settings=settings, provider=FakeProvider())
+    request = TTSRequest(
+        agent="operator_guide", payload={"final_answer": "로봇 음성 실패 테스트."}
+    )
+
+    result = service.synthesize_for_payload(request)
+
+    assert result.status == "ready"
+    stored_bytes = (
+        tmp_path / "operator_guide" / f"{result.text_hash}.mp3"
+    ).read_bytes()
+    assert stored_bytes == b"mp3-bytes"
+
+
+def test_tts_service_cache_key_changes_when_robotic_effect_toggled(
+    tmp_path: Path,
+) -> None:
+    request = TTSRequest(
+        agent="operator_guide", payload={"final_answer": "같은 문장 로봇 토글 테스트."}
+    )
+
+    disabled_settings = TTSSettings(
+        api_key=None,
+        enabled=True,
+        provider="edge_tts",
+        storage_path=tmp_path,
+        robotic_effect_enabled=False,
+    )
+    enabled_settings = TTSSettings(
+        api_key=None,
+        enabled=True,
+        provider="edge_tts",
+        storage_path=tmp_path,
+        robotic_effect_enabled=True,
+    )
+
+    disabled_result = TTSService(
+        settings=disabled_settings, provider=FakeProvider()
+    ).synthesize_for_payload(request)
+    enabled_result = TTSService(
+        settings=enabled_settings, provider=FakeProvider()
+    ).synthesize_for_payload(request)
+
+    assert disabled_result.text_hash != enabled_result.text_hash
 
 
 def test_tts_settings_production_edge_tts_override(

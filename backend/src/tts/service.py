@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from tts.audio_postprocess import AudioPostprocessError, apply_robotic_effect
 from tts.edge_tts_client import EdgeTTSClient
 from tts.elevenlabs_client import ElevenLabsClient
 from tts.schemas import TTSMetadata, TTSRequest
@@ -116,6 +117,17 @@ class TTSService:
             finally:
                 executor.shutdown(wait=False)
 
+            if self.settings.robotic_effect_enabled:
+                try:
+                    audio_bytes = apply_robotic_effect(
+                        audio_bytes, timeout_seconds=self.settings.timeout_seconds
+                    )
+                except AudioPostprocessError as exc:
+                    logger.warning(
+                        "안드로이드 기계음 후처리 실패, 원본 오디오로 대체합니다: %s",
+                        exc,
+                    )
+
             save_result: StorageResult = self.storage.write_audio(
                 agent=request.agent,
                 key=key,
@@ -163,18 +175,22 @@ class TTSService:
 
 
 def _build_voice_variant(settings: TTSSettings) -> str:
-    """ElevenLabs 세부 목소리 설정을 캐시 키에 넣기 위한 짧은 문자열로 변환합니다."""
-    if settings.provider != "elevenlabs":
-        return ""
+    """ElevenLabs 세부 목소리 설정과 기계음 후처리 여부를 캐시 키용 문자열로 변환합니다."""
+    values: list[tuple[str, float | bool | None]] = []
+    if settings.provider == "elevenlabs":
+        values.extend(
+            [
+                ("stability", settings.eleven_stability),
+                ("similarity_boost", settings.eleven_similarity_boost),
+                ("style", settings.eleven_style),
+                ("speed", settings.eleven_speed),
+                ("use_speaker_boost", settings.eleven_use_speaker_boost),
+            ]
+        )
+    if settings.robotic_effect_enabled:
+        values.append(("robotic_effect", True))
 
-    values: list[tuple[str, float | bool | None]] = [
-        ("stability", settings.eleven_stability),
-        ("similarity_boost", settings.eleven_similarity_boost),
-        ("style", settings.eleven_style),
-        ("speed", settings.eleven_speed),
-        ("use_speaker_boost", settings.eleven_use_speaker_boost),
-    ]
-    if all(value is None for _, value in values):
+    if not values or all(value is None for _, value in values):
         return ""
 
     return "|".join(
