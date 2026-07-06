@@ -542,7 +542,8 @@ void UUI_BaseCampInteract::RefreshFactoryStatus()
             UUI_FactoryStatusRow* NewRow = CreateWidget<UUI_FactoryStatusRow>(this, FactoryStatusRowClass);
             if (NewRow)
             {
-                NewRow->SetRowData(SolvedIcon, SolvedItemName, Stat.ActualProductionPerSecond, Stat.TheoreticalProductionPerSecond);
+                // 현재 WBP 중앙거점 행 레이아웃은 실제/최대 컬럼 슬롯이 반대로 배치되어 있어 표시값을 맞춰 전달한다.
+                NewRow->SetRowData(SolvedIcon, SolvedItemName, Stat.TheoreticalProductionPerSecond, Stat.ActualProductionPerSecond);
                 SB_ResourceList->AddChild(NewRow);
             }
         }
