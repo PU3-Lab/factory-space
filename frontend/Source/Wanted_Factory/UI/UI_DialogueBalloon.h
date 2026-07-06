@@ -101,6 +101,7 @@ private:
 	void ClearOperatorGuideHighlights();
 	bool IsTrackedProcessOptimizerIssueResolved(const FTrackedProcessOptimizerIssue& Issue) const;
 	ETrackedProcessOptimizerIssueType ClassifyProcessOptimizerIssue(const TSharedPtr<FJsonObject>& SuggestionObject) const;
+	void PlayTTSFromPayload(const TSharedPtr<FJsonObject>& PayloadObject);
 	
 	UPROPERTY()
 	class UQuestManagerSubsystem* QuestSubsystem;

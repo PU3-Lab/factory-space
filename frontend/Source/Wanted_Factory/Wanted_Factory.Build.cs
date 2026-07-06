@@ -35,7 +35,8 @@ public class Wanted_Factory : ModuleRules
 			"ProceduralMeshComponent",
 			// ① 물 셀 인식 — AWaterBody/UWaterBodyComponent 질의(TryQueryWaterInfoClosestToWorldLocation).
 			// 베이크 분류·수면Z가 WaterBodyRiver를 직접 인식(런타임 의존 — 베이크가 BeginPlay서도 돈다).
-			"Water"
+			"Water",
+			"HTTP"
 		});
 
 		if (Target.bBuildEditor)
