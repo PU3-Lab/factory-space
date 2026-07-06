@@ -26,6 +26,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "Components/AudioComponent.h"
 #include "Components/SpotLightComponent.h"
+#include "MediaSoundComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Animation/AnimInstance.h"
@@ -563,6 +564,32 @@ void AOJJ_Player::PlayEndingSequence(AActor* TowerActor)
 
 	bEndingSequenceActive = true;
 
+	// [엔딩 사운드] 게임 사운드 덕킹 시작 — Master 볼륨 0 Mix Push. 해제(Pop)는 FinishEndingSequence
+	// (정상/스킵/타임아웃/비정상 전 경로 수렴점) 한 곳 — Push/Pop이 bEndingSequenceActive와 1:1.
+	if (CinematicMuteMix)
+	{
+		UGameplayStatics::PushSoundMixModifier(this, CinematicMuteMix);
+	}
+
+	// [엔딩 사운드] 영상 오디오 분리 — 레벨 배치 MediaSound 액터(#502)의 컴포넌트를 별도 루트
+	// SoundClass로 옮겨 Mix 영향권 밖에 둔다(게임 사운드만 뮤트, 영상 소리 유지). 레벨 배치라
+	// 스폰 훅이 없어 시작 시점에 월드 소속 컴포넌트를 찾아 주입(CDO는 GetWorld() null로 걸러짐).
+	// ⚠️ SoundClass는 USynthComponent::Start()가 SoundClassOverride로 소비(엔진 SynthComponent.cpp)
+	// — BeginPlay에서 이미 시작된 컴포넌트는 프로퍼티 재지정만으로 무효라 Stop→재지정→Start로
+	// 재적용을 강제한다. 미디어 오픈(OnMediaOpened, 영상 위젯 단계)보다 앞이라 영상 오디오 무영향.
+	if (CinematicSoundClass)
+	{
+		for (TObjectIterator<UMediaSoundComponent> It; It; ++It)
+		{
+			if (It->GetWorld() == World)
+			{
+				It->Stop();
+				It->SoundClass = CinematicSoundClass;
+				It->Start();
+			}
+		}
+	}
+
 	// 입력 잠금 — 인트로와 동일하게 PC 유효 시에만 잠그고 플래그로 1:1 복구를 보장(soft-lock 방지).
 	APlayerController* PC = Cast<APlayerController>(GetController());
 	if (PC)
@@ -799,6 +826,12 @@ void AOJJ_Player::FinishEndingSequence()
 	}
 	bEndingSequenceActive = false;
 	bEndingPushInActive = false;
+
+	// [엔딩 사운드] 게임 사운드 덕킹 해제 — 중복 호출 가드 안쪽이라 Push와 1:1 보장.
+	if (CinematicMuteMix)
+	{
+		UGameplayStatics::PopSoundMixModifier(this, CinematicMuteMix);
+	}
 
 	// 클리어 플래그 영속화 — 재설치 시 엔딩 재발동 방지의 단일 출처(BuildController가 이 값을 읽고 스킵).
 	// 위젯 페이드아웃(아래)보다 먼저 기록 — 페이드 중 어떤 비정상이 나도 클리어는 이미 저장돼 있다(안전 우선).

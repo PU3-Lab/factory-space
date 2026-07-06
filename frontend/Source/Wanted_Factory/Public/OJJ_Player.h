@@ -26,6 +26,8 @@ class UAnimMontage;
 class UAnimSequenceBase;
 class UAudioComponent;
 class USoundBase;
+class USoundClass;
+class USoundMix;
 class UOJJ_CharacterAppearanceData;
 struct FInputActionValue;
 
@@ -753,6 +755,17 @@ protected:
 	// 미지정이면 영상 단계를 스킵하고 바로 복귀(안전 — 로그만 남김).
 	UPROPERTY(EditDefaultsOnly, Category = "Ending")
 	TSubclassOf<UUserWidget> EndingVideoWidgetClass;
+
+	// [엔딩 사운드 덕킹] 시네마틱 동안 게임 사운드(Master) 볼륨 0 덕킹용 SoundMix. 시퀀스 시작 시 Push,
+	// FinishEndingSequence(전 종료 경로 수렴점)에서 Pop. 미지정 시 무동작.
+	UPROPERTY(EditAnywhere, Category = "Ending|Sound")
+	TObjectPtr<USoundMix> CinematicMuteMix;
+
+	// 엔딩 영상 오디오가 옮겨탈 별도 루트 SoundClass(Master 계열 아님 → Mix 영향권 밖 = 영상 소리 유지).
+	// 오디오 출력은 L_Planet 레벨 배치 MediaSound 액터(#502)의 MediaSoundComponent — 코드 스폰이 아니라
+	// 시퀀스 시작 시 월드에서 찾아 주입한다(액터 재배치/머지 유실 후 재추가돼도 클래스 지정 누락 없음).
+	UPROPERTY(EditAnywhere, Category = "Ending|Sound")
+	TObjectPtr<USoundClass> CinematicSoundClass;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> EndingVideoWidgetInstance;
