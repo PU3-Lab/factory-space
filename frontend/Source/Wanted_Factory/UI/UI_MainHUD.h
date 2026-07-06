@@ -25,6 +25,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "HUD | Quest")
     void ToggleQuestWindow();
 
+    UFUNCTION(BlueprintCallable, Category = "HUD | Quest")
+    void OpenQuestWindow();
+
     UFUNCTION(BlueprintCallable, Category = "HUD | Save")
     void ShowSaveIndicator(float DisplaySeconds = 1.0f);
 
