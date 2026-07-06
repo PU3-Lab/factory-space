@@ -17,7 +17,7 @@ from typing import NamedTuple
 
 class StorageResult(NamedTuple):
     """저장 작업 완료 후 디스크 경로와 접근 URL을 담는 결과 객체."""
-    
+
     path: Path
     audio_url: str
 
@@ -39,29 +39,35 @@ class TTSAudioStorage:
         voice_id: str,
         model_id: str,
         output_format: str,
+        voice_variant: str = "",
     ) -> str:
         """텍스트와 메타데이터의 조합을 고유한 sha256 해시값으로 변환합니다.
-        
+
         해시 충돌 방지를 위해 각 구분을 널 문자(\\0)로 조인합니다.
         """
-        raw_key = f"{agent}\0{voice_id}\0{model_id}\0{output_format}\0{text}"
+        raw_key = (
+            f"{agent}\0{voice_id}\0{model_id}\0{output_format}\0{voice_variant}\0{text}"
+        )
         return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
 
     def _validate_params(self, agent: str, key: str, extension: str) -> None:
         """7차 재리뷰 보강: 허용된 에이전트, lowercase 64-character SHA-256 hex key, 'mp3' 확장자만 허용합니다."""
         if agent not in self.ALLOWED_AGENTS:
             raise ValueError(f"지원하지 않는 에이전트 대상입니다: {agent}")
-        
+
         # 64자리 소문자 hex 해시값 형식 체크 (path traversal 원천 방지)
         import re
+
         if not re.match(r"^[a-f0-9]{64}$", key):
             raise ValueError(f"잘못된 캐시 키 형식입니다: {key}")
-            
+
         # 오직 mp3 확장자만 허용
         if extension.lower() != "mp3":
             raise ValueError(f"지원하지 않는 파일 확장자입니다: {extension}")
 
-    def get_audio_result(self, agent: str, key: str, extension: str = "mp3") -> StorageResult | None:
+    def get_audio_result(
+        self, agent: str, key: str, extension: str = "mp3"
+    ) -> StorageResult | None:
         """기존 캐시에 파일이 존재하는 경우 StorageResult를 반환합니다."""
         self._validate_params(agent, key, extension)
 
@@ -92,7 +98,7 @@ class TTSAudioStorage:
         try:
             with os.fdopen(fd, "wb") as f:
                 f.write(audio_bytes)
-            
+
             # 원자적으로 파일 교체
             os.replace(temp_path_str, str(target_path))
         except Exception:

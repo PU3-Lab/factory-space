@@ -29,13 +29,15 @@ logger = logging.getLogger("app.tts.service")
 class TTSService:
     """TTS 설정, 캐시 관리, 그리고 실제 합성 클라이언트를 총괄하는 주 서비스 클래스."""
 
-    def __init__(self, settings: TTSSettings | None = None, provider: object | None = None) -> None:
+    def __init__(
+        self, settings: TTSSettings | None = None, provider: object | None = None
+    ) -> None:
         self.settings = settings or TTSSettings.from_env()
         self.storage = TTSAudioStorage(
             storage_path=self.settings.storage_path,
             public_base_url=self.settings.public_base_url,
         )
-        
+
         # 외부에서 모의(Mock) 프로바이더가 주입되면 이를 우선 사용하고, 없으면 설정에 맞춰 생성
         if provider is not None:
             self.provider = provider
@@ -82,6 +84,7 @@ class TTSService:
             voice_id=self.settings.voice_id,
             model_id=self.settings.model_id,
             output_format=self.settings.output_format,
+            voice_variant=_build_voice_variant(self.settings),
         )
 
         # 4. 캐시 확인 (디스크 상에 파일이 존재하는지)
@@ -105,7 +108,7 @@ class TTSService:
         # 5. 캐시 미스 - 실제 오디오 합성 호출 및 저장
         try:
             import concurrent.futures
-            
+
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             try:
                 future = executor.submit(self.provider.synthesize, text)
@@ -119,7 +122,7 @@ class TTSService:
                 audio_bytes=audio_bytes,
                 extension="mp3",
             )
-            
+
             return TTSMetadata(
                 status="ready",
                 provider=provider_name,
@@ -133,24 +136,48 @@ class TTSService:
             )
         except Exception as exc:
             logger.error("TTS 오디오 합성 또는 저장 실패: %s", exc)
-            
+
             # Timeout 판별
             import socket
             import urllib.error
+
             is_timeout = False
             if isinstance(exc, TimeoutError):
                 is_timeout = True
             elif isinstance(exc, socket.timeout):
                 is_timeout = True
-            elif isinstance(exc, urllib.error.URLError) and isinstance(exc.reason, socket.timeout):
+            elif isinstance(exc, urllib.error.URLError) and isinstance(
+                exc.reason, socket.timeout
+            ):
                 is_timeout = True
             elif "timeout" in str(exc).lower():
                 is_timeout = True
-                
+
             error_code = "TTS_TIMEOUT" if is_timeout else "TTS_PROVIDER_ERROR"
-            
+
             return TTSMetadata(
                 status="failed",
                 provider=provider_name,
                 error_code=error_code,
             )
+
+
+def _build_voice_variant(settings: TTSSettings) -> str:
+    """ElevenLabs 세부 목소리 설정을 캐시 키에 넣기 위한 짧은 문자열로 변환합니다."""
+    if settings.provider != "elevenlabs":
+        return ""
+
+    values: list[tuple[str, float | bool | None]] = [
+        ("stability", settings.eleven_stability),
+        ("similarity_boost", settings.eleven_similarity_boost),
+        ("style", settings.eleven_style),
+        ("speed", settings.eleven_speed),
+        ("use_speaker_boost", settings.eleven_use_speaker_boost),
+    ]
+    if all(value is None for _, value in values):
+        return ""
+
+    return "|".join(
+        f"{name}={str(value).lower() if isinstance(value, bool) else value}"
+        for name, value in values
+    )

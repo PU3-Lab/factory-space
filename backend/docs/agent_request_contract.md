@@ -315,6 +315,8 @@ LLM 실패 시 deterministic fallback이 후보 1개를 반환합니다.
 
 `operator_guide` 및 `process_optimizer` 에이전트의 성공 응답(`agent.response`) 페이로드에는 플레이어에게 음성 가이드를 제공할 수 있도록 `tts` 필드가 추가됩니다.
 
+개발/로컬/테스트 환경에서는 `edge_tts`를 사용하고, `FACTORY_ENV` 또는 `ENVIRONMENT`가 `production`/`staging`이면 `FACTORY_TTS_PROVIDER=auto`에서 ElevenLabs REST API를 사용합니다. production에서는 `ELEVENLABS_API_KEY`를 서버 secret으로 설정해야 하며, 기본 endpoint는 `ELEVENLABS_API_BASE_URL=https://api.elevenlabs.io`입니다.
+
 ### 성공 응답 예시 (status: "ready")
 
 ```json
@@ -373,4 +375,3 @@ LLM 실패 시 deterministic fallback이 후보 1개를 반환합니다.
 | `model_id` | string \| null | 사용된 음성 합성 모델 ID |
 | `cached` | bool \| null | 캐시 파일에서 로드되었는지 여부 |
 | `error_code` | string \| null | 실패 시 오류 코드 (`"TTS_PROVIDER_ERROR"` 등) |
-

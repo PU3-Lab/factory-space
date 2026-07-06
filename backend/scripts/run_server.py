@@ -1,4 +1,4 @@
-"""Run the local FastAPI backend server."""
+"""Run the FastAPI backend server with production defaults."""
 
 from __future__ import annotations
 
@@ -92,13 +92,14 @@ def load_env_file(env_file: Path) -> None:
 
 
 def prepare_environment(backend_root: Path) -> None:
-    """Prepare cwd, import path, and default .env settings for the server."""
+    """Prepare cwd, import path, and default .env.prod settings for the server."""
 
     os.chdir(backend_root)
     src_path = str(backend_root / "src")
     if src_path not in sys.path:
         sys.path.insert(0, src_path)
-    load_env_file(backend_root / ".env")
+    os.environ.setdefault("FACTORY_ENV_FILE", ".env.prod")
+    load_env_file(backend_root / ".env.prod")
 
 
 def parse_args() -> argparse.Namespace:

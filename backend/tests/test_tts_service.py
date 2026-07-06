@@ -43,6 +43,8 @@ def test_tts_settings_dev_defaults_to_edge_tts_without_api_key(
 def test_tts_settings_prod_elevenlabs_requires_api_key(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
     monkeypatch.delenv("FACTORY_TTS_PROVIDER", raising=False)
     monkeypatch.setenv("FACTORY_TTS_ENABLED", "true")
@@ -59,6 +61,8 @@ def test_tts_settings_prod_elevenlabs_requires_api_key(
 def test_tts_settings_prod_uses_elevenlabs_defaults(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
     monkeypatch.setenv("ELEVENLABS_API_KEY", "test-key")
     monkeypatch.setenv("FACTORY_ENV", "production")
     monkeypatch.setenv("FACTORY_TTS_STORAGE_PATH", str(tmp_path))
@@ -70,6 +74,29 @@ def test_tts_settings_prod_uses_elevenlabs_defaults(
     assert settings.model_id == "eleven_multilingual_v2"
     assert settings.output_format == "mp3_44100_128"
     assert settings.max_chars == 600
+
+
+def test_tts_settings_parses_elevenlabs_voice_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "test-key")
+    monkeypatch.setenv("FACTORY_ENV", "production")
+    monkeypatch.setenv("FACTORY_TTS_STORAGE_PATH", str(tmp_path))
+    monkeypatch.setenv("ELEVENLABS_STABILITY", "1")
+    monkeypatch.setenv("ELEVENLABS_SIMILARITY_BOOST", "1")
+    monkeypatch.setenv("ELEVENLABS_STYLE", "0")
+    monkeypatch.setenv("ELEVENLABS_SPEED", "1")
+    monkeypatch.setenv("ELEVENLABS_USE_SPEAKER_BOOST", "true")
+
+    settings = TTSSettings.from_env()
+
+    assert settings.eleven_stability == 1.0
+    assert settings.eleven_similarity_boost == 1.0
+    assert settings.eleven_style == 0.0
+    assert settings.eleven_speed == 1.0
+    assert settings.eleven_use_speaker_boost is True
 
 
 def test_tts_service_returns_disabled_status(tmp_path: Path) -> None:
@@ -116,9 +143,60 @@ def test_tts_service_generates_and_caches_audio(tmp_path: Path) -> None:
     assert provider.calls == ["안내입니다."]
 
 
+def test_tts_service_cache_key_changes_by_elevenlabs_voice_settings(
+    tmp_path: Path,
+) -> None:
+    first_provider = FakeProvider()
+    second_provider = FakeProvider()
+    request = TTSRequest(
+        agent="operator_guide",
+        payload={"final_answer": "같은 문장입니다."},
+    )
+    base_settings = {
+        "api_key": "test-key",
+        "enabled": True,
+        "provider": "elevenlabs",
+        "voice_id": "voice-a",
+        "model_id": "eleven_multilingual_v2",
+        "output_format": "mp3_44100_128",
+        "storage_path": tmp_path,
+    }
+
+    first = TTSService(
+        settings=TTSSettings(
+            **base_settings,
+            eleven_stability=0.5,
+            eleven_similarity_boost=0.75,
+            eleven_style=0.0,
+            eleven_speed=1.0,
+            eleven_use_speaker_boost=True,
+        ),
+        provider=first_provider,
+    ).synthesize_for_payload(request)
+    second = TTSService(
+        settings=TTSSettings(
+            **base_settings,
+            eleven_stability=1.0,
+            eleven_similarity_boost=1.0,
+            eleven_style=0.0,
+            eleven_speed=1.0,
+            eleven_use_speaker_boost=True,
+        ),
+        provider=second_provider,
+    ).synthesize_for_payload(request)
+
+    assert first.text_hash != second.text_hash
+    assert first.cached is False
+    assert second.cached is False
+    assert first_provider.calls == ["같은 문장입니다."]
+    assert second_provider.calls == ["같은 문장입니다."]
+
+
 def test_tts_settings_production_edge_tts_override(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
     monkeypatch.setenv("FACTORY_ENV", "production")
     monkeypatch.setenv("FACTORY_TTS_PROVIDER", "edge_tts")
     monkeypatch.setenv("FACTORY_TTS_STORAGE_PATH", str(tmp_path))
@@ -160,6 +238,8 @@ def test_tts_settings_unknown_provider_disables_tts(
 def test_tts_settings_elevenlabs_invalid_output_format_disables_tts(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
     monkeypatch.setenv("FACTORY_ENV", "production")
     monkeypatch.setenv("ELEVENLABS_API_KEY", "test-key")
     monkeypatch.setenv("ELEVENLABS_OUTPUT_FORMAT", "pcm_44100")
@@ -190,6 +270,7 @@ class SlowProvider:
 
     def synthesize(self, text: str) -> bytes:
         import time
+
         time.sleep(2.0)
         return b"ok"
 
@@ -210,6 +291,7 @@ def test_tts_service_handles_timeout_error(tmp_path: Path) -> None:
     )
 
     import time
+
     start_time = time.time()
     result = service.synthesize_for_payload(request)
     elapsed_time = time.time() - start_time
@@ -226,6 +308,7 @@ def test_edge_tts_client_timeout_no_running_loop(
     # 6차 재리뷰 보강: no-running-loop 환경에서 edge-tts client의 timeout이 elapsed_time 내에 차단되는지 검증
     async def mock_save(*args: object, **kwargs: object) -> None:
         await asyncio.sleep(5.0)
+
     monkeypatch.setattr(edge_tts.Communicate, "save", mock_save)
 
     settings = TTSSettings(
@@ -238,6 +321,7 @@ def test_edge_tts_client_timeout_no_running_loop(
     client = EdgeTTSClient(settings)
 
     import time
+
     start_time = time.time()
     with pytest.raises(TimeoutError):
         client.synthesize("테스트")
@@ -252,6 +336,7 @@ async def test_edge_tts_client_timeout_running_loop(
     # 6차 재리뷰 보강: running-loop 환경에서 edge-tts client의 timeout이 elapsed_time 내에 차단되는지 검증
     async def mock_save(*args: object, **kwargs: object) -> None:
         await asyncio.sleep(5.0)
+
     monkeypatch.setattr(edge_tts.Communicate, "save", mock_save)
 
     settings = TTSSettings(
@@ -264,6 +349,7 @@ async def test_edge_tts_client_timeout_running_loop(
     client = EdgeTTSClient(settings)
 
     import time
+
     start_time = time.time()
     with pytest.raises(TimeoutError):
         client.synthesize("테스트")
@@ -291,6 +377,7 @@ def test_tts_service_disabled_preserves_error_code(
     # 2. invalid_provider_for_environment 검증
     monkeypatch.setenv("FACTORY_ENV", "production")
     monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
     monkeypatch.setenv("FACTORY_TTS_PROVIDER", "edge_tts")
 
     settings = TTSSettings.from_env()
@@ -298,4 +385,3 @@ def test_tts_service_disabled_preserves_error_code(
     result = service.synthesize_for_payload(request)
     assert result.status == "disabled"
     assert result.error_code == "invalid_provider_for_environment"
-

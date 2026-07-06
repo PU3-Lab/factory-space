@@ -21,38 +21,44 @@ def _parse_bool(val: str | None) -> bool:
 
 class TTSSettings(NamedTuple):
     """TTS 설정값을 안전하게 보관하는 불변 데이터 구조체."""
-    
+
     enabled: bool
     provider: str  # "edge_tts" 또는 "elevenlabs"
     storage_path: Path
     public_base_url: str = "/tts"
-    
+
     # edge-tts 관련 설정
     voice_id: str = "ko-KR-SunHiNeural"
     edge_rate: str = "+0%"
     edge_volume: str = "+0%"
     edge_pitch: str = "+0Hz"
-    
+
     # ElevenLabs 관련 설정
     api_key: str | None = None
+    api_base_url: str = "https://api.elevenlabs.io"
     model_id: str = "edge_tts"
     output_format: str = "mp3_44100_128"
-    
+    eleven_stability: float | None = None
+    eleven_similarity_boost: float | None = None
+    eleven_style: float | None = None
+    eleven_speed: float | None = None
+    eleven_use_speaker_boost: bool | None = None
+
     # 공통 제한 설정
     max_chars: int = 600
     timeout_seconds: float = 2.0
-    
+
     # 비활성화된 경우의 원인 추적용
     disabled_reason: str | None = None
 
     @classmethod
     def from_env(cls) -> TTSSettings:
         """환경 변수를 파싱하고 기본값을 적용하여 설정을 빌드합니다."""
-        
+
         # 1. 활성화 여부 판별 (기본값 True)
         val = os.environ.get("FACTORY_TTS_ENABLED")
         enabled = _parse_bool(val) if val is not None else True
-        
+
         # 2. 실행 환경 확인 (FACTORY_ENV -> APP_ENV -> ENVIRONMENT 순서로 체크)
         env_vars = {}
         for key in ("FACTORY_ENV", "APP_ENV", "ENVIRONMENT"):
@@ -73,15 +79,21 @@ class TTSSettings(NamedTuple):
             is_dev = True  # Safe fallback default
         else:
             env_val = (
-                os.environ.get("FACTORY_ENV")
-                or os.environ.get("APP_ENV")
-                or os.environ.get("ENVIRONMENT")
-                or "development"
-            ).strip().lower()
+                (
+                    os.environ.get("FACTORY_ENV")
+                    or os.environ.get("APP_ENV")
+                    or os.environ.get("ENVIRONMENT")
+                    or "development"
+                )
+                .strip()
+                .lower()
+            )
             is_dev = env_val in {"dev", "development", "local", "test"}
-        
+
         # 3. Provider 결정 (FACTORY_TTS_PROVIDER가 auto이면 환경에 따라 자동 매핑)
-        provider_val = (os.environ.get("FACTORY_TTS_PROVIDER") or "auto").strip().lower()
+        provider_val = (
+            (os.environ.get("FACTORY_TTS_PROVIDER") or "auto").strip().lower()
+        )
         if disabled_reason is None:
             if provider_val == "auto":
                 provider = "edge_tts" if is_dev else "elevenlabs"
@@ -104,50 +116,68 @@ class TTSSettings(NamedTuple):
                 disabled_reason = "invalid_provider"
         else:
             provider = "edge_tts"
-            
+
         # 4. ElevenLabs API 키 확인 및 예외 처리
         api_key = os.environ.get("ELEVENLABS_API_KEY")
-        
+
         if enabled and provider == "elevenlabs" and not api_key:
             enabled = False
             disabled_reason = "missing_api_key"
-            
+
         # 5. 저장 경로 결정
         storage_path_str = os.environ.get("FACTORY_TTS_STORAGE_PATH") or "var/tts"
         storage_path = Path(storage_path_str).resolve()
-        
+
         # 6. 공통 제한값 설정 (클램핑 처리)
         try:
             max_chars = int(os.environ.get("FACTORY_TTS_MAX_CHARS") or "600")
         except ValueError:
             max_chars = 600
         max_chars = max(100, min(max_chars, 1200))
-        
+
         try:
-            timeout_seconds = float(os.environ.get("FACTORY_TTS_TIMEOUT_SECONDS") or "2.0")
+            timeout_seconds = float(
+                os.environ.get("FACTORY_TTS_TIMEOUT_SECONDS") or "2.0"
+            )
         except ValueError:
             timeout_seconds = 2.0
         timeout_seconds = max(0.5, min(timeout_seconds, 8.0))
-        
+
         # 7. edge-tts 목소리 설정
         edge_voice = os.environ.get("EDGE_TTS_VOICE") or "ko-KR-SunHiNeural"
         edge_rate = os.environ.get("EDGE_TTS_RATE") or "+0%"
         edge_volume = os.environ.get("EDGE_TTS_VOLUME") or "+0%"
         edge_pitch = os.environ.get("EDGE_TTS_PITCH") or "+0Hz"
-        
+
         # 8. ElevenLabs 목소리 및 모델 설정
         eleven_voice = os.environ.get("ELEVENLABS_VOICE_ID") or "JBFqnCBsd6RMkjVDRZzb"
         eleven_model = os.environ.get("ELEVENLABS_MODEL_ID") or "eleven_multilingual_v2"
         eleven_format = os.environ.get("ELEVENLABS_OUTPUT_FORMAT") or "mp3_44100_128"
-        
+        eleven_api_base_url = (
+            os.environ.get("ELEVENLABS_API_BASE_URL") or "https://api.elevenlabs.io"
+        ).rstrip("/")
+        eleven_stability = _parse_optional_float("ELEVENLABS_STABILITY", 0.0, 1.0)
+        eleven_similarity_boost = _parse_optional_float(
+            "ELEVENLABS_SIMILARITY_BOOST",
+            0.0,
+            1.0,
+        )
+        eleven_style = _parse_optional_float("ELEVENLABS_STYLE", 0.0, 1.0)
+        eleven_speed = _parse_optional_float("ELEVENLABS_SPEED", 0.7, 1.2)
+        eleven_use_speaker_boost = _parse_optional_bool("ELEVENLABS_USE_SPEAKER_BOOST")
+
         # 2차 재리뷰 추가: ElevenLabs output_format 검증 (mp3_*로 시작하지 않으면 invalid_output_format으로 비활성화)
-        if enabled and provider == "elevenlabs" and not eleven_format.startswith("mp3_"):
+        if (
+            enabled
+            and provider == "elevenlabs"
+            and not eleven_format.startswith("mp3_")
+        ):
             enabled = False
             disabled_reason = "invalid_output_format"
-        
+
         voice_id = eleven_voice if provider == "elevenlabs" else edge_voice
         model_id = eleven_model if provider == "elevenlabs" else "edge_tts"
-        
+
         return cls(
             enabled=enabled,
             provider=provider,
@@ -158,9 +188,33 @@ class TTSSettings(NamedTuple):
             edge_volume=edge_volume,
             edge_pitch=edge_pitch,
             api_key=api_key,
+            api_base_url=eleven_api_base_url,
             model_id=model_id,
             output_format=eleven_format,
+            eleven_stability=eleven_stability,
+            eleven_similarity_boost=eleven_similarity_boost,
+            eleven_style=eleven_style,
+            eleven_speed=eleven_speed,
+            eleven_use_speaker_boost=eleven_use_speaker_boost,
             max_chars=max_chars,
             timeout_seconds=timeout_seconds,
             disabled_reason=disabled_reason,
         )
+
+
+def _parse_optional_bool(key: str) -> bool | None:
+    val = os.environ.get(key)
+    if val is None or val.strip() == "":
+        return None
+    return _parse_bool(val)
+
+
+def _parse_optional_float(key: str, min_value: float, max_value: float) -> float | None:
+    val = os.environ.get(key)
+    if val is None or val.strip() == "":
+        return None
+    try:
+        parsed = float(val)
+    except ValueError:
+        return None
+    return max(min_value, min(parsed, max_value))

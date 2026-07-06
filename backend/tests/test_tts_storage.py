@@ -30,6 +30,31 @@ def test_storage_key_is_stable_and_agent_scoped(tmp_path: Path) -> None:
     assert "/" not in first
 
 
+def test_storage_key_changes_by_voice_variant(tmp_path: Path) -> None:
+    storage = TTSAudioStorage(tmp_path, public_base_url="/tts")
+
+    default_variant = storage.build_key(
+        agent="operator_guide",
+        text="같은 문장",
+        voice_id="voice-a",
+        model_id="eleven_multilingual_v2",
+        output_format="mp3_44100_128",
+    )
+    android_variant = storage.build_key(
+        agent="operator_guide",
+        text="같은 문장",
+        voice_id="voice-a",
+        model_id="eleven_multilingual_v2",
+        output_format="mp3_44100_128",
+        voice_variant=(
+            "stability=1.0|similarity_boost=1.0|style=0.0|"
+            "speed=1.0|use_speaker_boost=true"
+        ),
+    )
+
+    assert default_variant != android_variant
+
+
 def test_storage_writes_mp3_under_agent_directory(tmp_path: Path) -> None:
     storage = TTSAudioStorage(tmp_path, public_base_url="/tts")
     valid_key = "a" * 64
@@ -62,4 +87,6 @@ def test_storage_rejects_invalid_inputs(tmp_path: Path) -> None:
 
     # 3. mp3 이외의 확장자 차단 검증
     with pytest.raises(ValueError, match="지원하지 않는 파일 확장자입니다"):
-        storage.write_audio(agent="operator_guide", key=valid_key, audio_bytes=b"bytes", extension="wav")
+        storage.write_audio(
+            agent="operator_guide", key=valid_key, audio_bytes=b"bytes", extension="wav"
+        )
