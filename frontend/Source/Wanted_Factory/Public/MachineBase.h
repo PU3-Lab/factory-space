@@ -342,6 +342,11 @@ protected:
 		meta = (ClampMin = "0.01", EditCondition = "bUseOperatingSound"))
 	float OperatingSoundPitchMultiplier = 1.0f;
 
+	// [레벨업 사운드] ApplyMachineData에서 Level이 실제로 바뀔 때 1회 재생. 기본 null = 무음(파생 BP 무수정 안전).
+	// 최초 적용(BeginPlay/OnConstruction/세이브 로드)·같은 레벨 재적용·CDO는 재생하지 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine | Sound")
+	TObjectPtr<USoundBase> LevelUpSound;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Machine | State Indicator", meta = (ClampMin = "1.0"))
 	float StateIndicatorIconDrawSize = 256.0f;
 
@@ -730,4 +735,7 @@ private:
 	bool bOperatingSmokeActive = false;
 	bool bOperatingSmokeActive2 = false;
 	bool bOperatingSoundActive = false;
+	// [레벨업 사운드] 마지막으로 적용된 머신 데이터 Level(INDEX_NONE = 미적용). 스폰 시
+	// OnConstruction+BeginPlay가 같은 데이터를 2회 적용하므로 실제 레벨 전환 판별에 필수.
+	int32 AppliedMachineDataLevel = INDEX_NONE;
 };

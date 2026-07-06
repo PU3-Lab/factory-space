@@ -3,6 +3,7 @@
 #include "Conveyor.h"
 
 #include "Camera/PlayerCameraManager.h"
+#include "Components/AudioComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -20,6 +21,7 @@
 #include "OJJ_BuildController.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "Resource/ResourceData.h"
+#include "Sound/SoundBase.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -250,6 +252,10 @@ AConveyor::AConveyor()
 	DebugStateText->SetWorldSize(DebugTextWorldSize);
 	DebugStateText->SetRelativeRotation(FRotator(60.0f, 0.0f, 0.0f));
 
+	ConveyorLoopComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("ConveyorLoopComponent"));
+	ConveyorLoopComponent->SetupAttachment(Root);
+	ConveyorLoopComponent->bAutoActivate = false;
+
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Engine/BasicShapes/Cube.Cube"));
 	if (CubeMesh.Succeeded())
 	{
@@ -314,6 +320,7 @@ void AConveyor::Tick(float DeltaTime)
 	UpdateInputOccluder(DeltaTime);
 	RefreshFlowArrowInstances();
 	UpdateFlowArrowMaterial();
+	UpdateLoopSound();
 	if (bShowDebugStateText)
 	{
 		UpdateDebugTextFacingPlayer();
@@ -418,6 +425,12 @@ void AConveyor::SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize
 	RebuildVisuals();
 	RefreshItemVisualInstances();
 	UpdateDebugStateText();
+
+	if (ConveyorLoopComponent)
+	{
+		// [OJJ 가동 루프 사운드] 피벗=벨트 centroid(RebuildVisuals가 centroid 차감 배치)라 로컬 원점이 곧 경로 중심.
+		ConveyorLoopComponent->SetRelativeLocation(FVector(0.0f, 0.0f, ZOffset + SegmentHeight));
+	}
 }
 
 void AConveyor::OJJ_SetPathNodeLocalZs(const TArray<float>& NewNodeLocalZs)
@@ -2153,4 +2166,34 @@ FString AConveyor::BuildMovingItemSummary() const
 	}
 
 	return Result;
+}
+
+void AConveyor::UpdateLoopSound()
+{
+	// [OJJ 가동 루프 사운드] 게이트 = 화살표 애니와 동일 판정(ShouldAnimateFlowArrows)을 Tick 비주얼 갱신
+	// 경로에서 함께 소비(별도 폴링/타이머 없음). 전환 시에만 페이드 — 세이브 로드 스폰도 첫 Tick에서 판정.
+	if (!ConveyorLoopComponent || !LoopSound)
+	{
+		return;
+	}
+
+	const bool bShouldPlay = ShouldAnimateFlowArrows();
+	if (bShouldPlay == bLoopSoundActive)
+	{
+		return;
+	}
+
+	bLoopSoundActive = bShouldPlay;
+	if (bShouldPlay)
+	{
+		if (ConveyorLoopComponent->Sound != LoopSound)
+		{
+			ConveyorLoopComponent->SetSound(LoopSound);
+		}
+		ConveyorLoopComponent->FadeIn(0.5f);
+	}
+	else
+	{
+		ConveyorLoopComponent->FadeOut(0.5f, 0.0f);
+	}
 }
