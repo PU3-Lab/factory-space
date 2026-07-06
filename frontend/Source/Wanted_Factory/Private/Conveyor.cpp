@@ -3,6 +3,7 @@
 #include "Conveyor.h"
 
 #include "Camera/PlayerCameraManager.h"
+#include "Components/AudioComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -20,6 +21,7 @@
 #include "OJJ_BuildController.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "Resource/ResourceData.h"
+#include "Sound/SoundBase.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -250,6 +252,10 @@ AConveyor::AConveyor()
 	DebugStateText->SetWorldSize(DebugTextWorldSize);
 	DebugStateText->SetRelativeRotation(FRotator(60.0f, 0.0f, 0.0f));
 
+	ConveyorLoopComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("ConveyorLoopComponent"));
+	ConveyorLoopComponent->SetupAttachment(Root);
+	ConveyorLoopComponent->bAutoActivate = false;
+
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Engine/BasicShapes/Cube.Cube"));
 	if (CubeMesh.Succeeded())
 	{
@@ -288,24 +294,14 @@ AConveyor::AConveyor()
 		StraightSegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		CornerSegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		ItemVisualInstances->SetMaterial(0, MaterialAsset.Object);
-		FlowArrowMaterialInstance = UMaterialInstanceDynamic::Create(MaterialAsset.Object, this);
-		if (FlowArrowMaterialInstance)
-		{
-			FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
-		}
+		// [MID CDO 오염 수정] 생성자는 정적 베이스만 — 생성자 MID는 CDO 서브오브젝트로 박혀 컴포넌트
+		// OverrideMaterials 직렬화를 타고 BP_Conveyor 저장을 막는다(Illegal private reference).
+		// MID 생성/파라미터는 BeginPlay(런타임 전용)로 이동.
+		FlowArrowInstances->SetMaterial(0, MaterialAsset.Object);
 		PowderVisualMaterialBase = MaterialAsset.Object;
-		OutputOccluderMaterialInstance = UMaterialInstanceDynamic::Create(MaterialAsset.Object, this);
-		if (OutputOccluderMaterialInstance)
-		{
-			OutputOccluderMaterialInstance->SetVectorParameterValue(TEXT("Color"), FLinearColor::Black);
-			OutputOccluderMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor::Black);
-			OutputOccluderMaterialInstance->SetVectorParameterValue(TEXT("Tint"), FLinearColor::Black);
-			OutputOccluder->SetMaterial(0, OutputOccluderMaterialInstance);
-			InputOccluder->SetMaterial(0, OutputOccluderMaterialInstance);
-		}
+		OutputOccluder->SetMaterial(0, MaterialAsset.Object);
+		InputOccluder->SetMaterial(0, MaterialAsset.Object);
 	}
-
-	UpdateFlowArrowMaterial();
 
 	static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
 		TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData"));
@@ -324,6 +320,7 @@ void AConveyor::Tick(float DeltaTime)
 	UpdateInputOccluder(DeltaTime);
 	RefreshFlowArrowInstances();
 	UpdateFlowArrowMaterial();
+	UpdateLoopSound();
 	if (bShowDebugStateText)
 	{
 		UpdateDebugTextFacingPlayer();
@@ -354,6 +351,31 @@ void AConveyor::BeginPlay()
 		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
 		{
 			FactoryManager->RegisterConveyor(this);
+		}
+	}
+
+	// [MID CDO 오염 수정] MID는 런타임에서만 생성(베이스 = 컴포넌트 현재 머티리얼 — BP 오버라이드 존중).
+	// RF_Transient = 직렬화 제외 이중 안전장치(아이템 비주얼 MID와 동일 패턴).
+	if (UMaterialInterface* FlowArrowBase = FlowArrowInstances ? FlowArrowInstances->GetMaterial(0) : nullptr)
+	{
+		FlowArrowMaterialInstance = UMaterialInstanceDynamic::Create(FlowArrowBase, this);
+		if (FlowArrowMaterialInstance)
+		{
+			FlowArrowMaterialInstance->SetFlags(RF_Transient);
+			FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
+		}
+	}
+	if (UMaterialInterface* OccluderBase = OutputOccluder ? OutputOccluder->GetMaterial(0) : nullptr)
+	{
+		OutputOccluderMaterialInstance = UMaterialInstanceDynamic::Create(OccluderBase, this);
+		if (OutputOccluderMaterialInstance)
+		{
+			OutputOccluderMaterialInstance->SetFlags(RF_Transient);
+			OutputOccluderMaterialInstance->SetVectorParameterValue(TEXT("Color"), FLinearColor::Black);
+			OutputOccluderMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor::Black);
+			OutputOccluderMaterialInstance->SetVectorParameterValue(TEXT("Tint"), FLinearColor::Black);
+			OutputOccluder->SetMaterial(0, OutputOccluderMaterialInstance);
+			InputOccluder->SetMaterial(0, OutputOccluderMaterialInstance);
 		}
 	}
 
@@ -403,6 +425,12 @@ void AConveyor::SetPath(const TArray<FIntPoint>& NewPathCells, float NewCellSize
 	RebuildVisuals();
 	RefreshItemVisualInstances();
 	UpdateDebugStateText();
+
+	if (ConveyorLoopComponent)
+	{
+		// [OJJ 가동 루프 사운드] 피벗=벨트 centroid(RebuildVisuals가 centroid 차감 배치)라 로컬 원점이 곧 경로 중심.
+		ConveyorLoopComponent->SetRelativeLocation(FVector(0.0f, 0.0f, ZOffset + SegmentHeight));
+	}
 }
 
 void AConveyor::OJJ_SetPathNodeLocalZs(const TArray<float>& NewNodeLocalZs)
@@ -2008,6 +2036,12 @@ void AConveyor::UpdateFlowArrowMaterial()
 
 	if (!FlowArrowMaterialInstance)
 	{
+		// [MID CDO 오염 수정] lazy-create는 런타임 전용 — CDO/OnConstruction 경로에서 MID 생성 금지
+		// (색은 Tick이 매 프레임 갱신하므로 런타임 진입 후 커버).
+		if (!HasActorBegunPlay())
+		{
+			return;
+		}
 		UMaterialInterface* BaseMaterial = FlowArrowInstances ? FlowArrowInstances->GetMaterial(0) : nullptr;
 		if (BaseMaterial)
 		{
@@ -2018,6 +2052,10 @@ void AConveyor::UpdateFlowArrowMaterial()
 			BaseMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
 		}
 		FlowArrowMaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
+		if (FlowArrowMaterialInstance)
+		{
+			FlowArrowMaterialInstance->SetFlags(RF_Transient);
+		}
 		if (FlowArrowMaterialInstance && FlowArrowInstances)
 		{
 			FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
@@ -2128,4 +2166,34 @@ FString AConveyor::BuildMovingItemSummary() const
 	}
 
 	return Result;
+}
+
+void AConveyor::UpdateLoopSound()
+{
+	// [OJJ 가동 루프 사운드] 게이트 = 화살표 애니와 동일 판정(ShouldAnimateFlowArrows)을 Tick 비주얼 갱신
+	// 경로에서 함께 소비(별도 폴링/타이머 없음). 전환 시에만 페이드 — 세이브 로드 스폰도 첫 Tick에서 판정.
+	if (!ConveyorLoopComponent || !LoopSound)
+	{
+		return;
+	}
+
+	const bool bShouldPlay = ShouldAnimateFlowArrows();
+	if (bShouldPlay == bLoopSoundActive)
+	{
+		return;
+	}
+
+	bLoopSoundActive = bShouldPlay;
+	if (bShouldPlay)
+	{
+		if (ConveyorLoopComponent->Sound != LoopSound)
+		{
+			ConveyorLoopComponent->SetSound(LoopSound);
+		}
+		ConveyorLoopComponent->FadeIn(0.5f);
+	}
+	else
+	{
+		ConveyorLoopComponent->FadeOut(0.5f, 0.0f);
+	}
 }

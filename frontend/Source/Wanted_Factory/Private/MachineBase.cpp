@@ -12,6 +12,7 @@
 #include "Engine/Texture2D.h"
 #include "FactoryManagerSubsystem.h"
 #include "GameFramework/PlayerController.h"
+#include "Kismet/GameplayStatics.h"
 #include "MaterialGenerationRegistrySubsystem.h"
 #include "Machines/MachineSubsystem.h"
 #include "Materials/Material.h"
@@ -343,6 +344,16 @@ void AMachineBase::ApplyMachineData(const FMachineTableRow& MachineData)
 		OutputPort.PortIndex = PortIndex;
 		OutputPort.PortType = EPortType::Output;
 		OutputPorts.Add(OutputPort);
+	}
+
+	// [레벨업 사운드] 실제 레벨 전환에만 재생 — 최초 적용(sentinel)·같은 레벨 재적용(스폰 시
+	// OnConstruction+BeginPlay 2회 적용)은 무음, HasActorBegunPlay 가드로 CDO/스폰 중 적용도 차단.
+	const bool bLevelChanged =
+		(AppliedMachineDataLevel != INDEX_NONE) && (MachineData.Level != AppliedMachineDataLevel);
+	AppliedMachineDataLevel = MachineData.Level;
+	if (bLevelChanged && LevelUpSound && HasActorBegunPlay())
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, LevelUpSound, GetActorLocation());
 	}
 }
 

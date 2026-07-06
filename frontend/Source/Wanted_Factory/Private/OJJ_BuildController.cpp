@@ -49,6 +49,7 @@
 #include "Pipe.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "QuestManagerSubsystem.h"
+#include "Sound/SoundBase.h"
 #include "Resource/ResourceBase.h"
 
 namespace
@@ -1525,6 +1526,11 @@ void AOJJ_BuildController::StartBuildUpEffect(AActor* Building, UStaticMeshCompo
 	{
 		return;
 	}
+	// [건설 사운드] 빌드업 시작음 — 연출 머티리얼과 독립(미지정이어도 배치는 정상이므로 소리는 재생).
+	if (BuildUpSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, BuildUpSound, Mesh->GetComponentLocation());
+	}
 	UOJJ_HologramBuildUpComponent* Effect = NewObject<UOJJ_HologramBuildUpComponent>(Building);
 	if (!Effect)
 	{
@@ -1540,7 +1546,16 @@ void AOJJ_BuildController::StartBuildDownEffect(UStaticMeshComponent* Mesh)
 {
 	// [철거 빌드다운] 철거 대상 메시를 역방향(위→아래) 빨강 홀로그램으로 디졸브 — 대상 액터는 즉시 Destroy되므로
 	// 연출은 독립 프록시 액터(AOJJ_DemolishEffectActor)로 분리해 자체 소멸시킨다. 머티리얼 미지정/메시 null이면 무동작(철거 정상).
-	if (!Mesh || !HologramBuildUpMaterial)
+	if (!Mesh)
+	{
+		return;
+	}
+	// [건설 사운드] 철거음 — 연출 머티리얼과 독립(미지정이어도 철거는 진행되므로 소리는 재생).
+	if (DemolishSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, DemolishSound, Mesh->GetComponentLocation());
+	}
+	if (!HologramBuildUpMaterial)
 	{
 		return;
 	}
@@ -1569,6 +1584,12 @@ void AOJJ_BuildController::StartPathBuildUpEffect(AActor* Building, const TArray
 	}
 	const FVector PathStart = TargetGrid->GridToWorld(Cells[0]);
 	const FVector PathEnd = TargetGrid->GridToWorld(Cells.Last());
+
+	// [건설 사운드] 경로 빌드업은 셀 수와 무관하게 배치(호출)당 1회 — 경로 중점에서 재생.
+	if (BuildUpSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, BuildUpSound, (PathStart + PathEnd) * 0.5f);
+	}
 
 	TArray<UInstancedStaticMeshComponent*> ISMs;
 	Building->GetComponents<UInstancedStaticMeshComponent>(ISMs);
