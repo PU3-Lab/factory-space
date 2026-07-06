@@ -774,6 +774,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grid|Coordinate")
 	FTransform OJJ_GetMachinePlacementTransform(AMachineBase* Machine, FIntPoint Origin, int32 RotationSteps = 0) const;
 
+	// [LevelUp Z 재안착] 레벨업(메시 교체+바운즈 재스케일)으로 피벗 보정량(-Min.Z)이 달라진 등록 머신에
+	// 배치 산식(OJJ_GetMachinePlacementTransform)을 재적용해 바닥을 다시 안착. XY는 동일 산식이라 불변.
+	// 미등록 머신이면 false(호출자가 다른 그리드 시도). 회전 step은 그리드에 저장되지 않으므로
+	// 배치 규약(yaw=90°×step)에 따라 액터 yaw에서 복원한다.
+	bool OJJ_ReSettleMachinePlacement(AMachineBase* Machine);
+
 private:
 	// [2단계 내부] 풋프린트 4코너 하향 라인트레이스(BakeBuildableCells 동일 채널·머신/자원/Foundation 무시)로
 	// 지형 평면 법선 + 중심 높이 산출. 4코너 전부 히트해야 true(void면 false → 틸트 미적용). yaw 무관(월드 XY 코너).

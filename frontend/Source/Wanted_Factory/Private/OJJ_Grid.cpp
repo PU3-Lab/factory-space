@@ -4979,6 +4979,30 @@ bool AOJJ_Grid::TryPlaceMachine(AMachineBase* Machine, FIntPoint Origin, FString
 	return true;
 }
 
+bool AOJJ_Grid::OJJ_ReSettleMachinePlacement(AMachineBase* Machine)
+{
+	if (!Machine)
+	{
+		return false;
+	}
+
+	const FIntPoint* Origin = OJJ_ActorToOrigin.Find(Machine);
+	if (!Origin)
+	{
+		return false;
+	}
+
+	// 배치 규약 yaw=90°×step에서 step 복원(음수 yaw도 mod 정규화). 채굴기 틸트(pitch/roll)가 합성돼
+	// 있어도 yaw 성분은 90° 격자 근방이므로 반올림으로 안전하게 회수된다.
+	const float Yaw = Machine->GetActorRotation().Yaw;
+	const int32 RotationSteps = ((FMath::RoundToInt(Yaw / 90.0f) % 4) + 4) % 4;
+
+	// 라이브 배치(BuildController)와 동일 산식 재적용 — 현재 메시 바운즈 기준 Z 안착 + 채굴기-경사 틸트.
+	const FTransform PlaceXform = OJJ_GetMachinePlacementTransform(Machine, *Origin, RotationSteps);
+	Machine->SetActorLocationAndRotation(PlaceXform.GetLocation(), PlaceXform.GetRotation());
+	return true;
+}
+
 bool AOJJ_Grid::RegisterExistingMachine(AMachineBase* Machine, FIntPoint Origin, FString& OutReason)
 {
 	// Center anchor 검증 — 머신 팀 합의 contract를 양쪽 placement 경로에서 동일하게 강제.
