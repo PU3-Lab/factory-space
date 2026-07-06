@@ -288,24 +288,14 @@ AConveyor::AConveyor()
 		StraightSegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		CornerSegmentInstances->SetMaterial(0, MaterialAsset.Object);
 		ItemVisualInstances->SetMaterial(0, MaterialAsset.Object);
-		FlowArrowMaterialInstance = UMaterialInstanceDynamic::Create(MaterialAsset.Object, this);
-		if (FlowArrowMaterialInstance)
-		{
-			FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
-		}
+		// [MID CDO 오염 수정] 생성자는 정적 베이스만 — 생성자 MID는 CDO 서브오브젝트로 박혀 컴포넌트
+		// OverrideMaterials 직렬화를 타고 BP_Conveyor 저장을 막는다(Illegal private reference).
+		// MID 생성/파라미터는 BeginPlay(런타임 전용)로 이동.
+		FlowArrowInstances->SetMaterial(0, MaterialAsset.Object);
 		PowderVisualMaterialBase = MaterialAsset.Object;
-		OutputOccluderMaterialInstance = UMaterialInstanceDynamic::Create(MaterialAsset.Object, this);
-		if (OutputOccluderMaterialInstance)
-		{
-			OutputOccluderMaterialInstance->SetVectorParameterValue(TEXT("Color"), FLinearColor::Black);
-			OutputOccluderMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor::Black);
-			OutputOccluderMaterialInstance->SetVectorParameterValue(TEXT("Tint"), FLinearColor::Black);
-			OutputOccluder->SetMaterial(0, OutputOccluderMaterialInstance);
-			InputOccluder->SetMaterial(0, OutputOccluderMaterialInstance);
-		}
+		OutputOccluder->SetMaterial(0, MaterialAsset.Object);
+		InputOccluder->SetMaterial(0, MaterialAsset.Object);
 	}
-
-	UpdateFlowArrowMaterial();
 
 	static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
 		TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData"));
@@ -354,6 +344,31 @@ void AConveyor::BeginPlay()
 		if (UFactoryManagerSubsystem* FactoryManager = GameInstance->GetSubsystem<UFactoryManagerSubsystem>())
 		{
 			FactoryManager->RegisterConveyor(this);
+		}
+	}
+
+	// [MID CDO 오염 수정] MID는 런타임에서만 생성(베이스 = 컴포넌트 현재 머티리얼 — BP 오버라이드 존중).
+	// RF_Transient = 직렬화 제외 이중 안전장치(아이템 비주얼 MID와 동일 패턴).
+	if (UMaterialInterface* FlowArrowBase = FlowArrowInstances ? FlowArrowInstances->GetMaterial(0) : nullptr)
+	{
+		FlowArrowMaterialInstance = UMaterialInstanceDynamic::Create(FlowArrowBase, this);
+		if (FlowArrowMaterialInstance)
+		{
+			FlowArrowMaterialInstance->SetFlags(RF_Transient);
+			FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
+		}
+	}
+	if (UMaterialInterface* OccluderBase = OutputOccluder ? OutputOccluder->GetMaterial(0) : nullptr)
+	{
+		OutputOccluderMaterialInstance = UMaterialInstanceDynamic::Create(OccluderBase, this);
+		if (OutputOccluderMaterialInstance)
+		{
+			OutputOccluderMaterialInstance->SetFlags(RF_Transient);
+			OutputOccluderMaterialInstance->SetVectorParameterValue(TEXT("Color"), FLinearColor::Black);
+			OutputOccluderMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor::Black);
+			OutputOccluderMaterialInstance->SetVectorParameterValue(TEXT("Tint"), FLinearColor::Black);
+			OutputOccluder->SetMaterial(0, OutputOccluderMaterialInstance);
+			InputOccluder->SetMaterial(0, OutputOccluderMaterialInstance);
 		}
 	}
 
@@ -2008,6 +2023,12 @@ void AConveyor::UpdateFlowArrowMaterial()
 
 	if (!FlowArrowMaterialInstance)
 	{
+		// [MID CDO 오염 수정] lazy-create는 런타임 전용 — CDO/OnConstruction 경로에서 MID 생성 금지
+		// (색은 Tick이 매 프레임 갱신하므로 런타임 진입 후 커버).
+		if (!HasActorBegunPlay())
+		{
+			return;
+		}
 		UMaterialInterface* BaseMaterial = FlowArrowInstances ? FlowArrowInstances->GetMaterial(0) : nullptr;
 		if (BaseMaterial)
 		{
@@ -2018,6 +2039,10 @@ void AConveyor::UpdateFlowArrowMaterial()
 			BaseMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
 		}
 		FlowArrowMaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
+		if (FlowArrowMaterialInstance)
+		{
+			FlowArrowMaterialInstance->SetFlags(RF_Transient);
+		}
 		if (FlowArrowMaterialInstance && FlowArrowInstances)
 		{
 			FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
