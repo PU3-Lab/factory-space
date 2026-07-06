@@ -8,9 +8,11 @@
 #include "Conveyor.generated.h"
 
 class AMachineBase;
+class UAudioComponent;
 class UDataTable;
 class UInstancedStaticMeshComponent;
 class UMaterialInterface;
+class USoundBase;
 class UStaticMesh;
 class UStaticMeshComponent;
 class USceneComponent;
@@ -86,6 +88,13 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Components")
 	TObjectPtr<UTextRenderComponent> DebugStateText;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Conveyor|Components")
+	TObjectPtr<UAudioComponent> ConveyorLoopComponent;
+
+	// [OJJ 가동 루프 사운드] 미지정이면 무동작. 게이트 = ShouldAnimateFlowArrows(화살표 애니와 동일 판정).
+	UPROPERTY(EditAnywhere, Category = "Conveyor|Sound")
+	TObjectPtr<USoundBase> LoopSound;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Conveyor|Grid", meta = (ClampMin = "1.0"))
 	float CellSize = 100.0f;
@@ -337,6 +346,7 @@ protected:
 
 	FTimerHandle ItemMoveTimerHandle;
 	float LastItemMoveWorldTime = 0.0f;
+	bool bLoopSoundActive = false;
 	float OutputOccluderAlpha = 0.0f;
 	TArray<FConveyorOccluderWindow> OutputOccluderWindows;
 	float InputOccluderAlpha = 0.0f;
@@ -459,4 +469,5 @@ private:
 	FString BuildMovingItemSummary() const;
 	int32 GetFlowArrowPhase() const;
 	void UpdateFlowArrowMaterial();
+	void UpdateLoopSound();
 };
