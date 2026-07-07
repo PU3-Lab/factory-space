@@ -146,6 +146,7 @@ void UUI_DialogueBalloon::HandleOnTextCommitted(const FText& Text, ETextCommit::
 void UUI_DialogueBalloon::HandleOnOperatorGuideResponse(const FString& RequestId, const FString& Agent, const FString& PayloadJson, const FString& RawMessage)
 {
     if (Agent != TEXT("operator_guide")) return;
+    if (bBuildModeSuppressed) return;
     
     TSharedPtr<FJsonObject> PayloadObject;
     if (FactoryAgentJsonUtils::ParseJsonObject(PayloadJson, PayloadObject) && PayloadObject.IsValid())
@@ -166,6 +167,7 @@ void UUI_DialogueBalloon::HandleOnOperatorGuideResponse(const FString& RequestId
 void UUI_DialogueBalloon::HandleOnOperatorGuideError(const FString& RequestId, const FString& Agent, const FString& ErrorCode, const FString& ErrorMessage, const FString& RawMessage)
 {
     if (Agent != TEXT("operator_guide")) return;
+    if (bBuildModeSuppressed) return;
     
     FString CombinedMessage = ErrorCode.IsEmpty() ? ErrorMessage : FString::Printf(TEXT("%s: %s"), *ErrorCode, *ErrorMessage);
     
@@ -177,6 +179,7 @@ void UUI_DialogueBalloon::HandleOnOperatorGuideError(const FString& RequestId, c
 void UUI_DialogueBalloon::HandleOnOperatorGuideProgress(const FString& RequestId, const FString& Agent, const FString& Stage, const FString& Message, const FString& RawMessage)
 {
     if (Agent != TEXT("operator_guide")) return;
+    if (bBuildModeSuppressed) return;
 
     const FString ProgressMessage = Message.TrimStartAndEnd();
     if (ProgressMessage.IsEmpty()) return;
@@ -186,6 +189,11 @@ void UUI_DialogueBalloon::HandleOnOperatorGuideProgress(const FString& RequestId
 
 void UUI_DialogueBalloon::HandleOnMaterialGenerationResponse(const FFactoryMaterialGenerationResponse& Response)
 {
+    if (bBuildModeSuppressed)
+    {
+        return;
+    }
+
     const FString DialogueMessage = Response.Message.TrimStartAndEnd();
     if (DialogueMessage.IsEmpty())
     {
@@ -204,6 +212,12 @@ void UUI_DialogueBalloon::HandleOnProcessOptimizerResponse(
 {
     if (Agent != TEXT("process_optimizer"))
     {
+        return;
+    }
+
+    if (bBuildModeSuppressed)
+    {
+        bProcessOptimizerRequestInFlight = false;
         return;
     }
 
@@ -794,12 +808,13 @@ void UUI_DialogueBalloon::SetBuildModeSuppressed(bool bSuppressed)
     bBuildModeSuppressed = bSuppressed;
     if (bBuildModeSuppressed)
     {
-        SetVisibility(ESlateVisibility::Collapsed);
+        bHasExternalDialogue = false;
+        ExternalDialogueText.Empty();
+        bShowLastSubmittedOperatorGuideQuestion = false;
         if (ET_OperatorInput)
         {
             ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
         }
-        return;
     }
 
     RefreshDialogueUI();
@@ -837,6 +852,11 @@ void UUI_DialogueBalloon::HandleTutorialDialogueLogged(const FString& QuestId, c
 
 void UUI_DialogueBalloon::ShowExternalDialogue(const FString& DialogueText)
 {
+    if (bBuildModeSuppressed)
+    {
+        return;
+    }
+
     bHasExternalDialogue = !DialogueText.TrimStartAndEnd().IsEmpty();
     ExternalDialogueText = bHasExternalDialogue ? DialogueText : FString();
     DisplayCurrentLine();
@@ -909,16 +929,6 @@ void UUI_DialogueBalloon::BeginProcessOptimizerRequest()
 
 void UUI_DialogueBalloon::DisplayCurrentLine()
 {
-    if (bBuildModeSuppressed)
-    {
-        SetVisibility(ESlateVisibility::Collapsed);
-        if (ET_OperatorInput)
-        {
-            ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
-        }
-        return;
-    }
-
     // ?꾩젽 蹂몄껜 猷⑦듃???덈?濡?Collapsed ?쒗궎吏 ?딄퀬 ??떆 ?대젮?〓땲??
     // 洹몃옒???섎떒??/ ?명뭼 Border 李쎌씠 ?몄젣???낅┰?곸쑝濡???대굹?????덉뒿?덈떎.
     SetVisibility(ESlateVisibility::SelfHitTestInvisible);
@@ -1073,7 +1083,6 @@ void UUI_DialogueBalloon::ToggleAIGuide(APlayerController* PC)
     if (bBuildModeSuppressed)
     {
         ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
-        SetVisibility(ESlateVisibility::Collapsed);
         return;
     }
 

@@ -7,10 +7,13 @@
 #include "Misc/FileHelper.h"
 #include "HAL/PlatformFileManager.h"
 #include "HAL/FileManager.h"
+#include "MediaPlayer.h"
+#include "MediaSoundComponent.h"
 #include "Wanted_Factory.h"
 
 #include "FactoryAgentClientSubsystem.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
 
 void UFactoryAgentTTSPlaybackSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -20,6 +23,15 @@ void UFactoryAgentTTSPlaybackSubsystem::Initialize(FSubsystemCollectionBase& Col
 
 void UFactoryAgentTTSPlaybackSubsystem::Deinitialize()
 {
+	StopCurrent();
+
+	if (MediaSoundComponent)
+	{
+		MediaSoundComponent->DestroyComponent();
+		MediaSoundComponent = nullptr;
+	}
+
+	MediaPlayer = nullptr;
 	Super::Deinitialize();
 }
 
@@ -46,18 +58,12 @@ void UFactoryAgentTTSPlaybackSubsystem::PlayFromUrl(const FString& AudioUrl)
 				WsUrl.ReplaceInline(TEXT("wss://"), TEXT("https://"));
 			}
 
-			int32 ProtoIdx = WsUrl.Find(TEXT("://"));
+			const int32 ProtoIdx = WsUrl.Find(TEXT("://"));
 			if (ProtoIdx != INDEX_NONE)
 			{
-				int32 PathIdx;
-				if (WsUrl.FindChar(TEXT('/'), PathIdx) && PathIdx > ProtoIdx + 2)
-				{
-					ActiveOrigin = WsUrl.Left(PathIdx);
-				}
-				else
-				{
-					ActiveOrigin = WsUrl;
-				}
+				const int32 HostStartIdx = ProtoIdx + 3;
+				const int32 PathIdx = WsUrl.Find(TEXT("/"), ESearchCase::CaseSensitive, ESearchDir::FromStart, HostStartIdx);
+				ActiveOrigin = PathIdx != INDEX_NONE ? WsUrl.Left(PathIdx) : WsUrl;
 			}
 		}
 	}
@@ -83,12 +89,20 @@ void UFactoryAgentTTSPlaybackSubsystem::PlayFromUrl(const FString& AudioUrl)
 
 void UFactoryAgentTTSPlaybackSubsystem::StopCurrent()
 {
-	UE_LOG(LogWanted_Factory, Log, TEXT("StopCurrent TTS requested. (MP3 playback not supported yet)"));
+	if (MediaPlayer)
+	{
+		MediaPlayer->Close();
+	}
+
+	if (MediaSoundComponent && MediaSoundComponent->IsPlaying())
+	{
+		MediaSoundComponent->Stop();
+	}
 }
 
 bool UFactoryAgentTTSPlaybackSubsystem::IsPlaybackAvailable() const
 {
-	return false;
+	return true;
 }
 
 void UFactoryAgentTTSPlaybackSubsystem::HandleDownloadComplete(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful)
@@ -113,7 +127,7 @@ void UFactoryAgentTTSPlaybackSubsystem::HandleDownloadComplete(FHttpRequestPtr R
 		return;
 	}
 
-	FString RequestUrl = Request->GetURL();
+	const FString RequestUrl = Request->GetURL();
 	const int32 QueryIndex = RequestUrl.Find(TEXT("?"), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
 	const FString CleanUrl = QueryIndex == INDEX_NONE ? RequestUrl : RequestUrl.Left(QueryIndex);
 	FString FileName = FPaths::GetCleanFilename(CleanUrl);
@@ -133,10 +147,80 @@ void UFactoryAgentTTSPlaybackSubsystem::HandleDownloadComplete(FHttpRequestPtr R
 	if (FFileHelper::SaveArrayToFile(AudioBytes, *SavePath))
 	{
 		UE_LOG(LogWanted_Factory, Log, TEXT("TTS 오디오 로컬 디스크 저장 성공: %s"), *SavePath);
-		UE_LOG(LogWanted_Factory, Warning, TEXT("Warning: 런타임 MP3 재생 디코더 플러그인이 아직 활성화되지 않았습니다. 재생을 생략합니다."));
+		if (!PlaySavedAudioFile(SavePath))
+		{
+			UE_LOG(LogWanted_Factory, Warning, TEXT("TTS 오디오 재생 시작에 실패했습니다: %s"), *SavePath);
+		}
 	}
 	else
 	{
 		UE_LOG(LogWanted_Factory, Warning, TEXT("TTS 오디오 파일 로컬 디스크 저장 실패: %s"), *SavePath);
 	}
+}
+
+bool UFactoryAgentTTSPlaybackSubsystem::EnsurePlaybackObjects()
+{
+	if (!MediaPlayer)
+	{
+		MediaPlayer = NewObject<UMediaPlayer>(this);
+	}
+
+	if (MediaSoundComponent)
+	{
+		return MediaPlayer != nullptr;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			World = GI->GetWorld();
+		}
+	}
+	if (!World)
+	{
+		return false;
+	}
+
+	AWorldSettings* WorldSettings = World->GetWorldSettings();
+	if (!WorldSettings)
+	{
+		return false;
+	}
+
+	MediaSoundComponent = NewObject<UMediaSoundComponent>(WorldSettings);
+	if (!MediaSoundComponent)
+	{
+		return false;
+	}
+
+	MediaSoundComponent->SetMediaPlayer(MediaPlayer);
+	MediaSoundComponent->bAllowSpatialization = false;
+	MediaSoundComponent->bIsUISound = true;
+	MediaSoundComponent->RegisterComponentWithWorld(World);
+	return true;
+}
+
+bool UFactoryAgentTTSPlaybackSubsystem::PlaySavedAudioFile(const FString& SavePath)
+{
+	if (!EnsurePlaybackObjects() || !MediaPlayer || !MediaSoundComponent)
+	{
+		return false;
+	}
+
+	FString NormalizedPath = SavePath;
+	FPaths::MakeStandardFilename(NormalizedPath);
+
+	MediaPlayer->Close();
+	MediaSoundComponent->Stop();
+
+	if (!MediaPlayer->OpenFile(NormalizedPath))
+	{
+		UE_LOG(LogWanted_Factory, Warning, TEXT("TTS MediaPlayer OpenFile 실패: %s"), *NormalizedPath);
+		return false;
+	}
+
+	MediaSoundComponent->Activate(true);
+	return MediaPlayer->Play();
 }

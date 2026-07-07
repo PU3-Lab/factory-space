@@ -7,6 +7,9 @@
 #include "Interfaces/IHttpRequest.h"
 #include "FactoryAgentTTSPlaybackSubsystem.generated.h"
 
+class UMediaPlayer;
+class UMediaSoundComponent;
+
 /**
  * UFactoryAgentTTSPlaybackSubsystem
  * 
@@ -48,6 +51,14 @@ public:
 
 private:
 	void HandleDownloadComplete(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
+	bool EnsurePlaybackObjects();
+	bool PlaySavedAudioFile(const FString& SavePath);
 
 	FString ServerOriginUrl;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMediaPlayer> MediaPlayer;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMediaSoundComponent> MediaSoundComponent;
 };
