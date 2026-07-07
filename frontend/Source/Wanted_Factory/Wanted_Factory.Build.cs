@@ -29,6 +29,7 @@ public class Wanted_Factory : ModuleRules
 			"Json",
 			"JsonUtilities",
 			"WebSockets",
+			"HTTP",
 			// 호버 표면 게이트의 ALandscapeProxy 판별(F2-1' — 지형 위 호버 사각지대 해소)
 			"Landscape",
 			// 램프 쐐기 비주얼 코드 생성(F3.8 — AOJJ_RampFoundation::OJJ_BuildWedgeVisual)

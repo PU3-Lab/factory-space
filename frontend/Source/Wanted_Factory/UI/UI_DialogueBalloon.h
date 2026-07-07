@@ -99,6 +99,7 @@ private:
 	void HighlightOperatorGuideTargets(const TSharedPtr<FJsonObject>& PayloadObject, const FString& Answer);
 	void ClearOperatorGuideHighlights();
 	EAIWarningHighlightType ClassifyProcessOptimizerIssue(const TSharedPtr<FJsonObject>& SuggestionObject) const;
+	void PlayTTSFromPayload(const TSharedPtr<FJsonObject>& PayloadObject);
 	
 	UPROPERTY()
 	class UQuestManagerSubsystem* QuestSubsystem;
