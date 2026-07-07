@@ -1,4 +1,4 @@
-﻿#include "UI/UI_DialogueBalloon.h"
+#include "UI/UI_DialogueBalloon.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
@@ -17,6 +17,7 @@
 #include "Machines/PowerGridNode.h"
 #include "Dom/JsonObject.h"
 #include "InputCoreTypes.h"
+#include "FactoryAgentTTSPlaybackSubsystem.h"
 #include "Wanted_Factory.h"
 
 void UUI_DialogueBalloon::NativeConstruct()
@@ -156,6 +157,7 @@ void UUI_DialogueBalloon::HandleOnOperatorGuideResponse(const FString& RequestId
         {
             HighlightOperatorGuideTargets(PayloadObject, Answer);
             ShowExternalDialogue(Answer);
+            PlayTTSFromPayload(PayloadObject);
         }
     }
 }
@@ -371,7 +373,25 @@ void UUI_DialogueBalloon::HandleOnProcessOptimizerResponse(
     if (NewIssues.Num() > 0)
     {
         SetTrackedProcessOptimizerIssues(NewIssues);
-        ShowExternalDialogue(TEXT("발견한 문제를 강조 표시했습니다"));
+        
+        FString TtsText;
+        const TSharedPtr<FJsonObject>* TtsObjectPtr = nullptr;
+        bool bHasTtsText = false;
+        if (PayloadObject->TryGetObjectField(TEXT("tts"), TtsObjectPtr) && TtsObjectPtr != nullptr && (*TtsObjectPtr)->IsValid())
+        {
+            (*TtsObjectPtr)->TryGetStringField(TEXT("text"), TtsText);
+            bHasTtsText = !TtsText.IsEmpty();
+        }
+
+        if (bHasTtsText)
+        {
+            ShowExternalDialogue(TtsText);
+            PlayTTSFromPayload(PayloadObject);
+        }
+        else
+        {
+            ShowExternalDialogue(TEXT("발견한 문제를 강조 표시했습니다"));
+        }
         return;
     }
 
@@ -381,7 +401,24 @@ void UUI_DialogueBalloon::HandleOnProcessOptimizerResponse(
         FlushPersistentDebugLines(World);
     }
 
-    ShowExternalDialogue(TEXT("문제가 발견되지 않았습니다"));
+    FString TtsText;
+    const TSharedPtr<FJsonObject>* TtsObjectPtr = nullptr;
+    bool bHasTtsText = false;
+    if (PayloadObject->TryGetObjectField(TEXT("tts"), TtsObjectPtr) && TtsObjectPtr != nullptr && (*TtsObjectPtr)->IsValid())
+    {
+        (*TtsObjectPtr)->TryGetStringField(TEXT("text"), TtsText);
+        bHasTtsText = !TtsText.IsEmpty();
+    }
+
+    if (bHasTtsText)
+    {
+        ShowExternalDialogue(TtsText);
+        PlayTTSFromPayload(PayloadObject);
+    }
+    else
+    {
+        ShowExternalDialogue(TEXT("문제가 발견되지 않았습니다"));
+    }
 }
 void UUI_DialogueBalloon::SetTrackedProcessOptimizerIssues(const TArray<FTrackedProcessOptimizerIssue>& NewIssues)
 {
@@ -1041,6 +1078,46 @@ void UUI_DialogueBalloon::ToggleAIGuide(APlayerController* PC)
         ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
         PC->SetInputMode(FInputModeGameOnly());
         PC->bShowMouseCursor = false;
+    }
+}
+
+void UUI_DialogueBalloon::PlayTTSFromPayload(const TSharedPtr<FJsonObject>& PayloadObject)
+{
+    if (!PayloadObject.IsValid())
+    {
+        return;
+    }
+
+    const TSharedPtr<FJsonObject>* TtsObject = nullptr;
+    if (!PayloadObject->TryGetObjectField(TEXT("tts"), TtsObject) || TtsObject == nullptr || !(*TtsObject)->IsValid())
+    {
+        return;
+    }
+
+    FString Status;
+    if (!(*TtsObject)->TryGetStringField(TEXT("status"), Status) || Status != TEXT("ready"))
+    {
+        return;
+    }
+
+    FString AudioUrl;
+    if (!(*TtsObject)->TryGetStringField(TEXT("audio_url"), AudioUrl) || AudioUrl.IsEmpty())
+    {
+        return;
+    }
+
+    UGameInstance* GI = GetGameInstance();
+    if (!GI)
+    {
+        return;
+    }
+
+    UFactoryAgentTTSPlaybackSubsystem* PlaybackSubsystem = GI->GetSubsystem<UFactoryAgentTTSPlaybackSubsystem>();
+    if (PlaybackSubsystem)
+    {
+        // Stop any current playback first to avoid overlapping sounds
+        PlaybackSubsystem->StopCurrent();
+        PlaybackSubsystem->PlayFromUrl(AudioUrl);
     }
 }
 

@@ -142,6 +142,16 @@ Unreal은 모든 Agent 요청을 아래 공통 구조로 보낸다.
     "actions": [],
     "question": "분쇄기가 뭐야? 어디에 써?",
     "topic": "machine",
+    "tts": {
+      "status": "ready",
+      "provider": "edge_tts",
+      "audio_url": "/tts/operator_guide/sha256-key.mp3",
+      "content_type": "audio/mpeg",
+      "text_hash": "sha256-key",
+      "voice_id": "ko-KR-SunHiNeural",
+      "model_id": "edge_tts",
+      "cached": false
+    },
     "metadata": {
       "selectedAgent": "operator_guide",
       "selectedLeafAgent": "operator_guide.machine_help",
@@ -409,6 +419,16 @@ Unreal이 주기적으로 공장 상태를 보내는 경우다. 백엔드는 상
     "factoryRevision": 42,
     "goal": "balance",
     "summary": "smelter_1의 원자재 입력 부족을 해결하기 위한 최적화 개선안을 제안합니다.",
+    "tts": {
+      "status": "ready",
+      "provider": "edge_tts",
+      "audio_url": "/tts/process_optimizer/sha256-key.mp3",
+      "content_type": "audio/mpeg",
+      "text_hash": "sha256-key",
+      "voice_id": "ko-KR-SunHiNeural",
+      "model_id": "edge_tts",
+      "cached": false
+    },
     "changes": [
       {
         "id": "suggest_input_smelter_1",
