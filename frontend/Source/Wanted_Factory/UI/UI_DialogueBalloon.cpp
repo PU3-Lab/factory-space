@@ -753,6 +753,22 @@ void UUI_DialogueBalloon::RefreshDialogueUI()
     DisplayCurrentLine();
 }
 
+void UUI_DialogueBalloon::SetBuildModeSuppressed(bool bSuppressed)
+{
+    bBuildModeSuppressed = bSuppressed;
+    if (bBuildModeSuppressed)
+    {
+        SetVisibility(ESlateVisibility::Collapsed);
+        if (ET_OperatorInput)
+        {
+            ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
+        }
+        return;
+    }
+
+    RefreshDialogueUI();
+}
+
 void UUI_DialogueBalloon::HandleTutorialStepChanged(const FTutorialQuestStep& Step)
 {
     if (bHasExternalDialogue) return;
@@ -857,6 +873,16 @@ void UUI_DialogueBalloon::BeginProcessOptimizerRequest()
 
 void UUI_DialogueBalloon::DisplayCurrentLine()
 {
+    if (bBuildModeSuppressed)
+    {
+        SetVisibility(ESlateVisibility::Collapsed);
+        if (ET_OperatorInput)
+        {
+            ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
+        }
+        return;
+    }
+
     // ?꾩젽 蹂몄껜 猷⑦듃???덈?濡?Collapsed ?쒗궎吏 ?딄퀬 ??떆 ?대젮?〓땲??
     // 洹몃옒???섎떒??/ ?명뭼 Border 李쎌씠 ?몄젣???낅┰?곸쑝濡???대굹?????덉뒿?덈떎.
     SetVisibility(ESlateVisibility::SelfHitTestInvisible);
@@ -1008,6 +1034,12 @@ FReply UUI_DialogueBalloon::NativeOnPreviewKeyDown(const FGeometry& InGeometry, 
 void UUI_DialogueBalloon::ToggleAIGuide(APlayerController* PC)
 {
     if (!PC || !ET_OperatorInput) return;
+    if (bBuildModeSuppressed)
+    {
+        ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
+        SetVisibility(ESlateVisibility::Collapsed);
+        return;
+    }
 
     // 1. ?대? AI ?듬???異쒕젰 以묒씤 ?곹깭?쇰㈃ ?먮옒 ??щ줈 濡ㅻ갚
     if (bHasExternalDialogue)

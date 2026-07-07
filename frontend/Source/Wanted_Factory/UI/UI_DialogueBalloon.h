@@ -44,6 +44,9 @@ public:
 	void RefreshDialogueUI();
 
 	UFUNCTION(BlueprintCallable, Category = "Quest|UI")
+	void SetBuildModeSuppressed(bool bSuppressed);
+
+	UFUNCTION(BlueprintCallable, Category = "Quest|UI")
 	void ShowExternalDialogue(const FString& DialogueText);
 
 	UFUNCTION(BlueprintCallable, Category = "Quest|UI")
@@ -112,4 +115,5 @@ private:
 	TArray<TWeakObjectPtr<AMachineBase>> OperatorGuideHighlightedMachines;
 	bool bProcessOptimizerRequestInFlight = false;
 	bool bCanAnnounceProcessOptimizerResolution = false;
+	bool bBuildModeSuppressed = false;
 };

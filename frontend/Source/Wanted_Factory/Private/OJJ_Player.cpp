@@ -2712,12 +2712,11 @@ void AOJJ_Player::SetDialogueBalloonBuildModeVisibility(bool bVisible)
 
 		if (bVisible)
 		{
-			DialogueBalloon->RefreshDialogueUI();
-			DialogueBalloon->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			DialogueBalloon->SetBuildModeSuppressed(false);
 		}
 		else
 		{
-			DialogueBalloon->SetVisibility(ESlateVisibility::Collapsed);
+			DialogueBalloon->SetBuildModeSuppressed(true);
 		}
 	}
 }
