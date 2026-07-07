@@ -15,7 +15,7 @@
 void UFactoryAgentTTSPlaybackSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	ServerOriginUrl = TEXT("http://127.0.0.1:18000"); // Local fallback default
+	ServerOriginUrl = TEXT("http://127.0.0.1:18000");
 }
 
 void UFactoryAgentTTSPlaybackSubsystem::Deinitialize()
@@ -30,7 +30,6 @@ void UFactoryAgentTTSPlaybackSubsystem::PlayFromUrl(const FString& AudioUrl)
 		return;
 	}
 
-	// 4차 재리뷰 보강: WebSocket/client 설정의 agent server origin을 동적으로 파싱하여 연동
 	FString ActiveOrigin = ServerOriginUrl;
 	if (GetGameInstance())
 	{
@@ -66,7 +65,6 @@ void UFactoryAgentTTSPlaybackSubsystem::PlayFromUrl(const FString& AudioUrl)
 	FString FullUrl = AudioUrl;
 	if (AudioUrl.StartsWith(TEXT("/")))
 	{
-		// 상대 경로를 절대 URL 주소로 조인
 		FullUrl = ActiveOrigin + AudioUrl;
 	}
 	else if (!AudioUrl.StartsWith(TEXT("http://")) && !AudioUrl.StartsWith(TEXT("https://")))
@@ -76,7 +74,6 @@ void UFactoryAgentTTSPlaybackSubsystem::PlayFromUrl(const FString& AudioUrl)
 
 	UE_LOG(LogWanted_Factory, Log, TEXT("TTS PlayFromUrl: %s"), *FullUrl);
 
-	// HTTP GET 오디오 파일 요청 전송
 	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
 	Request->OnProcessRequestComplete().BindUObject(this, &UFactoryAgentTTSPlaybackSubsystem::HandleDownloadComplete);
 	Request->SetURL(FullUrl);
@@ -102,14 +99,13 @@ void UFactoryAgentTTSPlaybackSubsystem::HandleDownloadComplete(FHttpRequestPtr R
 		return;
 	}
 
-	int32 ResponseCode = Response->GetResponseCode();
+	const int32 ResponseCode = Response->GetResponseCode();
 	if (ResponseCode != 200)
 	{
 		UE_LOG(LogWanted_Factory, Warning, TEXT("TTS 오디오 다운로드 실패. HTTP 응답 코드: %d"), ResponseCode);
 		return;
 	}
 
-	// 다운로드 오디오 바이너리 추출
 	const TArray<uint8>& AudioBytes = Response->GetContent();
 	if (AudioBytes.Num() == 0)
 	{
@@ -117,27 +113,23 @@ void UFactoryAgentTTSPlaybackSubsystem::HandleDownloadComplete(FHttpRequestPtr R
 		return;
 	}
 
-	// URL에서 파일명 파싱 (예: /tts/operator_guide/some-key.mp3 -> some-key.mp3)
 	FString RequestUrl = Request->GetURL();
-	FString CleanUrl = RequestUrl.Left(RequestUrl.Find(TEXT("?"), ESearchCase::IgnoreCase, ESearchDir::FromEnd));
+	const int32 QueryIndex = RequestUrl.Find(TEXT("?"), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+	const FString CleanUrl = QueryIndex == INDEX_NONE ? RequestUrl : RequestUrl.Left(QueryIndex);
 	FString FileName = FPaths::GetCleanFilename(CleanUrl);
 	if (FileName.IsEmpty())
 	{
 		FileName = TEXT("tts_temp.mp3");
 	}
 
-	// 로컬 Saved 디렉터리 하위 폴더 지정
-	FString SaveDirectory = FPaths::ProjectSavedDir() / TEXT("AgentTTS");
+	const FString SaveDirectory = FPaths::ProjectSavedDir() / TEXT("AgentTTS");
 	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
-
 	if (!PlatformFile.DirectoryExists(*SaveDirectory))
 	{
 		PlatformFile.CreateDirectory(*SaveDirectory);
 	}
 
-	FString SavePath = SaveDirectory / FileName;
-	
-	// 바이너리 파일 저장
+	const FString SavePath = SaveDirectory / FileName;
 	if (FFileHelper::SaveArrayToFile(AudioBytes, *SavePath))
 	{
 		UE_LOG(LogWanted_Factory, Log, TEXT("TTS 오디오 로컬 디스크 저장 성공: %s"), *SavePath);

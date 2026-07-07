@@ -47,9 +47,7 @@ public:
 	bool IsPlaybackAvailable() const;
 
 private:
-	// HTTP 다운로드 완료 시 호출되는 콜백 함수
 	void HandleDownloadComplete(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
 
-	// 백엔드 기본 서버 Origin 주소
 	FString ServerOriginUrl;
 };

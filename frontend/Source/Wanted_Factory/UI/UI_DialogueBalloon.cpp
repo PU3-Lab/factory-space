@@ -1,4 +1,4 @@
-#include "UI/UI_DialogueBalloon.h"
+﻿#include "UI/UI_DialogueBalloon.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
@@ -16,8 +16,8 @@
 #include "MachineBase.h"
 #include "Machines/PowerGridNode.h"
 #include "Dom/JsonObject.h"
-#include "InputCoreTypes.h"
 #include "FactoryAgentTTSPlaybackSubsystem.h"
+#include "InputCoreTypes.h"
 #include "Wanted_Factory.h"
 
 void UUI_DialogueBalloon::NativeConstruct()
@@ -373,11 +373,11 @@ void UUI_DialogueBalloon::HandleOnProcessOptimizerResponse(
     if (NewIssues.Num() > 0)
     {
         SetTrackedProcessOptimizerIssues(NewIssues);
-        
+
         FString TtsText;
         const TSharedPtr<FJsonObject>* TtsObjectPtr = nullptr;
         bool bHasTtsText = false;
-        if (PayloadObject->TryGetObjectField(TEXT("tts"), TtsObjectPtr) && TtsObjectPtr != nullptr && (*TtsObjectPtr)->IsValid())
+        if (PayloadObject->TryGetObjectField(TEXT("tts"), TtsObjectPtr) && TtsObjectPtr != nullptr && TtsObjectPtr->IsValid())
         {
             (*TtsObjectPtr)->TryGetStringField(TEXT("text"), TtsText);
             bHasTtsText = !TtsText.IsEmpty();
@@ -387,12 +387,14 @@ void UUI_DialogueBalloon::HandleOnProcessOptimizerResponse(
         {
             ShowExternalDialogue(TtsText);
             PlayTTSFromPayload(PayloadObject);
+            return;
         }
-        else
+
+        if (TrackedProcessOptimizerIssues.Num() > 0)
         {
             ShowExternalDialogue(TEXT("발견한 문제를 강조 표시했습니다"));
+            return;
         }
-        return;
     }
 
     SetTrackedProcessOptimizerIssues(TArray<FTrackedProcessOptimizerIssue>());
@@ -404,7 +406,7 @@ void UUI_DialogueBalloon::HandleOnProcessOptimizerResponse(
     FString TtsText;
     const TSharedPtr<FJsonObject>* TtsObjectPtr = nullptr;
     bool bHasTtsText = false;
-    if (PayloadObject->TryGetObjectField(TEXT("tts"), TtsObjectPtr) && TtsObjectPtr != nullptr && (*TtsObjectPtr)->IsValid())
+    if (PayloadObject->TryGetObjectField(TEXT("tts"), TtsObjectPtr) && TtsObjectPtr != nullptr && TtsObjectPtr->IsValid())
     {
         (*TtsObjectPtr)->TryGetStringField(TEXT("text"), TtsText);
         bHasTtsText = !TtsText.IsEmpty();
@@ -787,6 +789,22 @@ void UUI_DialogueBalloon::RefreshDialogueUI()
     DisplayCurrentLine();
 }
 
+void UUI_DialogueBalloon::SetBuildModeSuppressed(bool bSuppressed)
+{
+    bBuildModeSuppressed = bSuppressed;
+    if (bBuildModeSuppressed)
+    {
+        SetVisibility(ESlateVisibility::Collapsed);
+        if (ET_OperatorInput)
+        {
+            ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
+        }
+        return;
+    }
+
+    RefreshDialogueUI();
+}
+
 void UUI_DialogueBalloon::HandleTutorialStepChanged(const FTutorialQuestStep& Step)
 {
     if (bHasExternalDialogue) return;
@@ -891,6 +909,16 @@ void UUI_DialogueBalloon::BeginProcessOptimizerRequest()
 
 void UUI_DialogueBalloon::DisplayCurrentLine()
 {
+    if (bBuildModeSuppressed)
+    {
+        SetVisibility(ESlateVisibility::Collapsed);
+        if (ET_OperatorInput)
+        {
+            ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
+        }
+        return;
+    }
+
     // ?꾩젽 蹂몄껜 猷⑦듃???덈?濡?Collapsed ?쒗궎吏 ?딄퀬 ??떆 ?대젮?〓땲??
     // 洹몃옒???섎떒??/ ?명뭼 Border 李쎌씠 ?몄젣???낅┰?곸쑝濡???대굹?????덉뒿?덈떎.
     SetVisibility(ESlateVisibility::SelfHitTestInvisible);
@@ -1042,6 +1070,12 @@ FReply UUI_DialogueBalloon::NativeOnPreviewKeyDown(const FGeometry& InGeometry, 
 void UUI_DialogueBalloon::ToggleAIGuide(APlayerController* PC)
 {
     if (!PC || !ET_OperatorInput) return;
+    if (bBuildModeSuppressed)
+    {
+        ET_OperatorInput->SetVisibility(ESlateVisibility::Collapsed);
+        SetVisibility(ESlateVisibility::Collapsed);
+        return;
+    }
 
     // 1. ?대? AI ?듬???異쒕젰 以묒씤 ?곹깭?쇰㈃ ?먮옒 ??щ줈 濡ㅻ갚
     if (bHasExternalDialogue)
@@ -1089,7 +1123,7 @@ void UUI_DialogueBalloon::PlayTTSFromPayload(const TSharedPtr<FJsonObject>& Payl
     }
 
     const TSharedPtr<FJsonObject>* TtsObject = nullptr;
-    if (!PayloadObject->TryGetObjectField(TEXT("tts"), TtsObject) || TtsObject == nullptr || !(*TtsObject)->IsValid())
+    if (!PayloadObject->TryGetObjectField(TEXT("tts"), TtsObject) || TtsObject == nullptr || !TtsObject->IsValid())
     {
         return;
     }
@@ -1115,7 +1149,6 @@ void UUI_DialogueBalloon::PlayTTSFromPayload(const TSharedPtr<FJsonObject>& Payl
     UFactoryAgentTTSPlaybackSubsystem* PlaybackSubsystem = GI->GetSubsystem<UFactoryAgentTTSPlaybackSubsystem>();
     if (PlaybackSubsystem)
     {
-        // Stop any current playback first to avoid overlapping sounds
         PlaybackSubsystem->StopCurrent();
         PlaybackSubsystem->PlayFromUrl(AudioUrl);
     }
