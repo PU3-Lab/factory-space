@@ -28,6 +28,7 @@ from db.models import RecipeModel
 from db.recipe_ingestion import ingest_recipes
 from docs_router import router as docs_router
 from manual_qa_docs.router import router as manual_qa_docs_router
+from tts.router import tts_router
 from websocket_gateway.gateway import router as websocket_router
 
 
@@ -150,6 +151,7 @@ def create_app() -> FastAPI:
     app.include_router(docs_router)
     app.include_router(manual_qa_docs_router)
     app.include_router(websocket_router)
+    app.include_router(tts_router)
 
     _mount_material_assets(app)
     return app
@@ -171,3 +173,4 @@ def _mount_material_assets(app: FastAPI) -> None:
         StaticFiles(directory=str(materials_dir)),
         name="materials",
     )
+

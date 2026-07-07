@@ -39,20 +39,32 @@ def test_load_env_file_sets_values_without_overwriting_existing_env(
     assert os.environ["FACTORY_LLM_DEFAULT_PROVIDER"] == "local"
 
 
-def test_prepare_environment_loads_backend_env_before_parsing_args(
+def test_prepare_environment_loads_backend_prod_env_before_parsing_args(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     env_file = tmp_path / ".env"
-    env_file.write_text("PORT=19001\n", encoding="utf-8")
+    env_file.write_text(
+        "PORT=19001\nFACTORY_TTS_PROVIDER=edge_tts\n",
+        encoding="utf-8",
+    )
+    prod_env_file = tmp_path / ".env.prod"
+    prod_env_file.write_text(
+        "PORT=19002\nFACTORY_TTS_PROVIDER=elevenlabs\n",
+        encoding="utf-8",
+    )
     monkeypatch.delenv("PORT", raising=False)
+    monkeypatch.delenv("FACTORY_ENV_FILE", raising=False)
+    monkeypatch.delenv("FACTORY_TTS_PROVIDER", raising=False)
     monkeypatch.setattr(run_server.sys, "argv", ["run_server.py"])
 
     run_server.prepare_environment(tmp_path)
 
     args = run_server.parse_args()
 
-    assert args.port == 19001
+    assert args.port == 19002
+    assert os.environ["FACTORY_ENV_FILE"] == ".env.prod"
+    assert os.environ["FACTORY_TTS_PROVIDER"] == "elevenlabs"
 
 
 def test_prepare_dev_environment_loads_env_dev_before_parsing_args(

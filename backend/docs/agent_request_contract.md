@@ -308,3 +308,70 @@ LLM 실패 시 deterministic fallback이 후보 1개를 반환합니다.
   }
 }
 ```
+
+---
+
+## 7. TTS 음성 합성 메타데이터 (payload.tts)
+
+`operator_guide` 및 `process_optimizer` 에이전트의 성공 응답(`agent.response`) 페이로드에는 플레이어에게 음성 가이드를 제공할 수 있도록 `tts` 필드가 추가됩니다.
+
+개발/로컬/테스트 환경에서는 `edge_tts`를 사용하고, `FACTORY_ENV` 또는 `ENVIRONMENT`가 `production`/`staging`이면 `FACTORY_TTS_PROVIDER=auto`에서 ElevenLabs REST API를 사용합니다. production에서는 `ELEVENLABS_API_KEY`를 서버 secret으로 설정해야 하며, 기본 endpoint는 `ELEVENLABS_API_BASE_URL=https://api.elevenlabs.io`입니다.
+
+### 성공 응답 예시 (status: "ready")
+
+```json
+{
+  "final_answer": "컨베이어가 멈췄다면 전력과 출력 저장 공간을 먼저 확인하세요.",
+  "tts": {
+    "status": "ready",
+    "provider": "edge_tts",
+    "audio_url": "/tts/operator_guide/sha256-key.mp3",
+    "content_type": "audio/mpeg",
+    "text_hash": "sha256-key",
+    "voice_id": "ko-KR-SunHiNeural",
+    "model_id": "edge_tts",
+    "cached": false
+  }
+}
+```
+
+### 비활성화 응답 예시 (status: "disabled")
+
+서버 환경에서 TTS가 비활성화되어 있는 경우의 응답 형태입니다.
+
+```json
+{
+  "final_answer": "안내 문장입니다.",
+  "tts": {
+    "status": "disabled",
+    "provider": "edge_tts"
+  }
+}
+```
+
+### 합성 실패 응답 예시 (status: "failed")
+
+외부 API 호출 제한, 타임아웃 또는 디스크 저장 실패 시 응답 형태입니다.
+
+```json
+{
+  "final_answer": "안내 문장입니다.",
+  "tts": {
+    "status": "failed",
+    "provider": "edge_tts",
+    "error_code": "TTS_PROVIDER_ERROR"
+  }
+}
+```
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `status` | string | TTS 처리 상태 (`"ready"`, `"disabled"`, `"skipped"`, `"failed"`) |
+| `provider` | string | 오디오 생성 공급자 (`"edge_tts"`, `"elevenlabs"`) |
+| `audio_url` | string \| null | 오디오 다운로드용 정적 URL 경로 (status가 ready일 때 제공) |
+| `content_type` | string \| null | 오디오 파일 MIME 타입 (예: `"audio/mpeg"`) |
+| `text_hash` | string \| null | 캐싱에 사용된 고유 해시 키 |
+| `voice_id` | string \| null | 사용된 목소리/성우 ID |
+| `model_id` | string \| null | 사용된 음성 합성 모델 ID |
+| `cached` | bool \| null | 캐시 파일에서 로드되었는지 여부 |
+| `error_code` | string \| null | 실패 시 오류 코드 (`"TTS_PROVIDER_ERROR"` 등) |
