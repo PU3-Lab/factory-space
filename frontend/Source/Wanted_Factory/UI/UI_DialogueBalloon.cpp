@@ -371,8 +371,11 @@ void UUI_DialogueBalloon::HandleOnProcessOptimizerResponse(
     if (NewIssues.Num() > 0)
     {
         SetTrackedProcessOptimizerIssues(NewIssues);
-        ShowExternalDialogue(TEXT("발견한 문제를 강조 표시했습니다"));
-        return;
+        if (TrackedProcessOptimizerIssues.Num() > 0)
+        {
+            ShowExternalDialogue(TEXT("발견한 문제를 강조 표시했습니다"));
+            return;
+        }
     }
 
     SetTrackedProcessOptimizerIssues(TArray<FTrackedProcessOptimizerIssue>());
