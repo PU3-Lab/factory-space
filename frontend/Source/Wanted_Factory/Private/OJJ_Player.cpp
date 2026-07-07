@@ -232,6 +232,10 @@ void AOJJ_Player::BeginPlay()
 		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
 		{
 			QuestManager->StartTutorialQuestTest();
+			// [엔딩 트리거] 메인퀘 전체 완료 감지 구독 — HandlePlayerReady(세이브 복원)보다 앞이지만
+			// 복원 재브로드캐스트는 핸들러의 라이브 완료 필터가 걸러낸다(헤더 주석 참조).
+			QuestManager->OnTutorialDialogueLogged.AddUniqueDynamic(
+				this, &AOJJ_Player::HandleTutorialDialogueLogged);
 		}
 
 		if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
@@ -595,6 +599,7 @@ void AOJJ_Player::PlayEndingSequence(AActor* TowerActor)
 	}
 
 	bEndingSequenceActive = true;
+	HideUIForEnding();
 
 	// [엔딩 사운드] 게임 사운드 덕킹 시작 — Master 볼륨 0 Mix Push. 해제(Pop)는 FinishEndingSequence
 	// (정상/스킵/타임아웃/비정상 전 경로 수렴점) 한 곳 — Push/Pop이 bEndingSequenceActive와 1:1.
@@ -800,6 +805,47 @@ void AOJJ_Player::StartEndingWidgetFadeIn()
 	EndingWidgetFadeDirection = 1;
 }
 
+void AOJJ_Player::HideUIForEnding()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	HiddenUIWidgetsForEnding.Reset();
+	HiddenUIWidgetVisibilitiesForEnding.Reset();
+
+	TArray<UUserWidget*> FoundWidgets;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, FoundWidgets, UUserWidget::StaticClass(), false);
+	for (UUserWidget* Widget : FoundWidgets)
+	{
+		if (!Widget || !Widget->IsInViewport())
+		{
+			continue;
+		}
+
+		HiddenUIWidgetsForEnding.Add(Widget);
+		HiddenUIWidgetVisibilitiesForEnding.Add(Widget->GetVisibility());
+		Widget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void AOJJ_Player::RestoreUIAfterEnding()
+{
+	const int32 RestoreCount = FMath::Min(HiddenUIWidgetsForEnding.Num(), HiddenUIWidgetVisibilitiesForEnding.Num());
+	for (int32 Index = 0; Index < RestoreCount; ++Index)
+	{
+		if (UUserWidget* Widget = HiddenUIWidgetsForEnding[Index].Get())
+		{
+			Widget->SetVisibility(HiddenUIWidgetVisibilitiesForEnding[Index]);
+		}
+	}
+
+	HiddenUIWidgetsForEnding.Reset();
+	HiddenUIWidgetVisibilitiesForEnding.Reset();
+}
+
 void AOJJ_Player::EnsureEndingFadeOverlay(float InitialAlpha)
 {
 	// [엔딩 페이드 오버레이] 화면 전체 검정 SImage(WhiteBrush 틴트)를 뷰포트 Slate 레이어 300에 부착 —
@@ -909,6 +955,7 @@ void AOJJ_Player::CompleteEndingRestore()
 	}
 	// 검정 오버레이 제거 — 이후의 '검정→게임 화면' 페이드인은 카메라 페이드(StartCameraFade)가 담당.
 	RemoveEndingFadeOverlay();
+	RestoreUIAfterEnding();
 
 	// [엔딩 복귀 환경 정리] 낮(09:00) 설정 + 진행 중 자기폭풍/모래폭풍 즉시 종료 — 엔딩 영상이 낮 배경이라
 	// 복귀 화면도 낮·맑음으로 잇는다. 페이즈 정의상 00~12시=Day라 540분=09:00이 낮(기존 O키 단축키와 동일값).
@@ -1021,6 +1068,62 @@ void AOJJ_Player::PlayEnding()
 	UE_LOG(LogTemp, Warning, TEXT("[OJJ_Player] PlayEnding — 월드에 통신탑이 없어 재생 불가. 먼저 설치하세요."));
 }
 
+void AOJJ_Player::HandleTutorialDialogueLogged(
+	const FString& QuestId, const FString& TriggerType, const TArray<FTutorialQuestDialogueLine>& Lines)
+{
+	// [엔딩 트리거] 메인퀘스트(튜토리얼 라인) 전체 완료 → 엔딩 1회 재생. '마지막 스텝' 판정은 ID 하드코딩이
+	// 아니라 NextQuestId 공란(체인 종단) — CSV에 스텝이 추가/재배열돼도 그대로 따라간다.
+	if (TriggerType != TEXT("on_complete"))
+	{
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	UQuestManagerSubsystem* QuestManager =
+		GameInstance ? GameInstance->GetSubsystem<UQuestManagerSubsystem>() : nullptr;
+	if (!QuestManager)
+	{
+		return;
+	}
+
+	FTutorialQuestStep CompletedStep;
+	if (!QuestManager->GetTutorialQuestStepById(QuestId, CompletedStep) || !CompletedStep.NextQuestId.IsEmpty())
+	{
+		return; // 마지막 스텝의 완료가 아님
+	}
+
+	// 라이브 완료 필터 — AdvanceTutorialQuestStep은 현재 스텝을 소거하기 '전에' 브로드캐스트하므로
+	// 이 시점엔 현재 스텝==QuestId. 세이브 복원(RestoreTutorialSaveState)의 재브로드캐스트는 완료 시
+	// 소거된 상태로 저장된 CurrentTutorialQuestId가 비어 있어 여기서 걸러진다(로드 직후 오발동 금지).
+	FTutorialQuestStep CurrentStep;
+	if (!QuestManager->GetCurrentTutorialQuestStep(CurrentStep) || CurrentStep.QuestId != QuestId)
+	{
+		return;
+	}
+
+	// [1회 가드] 클리어 플래그(세이브 영속, FinishEndingSequence가 셋) — 클리어 후 튜토리얼 리셋으로
+	// 재완료해도 엔딩은 다시 틀지 않는다.
+	if (const UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
+	{
+		if (SaveSubsystem->IsGameCleared())
+		{
+			return;
+		}
+	}
+
+	// 통신탑은 앞선 스텝(제작/설치/전력 연결)에서 이미 월드에 존재 — 컷1 카메라 대상. 없으면 경고 후 스킵.
+	for (TActorIterator<ATeleCommunicationTower> It(GetWorld()); It; ++It)
+	{
+		if (ATeleCommunicationTower* Tower = *It)
+		{
+			PlayEndingSequence(Tower);
+			return;
+		}
+	}
+	UE_LOG(LogTemp, Warning,
+		TEXT("[OJJ_Player] 메인퀘스트 전체 완료 감지 — 월드에 통신탑이 없어 엔딩 재생 스킵."));
+}
+
 void AOJJ_Player::SetCharacter(const FString& CharacterName)
 {
 	// [게임진입 테스트] 이름 기반 콘솔 스왑 — enum 리플렉션으로 매칭해 enum 확장 시 자동 대응(인덱스 하드코딩 회피).
@@ -1107,6 +1210,13 @@ void AOJJ_Player::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
+		// [엔딩 트리거] 퀘스트 델리게이트 해제 — 서브시스템은 GameInstance 수명이라 폰 파괴 후 stale 바인딩 방지.
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			QuestManager->OnTutorialDialogueLogged.RemoveDynamic(
+				this, &AOJJ_Player::HandleTutorialDialogueLogged);
+		}
+
 		if (UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
 		{
 			SaveSubsystem->SaveCurrentGame();
@@ -1297,6 +1407,7 @@ void AOJJ_Player::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::P, IE_Pressed, this, &AOJJ_Player::TriggerPlanetEventNoneShortcut);
 	PlayerInputComponent->BindKey(EKeys::LeftBracket, IE_Pressed, this, &AOJJ_Player::TriggerPlanetEventMagneticShortcut);
 	PlayerInputComponent->BindKey(EKeys::RightBracket, IE_Pressed, this, &AOJJ_Player::TriggerPlanetEventSandShortcut);
+	PlayerInputComponent->BindKey(EKeys::Semicolon, IE_Pressed, this, &AOJJ_Player::GiveIronIngotShortcut);
 	PlayerInputComponent->BindKey(EKeys::O, IE_Pressed, this, &AOJJ_Player::TimeSetMorningShortcut);
 	PlayerInputComponent->BindKey(EKeys::Right, IE_Pressed, this, &AOJJ_Player::CycleCategoryNext);
 	PlayerInputComponent->BindKey(EKeys::Left,  IE_Pressed, this, &AOJJ_Player::CycleCategoryPrev);
@@ -2294,6 +2405,7 @@ void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
        {
           BuildModeWidgetInstance->SetVisibility(ESlateVisibility::Visible);
        }
+       SetDialogueBalloonBuildModeVisibility(false);
     }
     else
     {
@@ -2331,12 +2443,17 @@ void AOJJ_Player::ApplyBuildModeView(EBuildViewMode NewMode)
        {
           // 드래그 씹힘 방지
           MainHUDWidgetInstance->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+          if (UUI_MainHUD* MainHUD = Cast<UUI_MainHUD>(MainHUDWidgetInstance))
+          {
+             MainHUD->OpenQuestWindow();
+          }
        }
        // [미니맵] 사용자가 N으로 꺼둔 상태가 아니면 HUD와 함께 복원(사용자 의사 존중).
        if (MinimapWidgetInstance && !bMinimapHiddenByUser)
        {
           MinimapWidgetInstance->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
        }
+       SetDialogueBalloonBuildModeVisibility(true);
     }
 }
 
@@ -2565,9 +2682,44 @@ void AOJJ_Player::TriggerPlanetEventSandShortcut()
 	TriggerPlanetEvent(TEXT("sand"));
 }
 
+void AOJJ_Player::GiveIronIngotShortcut()
+{
+	Give(TEXT("iron_ingot"), 100);
+}
+
 void AOJJ_Player::TimeSetMorningShortcut()
 {
 	TimeSet(540);
+}
+
+void AOJJ_Player::SetDialogueBalloonBuildModeVisibility(bool bVisible)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	TArray<UUserWidget*> FoundWidgets;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, FoundWidgets, UUI_DialogueBalloon::StaticClass(), false);
+	for (UUserWidget* FoundWidget : FoundWidgets)
+	{
+		UUI_DialogueBalloon* DialogueBalloon = Cast<UUI_DialogueBalloon>(FoundWidget);
+		if (!DialogueBalloon)
+		{
+			continue;
+		}
+
+		if (bVisible)
+		{
+			DialogueBalloon->RefreshDialogueUI();
+			DialogueBalloon->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		}
+		else
+		{
+			DialogueBalloon->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
 }
 
 void AOJJ_Player::ToggleBuildFPVShortcut()
@@ -2907,6 +3059,17 @@ void AOJJ_Player::OnInteract(const FInputActionValue& Value)
 
     AMachineBase* Machine = Cast<AMachineBase>(Hit.GetActor());
     if (!Machine) return;
+    if (Machine->GetMachineType() == TEXT("TeleCommunicationTower"))
+    {
+       if (UGameInstance* GameInstance = GetGameInstance())
+       {
+          if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+          {
+             QuestManager->NotifyTutorialEvent(TEXT("InteractTeleCommunicationTower"), TEXT("TeleCommunicationTower"));
+          }
+       }
+       return;
+    }
     if (!Machine->CanPlayerInteract()) return;
 
     // ── [인터랙트 생성 라우팅 분기점] ──
@@ -3394,6 +3557,34 @@ void AOJJ_Player::TutorialLog()
 			QuestManager->LogCurrentTutorialQuestTestState();
 		}
 	}
+}
+
+void AOJJ_Player::TutorialSkip(const FString& QuestId)
+{
+	const FString TrimmedQuestId = QuestId.TrimStartAndEnd();
+	if (TrimmedQuestId.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[TutorialSkip] QuestId is empty. Usage: TutorialSkip TUT_COMM_008"));
+		return;
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UQuestManagerSubsystem* QuestManager = GameInstance->GetSubsystem<UQuestManagerSubsystem>())
+		{
+			if (QuestManager->JumpToTutorialQuestStepForTest(TrimmedQuestId))
+			{
+				UE_LOG(LogTemp, Log, TEXT("[TutorialSkip] Jumped to tutorial step: %s"), *TrimmedQuestId);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[TutorialSkip] Failed to jump to tutorial step: %s"), *TrimmedQuestId);
+			}
+			return;
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[TutorialSkip] QuestManagerSubsystem not found."));
 }
 
 void AOJJ_Player::SetMachineLevel(const FString& MachineTypeName, int32 NewLevel)

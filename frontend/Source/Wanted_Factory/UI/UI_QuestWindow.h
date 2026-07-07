@@ -17,6 +17,7 @@ public:
 
     // J키를 누르거나 HUD에서 제어할 때 호출될 전용 토글 셔터
     void ToggleQuestWindow();
+    void OpenQuestWindow();
     
     void UpdateMainQuestUI(const FQuestState& MainQuest);
     

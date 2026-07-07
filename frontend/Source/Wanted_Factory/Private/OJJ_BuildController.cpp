@@ -49,6 +49,7 @@
 #include "Pipe.h"
 #include "PlayerWarehouseSubsystem.h"
 #include "QuestManagerSubsystem.h"
+#include "Sound/SoundBase.h"
 #include "Resource/ResourceBase.h"
 
 namespace
@@ -1465,33 +1466,11 @@ void AOJJ_BuildController::OnLeftClickPressed()
 
 	// 吏곸쟾 origin???댁젣 ?먯쑀?????ㅼ쓬 UpdateMouseHover?먯꽌 鍮④컯?쇰줈 媛뺤젣 ?ы몴??
 	CurrentHoverCell = FIntPoint(INT_MIN, INT_MIN);
-	// [엔딩 시네마틱] 통신탑(최종 목표) 여부는 SetPlacementMode(None)가 모드를 지우기 전에 캡처.
-	const bool bPlacedTeleCommunicationTower =
-		(PlacementMode == EOJJ_BuildPlacementMode::TeleCommunicationTower);
 	// [손 비우기] 단일 배치(머신) 성공 후 선택 해제 — 빌드모드 유지(PlacementMode만 None). Z키와 동일 경로(고스트 숨김/호버 리셋). 컨베이어/파이프 드래그·철거는 무관.
 	SetPlacementMode(EOJJ_BuildPlacementMode::None);
 
-	// [엔딩 시네마틱] 통신탑 설치 확정 → 미클리어면 1회 엔딩 연출(클리어 후 재설치는 스킵 — FactorySave 플래그).
-	// 배치 후처리까지 모두 끝낸 뒤 트리거 — 연출이 빌드모드 해제(SetBuildViewMode None)를 유발해도 이 함수의
-	// 배치 로직과 얽히지 않는다. 로컬(설치한) 플레이어 화면 전용 — 리플리케이션 범위 밖(멀티 동기화 미고려).
-	if (bPlacedTeleCommunicationTower)
-	{
-		bool bAlreadyCleared = false;
-		if (UGameInstance* GameInstance = World->GetGameInstance())
-		{
-			if (const UFactorySaveSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UFactorySaveSubsystem>())
-			{
-				bAlreadyCleared = SaveSubsystem->IsGameCleared();
-			}
-		}
-		if (!bAlreadyCleared)
-		{
-			if (AOJJ_Player* Player = Cast<AOJJ_Player>(UGameplayStatics::GetPlayerPawn(this, 0)))
-			{
-				Player->PlayEndingSequence(NewMachine);
-			}
-		}
-	}
+	// [엔딩 시네마틱] 통신탑 '설치' 트리거는 제거 — 엔딩은 메인퀘스트(튜토리얼 라인) 전체 완료 시
+	// OJJ_Player::HandleTutorialDialogueLogged가 재생한다(설치는 마지막 스텝보다 앞 단계라 여기선 미발동).
 }
 
 // === Foundation 紐⑤뱶 (F1-b ??癒몄떊 寃쎈줈? ?낅┰, 而ㅻ쾭由ъ? 諛곗튂) ===
@@ -1525,6 +1504,11 @@ void AOJJ_BuildController::StartBuildUpEffect(AActor* Building, UStaticMeshCompo
 	{
 		return;
 	}
+	// [건설 사운드] 빌드업 시작음 — 연출 머티리얼과 독립(미지정이어도 배치는 정상이므로 소리는 재생).
+	if (BuildUpSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, BuildUpSound, Mesh->GetComponentLocation());
+	}
 	UOJJ_HologramBuildUpComponent* Effect = NewObject<UOJJ_HologramBuildUpComponent>(Building);
 	if (!Effect)
 	{
@@ -1540,7 +1524,16 @@ void AOJJ_BuildController::StartBuildDownEffect(UStaticMeshComponent* Mesh)
 {
 	// [철거 빌드다운] 철거 대상 메시를 역방향(위→아래) 빨강 홀로그램으로 디졸브 — 대상 액터는 즉시 Destroy되므로
 	// 연출은 독립 프록시 액터(AOJJ_DemolishEffectActor)로 분리해 자체 소멸시킨다. 머티리얼 미지정/메시 null이면 무동작(철거 정상).
-	if (!Mesh || !HologramBuildUpMaterial)
+	if (!Mesh)
+	{
+		return;
+	}
+	// [건설 사운드] 철거음 — 연출 머티리얼과 독립(미지정이어도 철거는 진행되므로 소리는 재생).
+	if (DemolishSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, DemolishSound, Mesh->GetComponentLocation());
+	}
+	if (!HologramBuildUpMaterial)
 	{
 		return;
 	}
@@ -1569,6 +1562,12 @@ void AOJJ_BuildController::StartPathBuildUpEffect(AActor* Building, const TArray
 	}
 	const FVector PathStart = TargetGrid->GridToWorld(Cells[0]);
 	const FVector PathEnd = TargetGrid->GridToWorld(Cells.Last());
+
+	// [건설 사운드] 경로 빌드업은 셀 수와 무관하게 배치(호출)당 1회 — 경로 중점에서 재생.
+	if (BuildUpSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, BuildUpSound, (PathStart + PathEnd) * 0.5f);
+	}
 
 	TArray<UInstancedStaticMeshComponent*> ISMs;
 	Building->GetComponents<UInstancedStaticMeshComponent>(ISMs);

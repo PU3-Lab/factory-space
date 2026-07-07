@@ -367,6 +367,15 @@ public:
 	UPROPERTY(EditAnywhere, Category = "BuildController|Hologram", meta = (ClampMin = "0.01"))
 	float BuildDownDuration = 1.0f;
 
+	// [건설 사운드] 빌드업 시작음 — StartBuildUpEffect(머신/파운데이션/사다리) + StartPathBuildUpEffect
+	// (컨베이어/파이프, 배치당 1회) 공용. 미지정이면 무음(배치 정상).
+	UPROPERTY(EditAnywhere, Category = "Build|Sound")
+	TObjectPtr<class USoundBase> BuildUpSound;
+
+	// [건설 사운드] 철거음 — StartBuildDownEffect 시작 시점(연출 머티리얼 미지정과 독립). 미지정이면 무음(철거 정상).
+	UPROPERTY(EditAnywhere, Category = "Build|Sound")
+	TObjectPtr<class USoundBase> DemolishSound;
+
 	// 빌드 모드 상태 토글. Enter/Exit의 자체 가드(이미 같은 상태면 no-op) 덕분에 안전.
 	UFUNCTION(BlueprintCallable, Category = "BuildController")
 	void ToggleBuildMode();
