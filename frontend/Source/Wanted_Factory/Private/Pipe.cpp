@@ -165,14 +165,11 @@ APipe::APipe()
 		LiquidVisualInstances->SetMaterial(0, MaterialAsset.Object);
 		EmptyTransitionVisualInstances->SetMaterial(0, MaterialAsset.Object);
 		TransitionShadowInstances->SetMaterial(0, MaterialAsset.Object);
-		FlowArrowMaterialInstance = UMaterialInstanceDynamic::Create(MaterialAsset.Object, this);
-		if (FlowArrowMaterialInstance)
-		{
-			FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
-		}
+		// [MID CDO 오염 수정] 생성자는 정적 베이스만 — 생성자 MID는 CDO 서브오브젝트로 박혀 컴포넌트
+		// OverrideMaterials 직렬화를 타고 BP_Pipe 저장을 막는다(Illegal private reference).
+		// MID 생성/파라미터는 BeginPlay(런타임 전용)로 이동 — Conveyor a55d268 미러.
+		FlowArrowInstances->SetMaterial(0, MaterialAsset.Object);
 	}
-
-	UpdateFlowArrowMaterial();
 
 	static ConstructorHelpers::FObjectFinder<UDataTable> ResourceTableFinder(
 		TEXT("/Game/DataTable/DT_ResourceData.DT_ResourceData"));
@@ -203,6 +200,19 @@ void APipe::Tick(float DeltaTime)
 void APipe::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// [MID CDO 오염 수정] MID는 런타임에서만 생성(베이스 = 컴포넌트 현재 머티리얼 — BP 오버라이드 존중).
+	// RF_Transient = 직렬화 제외 이중 안전장치(Conveyor a55d268 미러).
+	if (UMaterialInterface* FlowArrowBase = FlowArrowInstances ? FlowArrowInstances->GetMaterial(0) : nullptr)
+	{
+		FlowArrowMaterialInstance = UMaterialInstanceDynamic::Create(FlowArrowBase, this);
+		if (FlowArrowMaterialInstance)
+		{
+			FlowArrowMaterialInstance->SetFlags(RF_Transient);
+			FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
+		}
+	}
+
 	LastFlowArrowPhase = GetFlowArrowPhase();
 	RestartLiquidMoveTimer();
 	UpdateMaterialState();
@@ -1202,6 +1212,12 @@ void APipe::UpdateFlowArrowMaterial()
 
 	if (!FlowArrowMaterialInstance)
 	{
+		// [MID CDO 오염 수정] lazy-create는 런타임 전용 — CDO/OnConstruction 경로에서 MID 생성 금지
+		// (색은 BeginPlay 생성분 + Tick 갱신이 런타임 진입 후 커버, Conveyor a55d268 미러).
+		if (!HasActorBegunPlay())
+		{
+			return;
+		}
 		UMaterialInterface* BaseMaterial = FlowArrowInstances ? FlowArrowInstances->GetMaterial(0) : nullptr;
 		if (BaseMaterial)
 		{
@@ -1212,6 +1228,10 @@ void APipe::UpdateFlowArrowMaterial()
 			BaseMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
 		}
 		FlowArrowMaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
+		if (FlowArrowMaterialInstance)
+		{
+			FlowArrowMaterialInstance->SetFlags(RF_Transient);
+		}
 		if (FlowArrowMaterialInstance && FlowArrowInstances)
 		{
 			FlowArrowInstances->SetMaterial(0, FlowArrowMaterialInstance);
@@ -1433,7 +1453,17 @@ UMaterialInterface* APipe::GetPipeMaterial(bool bHasLiquid)
 
 	if (!MaterialInstance || MaterialInstance->Parent != BaseMaterial)
 	{
+		// [MID CDO 오염 수정] MID 생성은 런타임 전용 — 호출처가 런타임 경로여도 CDO/construction 접근
+		// 가능성을 차단(Conveyor a55d268 미러). BeginPlay 전엔 베이스를 그대로 반환(시각 파라미터는 런타임 커버).
+		if (!HasActorBegunPlay())
+		{
+			return BaseMaterial;
+		}
 		MaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
+		if (MaterialInstance)
+		{
+			MaterialInstance->SetFlags(RF_Transient);
+		}
 	}
 
 	ConfigureMaterialInstance(MaterialInstance, bHasLiquid);
