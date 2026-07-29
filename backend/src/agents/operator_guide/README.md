@@ -1,4 +1,4 @@
-# Operator Guide Agent
+# 가이드 에이전트
 
 Factory Space의 `operator_guide`는 플레이어의 공장 운영 질문에 게임 데이터와 현재 공장 상태를 근거로 답변하는 RAG 기반 가이드 에이전트입니다.
 
