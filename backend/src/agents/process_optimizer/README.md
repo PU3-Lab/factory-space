@@ -1,4 +1,4 @@
-# Process Optimizer Agent
+# 최적화 에이전트
 
 Factory Space의 `process_optimizer`는 Unreal이 보낸 공장 상태를 분석해 병목과 개선안을 제안하고, 플레이어가 승인한 변경만 구조화된 명령으로 준비하는 LangGraph 기반 최적화 에이전트입니다.
 
